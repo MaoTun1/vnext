@@ -1,0 +1,40 @@
+using BBT.Aether;
+using BBT.Aether.Domain.Entities;
+
+namespace BBT.Workflow.Instances;
+
+public sealed class InstanceAction : Entity<Guid>
+{
+    private InstanceAction()
+    {
+        
+    }
+
+    public InstanceAction(
+        Guid id,
+        Guid taskId,
+        string status,
+        JsonData detail)
+        : base(id)
+    {
+        TaskId = taskId;
+        Detail = detail ?? JsonData.Empty;
+        StartedAt = DateTime.UtcNow;
+        SetStatus(status);
+    }
+
+    /// <summary>
+    /// Instance Task ID
+    /// </summary>
+    public Guid TaskId { get; private set; }
+    public JsonData Detail { get; private set; }
+    public DateTime StartedAt { get; private set; }
+    public DateTime? FinishedAt { get; private set; }
+    public TimeSpan? Duration { get; private set; }
+    public string Status { get; private set; }
+    
+    private void SetStatus(string status)
+    {
+        Status = Check.NotNullOrEmpty(status, nameof(status), InstanceActionConstants.MaxStatusLength);
+    }
+}

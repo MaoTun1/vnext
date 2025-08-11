@@ -1,0 +1,218 @@
+using BBT.Workflow.Caching;
+using BBT.Workflow.Definitions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.ObjectPool;
+using Microsoft.Extensions.Options;
+using System.Collections.Concurrent;
+using BBT.Workflow.Definitions.Tasks;
+
+namespace BBT.Workflow.Tasks.Factory;
+
+/// <summary>
+/// Advanced task factory implementation with object pooling for high-performance scenarios.
+/// This factory uses memory pooling to reduce garbage collection pressure and improve performance.
+/// </summary>
+public sealed class PooledTaskFactory(
+    IComponentCacheStore componentCacheStore,
+    ILogger<PooledTaskFactory> logger,
+    IOptions<TaskFactoryOptions> options)
+    : ITaskFactory
+{
+    private readonly ConcurrentDictionary<Type, ObjectPool<WorkflowTask>> _pools = new();
+    private readonly TaskFactoryOptions _options = options.Value;
+
+    /// <summary>
+    /// Creates a task instance suitable for execution, ensuring it's isolated from cached instances.
+    /// Uses object pooling for better performance in high-throughput scenarios.
+    /// </summary>
+    public async Task<WorkflowTask> CreateExecutionTaskAsync(
+        IReference taskReference, 
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var cachedTask = await componentCacheStore.GetTaskAsync(taskReference, cancellationToken);
+            return CreateFromCached(cachedTask);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to create execution task for reference: {TaskReference}", taskReference);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Creates a task instance from cached data with optimized cloning strategy.
+    /// Since task properties have private setters, we use the efficient Clone() method
+    /// instead of true object pooling, but maintain the pool for future optimization.
+    /// </summary>
+    public WorkflowTask CreateFromCached(WorkflowTask cachedTask)
+    {
+        if (cachedTask == null)
+            throw new ArgumentNullException(nameof(cachedTask));
+
+        try
+        {
+            var taskType = cachedTask.GetType();
+            
+            // Use configuration to determine strategy
+            if (ShouldUsePoolingFromConfig(taskType))
+            {
+                // Use real object pooling with the new CopyFromInternal methods
+                return CreateFromPool(cachedTask);
+            }
+            
+            // Fall back to direct cloning for non-pooled types
+            var directClonedTask = cachedTask.Clone();
+            
+            logger.LogDebug("Successfully cloned task {TaskKey} of type {TaskType}", 
+                cachedTask.Key, taskType.Name);
+            
+            return directClonedTask;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to clone task {TaskKey} of type {TaskType}", 
+                cachedTask.Key, cachedTask.GetType().Name);
+            throw;
+        }
+    }
+
+    private WorkflowTask CreateFromPool(WorkflowTask template)
+    {
+        var taskType = template.GetType();
+        var pool = _pools.GetOrAdd(taskType, _ => CreatePoolForType(taskType));
+        
+        var pooledTask = pool.Get();
+        
+        // Copy properties from template to pooled instance using efficient internal methods
+        CopyTaskProperties(template, pooledTask);
+        
+        logger.LogDebug("Retrieved and configured task from pool for type {TaskType}", taskType.Name);
+        
+        return pooledTask;
+    }
+
+    /// <summary>
+    /// Copies all task properties using efficient internal methods for object pooling
+    /// </summary>
+    private static void CopyTaskProperties(WorkflowTask source, WorkflowTask target)
+    {
+        // Try registry-based approach first
+        if (PoolableTaskRegistry.TryCopyProperties(source, target))
+        {
+            return;
+        }
+        
+        // Fallback to base copy for unsupported types
+        source.CopyBaseToInternal(target);
+    }
+
+    private ObjectPool<WorkflowTask> CreatePoolForType(Type taskType)
+    {
+        // Pool creation logic kept for future use
+        var policy = new TaskPooledObjectPolicy(taskType);
+        return new DefaultObjectPool<WorkflowTask>(policy, _options.MaxPoolSize);
+    }
+
+    private bool ShouldUsePoolingFromConfig(Type taskType)
+    {
+        return _options.PooledTaskTypes.Contains(taskType.Name);
+    }
+}
+
+/// <summary>
+/// Object pool policy for creating workflow task instances.
+/// </summary>
+internal sealed class TaskPooledObjectPolicy(Type taskType) : IPooledObjectPolicy<WorkflowTask>
+{
+    public WorkflowTask Create()
+    {
+        // Try registry-based creation first
+        var task = PoolableTaskRegistry.TryCreateEmpty(taskType);
+        if (task != null)
+        {
+            return task;
+        }
+        
+        // Fallback to reflection for non-registered types
+        return (WorkflowTask)Activator.CreateInstance(taskType, true)!;
+    }
+
+    public bool Return(WorkflowTask obj)
+    {
+        // Reset the object state before returning to pool
+        obj.Reset();
+        return true;
+    }
+}
+
+/// <summary>
+/// Registry for poolable task type operations
+/// </summary>
+public static class PoolableTaskRegistry
+{
+    private static readonly ConcurrentDictionary<Type, Func<WorkflowTask>> Creators = new();
+    private static readonly ConcurrentDictionary<Type, Action<WorkflowTask, WorkflowTask>> Copiers = new();
+
+    static PoolableTaskRegistry()
+    {
+        // Register all poolable task types
+        RegisterPoolableTask<DaprServiceTask>(
+            DaprServiceTask.CreateEmpty,
+            (source, target) => ((DaprServiceTask)target).CopyFromInternal((DaprServiceTask)source));
+            
+        RegisterPoolableTask<HttpTask>(
+            HttpTask.CreateEmpty,
+            (source, target) => ((HttpTask)target).CopyFromInternal((HttpTask)source));
+            
+        RegisterPoolableTask<ScriptTask>(
+            ScriptTask.CreateEmpty,
+            (source, target) => ((ScriptTask)target).CopyFromInternal((ScriptTask)source));
+            
+        RegisterPoolableTask<ConditionTask>(
+            ConditionTask.CreateEmpty,
+            (source, target) => ((ConditionTask)target).CopyFromInternal((ConditionTask)source));
+            
+        RegisterPoolableTask<DaprBindingTask>(
+            DaprBindingTask.CreateEmpty,
+            (source, target) => ((DaprBindingTask)target).CopyFromInternal((DaprBindingTask)source));
+            
+        RegisterPoolableTask<DaprPubSubTask>(
+            DaprPubSubTask.CreateEmpty,
+            (source, target) => ((DaprPubSubTask)target).CopyFromInternal((DaprPubSubTask)source));
+            
+        RegisterPoolableTask<DaprHttpEndpointTask>(
+            DaprHttpEndpointTask.CreateEmpty,
+            (source, target) => ((DaprHttpEndpointTask)target).CopyFromInternal((DaprHttpEndpointTask)source));
+            
+        RegisterPoolableTask<HumanTask>(
+            HumanTask.CreateEmpty,
+            (source, target) => ((HumanTask)target).CopyFromInternal((HumanTask)source));
+    }
+
+    public static void RegisterPoolableTask<T>(
+        Func<WorkflowTask> creator,
+        Action<WorkflowTask, WorkflowTask> copier) where T : WorkflowTask
+    {
+        var type = typeof(T);
+        Creators[type] = creator;
+        Copiers[type] = copier;
+    }
+
+    public static WorkflowTask? TryCreateEmpty(Type taskType)
+    {
+        return Creators.TryGetValue(taskType, out var creator) ? creator() : null;
+    }
+
+    public static bool TryCopyProperties(WorkflowTask source, WorkflowTask target)
+    {
+        var sourceType = source.GetType();
+        if (Copiers.TryGetValue(sourceType, out var copier))
+        {
+            copier(source, target);
+            return true;
+        }
+        return false;
+    }
+} 

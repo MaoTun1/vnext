@@ -1,0 +1,337 @@
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using BBT.Workflow.Definitions;
+using BBT.Workflow.Runtime;
+using BBT.Workflow.Scripting.Functions;
+using Microsoft.CodeAnalysis;
+using Moq;
+using Xunit;
+using IRuntimeInfoProvider = BBT.Workflow.Runtime.IRuntimeInfoProvider;
+using Dapr.Client;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace BBT.Workflow.Scripting;
+
+public class ScriptEngineTests : ApplicationTestBase<ApplicationEntryPoint>
+{
+    private readonly IScriptEngine _scriptEngine;
+
+    public ScriptEngineTests()
+    {
+        _scriptEngine = GetRequiredService<IScriptEngine>();
+    }
+
+    protected override void AddApplication(IServiceCollection services)
+    {
+        // Mock DaprClient for testing
+        var mockDaprClient = new Mock<DaprClient>();
+        
+        // Setup GetSecretAsync to return a mock secret value
+        mockDaprClient
+            .Setup(x => x.GetSecretAsync(
+                It.IsAny<string>(), 
+                It.IsAny<string>(), 
+                It.IsAny<IReadOnlyDictionary<string, string>>(), 
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, string> { { "test_key", "mock_secret_value" } });
+
+        services.AddSingleton(mockDaprClient.Object);
+        ScriptHelper.SetDaprClient(mockDaprClient.Object);
+        base.AddApplication(services);
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_ShouldReturnExpectedValue()
+    {
+        // Arrange
+        string code = "1 + 2";
+
+        // Act
+        var result = await _scriptEngine.EvaluateAsync(code);
+
+        // Assert
+        Assert.Equal(3, result);
+    }
+
+    [Fact]
+    public async Task EvaluateGenericAsync_ShouldReturnExpectedGenericValue()
+    {
+        // Arrange
+        string code = "\"Hello\"";
+        string expected = "Hello";
+
+        // Act
+        var result = await _scriptEngine.EvaluateAsync<string>(code);
+
+        // Assert
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public async Task CompileToInstanceAsync_ShouldReturnCompiledInstance()
+    {
+        // Arrange
+        string code = @"
+            public class MyCompiledClass : IMyCompiledClass
+            {
+                public string SayHello() => ""Hello from compiled!"";
+            }
+        ";
+        // Act
+        var result = await _scriptEngine.CompileToInstanceAsync<IMyCompiledClass>(code,
+            extraReferences:
+            [
+                MetadataReference.CreateFromFile(typeof(IMyCompiledClass).Assembly.Location)
+            ],
+            usingDirectives:
+            [
+                "System",
+                "BBT.Workflow.Scripting"
+            ]);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal("Hello from compiled!", result.SayHello());
+    }
+
+    [Fact]
+    public async Task Compile_IMapping_From_Code_Should_Work()
+    {
+        // Arrange
+        var code = """
+                   using System.Threading.Tasks;
+                   using BBT.Workflow.Scripting;
+                   using BBT.Workflow.Definitions;
+
+                   public class MockMapping : IMapping
+                   {
+                       public Task<ScriptResponse> InputHandler(WorkflowTask task, ScriptContext context)
+                       {
+                           var httpTask = (task as HttpTask)!;
+                           httpTask.Url = "https://httpbin.org/post/" + context.Transition.Key;
+                           httpTask.Method = "POST";
+                           return Task.FromResult(new ScriptResponse
+                           {
+                               Data = "Hello Input",
+                               Headers = null
+                           });
+                       }
+                   
+                       public Task<ScriptResponse> OutputHandler(ScriptContext context)
+                       {
+                           return Task.FromResult(new ScriptResponse
+                           {
+                               Data = "Hello Output",
+                               Headers = null
+                           });
+                       }
+                   }
+                   """;
+
+        var references = new List<MetadataReference>
+        {
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(IMapping).Assembly.Location)
+        };
+
+        var usings = new[]
+        {
+            "System.Threading.Tasks",
+            "BBT.Workflow.Scripting",
+            "BBT.Workflow.Definitions"
+        };
+
+        // Act
+        var instance = await _scriptEngine.CompileToInstanceAsync<IMapping>(code, references, usings);
+
+        var httpTask = WorkflowTaskFactory.CreateHttpTask();
+        var response = await instance.InputHandler(
+            task: httpTask,
+            context: new ScriptContext.Builder()
+                .SetWorkflow(WorkflowFactory.CreateDefault())
+                .SetInstance(InstanceFactory.CreateDefault())
+                .SetTransition(TransitionFactory.CreateDefault())
+                .SetRuntime(Mock.Of<IRuntimeInfoProvider>())
+                .SetDefinitions(new System.Collections.Generic.Dictionary<string, object>())
+                .Build());
+
+        // Assert
+        Assert.NotNull(response);
+        Assert.Equal("Hello Input", response.Data);
+        Assert.Equal("POST", httpTask.Method);
+        Assert.Equal("https://httpbin.org/post/test-transition", httpTask.Url);
+    }
+
+    [Fact]
+    public async Task Compile_IMapping_With_GetSecret_Should_Work_With_MockedDaprClient()
+    {
+        // Arrange - Now ScriptHelper should be initialized with mocked DaprClient
+        var code = """
+                   using System.Threading.Tasks;
+                   using BBT.Workflow.Scripting;
+                   using BBT.Workflow.Definitions;
+                   using BBT.Workflow.Scripting.Functions;
+
+                   public class MockMapping : IMapping
+                   {
+                       public Task<ScriptResponse> InputHandler(WorkflowTask task, ScriptContext context)
+                       {
+                           var httpTask = (task as HttpTask)!;
+                           httpTask.Url = "https://httpbin.org/post/" + context.Transition.Key;
+                           httpTask.Method = "POST";
+                           return Task.FromResult(new ScriptResponse
+                           {
+                               Data = "Hello Input",
+                               Headers = new Dictionary<string, string>
+                               {
+                                   {"ApiKey", ScriptHelper.GetSecret("secret_store", "secret", "test_key")}
+                               }
+                           });
+                       }
+
+                       public Task<ScriptResponse> OutputHandler(ScriptContext context)
+                       {
+                           return Task.FromResult(new ScriptResponse
+                           {
+                               Data = "Hello Output",
+                               Headers = null
+                           });
+                       }
+                   }
+                   """;
+
+        var references = new List<MetadataReference>
+        {
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(IMapping).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(ScriptHelper).Assembly.Location)
+        };
+
+        var usings = new[]
+        {
+            "System.Threading.Tasks",
+            "BBT.Workflow.Scripting",
+            "BBT.Workflow.Definitions",
+            "BBT.Workflow.Scripting.Functions"
+        };
+
+        // Act
+        var instance = await _scriptEngine.CompileToInstanceAsync<IMapping>(code, references, usings);
+        
+        var httpTask = WorkflowTaskFactory.CreateHttpTask();
+        var response = await instance.InputHandler(
+            task: httpTask,
+            context: new ScriptContext.Builder()
+                .SetWorkflow(WorkflowFactory.CreateDefault())
+                .SetInstance(InstanceFactory.CreateDefault())
+                .SetTransition(TransitionFactory.CreateDefault())
+                .SetRuntime(Mock.Of<IRuntimeInfoProvider>())
+                .SetDefinitions(new System.Collections.Generic.Dictionary<string, object>())
+                .Build());
+
+        // Assert
+        Assert.NotNull(response);
+        Assert.Equal("Hello Input", response.Data);
+        Assert.Equal("POST", httpTask.Method);
+        Assert.Equal("https://httpbin.org/post/test-transition", httpTask.Url);
+        Assert.NotNull(response.Headers);
+        Assert.True(response.Headers?.ContainsKey("ApiKey"));
+        Assert.Equal("mock_secret_value", response.Headers?["ApiKey"]);
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_With_GlobalScriptFunctions_Should_Work_With_MockedDaprClient()
+    {
+        // Arrange
+        string code = @"
+            var result = GetSecret(""secret_store"", ""secret"", ""test_key"");
+            return ""Got secret: "" + result;
+        ";
+
+        // Act
+        var result = await _scriptEngine.EvaluateAsync<string>(code);
+
+        // Assert
+        Assert.Equal("Got secret: mock_secret_value", result);
+    }
+
+    [Fact]
+    public async Task Compile_IMapping_With_ScriptBase_Should_Work_With_MockedDaprClient()
+    {
+        // Arrange
+        var code = """
+                   using System.Collections.Generic;
+                   using System.Threading.Tasks;
+                   using BBT.Workflow.Scripting;
+                   using BBT.Workflow.Definitions;
+                   using BBT.Workflow.Scripting.Functions;
+
+                   public class ScriptBaseMapping : ScriptBase, IMapping
+                   {
+                       public Task<ScriptResponse> InputHandler(WorkflowTask task, ScriptContext context)
+                       {
+                           var httpTask = (task as HttpTask)!;
+                           httpTask.Url = "https://httpbin.org/post/" + context.Transition.Key;
+                           httpTask.Method = "POST";
+                           
+                           var apiKey = GetSecret("secret_store", "secret", "test_key");
+                           return Task.FromResult(new ScriptResponse
+                           {
+                               Data = "Got secret: " + apiKey,
+                               Headers = null
+                           });
+                       }
+
+                       public Task<ScriptResponse> OutputHandler(ScriptContext context)
+                       {
+                           return Task.FromResult(new ScriptResponse
+                           {
+                               Data = "Hello Output from ScriptBase",
+                               Headers = null
+                           });
+                       }
+                   }
+                   """;
+
+        var references = new List<MetadataReference>
+        {
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(IMapping).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(ScriptHelper).Assembly.Location)
+        };
+
+        var usings = new[]
+        {
+            "System.Collections.Generic",
+            "System.Threading.Tasks",
+            "BBT.Workflow.Scripting",
+            "BBT.Workflow.Definitions",
+            "BBT.Workflow.Scripting.Functions"
+        };
+
+        // Act
+        var instance = await _scriptEngine.CompileToInstanceAsync<IMapping>(code, references, usings);
+        
+        var httpTask = WorkflowTaskFactory.CreateHttpTask();
+        var response = await instance.InputHandler(
+            task: httpTask,
+            context: new ScriptContext.Builder()
+                .SetWorkflow(WorkflowFactory.CreateDefault())
+                .SetInstance(InstanceFactory.CreateDefault())
+                .SetTransition(TransitionFactory.CreateDefault())
+                .SetRuntime(Mock.Of<IRuntimeInfoProvider>())
+                .SetDefinitions(new System.Collections.Generic.Dictionary<string, object>())
+                .Build());
+
+        // Assert
+        Assert.NotNull(response);
+        Assert.Equal("Got secret: mock_secret_value", response.Data);
+    }
+
+}
+
+public interface IMyCompiledClass
+{
+    string SayHello();
+}

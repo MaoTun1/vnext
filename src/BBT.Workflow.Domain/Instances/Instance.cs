@@ -1,0 +1,280 @@
+using BBT.Aether;
+using BBT.Aether.Auditing;
+using BBT.Aether.Domain.Entities;
+using BBT.Workflow.Definitions;
+using BBT.Workflow.Instances.Policies;
+
+namespace BBT.Workflow.Instances;
+
+/// <summary>
+/// Instance
+/// </summary>
+public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTime
+{
+    private Instance()
+    {
+    }
+
+    internal Instance(
+        Guid id,
+        string flow,
+        string? key
+    ) : base(id)
+    {
+        IsTransient = true;
+        CreatedAt = DateTime.UtcNow;
+        Flow = Check.NotNull(flow, nameof(Flow), WorkflowConstants.MaxKeyLength);
+        Key = Check.Length(key, nameof(Key), InstanceConstants.MaxKeyLength);
+        Status = InstanceStatus.Active;
+
+        Tags = [];
+
+        _dataList = [];
+    }
+
+    public static Instance Create(
+        Guid id,
+        string flow,
+        string? key = null
+    )
+    {
+        return new Instance(
+            id,
+            flow,
+            key
+        );
+    }
+
+    /// <summary>
+    /// It is the key value for the heat flow.
+    /// </summary>
+    public string? Key { get; private set; }
+
+    /// <summary>
+    /// Flow key.
+    /// </summary>
+    public string Flow { get; private set; }
+
+    /// <summary>
+    /// Current state key
+    /// </summary>
+    public string? CurrentState { get; private set; }
+
+    /// <summary>
+    /// Status
+    /// </summary>
+    public InstanceStatus Status { get; private set; }
+
+    /// <summary>
+    /// Completed at
+    /// </summary>
+    public DateTime? CompletedAt { get; private set; }
+
+    public TimeSpan? Duration { get; private set; }
+
+    public List<string> Tags { get; private set; }
+
+    /// <summary>
+    /// Created at
+    /// </summary>
+    public DateTime CreatedAt { get; set; }
+
+    /// <summary>
+    /// Modified at
+    /// </summary>
+    public DateTime? ModifiedAt { get; set; }
+
+    public bool IsTransient { get; private set; }
+
+    private readonly List<InstanceData> _dataList = new();
+    private readonly object _dataListLock = new(); // Thread-safe lock for data operations
+
+    /// <summary>
+    /// Child Correlations
+    /// </summary>
+    public IReadOnlyCollection<InstanceData> DataList => _dataList.AsReadOnly();
+
+    /// <summary>
+    /// Latest data
+    /// </summary>
+    public dynamic? Data
+    {
+        get
+        {
+            lock (_dataListLock)
+            {
+                return _dataList.OrderByDescending(x => x, InstanceDataVersionComparer.Instance).FirstOrDefault()?.Attributes;
+            }
+        }
+    }
+
+    public InstanceData? LatestData
+    {
+        get
+        {
+            lock (_dataListLock)
+            {
+                return _dataList.OrderByDescending(x => x, InstanceDataVersionComparer.Instance).FirstOrDefault();
+            }
+        }
+    }
+
+    private readonly List<InstanceCorrelation> _childCorrelations = new();
+
+    /// <summary>
+    /// Child Correlations
+    /// </summary>
+    public IReadOnlyCollection<InstanceCorrelation> ChildCorrelations => _childCorrelations.AsReadOnly();
+
+    public void Complete()
+    {
+        Status = InstanceStatus.Completed;
+        CompletedAt = DateTime.UtcNow;
+        Duration = CompletedAt - CreatedAt;
+    }
+
+    public void Fault()
+    {
+        Status = InstanceStatus.Faulted;
+    }
+
+    /// <summary>
+    /// Sets the instance status to Busy.
+    /// This is typically called when a transition is being processed to prevent concurrent modifications.
+    /// </summary>
+    public void Busy()
+    {
+        Status = InstanceStatus.Busy;
+    }
+
+    /// <summary>
+    /// Sets the instance status to Active.
+    /// This is typically called when a transition processing is completed successfully.
+    /// </summary>
+    public void Active()
+    {
+        Status = InstanceStatus.Active;
+    }
+
+    public void AddCorrelation(InstanceCorrelation correlation)
+    {
+        _childCorrelations.Add(correlation);
+    }
+
+    public void SetKey(string key)
+    {
+        Key = Check.NotNullOrEmpty(key, nameof(key), InstanceConstants.MaxKeyLength);
+    }
+
+    private void SetState(string currentState)
+    {
+        CurrentState = Check.Length(currentState, nameof(currentState), StateConstants.MaxKeyLength);
+    }
+
+    public void ChangeState(State state)
+    {
+        SetState(state.Key);
+    }
+
+    public void ChangeState(Transition transition)
+    {
+        SetState(transition.Target);
+    }
+    
+    public void ChangeState(WorkflowTimeout timeout)
+    {
+        SetState(timeout.Target);
+    }
+
+    public void AddTags(string[]? tags)
+    {
+        tags ??= [];
+
+        Tags.RemoveAll(existingTag => !tags.Contains(existingTag));
+
+        foreach (var tag in tags)
+        {
+            if (!Tags.Contains(tag))
+            {
+                Tags.Add(tag);
+            }
+        }
+    }
+
+    public bool CanExecuteTransition(Transition transition, State state, StateTransitionPolicy policy)
+    {
+        return transition.CanExecute(state, policy);
+    }
+
+    public InstanceData AddDataWithVersion(Guid id, JsonData inputData, string version)
+    {
+        var newData = new InstanceData(
+            id,
+            Id,
+            version,
+            inputData,true
+        );
+        _dataList.Add(newData);
+        return newData;
+    }
+
+    public InstanceData AddData(Guid id, JsonData inputData, VersionStrategy? versionStrategy = null)
+    {
+        lock (_dataListLock)
+        {
+            var lastData = _dataList.LastOrDefault();
+            InstanceData newData;
+
+            if (lastData is null)
+            {
+                newData = new InstanceData(
+                    id,
+                    Id,
+                    WorkflowConstants.DefaultVersion,
+                    inputData,
+                    true
+                );
+            }
+            else
+            {
+                newData = lastData.NewVersion(
+                    id,
+                    inputData,
+                    versionStrategy ?? VersionStrategy.IncreaseMinor
+                );
+            }
+
+            _dataList.Add(newData);
+            return newData;
+        }
+    }
+
+    public InstanceData? FindData(string version)
+    {
+        if (string.IsNullOrWhiteSpace(version))
+            return null;
+
+        lock (_dataListLock)
+        {
+            var exactMatch = _dataList.FirstOrDefault(x => x.Version == version);
+            if (exactMatch != null)
+                return exactMatch;
+
+            // Partial versiyon: 1.0 → tüm 1.0.x versiyonları içinde en büyük olanı bul
+            var partial = version.Split('.');
+            if (partial.Length == 2)
+            {
+                var prefix = $"{partial[0]}.{partial[1]}.";
+
+                var matched = _dataList
+                    .Where(d => d.Version.StartsWith(prefix))
+                    .OrderByDescending(d => d, InstanceDataVersionComparer.Instance)
+                    .FirstOrDefault();
+
+                return matched;
+            }
+
+            return null;
+        }
+    }
+}

@@ -1,0 +1,27 @@
+using BBT.Aether.AspNetCore.Dapr;
+using BBT.Aether.AspNetCore.Threads;
+using Dapr.Client;
+using Dapr.Extensions.Configuration;
+
+ThreadPoolHelper.ConfigureThreadPool();
+
+var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.SetBasePath(Directory.GetCurrentDirectory());
+
+// // Dapr configuration
+// var daprClient = new DaprClientBuilder()
+//     .Build();
+//
+// await DaprCheckForSidecarHelper.CheckAsync(daprClient);
+// builder.Configuration.AddDaprSecretStore(builder.Configuration["DAPR_SECRET_STORE_NAME"] ?? "vnext-execution-secret", daprClient);
+
+builder.WebHost.ConfigureKestrel(option => option.AddServerHeader = false);
+
+builder.Services.AddExecutionApiModule();
+
+var app = builder.Build();
+app.UseExecutionApiModule();
+
+await app.RunAsync();
+
+

@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\common.props" />
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>BBT.Workflow</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="BBT.Aether.Infrastructure" Version="$(AetherPackageVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="$(MicrosoftPackageVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Http.Polly" Version="$(MicrosoftPackageVersion)" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="$(MicrosoftPackageVersion)" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="$(MicrosoftPackageVersion)">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Polly.Extensions.Http" Version="3.0.0" />
+    <ProjectReference Include="..\BBT.Workflow.Application\BBT.Workflow.Application.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Remote\" />
+  </ItemGroup>
+</Project>

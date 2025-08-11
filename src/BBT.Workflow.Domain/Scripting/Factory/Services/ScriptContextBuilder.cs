@@ -1,0 +1,237 @@
+using BBT.Workflow.Caching;
+using BBT.Workflow.Definitions;
+using BBT.Workflow.Instances;
+using BBT.Workflow.Runtime;
+using Microsoft.EntityFrameworkCore;
+
+namespace BBT.Workflow.Scripting;
+
+/// <summary>
+/// Implementation of the fluent builder for constructing ScriptContext instances.
+/// This builder handles both synchronous data and asynchronous data retrieval operations.
+/// </summary>
+internal sealed class ScriptContextBuilder(
+    IComponentCacheStore componentCacheStore,
+    IInstanceRepository instanceRepository) : IScriptContextBuilder
+{
+    private IRuntimeInfoProvider? _runtimeInfoProvider;
+    private Definitions.Workflow? _workflow;
+    private Instance? _instance;
+    private Transition? _transition;
+    private object? _body;
+    private Dictionary<string, string>? _headers;
+    private Dictionary<string, object?>? _routeValues;
+    private Dictionary<string, object?> _taskResponse = new();
+    private Dictionary<string, object> _metadata = new();
+    private Dictionary<string, object> _definitions = new();
+
+    // Async data retrieval properties
+    private string? _workflowDomain;
+    private string? _workflowKey;
+    private string? _workflowVersion;
+    private IReference? _workflowReference;
+    private Guid? _instanceId;
+    private bool _includeNavigations = true;
+    private bool _noTracking = false;
+    private string? _transitionKey;
+
+    public IScriptContextBuilder WithRuntime(IRuntimeInfoProvider runtimeInfoProvider)
+    {
+        _runtimeInfoProvider = runtimeInfoProvider;
+        return this;
+    }
+
+    public IScriptContextBuilder WithWorkflow(string domain, string workflowKey, string? version = null)
+    {
+        _workflowDomain = domain;
+        _workflowKey = workflowKey;
+        _workflowVersion = version;
+        _workflow = null; // Clear direct workflow if set
+        _workflowReference = null; // Clear reference if set
+        return this;
+    }
+
+    public IScriptContextBuilder WithWorkflow(Definitions.Workflow workflow)
+    {
+        _workflow = workflow;
+        _workflowDomain = null; // Clear async retrieval properties
+        _workflowKey = null;
+        _workflowVersion = null;
+        _workflowReference = null;
+        return this;
+    }
+
+    public IScriptContextBuilder WithWorkflow(IReference workflowReference)
+    {
+        _workflowReference = workflowReference;
+        _workflow = null; // Clear direct workflow if set
+        _workflowDomain = null; // Clear domain/key properties
+        _workflowKey = null;
+        _workflowVersion = null;
+        return this;
+    }
+
+    public IScriptContextBuilder WithInstance(Guid instanceId, bool includeNavigations = true, bool noTracking = false)
+    {
+        _instanceId = instanceId;
+        _includeNavigations = includeNavigations;
+        _noTracking = noTracking;
+        _instance = null; // Clear direct instance if set
+        return this;
+    }
+
+    public IScriptContextBuilder WithInstance(Instance instance)
+    {
+        _instance = instance;
+        _instanceId = null; // Clear async retrieval property
+        return this;
+    }
+
+    public IScriptContextBuilder WithTransition(string transitionKey)
+    {
+        _transitionKey = transitionKey;
+        _transition = null; // Clear direct transition if set
+        return this;
+    }
+
+    public IScriptContextBuilder WithTransition(Transition transition)
+    {
+        _transition = transition;
+        _transitionKey = null; // Clear async retrieval property
+        return this;
+    }
+
+    public IScriptContextBuilder WithBody(object? body)
+    {
+        _body = body;
+        return this;
+    }
+
+    public IScriptContextBuilder WithHeaders(Dictionary<string, string>? headers)
+    {
+        _headers = headers;
+        return this;
+    }
+
+    public IScriptContextBuilder WithRouteValues(Dictionary<string, object?>? routeValues)
+    {
+        _routeValues = routeValues;
+        return this;
+    }
+
+    public IScriptContextBuilder WithRouteValues(Dictionary<string, string?>? routeValues)
+    {
+        _routeValues = routeValues?.ToDictionary(kvp => kvp.Key, kvp => (object?)kvp.Value);
+        return this;
+    }
+
+    public IScriptContextBuilder WithTaskResponse(Dictionary<string, object?> taskResponse)
+    {
+        _taskResponse = taskResponse;
+        return this;
+    }
+
+    public IScriptContextBuilder WithMetadata(Dictionary<string, object> metadata)
+    {
+        _metadata = metadata;
+        return this;
+    }
+
+    public IScriptContextBuilder WithDefinitions(Dictionary<string, object> definitions)
+    {
+        _definitions = definitions;
+        return this;
+    }
+
+    public async Task<ScriptContext> BuildAsync(CancellationToken cancellationToken = default)
+    {
+        // Resolve workflow if needed
+        var workflow = await ResolveWorkflowAsync(cancellationToken);
+
+        // Resolve instance if needed
+        var instance = await ResolveInstanceAsync(cancellationToken);
+
+        // Resolve transition if needed
+        var transition = ResolveTransition(workflow);
+
+        // Build the ScriptContext using the domain builder
+        return new ScriptContext.Builder()
+            .SetRuntime(_runtimeInfoProvider!)
+            .SetWorkflow(workflow)
+            .SetInstance(instance)
+            .SetTransition(transition)
+            .SetBody(_body)
+            .SetHeaders(_headers)
+            .SetRouteValues(_routeValues)
+            .SetTaskResponse(_taskResponse)
+            .SetMetadata(_metadata)
+            .SetDefinitions(_definitions)
+            .Build();
+    }
+
+    private async Task<Definitions.Workflow> ResolveWorkflowAsync(CancellationToken cancellationToken)
+    {
+        if (_workflow != null)
+            return _workflow;
+
+        if (_workflowReference != null)
+            return await componentCacheStore.GetFlowAsync(_workflowReference, cancellationToken);
+
+        if (_workflowDomain != null && _workflowKey != null)
+            return await componentCacheStore.GetFlowAsync(_workflowDomain, _workflowKey, _workflowVersion,
+                cancellationToken);
+
+        throw new InvalidOperationException("Workflow must be set either directly or through domain/key parameters.");
+    }
+
+    private async Task<Instance> ResolveInstanceAsync(CancellationToken cancellationToken)
+    {
+        if (_instance != null)
+            return _instance;
+
+        if (_instanceId.HasValue)
+        {
+            Instance? instance = null;
+            if (_noTracking)
+            {
+                var query = (await instanceRepository.GetQueryableAsync());
+                if (_includeNavigations)
+                {
+                    query = query.Include(i => i.DataList);
+                }
+
+                instance = await query
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(p => p.Id == _instanceId.Value, cancellationToken);
+            }
+            else
+            {
+                instance = await instanceRepository.FindAsync(_instanceId.Value, _includeNavigations,
+                    cancellationToken);
+            }
+
+            if (instance == null)
+                throw new InvalidOperationException($"Instance with ID {_instanceId.Value} not found.");
+            return instance;
+        }
+
+        throw new InvalidOperationException("Instance must be set either directly or through instance ID.");
+    }
+
+    private Transition? ResolveTransition(Definitions.Workflow workflow)
+    {
+        if (_transition != null)
+            return _transition;
+
+        if (_transitionKey != null)
+        {
+            var transition = workflow.FindTransitionInContext(_transitionKey);
+            if (transition == null)
+                throw new InvalidOperationException(
+                    $"Transition with key '{_transitionKey}' not found in workflow '{workflow.Key}'.");
+            return transition;
+        }
+
+        return null;
+    }
+}

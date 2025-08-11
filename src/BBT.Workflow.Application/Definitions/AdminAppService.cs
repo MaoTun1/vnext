@@ -1,0 +1,287 @@
+using System.Text.Json;
+using BBT.Aether.Application.Services;
+using BBT.Aether.Domain.Entities;
+using BBT.Aether.Validation;
+using BBT.Workflow.Caching;
+using BBT.Workflow.Definitions.CastHandlers;
+using BBT.Workflow.Definitions.Validators;
+using BBT.Workflow.ExceptionHandling;
+using BBT.Workflow.Instances;
+using BBT.Workflow.Runtime;
+using BBT.Workflow.Schemas;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Nito.Disposables;
+
+namespace BBT.Workflow.Definitions;
+
+/// <summary>
+/// Administrative service implementation for workflow management operations
+/// </summary>
+/// <param name="serviceProvider">The service provider for dependency injection</param>
+/// <param name="schemaManager">The schema manager for database schema operations</param>
+/// <param name="currentSchema">The current schema context</param>
+/// <param name="runtimeInfoProvider">The runtime information provider</param>
+/// <param name="runtimeOptions">The runtime configuration options</param>
+/// <param name="instanceRepository">The repository for workflow instances</param>
+/// <param name="workflowValidator">The workflow validator</param>
+/// <param name="domainCacheContext">The domain cache context</param>
+/// <param name="castProcessor">The workflow cast processor</param>
+public sealed class AdminAppService(
+    IServiceProvider serviceProvider,
+    ISchemaManager schemaManager,
+    ICurrentSchema currentSchema,
+    IRuntimeInfoProvider runtimeInfoProvider,
+    IOptions<RuntimeOptions> runtimeOptions,
+    IInstanceRepository instanceRepository,
+    WorkflowValidator workflowValidator,
+    DomainCacheContext domainCacheContext,
+    WorkflowCastProcessor castProcessor)
+    : ApplicationService(serviceProvider), IAdminAppService
+{
+    /// <inheritdoc />
+    public async Task PublishAsync(PublishInput input, CancellationToken cancellationToken = default)
+    {
+        runtimeInfoProvider.Check(input.Domain);
+
+        if (!IsValidSchema(input))
+        {
+            throw new RuntimeSchemaInvalidException();
+        }
+
+        using (currentSchema.Change(input.Flow))
+        {
+            await schemaManager.EnsureSchemaAndTablesAsync(currentSchema.Name, cancellationToken);
+            var instance = await instanceRepository.FindByKeyAsync(input.Key, cancellationToken)
+                           ?? Instance.Create(
+                               GuidGenerator.Create(),
+                               input.Flow,
+                               input.Key
+                           );
+
+            instance.AddTags(input.Tags.ToArray());
+
+            if (instance.IsTransient)
+            {
+                await SaveNewInstanceAsync(instance, input, cancellationToken);
+                return;
+            }
+
+            await HandleExistingInstanceAsync(instance, input, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Validates if the provided schema is valid according to runtime options
+    /// </summary>
+    /// <param name="input">The publish input to validate</param>
+    /// <returns>True if the schema is valid, false otherwise</returns>
+    private bool IsValidSchema(PublishInput input)
+    {
+        return runtimeOptions.Value.Schemas.ContainsKey(input.Key) &&
+               runtimeOptions.Value.Schemas.ContainsKey(input.Flow);
+    }
+
+    /// <summary>
+    /// Creates and validates a workflow from the publish input
+    /// </summary>
+    /// <param name="input">The publish input containing workflow definition</param>
+    /// <returns>A validated workflow instance</returns>
+    /// <exception cref="AetherValidationException">Thrown when workflow validation fails</exception>
+    private Workflow CreateAndValidateWorkflow(PublishInput input)
+    {
+        var workflow = WorkflowFactory.CreateWorkflow(input);
+        var validationResult = workflowValidator.Validate(workflow);
+
+        if (!validationResult.IsValid)
+            throw new AetherValidationException(validationResult.ValidationErrors);
+
+        return workflow;
+    }
+
+    /// <summary>
+    /// Saves a new workflow instance to the repository
+    /// </summary>
+    /// <param name="instance">The instance to save</param>
+    /// <param name="input">The publish input</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    private async Task SaveNewInstanceAsync(Instance instance, PublishInput input,
+        CancellationToken cancellationToken)
+    {
+        var workflow = CreateAndValidateWorkflow(input);
+        instance.AddDataWithVersion(
+            GuidGenerator.Create(),
+            new JsonData(
+                JsonSerializer.Serialize(workflow, JsonSerializerConstants.JsonOptions)
+            ),
+            input.Version
+        );
+        await instanceRepository.InsertAsync(instance, true, cancellationToken);
+        await domainCacheContext.Workflows.SetAsync(workflow, cancellationToken);
+
+        if (input.Data?.Any() == true)
+        {
+            await HandleAdditionalDataVersionsAsync(input, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Handles updating an existing workflow instance
+    /// </summary>
+    /// <param name="instance">The existing instance to update</param>
+    /// <param name="input">The publish input</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <exception cref="ConflictException">Thrown when trying to publish a version that already exists</exception>
+    private async Task HandleExistingInstanceAsync(Instance instance, PublishInput input,
+        CancellationToken cancellationToken)
+    {
+        var existingInstanceData = instance.FindData(input.Version);
+        if (existingInstanceData != null)
+            throw new ConflictException();
+
+        var workflow = CreateAndValidateWorkflow(input);
+
+        instance.AddDataWithVersion(
+            GuidGenerator.Create(),
+            new JsonData(JsonSerializer.Serialize(workflow, JsonSerializerConstants.JsonOptions)),
+            input.Version
+        );
+
+        await instanceRepository.UpdateAsync(instance, true, cancellationToken);
+        await domainCacheContext.Workflows.SetAsync(workflow, cancellationToken);
+
+        if (input.Data?.Any() == true)
+        {
+            await HandleAdditionalDataVersionsAsync(input, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Handles processing additional data versions from the publish input
+    /// </summary>
+    /// <param name="input">The publish input containing additional data</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    private async Task HandleAdditionalDataVersionsAsync(PublishInput input, CancellationToken cancellationToken)
+    {
+        using (currentSchema.Change(input.Key))
+        {
+            var scopeProvider = ServiceProvider.CreateAsyncScope();
+            var instanceRepo = scopeProvider.ServiceProvider.GetRequiredService<IInstanceRepository>();
+
+            foreach (var dataItem in input.Data!)
+            {
+                var instance = await instanceRepo.FindByKeyAsync(dataItem.Key, cancellationToken)
+                               ?? Instance.Create(
+                                   GuidGenerator.Create(),
+                                   input.Key,
+                                   dataItem.Key
+                               );
+
+                instance.AddTags(dataItem.Tags.ToArray());
+                instance.AddDataWithVersion(
+                    GuidGenerator.Create(),
+                    new JsonData(dataItem.Attributes),
+                    dataItem.Version
+                );
+
+                if (instance.IsTransient)
+                {
+                    await instanceRepo.InsertAsync(instance, true, cancellationToken);
+                }
+                else
+                {
+                    await instanceRepo.UpdateAsync(instance, true, cancellationToken);
+                }
+
+                await castProcessor.ProcessAsync(
+                    input.Key,
+                    new Reference(dataItem.Key, input.Domain, input.Key, dataItem.Version),
+                    dataItem.Attributes,
+                    cancellationToken
+                );
+            }
+
+            await scopeProvider.DisposeAsync();
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task InvalidateCacheAsync(InvalidateCacheInput input, CancellationToken cancellationToken = default)
+    {
+        runtimeInfoProvider.Check(input.Domain);
+        if (!runtimeOptions.Value.Schemas.ContainsKey(input.Flow))
+        {
+            throw new RuntimeSchemaInvalidException();
+        }
+
+        using (currentSchema.Change(input.Flow))
+        {
+            var instance = await instanceRepository.FindByKeyAsync(input.Key, cancellationToken);
+            if (instance == null)
+            {
+                throw new EntityNotFoundException(typeof(Instance), input.Key);
+            }
+
+            var instanceData = instance.FindData(input.Version);
+            if (instanceData == null)
+            {
+                throw new EntityNotFoundException(typeof(InstanceData), new { input.Key, input.Version });
+            }
+
+            if (instanceData.Data.JsonElement.ValueKind != JsonValueKind.Null)
+            {
+                await castProcessor.ProcessAsync(
+                    input.Flow,
+                    new Reference(input.Key, input.Domain, input.Flow, input.Version),
+                    instanceData.Data.JsonElement,
+                    cancellationToken
+                );
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task ReInitializeAsync(CancellationToken cancellationToken = default)
+    {
+        var flows = await GetComponentAsync<Definitions.Workflow>(RuntimeSysSchemaInfo.Flows, cancellationToken);
+        var tasks = await GetComponentAsync<WorkflowTask>(RuntimeSysSchemaInfo.Tasks, cancellationToken);
+        var functions = await GetComponentAsync<Function>(RuntimeSysSchemaInfo.Functions, cancellationToken);
+        var views = await GetComponentAsync<View>(RuntimeSysSchemaInfo.Views, cancellationToken);
+        var schemas = await GetComponentAsync<SchemaDefinition>(RuntimeSysSchemaInfo.Schemas, cancellationToken);
+        var extensions = await GetComponentAsync<Extension>(RuntimeSysSchemaInfo.Extensions, cancellationToken);
+
+        var scope = ServiceProvider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<DomainCacheContext>();
+
+        var initialData = new Dictionary<Type, object>
+        {
+            { typeof(Definitions.Workflow), flows },
+            { typeof(WorkflowTask), tasks },
+            { typeof(SchemaDefinition), schemas },
+            { typeof(Function), functions },
+            { typeof(View), views },
+            { typeof(Extension), extensions }
+        };
+
+        await context.InitializeAsync(initialData, cancellationToken);
+        scope.ToAsyncDisposable();
+    }
+
+    /// <summary>
+    /// Retrieves components of the specified type from the runtime system
+    /// </summary>
+    /// <typeparam name="T">The type of component to retrieve</typeparam>
+    /// <param name="name">The name of the component schema</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>A collection of components of the specified type</returns>
+    private async Task<IEnumerable<T?>> GetComponentAsync<T>(string name, CancellationToken cancellationToken = default)
+        where T : class, IDomainEntity, IReferenceSetter
+    {
+        var scope = ServiceProvider.CreateAsyncScope();
+        var runtimeService = scope.ServiceProvider.GetRequiredService<IRuntimeService>();
+
+        var items = await runtimeService.GetAsync<T>(name, cancellationToken);
+        scope.ToAsyncDisposable();
+        return items;
+    }
+}

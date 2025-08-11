@@ -1,0 +1,44 @@
+﻿{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "http": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "applicationUrl": "http://localhost:4201",
+      "launchUrl": "http://localhost:4201/swagger",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "APP_DOMAIN": "core",
+        "DAPR_HTTP_PORT": "42110",
+        "DAPR_GRPC_PORT": "42111",
+        "DAPR_PLACEMENT_HOST": "localhost:50005",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317",
+        "OTEL_SERVICE_NAME": "vnext-app",
+        "DAPR_SECRET_STORE_NAME": "vnext-secret",
+        "DAPR_STATE_STORE_NAME": "vnext-state",
+        "DAPR_PUBSUB_STORE_NAME": "vnext-pubsub",
+        "DAPR_LOCK_STORE_NAME": "vnext-lock"
+      }
+    },
+    "https": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "applicationUrl": "https://localhost:7289;http://localhost:4201",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "APP_DOMAIN": "core",
+        "DAPR_HTTP_PORT": "42110",
+        "DAPR_GRPC_PORT": "42111",
+        "DAPR_PLACEMENT_HOST": "localhost:50005",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317",
+        "OTEL_SERVICE_NAME": "vnext-app",
+        "DAPR_SECRET_STORE_NAME": "vnext-secret",
+        "DAPR_STATE_STORE_NAME": "vnext-state",
+        "DAPR_PUBSUB_STORE_NAME": "vnext-pubsub",
+        "DAPR_LOCK_STORE_NAME": "vnext-lock"
+      }
+    }
+  }
+}

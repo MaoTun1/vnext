@@ -1,0 +1,220 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "Orchestration with Docker Compose",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-all-and-docker-compose-up",
+            "program": "${workspaceFolder}/orchestration/BBT.Workflow.Orchestration.HttpApi.Host/bin/Debug/net9.0/BBT.Workflow.Orchestration.HttpApi.Host.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/orchestration/BBT.Workflow.Orchestration.HttpApi.Host",
+            "stopAtEntry": false,
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_URLS": "http://localhost:4201",
+                "APP_DOMAIN": "core",
+                "DAPR_HTTP_PORT": "42110",
+                "DAPR_GRPC_PORT": "42111",
+                "DAPR_PLACEMENT_HOST": "localhost:50005",
+                "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317",
+                "OTEL_SERVICE_NAME": "vnext-app",
+                "DAPR_SECRET_STORE_NAME": "vnext-secret",
+                "DAPR_STATE_STORE_NAME": "vnext-state",
+                "DAPR_PUBSUB_STORE_NAME": "vnext-pubsub",
+                "DAPR_LOCK_STORE_NAME": "vnext-lock"
+            },
+            "serverReadyAction": {
+                "action": "openExternally",
+                "pattern": "\\bNow listening on:\\s+(https?://\\S+)",
+                "uriFormat": "%s/swagger/"
+            }
+        },
+        {
+            "name": "Execution with Docker Compose",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-all-and-docker-compose-up",
+            "program": "${workspaceFolder}/execution/BBT.Workflow.Execution.HttpApi.Host/bin/Debug/net9.0/BBT.Workflow.Execution.HttpApi.Host.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/execution/BBT.Workflow.Execution.HttpApi.Host",
+            "stopAtEntry": false,
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_URLS": "http://localhost:4202",
+                "APP_DOMAIN": "core",
+                "DAPR_HTTP_PORT": "43110",
+                "DAPR_GRPC_PORT": "43111",
+                "DAPR_PLACEMENT_HOST": "localhost:50005",
+                "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317",
+                "OTEL_SERVICE_NAME": "vnext-execution-app",
+                "DAPR_SECRET_STORE_NAME": "vnext-execution-secret",
+                "DAPR_STATE_STORE_NAME": "vnext-execution-state",
+                "DAPR_PUBSUB_STORE_NAME": "vnext-execution-pubsub",
+                "DAPR_LOCK_STORE_NAME": "vnext-execution-lock"
+            },
+            "serverReadyAction": {
+                "action": "openExternally",
+                "pattern": "\\bNow listening on:\\s+(https?://\\S+)",
+                "uriFormat": "%s/swagger/"
+            }
+        },
+        {
+            "name": "Orchestration Attach to Docker",
+            "type": "coreclr",
+            "request": "attach",
+            "processId": "${command:pickRemoteProcess}",
+            "pipeTransport": {
+                "pipeProgram": "docker",
+                "pipeArgs": ["exec", "-i", "vnext-app"],
+                "debuggerPath": "/vsdbg/vsdbg",
+                "pipeCwd": "${workspaceRoot}",
+                "quoteArgs": false
+            },
+            "sourceFileMap": {
+                "/app": "${workspaceRoot}"
+            }
+        },
+        {
+            "name": "Execution Attach to Docker",
+            "type": "coreclr",
+            "request": "attach",
+            "processId": "${command:pickRemoteProcess}",
+            "pipeTransport": {
+                "pipeProgram": "docker",
+                "pipeArgs": ["exec", "-i", "vnext-execution-app"],
+                "debuggerPath": "/vsdbg/vsdbg",
+                "pipeCwd": "${workspaceRoot}",
+                "quoteArgs": false
+            },
+            "sourceFileMap": {
+                "/app": "${workspaceRoot}"
+            }
+        },
+        {
+            "name": "Orchestration Debug with Docker Compose",
+            "type": "coreclr",
+            "request": "attach",
+            "processId": "${command:pickRemoteProcess}",
+            "pipeTransport": {
+                "pipeProgram": "docker",
+                "pipeArgs": ["exec", "-i", "vnext-app"],
+                "debuggerPath": "/vsdbg/vsdbg",
+                "pipeCwd": "${workspaceRoot}",
+                "quoteArgs": false
+            },
+            "sourceFileMap": {
+                "/app": "${workspaceRoot}"
+            }
+        },
+        {
+            "name": "Execution Debug with Docker Compose",
+            "type": "coreclr",
+            "request": "attach",
+            "processId": "${command:pickRemoteProcess}",
+            "pipeTransport": {
+                "pipeProgram": "docker",
+                "pipeArgs": ["exec", "-i", "vnext-execution-app"],
+                "debuggerPath": "/vsdbg/vsdbg",
+                "pipeCwd": "${workspaceRoot}",
+                "quoteArgs": false
+            },
+            "sourceFileMap": {
+                "/app": "${workspaceRoot}"
+            }
+        },
+        {
+            "name": "Orchestration Local (Docker Compose)",
+            "type": "coreclr",
+            "request": "launch",
+            // "preLaunchTask": "run-orchestration-local",
+            "program": "${workspaceFolder}/orchestration/BBT.Workflow.Orchestration.HttpApi.Host/bin/Debug/net9.0/BBT.Workflow.Orchestration.HttpApi.Host.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/orchestration/BBT.Workflow.Orchestration.HttpApi.Host",
+            "stopAtEntry": false,
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_URLS": "http://localhost:4201",
+                "APP_DOMAIN": "core",
+                "DAPR_HTTP_PORT": "42110",
+                "DAPR_GRPC_PORT": "42111",
+                "DAPR_PLACEMENT_HOST": "localhost:50005",
+                "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317",
+                "OTEL_SERVICE_NAME": "vnext-app",
+                "DAPR_SECRET_STORE_NAME": "vnext-secret",
+                "DAPR_STATE_STORE_NAME": "vnext-state",
+                "DAPR_PUBSUB_STORE_NAME": "vnext-pubsub",
+                "DAPR_LOCK_STORE_NAME": "vnext-lock"
+            },
+            "serverReadyAction": {
+                "action": "openExternally",
+                "pattern": "\\bNow listening on:\\s+(https?://\\S+)",
+                "uriFormat": "%s/swagger/"
+            }
+        },
+        {
+            "name": "Execution Local (Docker Compose)",
+            "type": "coreclr",
+            "request": "launch",
+            // "preLaunchTask": "run-execution-local",
+            "program": "${workspaceFolder}/execution/BBT.Workflow.Execution.HttpApi.Host/bin/Debug/net9.0/BBT.Workflow.Execution.HttpApi.Host.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/execution/BBT.Workflow.Execution.HttpApi.Host",
+            "stopAtEntry": false,
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_URLS": "http://localhost:4202",
+                "APP_DOMAIN": "core",
+                "DAPR_HTTP_PORT": "43110",
+                "DAPR_GRPC_PORT": "43111",
+                "DAPR_PLACEMENT_HOST": "localhost:50005",
+                "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317",
+                "OTEL_SERVICE_NAME": "vnext-execution-app",
+                "DAPR_SECRET_STORE_NAME": "vnext-execution-secret",
+                "DAPR_STATE_STORE_NAME": "vnext-execution-state",
+                "DAPR_PUBSUB_STORE_NAME": "vnext-execution-pubsub",
+                "DAPR_LOCK_STORE_NAME": "vnext-execution-lock"
+            },
+            "serverReadyAction": {
+                "action": "openExternally",
+                "pattern": "\\bNow listening on:\\s+(https?://\\S+)",
+                "uriFormat": "%s/swagger/"
+            }
+        }
+    ],
+    "compounds": [
+        {
+            "name": "🐳 Debug with Infrastructure (Docker Compose + VS Code)",
+            "description": "Starts Docker Compose infrastructure and runs applications in debug mode within VS Code",
+            "configurations": [
+                "Orchestration with Docker Compose",
+                "Execution with Docker Compose"
+            ],
+            "stopAll": true,
+            "preLaunchTask": "build-all-and-docker-compose-up"
+        },
+        {
+            "name": "🔧 Remote Debug (Docker Container Hot Reload)",
+            "description": "Runs docker-compose.dev with applications in hot reload mode inside containers, allows remote debugging via VS Code attach",
+            "configurations": [
+                "Orchestration Debug with Docker Compose",
+                "Execution Debug with Docker Compose"
+            ],
+            "stopAll": true,
+            "preLaunchTask": "build-all-and-docker-compose-dev-up"
+        },
+        {
+            "name": "⚡ Local Debug (Flexible Development)",
+            "description": "Uses Docker Compose for infrastructure while running applications locally in VS Code debug mode for maximum development flexibility",
+            "configurations": [
+                "Orchestration Local (Docker Compose)",
+                "Execution Local (Docker Compose)"
+            ],
+            "stopAll": true
+        }
+    ]
+}

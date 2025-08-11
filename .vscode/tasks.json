@@ -1,0 +1,292 @@
+{
+    "version": "2.0.0",
+    "inputs": [
+    ],
+    "tasks": [
+        {
+            "label": "build-orchestration",
+            "dependsOn": "init-mocks",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "build",
+                "${workspaceFolder}/orchestration/BBT.Workflow.Orchestration.HttpApi.Host/BBT.Workflow.Orchestration.HttpApi.Host.csproj",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "build-execution",
+            "dependsOn": "init-mocks",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "build",
+                "${workspaceFolder}/execution/BBT.Workflow.Execution.HttpApi.Host/BBT.Workflow.Execution.HttpApi.Host.csproj",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "build-all-services",
+            "dependsOrder": "parallel",
+            "dependsOn": [
+                "build-orchestration",
+                "build-execution"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "dapr-debug-orchestration",
+            "type": "shell",
+            "dependsOn": "build-orchestration",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id", "vnext-app",
+                "--app-port", "4201",
+                "--dapr-http-port", "42110",
+                "--dapr-grpc-port", "42111",
+                "--placement-host-address", "localhost:50005",
+                "--resources-path", "${workspaceFolder}/etc/orchestration/dapr/components",
+                "--", "dotnet", "run", "--project", "${workspaceFolder}/orchestration/BBT.Workflow.Orchestration.HttpApi.Host/BBT.Workflow.Orchestration.HttpApi.Host.csproj"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "dapr-debug-execution", 
+            "type": "shell",
+            "dependsOn": "build-execution",
+            "command": "dapr",
+            "args": [
+                "run",
+                "--app-id", "vnext-execution-app",
+                "--app-port", "4202", 
+                "--dapr-http-port", "43110",
+                "--dapr-grpc-port", "43111",
+                "--placement-host-address", "localhost:50005",
+                "--resources-path", "${workspaceFolder}/etc/execution/dapr/components",
+                "--", "dotnet", "run", "--project", "${workspaceFolder}/execution/BBT.Workflow.Execution.HttpApi.Host/BBT.Workflow.Execution.HttpApi.Host.csproj"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "daprd-down-orchestration",
+            "type": "shell",
+            "command": "dapr",
+            "args": ["stop", "--app-id", "vnext-app"],
+            "dependsOn": "stop-mocks"
+        },
+        {
+            "label": "daprd-down-execution",
+            "type": "shell", 
+            "command": "dapr",
+            "args": ["stop", "--app-id", "vnext-execution-app"],
+            "dependsOn": "stop-mocks"
+        },
+        {
+            "label": "daprd-down-all",
+            "dependsOrder": "parallel",
+            "dependsOn": [
+                "daprd-down-orchestration",
+                "daprd-down-execution"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "docker-compose-debug-up",
+            "type": "shell",
+            "command": "docker-compose",
+            "args": [
+                "-f",
+                "${workspaceFolder}/etc/docker/docker-compose.yml",
+                "up",
+                "-d"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "docker-compose-debug-down",
+            "type": "shell",
+            "command": "docker-compose",
+            "args": [
+                "-f",
+                "${workspaceFolder}/etc/docker/docker-compose.yml",
+                "down"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "docker-compose-dev-up",
+            "type": "shell",
+            "command": "docker-compose",
+            "args": [
+                "-f",
+                "${workspaceFolder}/etc/docker/docker-compose.dev.yml",
+                "up",
+                "-d"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "docker-compose-dev-down",
+            "type": "shell",
+            "command": "docker-compose",
+            "args": [
+                "-f",
+                "${workspaceFolder}/etc/docker/docker-compose.dev.yml",
+                "down"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "build-all-and-docker-compose-up",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "build-all-services",
+                "docker-compose-debug-up"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "build-all-and-docker-compose-dev-up",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "build-all-services",
+                "docker-compose-dev-up"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "docker-compose-standalone-up",
+            "type": "shell",
+            "command": "docker-compose",
+            "args": [
+                "-f",
+                "${workspaceFolder}/etc/docker/docker-compose.yml",
+                "up"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/etc/docker"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "problemMatcher": [],
+            "detail": "Starts docker-compose standalone (without building projects) and keeps it running",
+            "isBackground": false
+        },
+        {
+            "label": "docker-compose-standalone-down",
+            "type": "shell",
+            "command": "docker-compose",
+            "args": [
+                "-f",
+                "${workspaceFolder}/etc/docker/docker-compose.yml",
+                "down"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/etc/docker"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": [],
+            "detail": "Stops docker-compose standalone"
+        },
+        {
+            "label": "run-orchestration-local",
+            "type": "shell",
+            "dependsOn": "build-orchestration",
+            "command": "dotnet",
+            "args": [
+                "run",
+                "--project",
+                "${workspaceFolder}/orchestration/BBT.Workflow.Orchestration.HttpApi.Host/BBT.Workflow.Orchestration.HttpApi.Host.csproj"
+            ],
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_URLS": "http://localhost:4201",
+                "APP_DOMAIN": "core",
+                "DAPR_HTTP_PORT": "42110",
+                "DAPR_GRPC_PORT": "42111",
+                "DAPR_PLACEMENT_HOST": "localhost:50005",
+                "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317",
+                "OTEL_SERVICE_NAME": "vnext-app",
+                "DAPR_SECRET_STORE_NAME": "vnext-secret",
+                "DAPR_STATE_STORE_NAME": "vnext-state",
+                "DAPR_PUBSUB_STORE_NAME": "vnext-pubsub",
+                "DAPR_LOCK_STORE_NAME": "vnext-lock"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "dedicated",
+                "showReuseMessage": false
+            },
+            "problemMatcher": "$msCompile",
+            "detail": "Runs Orchestration service locally (expects docker-compose to be running)"
+        },
+        {
+            "label": "run-execution-local",
+            "type": "shell",
+            "dependsOn": "build-execution",
+            "command": "dotnet",
+            "args": [
+                "run",
+                "--project",
+                "${workspaceFolder}/execution/BBT.Workflow.Execution.HttpApi.Host/BBT.Workflow.Execution.HttpApi.Host.csproj"
+            ],
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_URLS": "http://localhost:4202",
+                "APP_DOMAIN": "core",
+                "DAPR_HTTP_PORT": "43110",
+                "DAPR_GRPC_PORT": "43111",
+                "DAPR_PLACEMENT_HOST": "localhost:50005",
+                "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317",
+                "OTEL_SERVICE_NAME": "vnext-execution-app",
+                "DAPR_SECRET_STORE_NAME": "vnext-execution-secret",
+                "DAPR_STATE_STORE_NAME": "vnext-execution-state",
+                "DAPR_PUBSUB_STORE_NAME": "vnext-execution-pubsub",
+                "DAPR_LOCK_STORE_NAME": "vnext-execution-lock"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "dedicated",
+                "showReuseMessage": false
+            },
+            "problemMatcher": "$msCompile",
+            "detail": "Runs Execution service locally (expects docker-compose to be running)"
+        }
+    ]
+}

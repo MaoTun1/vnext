@@ -1,0 +1,220 @@
+using BBT.Aether.Domain.EntityFrameworkCore;
+using BBT.Aether.Domain.Services;
+using BBT.Workflow.Data;
+using BBT.Workflow.Definitions;
+using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using System.Text.Json;
+
+namespace BBT.Workflow.Instances;
+
+public sealed class EfCoreInstanceRepository(
+    WorkflowDbContext dbContext,
+    IServiceProvider serviceProvider,
+    ITransactionService transactionService,
+    IConfiguration configuration)
+    : EfCoreRepository<WorkflowDbContext, Instance, Guid>(dbContext, serviceProvider, transactionService),
+        IInstanceRepository
+{
+    public override async Task<IQueryable<Instance>> WithDetailsAsync()
+    {
+        return (await base.WithDetailsAsync())
+            .Include(i => i.DataList);
+    }
+
+    public async Task<Instance?> FindByKeyAsync(
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        return await (await GetDbSetAsync())
+            .Include(i => i.DataList)
+            .FirstOrDefaultAsync(
+            p => p.Key == key, cancellationToken);
+    }
+
+    public async Task<Instance?> FindByIdAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        return await (await GetDbSetAsync())
+            .Include(i => i.DataList)
+            .FirstOrDefaultAsync(
+            p => p.Id == id, cancellationToken);
+    }
+
+
+    public async Task<InstanceAndDataModel?> FindActiveDataAsync(string key, string version,
+        CancellationToken cancellationToken = default)
+    {
+        var context = await GetDbContextAsync();
+
+        // Optimize query with proper indexing and reduced data transfer
+        return await (from instance in context.Instances
+                where instance.Status == InstanceStatus.Active
+                join data in context.InstancesData on instance.Id equals data.InstanceId
+                where instance.Key == key && data.Version == version
+                select new InstanceAndDataModel
+                {
+                    Instance = instance,
+                    InstanceData = data
+                })
+            .AsNoTracking() // Don't track changes for read-only operations
+            .AsSplitQuery() // Use split queries for better performance with joins
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<IQueryable<Instance>> GetFilteredQueryAsync(
+        string[]? filters,
+        CancellationToken cancellationToken = default)
+    {
+        var context = await GetDbContextAsync();
+        
+        // Apply PostgreSQL native JSON filters if provided
+        if (filters != null && filters.Any())
+        {
+            try
+            {
+                // Use ApplyJsonFilters on Instance DbSet - this matches the working pattern
+                // The CTE inside ApplyJsonFilters will handle InstanceData filtering and return Instances
+                var filteredInstances =  (await GetDbSetAsync())
+                    .ApplyJsonFilters(
+                        filters: filters,
+                        jsonColumnName: "Data", // InstanceData.Data is the JSON column
+                        tableName: "InstancesData", // Filter table name
+                        schema:  dbContext.SchemaName ?? "public" // Default schema
+                    );
+
+                return filteredInstances
+                .Include(i => i.DataList)
+                ;
+            }
+            catch (Exception ex)
+            {
+                // Fallback to original implementation if PostgreSQL filter fails
+                Console.WriteLine($"PostgreSQL filter failed, falling back to EF Core filters: {ex.Message}");
+                
+                var dbSet = await GetDbSetAsync();
+                var query = dbSet.Include(i => i.DataList);
+                var filterSpec = new InstanceFilterSpecification(filters);
+                return filterSpec.Apply(query);
+            }
+        }
+        
+        // If no filters, use the standard approach with includes
+        var standardDbSet = await GetDbSetAsync();
+        return standardDbSet.Include(i => i.DataList);
+    }
+
+    /// <summary>
+    /// Alternative method that handles DataList loading separately for better performance
+    /// with PostgreSQL native filters on InstanceData table
+    /// </summary>
+    public async Task<IQueryable<Instance>> GetFilteredQueryWithPostgreSqlAsync(
+        string[]? filters,
+        bool includeDataList = true,
+        bool onlyLatest = true,
+        CancellationToken cancellationToken = default)
+    {
+        var context = await GetDbContextAsync();
+        
+        if (filters != null && filters.Any())
+        {
+            // Apply PostgreSQL native JSON filters on Instance DbSet
+            // CTE inside ApplyJsonFilters handles InstanceData filtering and returns Instances
+            var filteredInstances = context.Set<Instance>()
+                .ApplyJsonFilters(
+                    filters: filters,
+                    jsonColumnName: "Data", // InstanceData.Data contains the JSON
+                    tableName: "InstancesData"
+                );
+
+            // Handle DataList inclusion
+            if (includeDataList)
+            {
+                return filteredInstances.Include(i => i.DataList);
+            }
+            
+            return filteredInstances;
+        }
+        
+        // No filters - standard approach
+        var query = context.Instances.AsQueryable();
+        if (includeDataList)
+        {
+            query = query.Include(i => i.DataList);
+        }
+        
+        return query;
+    }
+
+    /// <summary>
+    /// Get filtered InstanceData directly using basic EF Core filters
+    /// For now, this method uses standard EF Core filtering instead of PostgreSQL native filters
+    /// TODO: Implement InstanceData-specific PostgreSQL native filtering if needed
+    /// </summary>
+    public async Task<IQueryable<InstanceData>> GetFilteredInstanceDataAsync(
+        string[]? filters,
+        bool onlyLatest = true,
+        CancellationToken cancellationToken = default)
+    {
+        var context = await GetDbContextAsync();
+        var query = context.Set<InstanceData>().AsQueryable();
+        
+        if (onlyLatest)
+        {
+            query = query.Where(d => d.IsLatest == true);
+        }
+
+        // For now, using basic filtering - can be enhanced later with InstanceData-specific filters
+        if (filters != null && filters.Any())
+        {
+            // Basic filtering could be implemented here if needed
+            // For now, just return the latest data
+            Console.WriteLine("Note: Advanced filtering not implemented for InstanceData-only queries");
+        }
+
+        return query;
+    }
+
+    public async Task<Definitions.PaginationResult<Instance>> GetPagedResultsAsync(
+        int page,
+        int pageSize,
+        string route,
+        IQueryCollection? queryParams = null,
+        IQueryable<Instance>? instance = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = instance ?? (await base.GetQueryableAsync()).Include(i => i.DataList);
+        return query.Paginate(page, pageSize, route, configuration, queryParams);
+    }
+
+    public async Task<Instance> GetActiveAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var instance = await GetAsync(id, true, cancellationToken);
+        if (instance.Status.Equals(InstanceStatus.Completed))
+        {
+            throw new InstanceCompletedException(instance.Id);
+        }
+
+        return instance;
+    }
+
+    public async Task<List<InstanceAndDataModel>> GetActiveDataListAsync(CancellationToken cancellationToken = default)
+    {
+        var context = await GetDbContextAsync();
+
+        // Optimize query with proper indexing and reduced data transfer
+        return await (from instance in context.Instances
+                      where instance.Status == InstanceStatus.Active
+                      join data in context.InstancesData on instance.Id equals data.InstanceId
+                      select new InstanceAndDataModel
+                      {
+                          Instance = instance,
+                          InstanceData = data
+                      })
+            .AsNoTracking() // Don't track changes for read-only operations
+            .AsSplitQuery() // Use split queries for better performance with joins
+            .ToListAsync(cancellationToken);
+    }
+}

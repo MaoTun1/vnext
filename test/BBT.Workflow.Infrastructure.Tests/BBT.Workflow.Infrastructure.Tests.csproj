@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <Import Project="..\..\common.props" />
+
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <RootNamespace>BBT.Workflow</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Data.Sqlite" Version="$(MicrosoftPackageVersion)" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="$(MicrosoftPackageVersion)" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="$(TestSdkPackageVersion)" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\..\src\BBT.Workflow.Infrastructure\BBT.Workflow.Infrastructure.csproj" />
+      <ProjectReference Include="..\BBT.Workflow.Application.Tests\BBT.Workflow.Application.Tests.csproj" />
+    </ItemGroup>
+
+</Project>

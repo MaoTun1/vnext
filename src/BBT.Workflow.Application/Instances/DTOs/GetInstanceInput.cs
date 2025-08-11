@@ -1,0 +1,98 @@
+using System.ComponentModel.DataAnnotations;
+
+using BBT.Workflow.Definitions;
+
+namespace BBT.Workflow.Instances;
+
+/// <summary>
+/// Input for retrieving a single instance with optional extensions
+/// </summary>
+public sealed class GetInstanceInput : IHasDomain
+{
+    [Required]
+    [StringLength(WorkflowConstants.MaxDomainLength)]
+    public string Domain { get; set; } = string.Empty;
+
+    [Required] 
+    [StringLength(WorkflowConstants.MaxFlowLength)]
+    public string Workflow { get; set; } = string.Empty;
+
+    [Required]
+    public string Instance { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Extensions requested for data enrichment
+    /// </summary>
+    public string[]? Extension { get; set; }
+
+    /// <summary>
+    /// ETag value for conditional requests (If-None-Match header)
+    /// </summary>
+    public string? IfNoneMatch { get; set; }
+}
+
+/// <summary>
+/// Input for retrieving multiple instances with pagination and optional extensions
+/// </summary>
+public sealed class GetInstanceListInput : IHasDomain
+{
+    [Required]
+    [StringLength(WorkflowConstants.MaxDomainLength)]
+    public string Domain { get; set; } = string.Empty;
+
+    [Required]
+    [StringLength(WorkflowConstants.MaxFlowLength)]
+    public string Workflow { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Extensions requested for data enrichment
+    /// </summary>
+    public string[]? Extension { get; set; }
+
+    /// <summary>
+    /// Filters to apply to the query (format: JSON)
+    /// </summary>
+    public string[]? Filter { get; set; }
+
+    /// <summary>
+    /// Page number for pagination (1-based)
+    /// </summary>
+    [Range(1, 1000)]
+    public int Page { get; set; } = 1;
+
+    /// <summary>
+    /// Page size for pagination
+    /// </summary>
+    [Range(1, 100)]
+    public int PageSize { get; set; } = 10;
+
+    public string PageUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Field to sort by. Prefix with '-' for descending order.
+    /// Example: "CreatedAt" for ascending, "-CreatedAt" for descending
+    /// </summary>
+    public string? Sort { get; set; }
+}
+
+/// <summary>
+/// Input for retrieving instance history (all data transitions)
+/// </summary>
+public sealed class GetInstanceHistoryInput : IHasDomain
+{
+    [Required]
+    [StringLength(WorkflowConstants.MaxDomainLength)]
+    public string Domain { get; set; } = string.Empty;
+
+    [Required]
+    [StringLength(WorkflowConstants.MaxFlowLength)]
+    public string Workflow { get; set; } = string.Empty;
+
+    [Required]
+    public string Instance { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Extensions requested for data enrichment
+    /// </summary>
+    public string[]? Extension { get; set; }
+} 

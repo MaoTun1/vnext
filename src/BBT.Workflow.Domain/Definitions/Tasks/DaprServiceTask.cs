@@ -1,0 +1,167 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace BBT.Workflow.Definitions;
+
+/// <summary>
+/// Dapr Service Task Definition
+/// </summary>
+public sealed class DaprServiceTask : WorkflowTask
+{
+    private DaprServiceTask()
+    {
+        
+    }
+    
+    [JsonConstructor]
+    private DaprServiceTask(
+        JsonElement config) : base(config)
+    {
+        Type = ((int)TaskType.DaprService).ToString();
+    }
+    
+    /// <summary>
+    /// App ID
+    /// </summary>
+    public string AppId { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// Method Name
+    /// </summary>
+    public string MethodName { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// Http Verb
+    /// </summary>
+    public string HttpVerb { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// Data
+    /// </summary>
+    public JsonElement Data { get; private set; }
+
+    /// <summary>
+    /// Query String
+    /// </summary>
+    public string? QueryString { get; private set; }
+
+    /// <summary>
+    /// Timeout seconds
+    /// </summary>
+    public int TimeoutSeconds { get; private set; } = 30;
+
+    public void SetAppId(string appId) => AppId = appId;
+    public void SetMethodName(string methodName) => MethodName = methodName;
+    public void SetQueryString(string? queryString) => QueryString = queryString;
+    public void SetData(dynamic data)
+    {
+        Data = JsonSerializer.SerializeToElement(data);
+    }
+    
+    /// <summary>
+    /// Internal property setters for object pooling
+    /// </summary>
+    internal void SetAppIdInternal(string appId) => AppId = appId;
+    internal void SetMethodNameInternal(string methodName) => MethodName = methodName;
+    internal void SetHttpVerbInternal(string httpVerb) => HttpVerb = httpVerb;
+    internal void SetDataInternal(JsonElement data) => Data = data;
+    internal void SetQueryStringInternal(string? queryString) => QueryString = queryString;
+    internal void SetTimeoutSecondsInternal(int timeoutSeconds) => TimeoutSeconds = timeoutSeconds;
+
+    protected override void Configure(JsonElement config)
+    {
+        base.Configure(config);
+
+        if (config.TryGetProperty("appId", out var appId))
+            AppId = appId.GetString() ?? throw new ArgumentNullException(nameof(appId));
+
+        if (config.TryGetProperty("methodName", out var methodName))
+            MethodName = methodName.GetString() ?? throw new ArgumentNullException(nameof(methodName));
+
+        if (config.TryGetProperty("httpVerb", out var httpVerb))
+            HttpVerb = httpVerb.GetString() ?? throw new ArgumentNullException(nameof(httpVerb));
+
+        if (config.TryGetProperty("data", out var data))
+            Data = data;
+
+        if (config.TryGetProperty("queryString", out var queryString))
+            QueryString = queryString.GetString();
+
+        if (config.TryGetProperty("timeoutSeconds", out var timeout))
+            TimeoutSeconds = timeout.GetInt32();
+    }
+    
+    public static DaprServiceTask Create(
+        string type,
+        JsonElement config)
+    {
+        return new DaprServiceTask(config);
+    }
+
+    /// <summary>
+    /// Creates a deep copy of the current DaprServiceTask instance.
+    /// This implementation uses direct property copying for optimal performance.
+    /// </summary>
+    /// <returns>A new DaprServiceTask instance with identical configuration.</returns>
+    public override WorkflowTask Clone()
+    {
+        return CloneTyped();
+    }
+
+    /// <summary>
+    /// Creates a typed deep copy of the current DaprServiceTask instance.
+    /// </summary>
+    /// <returns>A new DaprServiceTask instance with identical configuration.</returns>
+    public DaprServiceTask CloneTyped()
+    {
+        var cloned = new DaprServiceTask();
+        CopyBaseTo(cloned);
+        
+        // Copy DaprServiceTask specific properties
+        cloned.AppId = AppId;
+        cloned.MethodName = MethodName; // This will be the original method name from cache
+        cloned.HttpVerb = HttpVerb;
+        cloned.Data = Data; // JsonElement is a struct, so this is safe
+        cloned.QueryString = QueryString;
+        cloned.TimeoutSeconds = TimeoutSeconds;
+        
+        return cloned;
+    }
+
+    /// <summary>
+    /// Internal method for object pooling - copies all properties efficiently
+    /// </summary>
+    /// <param name="source">Source task to copy from</param>
+    public void CopyFromInternal(DaprServiceTask source)
+    {
+        source.CopyBaseToInternal(this);
+        SetAppIdInternal(source.AppId);
+        SetMethodNameInternal(source.MethodName);
+        SetHttpVerbInternal(source.HttpVerb);
+        SetDataInternal(source.Data);
+        SetQueryStringInternal(source.QueryString);
+        SetTimeoutSecondsInternal(source.TimeoutSeconds);
+    }
+
+    /// <summary>
+    /// Resets the task instance to a clean state for object pooling
+    /// </summary>
+    public override void Reset()
+    {
+        base.Reset();
+        AppId = string.Empty;
+        MethodName = string.Empty;
+        HttpVerb = string.Empty;
+        Data = default;
+        QueryString = null;
+        TimeoutSeconds = 30;
+    }
+
+    /// <summary>
+    /// Creates a new instance for object pooling - internal use only
+    /// </summary>
+    public static DaprServiceTask CreateEmpty()
+    {
+        return new DaprServiceTask();
+    }
+}

@@ -1,0 +1,49 @@
+using BBT.Aether.Application;
+
+namespace BBT.Workflow.Definitions;
+
+/// <summary>
+/// Administrative service interface for workflow management operations
+/// </summary>
+public interface IAdminAppService : IApplicationService
+{
+    /// <summary>
+    /// Publishes a workflow definition to the system
+    /// </summary>
+    /// <param name="input">The publish input containing workflow definition, key, flow, version and optional data</param>
+    /// <param name="cancellationToken">Cancellation token to cancel the operation</param>
+    /// <returns>A task representing the asynchronous publish operation</returns>
+    /// <remarks>
+    /// This method validates the workflow schema, creates or updates workflow instances,
+    /// handles versioning, and processes additional data if provided.
+    /// </remarks>
+    /// <exception cref="RuntimeSchemaInvalidException">Thrown when the provided schema is invalid</exception>
+    /// <exception cref="ConflictException">Thrown when trying to publish a version that already exists</exception>
+    /// <exception cref="AetherValidationException">Thrown when workflow validation fails</exception>
+    Task PublishAsync(PublishInput input, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Invalidates cache for a specific workflow instance
+    /// </summary>
+    /// <param name="input">The invalidate cache input containing flow, key, version and domain information</param>
+    /// <param name="cancellationToken">Cancellation token to cancel the operation</param>
+    /// <returns>A task representing the asynchronous cache invalidation operation</returns>
+    /// <remarks>
+    /// This method finds the specified workflow instance and processes it through the cast processor
+    /// to invalidate and refresh the cache.
+    /// </remarks>
+    /// <exception cref="RuntimeSchemaInvalidException">Thrown when the provided schema is invalid</exception>
+    /// <exception cref="EntityNotFoundException">Thrown when the instance or instance data is not found</exception>
+    Task InvalidateCacheAsync(InvalidateCacheInput input, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Re-initializes the workflow system by reloading all system components
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token to cancel the operation</param>
+    /// <returns>A task representing the asynchronous re-initialization operation</returns>
+    /// <remarks>
+    /// This method reloads all system components including workflows, tasks, functions, 
+    /// views, schemas, and extensions from the runtime system schema and reinitializes the domain cache.
+    /// </remarks>
+    Task ReInitializeAsync(CancellationToken cancellationToken = default);
+}

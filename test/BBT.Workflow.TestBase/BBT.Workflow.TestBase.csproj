@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\common.props" />
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <RootNamespace>BBT.Workflow</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="BBT.Aether.TestBase" Version="$(AetherPackageVersion)" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="$(TestSdkPackageVersion)" />
+    <PackageReference Include="Moq" Version="$(MoqPackageVersion)" />
+    <PackageReference Include="NSubstitute" Version="$(NSubstitutePackageVersion)" />
+    <PackageReference Include="NSubstitute.Analyzers.CSharp" Version="$(NSubstituteAnalyzersPackageVersion)">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Shouldly" Version="$(ShouldlyPackageVersion)" />
+    <PackageReference Include="xunit" Version="$(xunitPackageVersion)" />
+    <PackageReference Include="xunit.extensibility.execution" Version="$(xunitPackageVersion)" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="$(xunitRunnerPackageVersion)" />
+    <PackageReference Include="Microsoft.AspNetCore.Diagnostics.Middleware" Version="$(MicrosoftPackageVersion)" />
+  </ItemGroup>
+</Project>

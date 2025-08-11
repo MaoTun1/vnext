@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\common.props" />
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>BBT.Workflow</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="BBT.Aether.Domain" Version="$(AetherPackageVersion)" />
+    <PackageReference Include="Dapr.Jobs" Version="$(DaprPackageVersion)" />
+    <PackageReference Include="Ulid" Version="$(UlidPackageVersion)" />
+    <PackageReference Include="JsonSchema.Net" Version="$(JsonSchemaNetPackageVersion)" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="$(MicrosoftPackageVersion)" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="$(MicrosoftPackageVersion)" />
+    <ProjectReference Include="..\..\modules\BBT.Workflow.Modules.Scripting\BBT.Workflow.Modules.Scripting.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="Definitions\Validators\ValidationResult.cs" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,28 @@
+<Project>
+    <PropertyGroup>
+
+        <!-- All Prism packages -->
+        <AetherPackageVersion>1.0.1</AetherPackageVersion>
+        <!-- Elastic Apm packages -->
+        <ElasticApmPackageVersion>1.31.0</ElasticApmPackageVersion>
+        <!-- Microsoft packages -->
+        <MicrosoftPackageVersion>9.0.0</MicrosoftPackageVersion>
+        <!-- Dapr packages -->
+        <DaprPackageVersion>1.15.4</DaprPackageVersion>
+        <!-- AutoMapper packages -->
+        <AutoMapperPackageVersion>13.0.1</AutoMapperPackageVersion>
+        <!-- Ulid -->
+        <UlidPackageVersion>1.3.4</UlidPackageVersion>
+        <!-- JsonSchema.NET -->
+        <JsonSchemaNetPackageVersion>7.3.3</JsonSchemaNetPackageVersion>
+      
+        <!-- Microsot Test SDK packages -->
+        <TestSdkPackageVersion>17.12.0</TestSdkPackageVersion>
+        <NSubstitutePackageVersion>5.3.0</NSubstitutePackageVersion>
+        <NSubstituteAnalyzersPackageVersion>1.0.17</NSubstituteAnalyzersPackageVersion>
+        <ShouldlyPackageVersion>4.3.0</ShouldlyPackageVersion>
+        <xunitPackageVersion>2.9.3</xunitPackageVersion>
+        <xunitRunnerPackageVersion>3.0.1</xunitRunnerPackageVersion>
+        <MoqPackageVersion>4.20.72</MoqPackageVersion>
+    </PropertyGroup>
+</Project>
