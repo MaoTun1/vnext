@@ -18,13 +18,11 @@ public sealed class Function : IDomainEntity, IFunctionReference, IReferenceSett
     [JsonConstructor]
     public Function(
         TaskScope scope,
-        Reference task,
-        ScriptCode mapping
+        OnExecuteTask task
     ) : this()
     {
         Scope = scope;
         Task = task;
-        Mapping = mapping;
     }
 
     /// <summary>
@@ -48,8 +46,7 @@ public sealed class Function : IDomainEntity, IFunctionReference, IReferenceSett
     public string Version { get; private set; }
 
     public TaskScope Scope { get; private set; }
-    public Reference Task { get; private set; }
-    public ScriptCode Mapping { get; private set; }
+    [JsonInclude] public OnExecuteTask Task { get; private set; }
 
     public string CacheKey => $"{nameof(Function)}:{Domain}:{Flow}:{Key}:{Version}";
 
@@ -76,18 +73,13 @@ public sealed class Function : IDomainEntity, IFunctionReference, IReferenceSett
     {
         Version = Check.NotNullOrEmpty(version, nameof(Version), WorkflowConstants.MaxVersionLength);
     }
-    public OnExecuteTask GetExecuteTask()
-    {
-        return  OnExecuteTask.Create(1, Task, Mapping);
-    }
+
     public List<OnExecuteTask> GetExecuteTasks()
     {
-       return new List<OnExecuteTask>()
-        {
-            {
-                GetExecuteTask()
-            } 
-        };
+       return
+       [
+           Task
+       ];
     }
     public void SetReference(IReference reference)
     {
