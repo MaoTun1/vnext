@@ -158,10 +158,31 @@ The workflow requires these GitHub permissions:
 
 - `contents: write` - For creating tags and releases
 - `packages: write` - For publishing to GitHub Container Registry
+- `packages: read` - For accessing NuGet packages from burgan-tech organization
 
 ### Secrets
 
-No additional secrets are required. The workflow uses the built-in `GITHUB_TOKEN`.
+No additional secrets are required. The workflow uses the built-in `GITHUB_TOKEN` for:
+- Publishing Docker images to GitHub Container Registry
+- Accessing NuGet packages from burgan-tech GitHub Packages
+- Creating releases and tags
+
+### NuGet Package Dependencies
+
+This project depends on BBT.Aether framework packages from the `burgan-tech` organization. The configuration works differently for different environments:
+
+**Local Development:**
+- Uses `nuget.config` file in repository root for persistent configuration
+- Supports environment variables for GitHub credentials
+
+**CI/CD Workflow:**
+- Dynamically configures NuGet sources using `dotnet nuget add source` commands
+- Uses GitHub Actions secrets for authentication
+
+**Docker Builds:**
+- Receives GitHub credentials as build arguments
+- Configures NuGet sources during the build process
+- No static config files copied into containers
 
 ## Troubleshooting
 
@@ -171,6 +192,33 @@ No additional secrets are required. The workflow uses the built-in `GITHUB_TOKEN
 2. **Build Failures**: Check the build logs for .NET compilation errors
 3. **Test Failures**: The workflow continues even if tests fail but logs the results
 4. **Push Failures**: Verify repository permissions for GitHub Container Registry
+5. **NuGet Package Access Issues**: 
+   - Ensure the `GITHUB_TOKEN` has `packages: read` permission
+   - Verify the repository has access to `burgan-tech` organization packages
+   - Check if the BBT.Aether packages exist in the burgan-tech GitHub Packages
+
+### NuGet Package Troubleshooting
+
+If you encounter issues accessing BBT.Aether packages:
+
+**For Local Development:**
+```bash
+# Configure GitHub Packages source
+dotnet nuget add source \
+  --username YOUR_GITHUB_USERNAME \
+  --password YOUR_PAT \
+  --store-password-in-clear-text \
+  --name burgan-tech-github \
+  "https://nuget.pkg.github.com/burgan-tech/index.json"
+
+# Test package access
+dotnet nuget search BBT.Aether --source burgan-tech-github
+```
+
+**For CI/CD Issues:**
+1. Check if the workflow has access to burgan-tech packages
+2. Verify the `packages: read` permission in workflow permissions
+3. Ensure BBT.Aether packages are published to burgan-tech GitHub Packages
 
 ### Manual Version Override
 
