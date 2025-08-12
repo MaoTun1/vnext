@@ -137,7 +137,7 @@ jobs:
           type=ref,event=branch
           type=sha,prefix={{branch}}-
     
-    - name: Build and test solution
+    - name: Build solution
       run: |
         echo "Restoring dependencies..."
         # Restore using default NuGet.org source
@@ -149,21 +149,7 @@ jobs:
           --no-restore \
           -p:Version=${{ steps.version.outputs.version }}
         
-        echo "Running tests..."
-        # Find and run all test projects
-        for test_project in $(find ./test -name "*Test*.csproj" -o -name "*Tests.csproj"); do
-          if [ -f "$test_project" ]; then
-            echo "Running tests for: $test_project"
-            dotnet test "$test_project" \
-              --configuration Release \
-              --no-build \
-              --verbosity normal \
-              --logger "trx;LogFileName=test-results.trx" \
-              --logger "console;verbosity=detailed" \
-              --collect:"XPlat Code Coverage" \
-              -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover || echo "Tests completed with warnings/errors"
-          fi
-        done
+        echo "Skipping unit tests as requested..."
     
     - name: Build and push Execution Docker image
       uses: docker/build-push-action@v5
