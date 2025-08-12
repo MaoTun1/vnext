@@ -15,6 +15,7 @@ on:
 permissions:
   contents: write
   packages: write
+  actions: read
   # Note: packages:read permission for cross-org access requires PAT token
 
 env:
@@ -97,28 +98,24 @@ jobs:
     
     - name: Configure GitHub NuGet Sources
       run: |
-        # Remove the existing nuget.config to avoid conflicts
-        rm -f nuget.config
+        # Use the existing nuget.config from repository
+        echo "Using repository nuget.config"
         
-        # Create a new nuget.config with proper authentication
-        cat > nuget.config <<EOF
-        <?xml version="1.0" encoding="utf-8"?>
-        <configuration>
-          <packageSources>
-            <clear />
-            <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
-            <add key="burgan-tech-github" value="https://nuget.pkg.github.com/burgan-tech/index.json" />
-          </packageSources>
-          <packageSourceCredentials>
-            <burgan-tech-github>
-              <add key="Username" value="${{ github.actor }}" />
-              <add key="ClearTextPassword" value="${{ secrets.GITHUB_TOKEN }}" />
-            </burgan-tech-github>
-          </packageSourceCredentials>
-        </configuration>
-        EOF
+        # Add authentication using dotnet nuget command
+        dotnet nuget add source https://nuget.pkg.github.com/burgan-tech/index.json \
+          --name burgan-tech-github \
+          --username ${{ github.actor }} \
+          --password ${{ secrets.GITHUB_TOKEN }} \
+          --store-password-in-clear-text \
+          --configfile ./nuget.config \
+          || echo "Source already exists, updating..."
         
-        echo "Created nuget.config with authentication"
+        # Update the source with credentials
+        dotnet nuget update source burgan-tech-github \
+          --username ${{ github.actor }} \
+          --password ${{ secrets.GITHUB_TOKEN }} \
+          --store-password-in-clear-text \
+          --configfile ./nuget.config
         
         # List configured sources for verification
         echo "Configured NuGet sources:"
@@ -163,10 +160,15 @@ jobs:
           type=sha,prefix={{branch}}-
     
     - name: Build and test solution
+      env:
+        NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER: 0
       run: |
         echo "Restoring dependencies..."
-        # Restore will use the configured NuGet sources from previous step
-        dotnet restore ./BBT.Workflow.sln --verbosity normal
+        # Use environment variable for authentication
+        dotnet restore ./BBT.Workflow.sln \
+          --configfile ./nuget.config \
+          --verbosity normal
         
         echo "Building solution..."
         dotnet build ./BBT.Workflow.sln \
