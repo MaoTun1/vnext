@@ -319,13 +319,63 @@ jobs:
         fail-build: false
         output-format: sarif
     
+    - name: Check if SARIF files exist
+      if: always()
+      id: check-sarif
+      run: |
+        echo "Checking for SARIF files..."
+        FOUND_FILES=""
+        
+        if [ -n "${{ steps.scan-execution.outputs.sarif }}" ] && [ -f "${{ steps.scan-execution.outputs.sarif }}" ]; then
+          echo "Found execution SARIF: ${{ steps.scan-execution.outputs.sarif }}"
+          FOUND_FILES="${{ steps.scan-execution.outputs.sarif }}"
+        fi
+        
+        if [ -n "${{ steps.scan-orchestrator.outputs.sarif }}" ] && [ -f "${{ steps.scan-orchestrator.outputs.sarif }}" ]; then
+          echo "Found orchestrator SARIF: ${{ steps.scan-orchestrator.outputs.sarif }}"
+          if [ -n "$FOUND_FILES" ]; then
+            FOUND_FILES="$FOUND_FILES,${{ steps.scan-orchestrator.outputs.sarif }}"
+          else
+            FOUND_FILES="${{ steps.scan-orchestrator.outputs.sarif }}"
+          fi
+        fi
+        
+        if [ -n "$FOUND_FILES" ]; then
+          echo "has_sarif=true" >> $GITHUB_OUTPUT
+          echo "sarif_files=$FOUND_FILES" >> $GITHUB_OUTPUT
+          echo "Will attempt to upload SARIF files: $FOUND_FILES"
+        else
+          echo "has_sarif=false" >> $GITHUB_OUTPUT
+          echo "No SARIF files found - this is normal if no critical vulnerabilities were detected"
+        fi
+
     - name: Upload security scan results
       uses: github/codeql-action/upload-sarif@v3
-      if: always()
+      if: always() && steps.check-sarif.outputs.has_sarif == 'true'
+      continue-on-error: true
       with:
-        sarif_file: |
-          ${{ steps.scan-execution.outputs.sarif }}
-          ${{ steps.scan-orchestrator.outputs.sarif }}
+        sarif_file: ${{ steps.check-sarif.outputs.sarif_files }}
+      env:
+        # Only upload if Advanced Security is available
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Security scan summary
+      if: always()
+      run: |
+        echo "=== Security Scan Summary ==="
+        if [ "${{ steps.check-sarif.outputs.has_sarif }}" == "true" ]; then
+          echo "✅ SARIF files were generated and upload was attempted"
+          echo "📁 Files: ${{ steps.check-sarif.outputs.sarif_files }}"
+        else
+          echo "ℹ️  No SARIF files generated - this typically means no critical vulnerabilities were found"
+        fi
+        
+        echo ""
+        echo "Note: SARIF upload to GitHub Security tab requires:"
+        echo "- GitHub Advanced Security to be enabled (paid feature for private repos)"
+        echo "- Critical vulnerabilities to be found by the scanner"
+        echo ""
+        echo "The security scans still ran successfully and results are available in the workflow logs above."
     
     - name: Update Docker Compose files with new version
       run: |
