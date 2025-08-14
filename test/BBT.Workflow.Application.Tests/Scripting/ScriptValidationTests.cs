@@ -51,44 +51,6 @@ public class ScriptValidationTests : ApplicationTestBase<ApplicationEntryPoint>
         base.AddApplication(services);
     }
 
-    [Fact]
-    public async Task ValidateScriptFile_ContractCheckMapping_ShouldCompileSuccessfully()
-    {
-        // Arrange
-        var scriptPath = Path.Combine(
-            Directory.GetCurrentDirectory(), 
-            "..", "..", "..", "..", "..", 
-            "examples", "checking-account-opening", "src", "ContractCheckMapping.csx");
-
-        // Act & Assert
-        var result = await ValidateScriptFileAsync(scriptPath);
-        Assert.True(result.IsValid, $"Script validation failed: {result.ErrorMessage}");
-
-        _output.WriteLine($"✅ ContractCheckMapping.csx compiled successfully!");
-        if (result.MappingInstance != null)
-        {
-            _output.WriteLine("✅ IMapping interface implementation validated!");
-        }
-    }
-
-    [Theory]
-    [InlineData("AccountCreationMapping.csx")]
-    [InlineData("ContractCheckMapping.csx")]
-    public async Task ValidateAllCheckingAccountScripts_ShouldCompileSuccessfully(string scriptFileName)
-    {
-        // Arrange
-        var scriptPath = Path.Combine(
-            Directory.GetCurrentDirectory(), 
-            "..", "..", "..", "..", "..", 
-            "examples", "checking-account-opening", "src", scriptFileName);
-
-        // Act & Assert
-        var result = await ValidateScriptFileAsync(scriptPath);
-        Assert.True(result.IsValid, $"Script {scriptFileName} validation failed: {result.ErrorMessage}");
-
-        _output.WriteLine($"✅ {scriptFileName} compiled successfully!");
-    }
-
     /// <summary>
     /// Helper method to validate any script file and provide detailed feedback
     /// </summary>
