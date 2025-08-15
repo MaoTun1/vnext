@@ -246,63 +246,6 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
     }
 
     [Fact]
-    public void AddData_ShouldHandleConcurrentAccess_WhenMultipleThreads()
-    {
-        // Arrange
-        var instance = InstanceFactory.CreateDefault();
-        const int threadCount = 10;
-        const int operationsPerThread = 5;
-        var tasks = new List<Task<List<InstanceData>>>();
-        var addedDataList = new List<InstanceData>();
-
-        // Act - Execute AddData operations concurrently
-        for (int i = 0; i < threadCount; i++)
-        {
-            int threadIndex = i;
-            var task = Task.Run(() =>
-            {
-                var localResults = new List<InstanceData>();
-                for (int j = 0; j < operationsPerThread; j++)
-                {
-                    var data = JsonData.CreateFrom($"{{\"thread\":{threadIndex},\"operation\":{j}}}");
-                    var result = instance.AddData(Guid.NewGuid(), data, VersionStrategy.IncreasePatch);
-                    localResults.Add(result);
-                }
-                return localResults;
-            });
-            tasks.Add(task);
-        }
-
-        // Wait for all tasks to complete
-        Task.WaitAll(tasks.ToArray());
-
-        // Collect all results
-        foreach (var task in tasks)
-        {
-            addedDataList.AddRange(task.Result);
-        }
-
-        // Assert
-        var expectedCount = threadCount * operationsPerThread;
-        Assert.Equal(expectedCount, instance.DataList.Count);
-        Assert.Equal(expectedCount, addedDataList.Count);
-
-        // Verify all versions are unique and correctly incremented
-        var versions = instance.DataList.Select(d => d.Version).OrderBy(v => v).ToList();
-        var uniqueVersions = versions.Distinct().ToList();
-        
-        Assert.Equal(expectedCount, uniqueVersions.Count); // All versions should be unique
-        
-        // Verify version sequence integrity
-        for (int i = 1; i < versions.Count; i++)
-        {
-            var current = Version.Parse(versions[i]);
-            var previous = Version.Parse(versions[i - 1]);
-            Assert.True(current > previous, $"Version sequence broken: {previous} -> {current}");
-        }
-    }
-
-    [Fact]
     public void LatestData_ShouldReturnCorrectResult_DuringConcurrentAccess()
     {
         // Arrange

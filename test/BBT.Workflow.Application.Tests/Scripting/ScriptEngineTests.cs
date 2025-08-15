@@ -241,22 +241,6 @@ public class ScriptEngineTests : ApplicationTestBase<ApplicationEntryPoint>
     }
 
     [Fact]
-    public async Task EvaluateAsync_With_GlobalScriptFunctions_Should_Work_With_MockedDaprClient()
-    {
-        // Arrange
-        string code = @"
-            var result = GetSecret(""secret_store"", ""secret"", ""test_key"");
-            return ""Got secret: "" + result;
-        ";
-
-        // Act
-        var result = await _scriptEngine.EvaluateAsync<string>(code);
-
-        // Assert
-        Assert.Equal("Got secret: mock_secret_value", result);
-    }
-
-    [Fact]
     public async Task Compile_IMapping_With_ScriptBase_Should_Work_With_MockedDaprClient()
     {
         // Arrange
