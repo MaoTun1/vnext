@@ -267,3 +267,7 @@ To run the script on MacOS, you need to install PowerShell. You can find the off
 
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+
+
+
