@@ -10,6 +10,7 @@ using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nito.Disposables;
 
@@ -137,7 +138,14 @@ public sealed class AdminAppService(
     {
         var existingInstanceData = instance.FindData(input.Version);
         if (existingInstanceData != null)
-            throw new ConflictException();
+        {
+            Logger.LogWarning("Instance {InstanceKey} already has data version {Version}", instance.Key, input.Version);
+            if (input.Data?.Any() == true)
+            {
+                await HandleAdditionalDataVersionsAsync(input, cancellationToken);
+            }
+            return;
+        }   
 
         var workflow = CreateAndValidateWorkflow(input);
 
@@ -176,6 +184,12 @@ public sealed class AdminAppService(
                                    input.Key,
                                    dataItem.Key
                                );
+
+                if (instance.FindData(dataItem.Version) != null)
+                {
+                    Logger.LogWarning("Instance {InstanceKey} already has data version {Version}", dataItem.Key, dataItem.Version);
+                    continue;
+                }
 
                 instance.AddTags(dataItem.Tags.ToArray());
                 instance.AddDataWithVersion(
