@@ -243,67 +243,23 @@ services:
     command: [ "sh", "-c", "chmod +x /etc/vault/prepopulate_vault.sh && /etc/vault/prepopulate_vault.sh" ]
     networks:
       - bbt-development
-
-  # optional
-  elastic:
-    container_name: vnext-elastic
-    image: elasticsearch:8.8.1
+  
+  # OpenObserve for observability
+  openobserve:
+    container_name: vnext-openobserve
+    image: public.ecr.aws/zinclabs/openobserve:latest
     environment:
-      - xpack.security.enabled=false
-      - "discovery.type=single-node"
+      ZO_ROOT_USER_EMAIL: "root@example.com"
+      ZO_ROOT_USER_PASSWORD: "Complexpass#@123"
+      ZO_DATA_DIR: "/data"
+    ports:
+      - "5080:5080"
     volumes:
-      - elastic:/data/elastic
-    ports:
-      - 9200:9200
+      - openobserve:/data
     networks:
       - bbt-development
 
-  apm:
-    container_name: vnext-apm
-    image: docker.elastic.co/apm/apm-server:7.17.23
-    cap_add: [ "CHOWN", "DAC_OVERRIDE", "SETGID", "SETUID" ]
-    cap_drop: [ "ALL" ]
-    networks:
-      - bbt-development
-    ports:
-      - "5200:8200"
-    command: >
-      apm-server -e
-         -E apm-server.rum.enabled=true
-         -E setup.kibana.host=vnext-kibana:5601
-         -E setup.template.settings.index.number_of_replicas=0
-         -E apm-server.kibana.enabled=true
-         -E apm-server.kibana.host=vnext-kibana:5601
-         -E output.elasticsearch.hosts=["vnext-elastic:9200"]
-    depends_on:
-      - elastic
-      - kibana
-
-  # optional
-  kibana:
-    container_name: vnext-kibana
-    image: kibana:7.17.25
-    environment:
-      - ELASTICSEARCH_HOSTS=http://vnext-elastic:9200
-    networks:
-      - bbt-development
-    depends_on:
-      - elastic
-    ports:
-      - 5601:5601
-
-  # optional
-  grafana:
-    container_name: vnext-grafana
-    image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
-    networks:
-      - bbt-development
-    # depends_on:
-    #   - prometheus
-
-  # optional
+  # OpenTelemetry Collector
   otel-collector:
     container_name: vnext-otel-collector
     image: otel/opentelemetry-collector-contrib:latest
@@ -317,10 +273,11 @@ services:
       - "4317:4317" # OTLP gRPC receiver
       - "4318:4318" # OTLP http receiver
       - "55679:55679" # zpages extension
+    depends_on:
+      - openobserve
     networks:
       - bbt-development
-
-  # optional
+  
   # prometheus:
   #   container_name: vnext-prometheus
   #   image: prom/prometheus:latest
@@ -334,16 +291,15 @@ services:
   #     - bbt-development
 
 networks:
- bbt-development:
-   external: true
+  bbt-development:
+    external: true
 
 volumes:
   redis:
   redis-insight:
   postgres:
   pgadmin:
-  grafana:
-  elastic:
+  openobserve:
   vnext-app:
   vnext-execution-app:
   # prometheus:
