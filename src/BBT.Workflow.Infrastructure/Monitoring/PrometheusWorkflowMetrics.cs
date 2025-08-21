@@ -1,3 +1,5 @@
+using BBT.Workflow.Instances;
+
 namespace BBT.Workflow.Monitoring;
 
 /// <summary>
@@ -84,17 +86,19 @@ public sealed class PrometheusWorkflowMetrics : IWorkflowMetrics
     {
         switch (status)
         {
-            case "A": // Active
+            case var s when s == InstanceStatus.Active.Code: // Active
                 WorkflowMetrics.ActiveInstances.WithLabels(workflow).Dec();
                 break;
-            case "B": // Busy (Pending)
+            case var s when s == InstanceStatus.Busy.Code: // Busy (Pending)
                 WorkflowMetrics.PendingInstances.WithLabels(workflow).Dec();
                 break;
-            case "P": // Passive (Suspended)
+            case var s when s == InstanceStatus.Passive.Code: // Passive (Suspended)
                 WorkflowMetrics.SuspendedInstances.WithLabels(workflow).Dec();
                 break;
-            // Completed and Faulted instances are not tracked in gauges
-            // as they represent final states
+            default:
+                // Completed and Faulted instances are not tracked in gauges
+                // as they represent final states - no action needed
+                break;
         }
     }
 
@@ -105,17 +109,19 @@ public sealed class PrometheusWorkflowMetrics : IWorkflowMetrics
     {
         switch (status)
         {
-            case "A": // Active
+            case var s when s == InstanceStatus.Active.Code: // Active
                 WorkflowMetrics.ActiveInstances.WithLabels(workflow).Inc();
                 break;
-            case "B": // Busy (Pending)
+            case var s when s == InstanceStatus.Busy.Code: // Busy (Pending)
                 WorkflowMetrics.PendingInstances.WithLabels(workflow).Inc();
                 break;
-            case "P": // Passive (Suspended)
+            case var s when s == InstanceStatus.Passive.Code: // Passive (Suspended)
                 WorkflowMetrics.SuspendedInstances.WithLabels(workflow).Inc();
                 break;
-            // Completed and Faulted instances are not tracked in gauges
-            // as they represent final states
+            default:
+                // Completed and Faulted instances are not tracked in gauges
+                // as they represent final states - no action needed
+                break;
         }
     }
 
