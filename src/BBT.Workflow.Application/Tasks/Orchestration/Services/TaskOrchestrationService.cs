@@ -4,6 +4,7 @@ using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Tasks.Factory;
+using BBT.Workflow.Monitoring;
 
 namespace BBT.Workflow.Tasks;
 
@@ -18,7 +19,8 @@ namespace BBT.Workflow.Tasks;
 public class TaskOrchestrationService(
     ITaskOrchestrator taskOrchestrator,
     ITaskExecutorFactory taskExecutorFactory,
-    ITaskFactory taskFactory) : ITaskOrchestrationService
+    ITaskFactory taskFactory,
+    IWorkflowMetrics workflowMetrics) : ITaskOrchestrationService
 {
     /// <summary>
     /// Orchestrates a collection of tasks using the optimal execution strategy (parallel or sequential).
@@ -39,6 +41,12 @@ public class TaskOrchestrationService(
     {
         var tasks = onExecuteTasks.ToList();
         if (!tasks.Any()) return;
+
+        // Record pending tasks when they are queued for orchestration
+        foreach (var task in tasks)
+        {
+            workflowMetrics.IncrementPendingTasks(task.Task.Key, context.Workflow.Key);
+        }
 
         // Check if tasks can be executed in parallel (no dependencies)
         var canExecuteInParallel = CanExecuteInParallel(tasks);

@@ -2,6 +2,7 @@ using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Definitions.CastHandlers;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.States;
@@ -47,7 +48,18 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         // services.AddScoped<IInstanceAppService, InstanceAppService>(); // For backward compatibility
 
         services.AddScoped<IRuntimeService, RuntimeService>();
-        services.AddSingleton<IComponentCacheStore, ComponentCacheStore>();
+        // Register the original ComponentCacheStore as a concrete service
+        services.AddSingleton<ComponentCacheStore>();
+        
+        // Register the metrics-aware decorator as the primary IComponentCacheStore
+        services.AddSingleton<IComponentCacheStore>(serviceProvider =>
+        {
+            var originalStore = serviceProvider.GetRequiredService<ComponentCacheStore>();
+            var workflowMetrics = serviceProvider.GetRequiredService<IWorkflowMetrics>();
+            var logger = serviceProvider.GetRequiredService<ILogger<MetricsAwareComponentCacheStore>>();
+            
+            return originalStore.WithMetrics(workflowMetrics, logger);
+        });
 
         // Instance Services
         services.AddScoped<IInstanceExtensionService, InstanceExtensionService>();

@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Shared;
+using BBT.Workflow.Monitoring;
 using Dapr.Client;
 
 namespace BBT.Workflow.Tasks.Execution;
@@ -15,10 +17,12 @@ namespace BBT.Workflow.Tasks.Execution;
 /// <param name="daprClient">The Dapr client for service invocation calls.</param>
 /// <param name="logger">Logger for recording service invocation activities.</param>
 /// <param name="configuration">Configuration for service settings.</param>
+/// <param name="workflowMetrics">Service for recording task execution metrics.</param>
 public sealed class DaprTaskExecutor(
     DaprClient daprClient,
     ILogger<DaprTaskExecutor> logger,
-    IConfiguration configuration) : ITaskOrchestrator
+    IConfiguration configuration,
+    IWorkflowMetrics workflowMetrics) : ITaskOrchestrator
 {
     private readonly string _executionServiceAppId = configuration["ExecutionService:AppId"] ?? "vnext-execution";
     private readonly ConcurrentDictionary<string, object> _contextLocks = new();
@@ -55,6 +59,15 @@ public sealed class DaprTaskExecutor(
             taskTrigger,
             context);
 
+        // Extract task info for metrics
+        var taskType = input.OnExecuteTask.Task.Key; // Task key can represent task type
+        var workflowKey = context.Workflow.Key;
+        
+        // Record task execution start and update gauges (remote execution)
+        workflowMetrics.RecordTaskExecuted(taskType, workflowKey);
+        workflowMetrics.StartTaskExecution(taskType, workflowKey); // pending--, running++
+        
+        var stopwatch = Stopwatch.StartNew();
         try
         {
             var response = await daprClient.InvokeMethodAsync<TaskExecutionRequestInput, TaskExecutionResponseOutput>(
@@ -64,10 +77,19 @@ public sealed class DaprTaskExecutor(
                 input,
                 cancellationToken);
 
+            stopwatch.Stop();
+            
             if (!response.Success)
             {
+                // Record task failure (remote execution failed)
+                workflowMetrics.RecordTaskFailed(taskType, workflowKey, stopwatch.Elapsed.TotalSeconds);
+                workflowMetrics.FinishTaskExecution(taskType, workflowKey); // running--
                 throw new InvalidOperationException($"Task execution failed: {response.Message}");
             }
+
+            // Record successful task completion (remote execution succeeded)
+            workflowMetrics.RecordTaskCompleted(taskType, workflowKey, stopwatch.Elapsed.TotalSeconds);
+            workflowMetrics.FinishTaskExecution(taskType, workflowKey); // running--
 
             // Apply context updates from remote execution to local context
             if (response.ContextUpdate != null)
@@ -87,6 +109,12 @@ public sealed class DaprTaskExecutor(
         }
         catch (Exception ex) when (ex is not InvalidOperationException)
         {
+            stopwatch.Stop();
+            
+            // Record task failure (communication error with execution service)
+            workflowMetrics.RecordTaskFailed(taskType, workflowKey, stopwatch.Elapsed.TotalSeconds);
+            workflowMetrics.FinishTaskExecution(taskType, workflowKey); // running--
+            
             logger.LogError(ex, "Error calling Execution service for task {TaskKey} for instance {InstanceId}",
                 onExecuteTask.Task.Key, context.Instance.Id);
             throw new InvalidOperationException($"Failed to execute task via Execution service: {ex.Message}", ex);

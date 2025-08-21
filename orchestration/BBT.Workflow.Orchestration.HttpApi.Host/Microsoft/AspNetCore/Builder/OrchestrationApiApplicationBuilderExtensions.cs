@@ -1,5 +1,6 @@
 using BBT.Workflow.BackgroundJobs;
 using Dapr.Jobs.Extensions;
+using Prometheus;
 
 namespace Microsoft.AspNetCore.Builder;
 
@@ -15,10 +16,10 @@ public static class OrchestrationApiApplicationBuilderExtensions
     /// <returns>The web application for chaining</returns>
     public static WebApplication UseOrchestrationApiModule(this WebApplication app)
     {
-        // Use base Workflow API configuration
+        // Use base Workflow API configuration (already includes UseHttpMetrics and MapMetrics)
         app.UseWorkflowApiBase();
         app.MapAppHealthChecks();
-
+        
         // Add Orchestration-specific middleware and configurations
         ConfigureOrchestrationSpecificMiddleware(app);
 
