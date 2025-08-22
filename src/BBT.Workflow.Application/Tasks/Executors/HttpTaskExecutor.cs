@@ -72,9 +72,9 @@ public sealed class HttpTaskExecutor(
                 }
             }
             
-            if (request.Method != HttpMethod.Get && inputResponse.Data != null)
+            if (request.Method != HttpMethod.Get && httpTask.Body.HasValue)
             {
-                var requestContent = JsonSerializer.Serialize(inputResponse.Data);
+                var requestContent = httpTask.Body.Value.GetRawText();
                 request.Content = new StringContent(
                     requestContent,
                     System.Text.Encoding.UTF8,

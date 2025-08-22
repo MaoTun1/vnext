@@ -5,6 +5,7 @@
         <Nullable>enable</Nullable>
         <WarningsAsErrors>Nullable</WarningsAsErrors>
         <AssemblyName>BBT.Workflow.Scripting</AssemblyName>
+        <NoWarn>$(NoWarn);CS8619</NoWarn>
         <RootNamespace/>
     </PropertyGroup>
     <ItemGroup>

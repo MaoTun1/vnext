@@ -58,7 +58,7 @@ public sealed class DaprBindingTaskExecutor(
             await daprClient.InvokeBindingAsync(
                 daprTask.BindingName,
                 daprTask.Operation,
-                inputResponse.Data,
+                daprTask.Data,
                 metadata,
                 cancellationToken: cancellationToken
             );

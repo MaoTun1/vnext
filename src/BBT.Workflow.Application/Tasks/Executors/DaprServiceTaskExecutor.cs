@@ -61,9 +61,9 @@ public sealed class DaprServiceTaskExecutor(
                 daprTask.AppId,
                 daprTask.MethodName);
 
-            if (request.Method != HttpMethod.Get && inputResponse.Data != null)
+            if (request.Method != HttpMethod.Get && daprTask.Data.HasValue)
             {
-                var requestContent = JsonSerializer.Serialize(inputResponse.Data);
+                var requestContent = daprTask.Data.Value.GetRawText();
                 request.Content = new StringContent(requestContent, Encoding.UTF8, "application/json");
                 
                 Logger.LogDebug("Added request body to DAPR service call for task {TaskKey}", daprTask.Key);

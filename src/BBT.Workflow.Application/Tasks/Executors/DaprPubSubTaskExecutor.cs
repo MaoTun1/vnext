@@ -70,7 +70,7 @@ public sealed class DaprPubSubTaskExecutor(
             await daprClient.PublishEventAsync(
                 daprTask.PubSubName,
                 daprTask.Topic,
-                inputResponse.Data,
+                daprTask.Data,
                 metadata,
                 cancellationToken: cancellationToken
             );
