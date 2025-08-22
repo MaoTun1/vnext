@@ -69,7 +69,6 @@ public sealed class LocalTaskExecutor(
         await persistenceStrategy.HandleCreationAsync(instanceTask, cancellationToken);
 
         var taskType = task.GetTaskType().ToString();
-        var workflowKey = context.Workflow.Key;
         
         // Record task execution start 
         workflowMetrics.RecordTaskExecution(taskType, "started");
