@@ -387,4 +387,219 @@ public sealed class PrometheusWorkflowMetrics : IWorkflowMetrics
             .WithLabels(taskType)
             .Inc();
     }
+
+    public void RecordExternalServiceCall(string serviceName, string operation, string status)
+    {
+        WorkflowMetrics.ExternalServiceCalls
+            .WithLabels(serviceName, operation, status)
+            .Inc();
+    }
+
+    public void RecordExternalServiceFailure(string serviceName, string operation, string failureType)
+    {
+        WorkflowMetrics.ExternalServiceFailures
+            .WithLabels(serviceName, operation, failureType)
+            .Inc();
+    }
+
+    public void RecordExternalServiceTimeout(string serviceName, string operation, double timeoutThreshold)
+    {
+        WorkflowMetrics.ExternalServiceTimeouts
+            .WithLabels(serviceName, operation, timeoutThreshold.ToString("F1"))
+            .Inc();
+    }
+
+    public void RecordExternalServiceDuration(string serviceName, string operation, string status, double durationSeconds)
+    {
+        WorkflowMetrics.ExternalServiceDuration
+            .WithLabels(serviceName, operation, status)
+            .Observe(durationSeconds);
+    }
+
+    public void RecordDaprServiceInvocation(string serviceName, string methodName, string status)
+    {
+        WorkflowMetrics.DaprServiceInvocations
+            .WithLabels(serviceName, methodName, status)
+            .Inc();
+    }
+
+    public void RecordDaprPubsubMessagePublished(string pubsubName, string topic, string status)
+    {
+        WorkflowMetrics.DaprPubsubMessagesPublished
+            .WithLabels(pubsubName, topic, status)
+            .Inc();
+    }
+
+    public void RecordDaprPubsubMessageReceived(string pubsubName, string topic, string status)
+    {
+        WorkflowMetrics.DaprPubsubMessagesReceived
+            .WithLabels(pubsubName, topic, status)
+            .Inc();
+    }
+
+    public void RecordDaprBindingInvocation(string bindingName, string operation, string status)
+    {
+        WorkflowMetrics.DaprBindingInvocations
+            .WithLabels(bindingName, operation, status)
+            .Inc();
+    }
+
+    public void RecordBackgroundJobScheduled(string jobType, string jobName)
+    {
+        WorkflowMetrics.BackgroundJobsScheduled
+            .WithLabels(jobType, jobName)
+            .Inc();
+    }
+
+    public void RecordBackgroundJobExecuted(string jobType, string jobName, string status)
+    {
+        WorkflowMetrics.BackgroundJobsExecuted
+            .WithLabels(jobType, jobName, status)
+            .Inc();
+    }
+
+    public void RecordBackgroundJobFailed(string jobType, string jobName, string failureReason)
+    {
+        WorkflowMetrics.BackgroundJobsFailed
+            .WithLabels(jobType, jobName, failureReason)
+            .Inc();
+    }
+
+    public void RecordBackgroundJobRetried(string jobType, string jobName, int retryCount)
+    {
+        WorkflowMetrics.BackgroundJobsRetried
+            .WithLabels(jobType, jobName, retryCount.ToString())
+            .Inc();
+    }
+
+    public void RecordBackgroundJobDuration(string jobType, string jobName, string status, double durationSeconds)
+    {
+        WorkflowMetrics.BackgroundJobDuration
+            .WithLabels(jobType, jobName, status)
+            .Observe(durationSeconds);
+    }
+
+    public void RecordBackgroundJobQueueWait(string jobType, string jobName, double waitDurationSeconds)
+    {
+        WorkflowMetrics.BackgroundJobQueueWait
+            .WithLabels(jobType, jobName)
+            .Observe(waitDurationSeconds);
+    }
+
+    public void SetBackgroundJobsPending(string jobType, int count)
+    {
+        WorkflowMetrics.BackgroundJobsPending
+            .WithLabels(jobType)
+            .Set(count);
+    }
+
+    public void SetBackgroundJobsRunning(string jobType, int count)
+    {
+        WorkflowMetrics.BackgroundJobsRunning
+            .WithLabels(jobType)
+            .Set(count);
+    }
+
+    public void RecordScriptExecution(string scriptType, string language, string status)
+    {
+        WorkflowMetrics.ScriptExecutions
+            .WithLabels(scriptType, language, status)
+            .Inc();
+    }
+
+    public void RecordScriptCompilationError(string scriptType, string language, string errorType)
+    {
+        WorkflowMetrics.ScriptCompilationErrors
+            .WithLabels(scriptType, language, errorType)
+            .Inc();
+    }
+
+    public void RecordScriptRuntimeError(string scriptType, string language, string errorType)
+    {
+        WorkflowMetrics.ScriptRuntimeErrors
+            .WithLabels(scriptType, language, errorType)
+            .Inc();
+    }
+
+    public void RecordScriptCompilationDuration(string scriptType, string language, string status, double durationSeconds)
+    {
+        WorkflowMetrics.ScriptCompilationDuration
+            .WithLabels(scriptType, language, status)
+            .Observe(durationSeconds);
+    }
+
+    public void RecordScriptExecutionDuration(string scriptType, string language, string status, double durationSeconds)
+    {
+        WorkflowMetrics.ScriptExecutionDuration
+            .WithLabels(scriptType, language, status)
+            .Observe(durationSeconds);
+    }
+
+    public void RecordWorkflowError(string errorType, string severity, string component)
+    {
+        WorkflowMetrics.WorkflowErrors
+            .WithLabels(errorType, severity, component)
+            .Inc();
+    }
+
+    public void RecordWorkflowException(string exceptionType, string component, string operation)
+    {
+        WorkflowMetrics.WorkflowExceptions
+            .WithLabels(exceptionType, component, operation)
+            .Inc();
+    }
+
+    public void RecordValidationFailure(string validationType, string component, string field)
+    {
+        WorkflowMetrics.ValidationFailures
+            .WithLabels(validationType, component, field)
+            .Inc();
+    }
+
+    public void SetWorkflowErrorRate(string component, double errorRate)
+    {
+        WorkflowMetrics.WorkflowErrorRate
+            .WithLabels(component)
+            .Set(errorRate);
+    }
+
+    public void SetWorkflowHealthStatus(string component, bool isHealthy)
+    {
+        WorkflowMetrics.WorkflowHealthStatus
+            .WithLabels(component)
+            .Set(isHealthy ? 1.0 : 0.0);
+    }
+
+    public void RecordTaskExecution(string taskType, string status)
+    {
+        WorkflowMetrics.TaskExecutions
+            .WithLabels(taskType, status)
+            .Inc();
+        
+        // Also record as completion if successful
+        if (status == "success")
+        {
+            WorkflowMetrics.TaskCompletions
+                .WithLabels(taskType, status)
+                .Inc();
+        }
+    }
+
+    public void RecordWorkflowInstanceCompletion(string workflowType, string status, double durationSeconds)
+    {
+        WorkflowMetrics.WorkflowInstanceCompletions
+            .WithLabels(workflowType, status)
+            .Inc();
+            
+        WorkflowMetrics.WorkflowInstanceDuration
+            .WithLabels(workflowType, status)
+            .Observe(durationSeconds);
+    }
+
+    public void SetActiveWorkflowInstances(string workflowType, int count)
+    {
+        WorkflowMetrics.ActiveWorkflowInstances
+            .WithLabels(workflowType)
+            .Set(count);
+    }
 }

@@ -313,4 +313,257 @@ public interface IWorkflowMetrics
     /// </summary>
     /// <param name="taskType">Type of task</param>
     void RecordTaskFactoryPoolCreate(string taskType);
+
+    #region External Service Integration Metrics
+
+    /// <summary>
+    /// Records external service call.
+    /// </summary>
+    /// <param name="serviceName">Name of external service</param>
+    /// <param name="operation">Operation or endpoint called</param>
+    /// <param name="status">Status of the call (success/failure)</param>
+    void RecordExternalServiceCall(string serviceName, string operation, string status);
+
+    /// <summary>
+    /// Records external service call failure.
+    /// </summary>
+    /// <param name="serviceName">Name of external service</param>
+    /// <param name="operation">Operation or endpoint called</param>
+    /// <param name="failureType">Type of failure (e.g., network, timeout, server_error)</param>
+    void RecordExternalServiceFailure(string serviceName, string operation, string failureType);
+
+    /// <summary>
+    /// Records external service call timeout.
+    /// </summary>
+    /// <param name="serviceName">Name of external service</param>
+    /// <param name="operation">Operation or endpoint called</param>
+    /// <param name="timeoutThreshold">Timeout threshold in seconds</param>
+    void RecordExternalServiceTimeout(string serviceName, string operation, double timeoutThreshold);
+
+    /// <summary>
+    /// Records external service call duration.
+    /// </summary>
+    /// <param name="serviceName">Name of external service</param>
+    /// <param name="operation">Operation or endpoint called</param>
+    /// <param name="status">Status of the call</param>
+    /// <param name="durationSeconds">Duration in seconds</param>
+    void RecordExternalServiceDuration(string serviceName, string operation, string status, double durationSeconds);
+
+    #endregion
+
+    #region DAPR Integration Metrics
+
+    /// <summary>
+    /// Records Dapr service invocation.
+    /// </summary>
+    /// <param name="serviceName">Name of the invoked service</param>
+    /// <param name="methodName">Method or endpoint invoked</param>
+    /// <param name="status">Status of the invocation (success/failure)</param>
+    void RecordDaprServiceInvocation(string serviceName, string methodName, string status);
+
+    /// <summary>
+    /// Records Dapr pub/sub message published.
+    /// </summary>
+    /// <param name="pubsubName">Name of the pub/sub component</param>
+    /// <param name="topic">Topic name</param>
+    /// <param name="status">Status of the publish (success/failure)</param>
+    void RecordDaprPubsubMessagePublished(string pubsubName, string topic, string status);
+
+    /// <summary>
+    /// Records Dapr pub/sub message received.
+    /// </summary>
+    /// <param name="pubsubName">Name of the pub/sub component</param>
+    /// <param name="topic">Topic name</param>
+    /// <param name="status">Status of the receive (success/failure)</param>
+    void RecordDaprPubsubMessageReceived(string pubsubName, string topic, string status);
+
+    /// <summary>
+    /// Records Dapr binding invocation.
+    /// </summary>
+    /// <param name="bindingName">Name of the binding component</param>
+    /// <param name="operation">Operation type (invoke/create/read/update/delete)</param>
+    /// <param name="status">Status of the invocation (success/failure)</param>
+    void RecordDaprBindingInvocation(string bindingName, string operation, string status);
+
+    #endregion
+
+    #region Background Jobs Metrics
+
+    /// <summary>
+    /// Records background job scheduled.
+    /// </summary>
+    /// <param name="jobType">Type of the job</param>
+    /// <param name="jobName">Name of the job</param>
+    void RecordBackgroundJobScheduled(string jobType, string jobName);
+
+    /// <summary>
+    /// Records background job executed.
+    /// </summary>
+    /// <param name="jobType">Type of the job</param>
+    /// <param name="jobName">Name of the job</param>
+    /// <param name="status">Status of the execution (success/failure)</param>
+    void RecordBackgroundJobExecuted(string jobType, string jobName, string status);
+
+    /// <summary>
+    /// Records background job failed.
+    /// </summary>
+    /// <param name="jobType">Type of the job</param>
+    /// <param name="jobName">Name of the job</param>
+    /// <param name="failureReason">Reason for the failure</param>
+    void RecordBackgroundJobFailed(string jobType, string jobName, string failureReason);
+
+    /// <summary>
+    /// Records background job retry.
+    /// </summary>
+    /// <param name="jobType">Type of the job</param>
+    /// <param name="jobName">Name of the job</param>
+    /// <param name="retryCount">Current retry count</param>
+    void RecordBackgroundJobRetried(string jobType, string jobName, int retryCount);
+
+    /// <summary>
+    /// Records background job execution duration.
+    /// </summary>
+    /// <param name="jobType">Type of the job</param>
+    /// <param name="jobName">Name of the job</param>
+    /// <param name="status">Status of the execution</param>
+    /// <param name="durationSeconds">Duration in seconds</param>
+    void RecordBackgroundJobDuration(string jobType, string jobName, string status, double durationSeconds);
+
+    /// <summary>
+    /// Records background job queue wait time.
+    /// </summary>
+    /// <param name="jobType">Type of the job</param>
+    /// <param name="jobName">Name of the job</param>
+    /// <param name="waitDurationSeconds">Wait duration in seconds</param>
+    void RecordBackgroundJobQueueWait(string jobType, string jobName, double waitDurationSeconds);
+
+    /// <summary>
+    /// Sets the count of pending background jobs.
+    /// </summary>
+    /// <param name="jobType">Type of the jobs</param>
+    /// <param name="count">Number of pending jobs</param>
+    void SetBackgroundJobsPending(string jobType, int count);
+
+    /// <summary>
+    /// Sets the count of currently running background jobs.
+    /// </summary>
+    /// <param name="jobType">Type of the jobs</param>
+    /// <param name="count">Number of running jobs</param>
+    void SetBackgroundJobsRunning(string jobType, int count);
+
+    #endregion
+
+    #region Script Engine Metrics
+
+    /// <summary>
+    /// Records script execution.
+    /// </summary>
+    /// <param name="scriptType">Type of script (evaluation, compilation)</param>
+    /// <param name="language">Script language (csharp, etc.)</param>
+    /// <param name="status">Status of execution (success/failure)</param>
+    void RecordScriptExecution(string scriptType, string language, string status);
+
+    /// <summary>
+    /// Records script compilation error.
+    /// </summary>
+    /// <param name="scriptType">Type of script being compiled</param>
+    /// <param name="language">Script language</param>
+    /// <param name="errorType">Type of compilation error</param>
+    void RecordScriptCompilationError(string scriptType, string language, string errorType);
+
+    /// <summary>
+    /// Records script runtime error.
+    /// </summary>
+    /// <param name="scriptType">Type of script that failed</param>
+    /// <param name="language">Script language</param>
+    /// <param name="errorType">Type of runtime error</param>
+    void RecordScriptRuntimeError(string scriptType, string language, string errorType);
+
+    /// <summary>
+    /// Records script compilation duration.
+    /// </summary>
+    /// <param name="scriptType">Type of script compiled</param>
+    /// <param name="language">Script language</param>
+    /// <param name="status">Compilation status</param>
+    /// <param name="durationSeconds">Duration in seconds</param>
+    void RecordScriptCompilationDuration(string scriptType, string language, string status, double durationSeconds);
+
+    /// <summary>
+    /// Records script execution duration.
+    /// </summary>
+    /// <param name="scriptType">Type of script executed</param>
+    /// <param name="language">Script language</param>
+    /// <param name="status">Execution status</param>
+    /// <param name="durationSeconds">Duration in seconds</param>
+    void RecordScriptExecutionDuration(string scriptType, string language, string status, double durationSeconds);
+
+    #endregion
+
+    #region Error Handling and System Health Metrics
+
+    /// <summary>
+    /// Records workflow error.
+    /// </summary>
+    /// <param name="errorType">Type of error (validation, business, system, etc.)</param>
+    /// <param name="severity">Severity level (low, medium, high, critical)</param>
+    /// <param name="component">Component where error occurred</param>
+    void RecordWorkflowError(string errorType, string severity, string component);
+
+    /// <summary>
+    /// Records unhandled exception.
+    /// </summary>
+    /// <param name="exceptionType">Type of exception</param>
+    /// <param name="component">Component where exception occurred</param>
+    /// <param name="operation">Operation being performed</param>
+    void RecordWorkflowException(string exceptionType, string component, string operation);
+
+    /// <summary>
+    /// Records validation failure.
+    /// </summary>
+    /// <param name="validationType">Type of validation that failed</param>
+    /// <param name="component">Component performing validation</param>
+    /// <param name="field">Field or rule that failed</param>
+    void RecordValidationFailure(string validationType, string component, string field);
+
+    /// <summary>
+    /// Sets the current error rate.
+    /// </summary>
+    /// <param name="component">Component for which error rate is being set</param>
+    /// <param name="errorRate">Error rate as a percentage (0.0 to 100.0)</param>
+    void SetWorkflowErrorRate(string component, double errorRate);
+
+    /// <summary>
+    /// Sets the overall system health status.
+    /// </summary>
+    /// <param name="component">Component for which health status is being set</param>
+    /// <param name="isHealthy">Health status (true=healthy, false=unhealthy)</param>
+    void SetWorkflowHealthStatus(string component, bool isHealthy);
+
+    #endregion
+
+    #region Additional Dashboard Metrics
+
+    /// <summary>
+    /// Records task execution completion.
+    /// </summary>
+    /// <param name="taskType">Type of task</param>
+    /// <param name="status">Execution status (success, failure, cancelled)</param>
+    void RecordTaskExecution(string taskType, string status);
+
+    /// <summary>
+    /// Records workflow instance completion.
+    /// </summary>
+    /// <param name="workflowType">Type of workflow</param>
+    /// <param name="status">Completion status (completed, failed, cancelled)</param>
+    /// <param name="durationSeconds">Total instance duration in seconds</param>
+    void RecordWorkflowInstanceCompletion(string workflowType, string status, double durationSeconds);
+
+    /// <summary>
+    /// Sets count of active workflow instances.
+    /// </summary>
+    /// <param name="workflowType">Type of workflow</param>
+    /// <param name="count">Number of active instances</param>
+    void SetActiveWorkflowInstances(string workflowType, int count);
+
+    #endregion
 }

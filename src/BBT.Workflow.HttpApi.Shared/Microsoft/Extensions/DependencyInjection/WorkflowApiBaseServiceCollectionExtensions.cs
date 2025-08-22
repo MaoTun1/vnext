@@ -6,6 +6,7 @@ using BBT.Workflow;
 using BBT.Workflow.Data;
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Headers;
+using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
 using BBT.Workflow.Tasks;

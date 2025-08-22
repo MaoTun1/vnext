@@ -1,5 +1,6 @@
 using System.Text.Json;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Monitoring;
 using BBT.Workflow.Scripting;
 using Dapr.Client;
 using Microsoft.Extensions.Logging;
@@ -12,10 +13,12 @@ namespace BBT.Workflow.Tasks;
 /// </summary>
 /// <param name="scriptEngine">The script engine used for compiling input/output mapping scripts.</param>
 /// <param name="daprClient">The DAPR client for invoking external system bindings.</param>
+/// <param name="workflowMetrics">The workflow metrics service for recording DAPR metrics.</param>
 /// <param name="logger">The logger instance for logging DAPR binding task execution details.</param>
 public sealed class DaprBindingTaskExecutor(
     IScriptEngine scriptEngine,
     DaprClient daprClient,
+    IWorkflowMetrics workflowMetrics,
     ILogger<DaprBindingTaskExecutor> logger) : TaskExecutor(scriptEngine, logger), ITaskExecutor
 {
     /// <summary>
@@ -64,6 +67,10 @@ public sealed class DaprBindingTaskExecutor(
             );
 
             stopwatch.Stop();
+            
+            // Record successful DAPR binding invocation
+            workflowMetrics.RecordDaprBindingInvocation(daprTask.BindingName, daprTask.Operation, "success");
+            
             Logger.LogInformation("DAPR binding task {TaskKey} completed successfully in {Duration}ms", 
                 daprTask.Key, stopwatch.ElapsedMilliseconds);
 
@@ -76,6 +83,10 @@ public sealed class DaprBindingTaskExecutor(
         catch (TaskCanceledException ex) when (ex.CancellationToken.IsCancellationRequested)
         {
             stopwatch.Stop();
+            
+            // Record cancelled DAPR binding invocation
+            workflowMetrics.RecordDaprBindingInvocation(daprTask.BindingName, daprTask.Operation, "cancelled");
+            
             Logger.LogWarning("DAPR binding task {TaskKey} was cancelled after {Duration}ms", 
                 daprTask.Key, stopwatch.ElapsedMilliseconds);
             throw;
@@ -83,6 +94,10 @@ public sealed class DaprBindingTaskExecutor(
         catch (Exception ex)
         {
             stopwatch.Stop();
+            
+            // Record failed DAPR binding invocation
+            workflowMetrics.RecordDaprBindingInvocation(daprTask.BindingName, daprTask.Operation, "failure");
+            
             Logger.LogError(ex, "Error occurred during DAPR binding task {TaskKey} execution after {Duration}ms - BindingName: {BindingName}, Operation: {Operation}", 
                 daprTask.Key, stopwatch.ElapsedMilliseconds, daprTask.BindingName, daprTask.Operation);
             throw;

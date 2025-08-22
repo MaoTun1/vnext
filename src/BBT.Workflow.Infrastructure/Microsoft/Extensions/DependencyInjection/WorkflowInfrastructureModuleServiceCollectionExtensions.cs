@@ -1,5 +1,6 @@
 using BBT.Workflow.BackgroundJobs;
 using BBT.Workflow.Data;
+using BBT.Workflow.Infrastructure.HostedServices;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Remote.Extensions;
@@ -48,6 +49,10 @@ public static class WorkflowInfrastructureModuleServiceCollectionExtensions
         services.AddSingleton<IWorkflowMetrics, PrometheusWorkflowMetrics>();
         services.AddScoped<WorkflowDatabaseInterceptor>();
         services.AddScoped<WorkflowTransactionInterceptor>();
+        
+        // Hosted Services
+        services.AddHostedService<BackgroundJobMetricsHostedService>();
+        services.AddHostedService<SystemHealthMonitoringHostedService>();
         
         return services;
     }

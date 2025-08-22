@@ -71,10 +71,14 @@ public sealed class HttpMetricsMiddleware
             var statusCode = context.Response.StatusCode.ToString();
             var errorType = ex.GetType().Name;
             
-            // Record error metrics
+            // Record HTTP error metrics
             _workflowMetrics.RecordHttpRequest(method, endpoint, statusCode);
             _workflowMetrics.RecordHttpError(method, endpoint, errorType);
             _workflowMetrics.RecordHttpRequestDuration(method, endpoint, statusCode, stopwatch.Elapsed.TotalSeconds);
+            
+            // Record workflow error and exception metrics
+            _workflowMetrics.RecordWorkflowError("system", "high", "HttpMiddleware");
+            _workflowMetrics.RecordWorkflowException(errorType, "HttpMiddleware", $"{method} {endpoint}");
             
             _logger.LogWarning(ex, "HTTP request failed: {Method} {Endpoint} with {ErrorType} after {Duration}ms",
                 method, endpoint, errorType, stopwatch.ElapsedMilliseconds);

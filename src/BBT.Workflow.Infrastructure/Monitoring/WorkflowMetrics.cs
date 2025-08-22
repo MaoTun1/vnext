@@ -378,4 +378,295 @@ public static class WorkflowMetrics
             {
                 Buckets = new[] { 0.1, 1, 5, 10, 30, 60, 300, 600, 1800, 3600 }
             });
+
+    // External Service Integration Metrics
+
+    /// <summary>
+    /// External service call counter with service_name, operation, and status labels.
+    /// </summary>
+    public static readonly Counter ExternalServiceCalls = Metrics
+        .CreateCounter("external_service_calls_total",
+            "External API calls by service",
+            new[] { "service_name", "operation", "status" });
+
+    /// <summary>
+    /// External service failure counter with service_name, operation, and failure_type labels.
+    /// </summary>
+    public static readonly Counter ExternalServiceFailures = Metrics
+        .CreateCounter("external_service_failures_total", 
+            "Failed external calls",
+            new[] { "service_name", "operation", "failure_type" });
+
+    /// <summary>
+    /// External service timeout counter with service_name, operation, and timeout_threshold labels.
+    /// </summary>
+    public static readonly Counter ExternalServiceTimeouts = Metrics
+        .CreateCounter("external_service_timeouts_total",
+            "Timeout occurrences",
+            new[] { "service_name", "operation", "timeout_threshold" });
+
+    /// <summary>
+    /// External service call duration histogram with service_name, operation, and status labels.
+    /// Uses custom buckets optimized for external service call duration.
+    /// </summary>
+    public static readonly Histogram ExternalServiceDuration = Metrics
+        .CreateHistogram("external_service_duration_seconds",
+            "External call duration",
+            new[] { "service_name", "operation", "status" },
+            new HistogramConfiguration
+            {
+                Buckets = new[] { 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0 }
+            });
+
+    // DAPR Integration Metrics
+
+    /// <summary>
+    /// Dapr service invocation counter with service_name, method_name, and status labels.
+    /// </summary>
+    public static readonly Counter DaprServiceInvocations = Metrics
+        .CreateCounter("dapr_service_invocations_total",
+            "Dapr service invocations",
+            new[] { "service_name", "method_name", "status" });
+
+    /// <summary>
+    /// Dapr pub/sub messages published counter with pubsub_name, topic, and status labels.
+    /// </summary>
+    public static readonly Counter DaprPubsubMessagesPublished = Metrics
+        .CreateCounter("dapr_pubsub_messages_published_total",
+            "Published messages",
+            new[] { "pubsub_name", "topic", "status" });
+
+    /// <summary>
+    /// Dapr pub/sub messages received counter with pubsub_name, topic, and status labels.
+    /// </summary>
+    public static readonly Counter DaprPubsubMessagesReceived = Metrics
+        .CreateCounter("dapr_pubsub_messages_received_total",
+            "Received messages",
+            new[] { "pubsub_name", "topic", "status" });
+
+    /// <summary>
+    /// Dapr binding invocations counter with binding_name, operation, and status labels.
+    /// </summary>
+    public static readonly Counter DaprBindingInvocations = Metrics
+        .CreateCounter("dapr_binding_invocations_total",
+            "Binding invocations",
+            new[] { "binding_name", "operation", "status" });
+
+    // Background Jobs Metrics
+
+    /// <summary>
+    /// Background jobs scheduled counter with job_type and job_name labels.
+    /// </summary>
+    public static readonly Counter BackgroundJobsScheduled = Metrics
+        .CreateCounter("background_jobs_scheduled_total",
+            "Jobs scheduled",
+            new[] { "job_type", "job_name" });
+
+    /// <summary>
+    /// Background jobs executed counter with job_type, job_name, and status labels.
+    /// </summary>
+    public static readonly Counter BackgroundJobsExecuted = Metrics
+        .CreateCounter("background_jobs_executed_total",
+            "Jobs executed",
+            new[] { "job_type", "job_name", "status" });
+
+    /// <summary>
+    /// Background jobs failed counter with job_type, job_name, and failure_reason labels.
+    /// </summary>
+    public static readonly Counter BackgroundJobsFailed = Metrics
+        .CreateCounter("background_jobs_failed_total",
+            "Failed jobs",
+            new[] { "job_type", "job_name", "failure_reason" });
+
+    /// <summary>
+    /// Background jobs retried counter with job_type, job_name, and retry_count labels.
+    /// </summary>
+    public static readonly Counter BackgroundJobsRetried = Metrics
+        .CreateCounter("background_jobs_retried_total",
+            "Job retries",
+            new[] { "job_type", "job_name", "retry_count" });
+
+    /// <summary>
+    /// Background job execution duration histogram with job_type, job_name, and status labels.
+    /// Uses custom buckets optimized for background job execution timing.
+    /// </summary>
+    public static readonly Histogram BackgroundJobDuration = Metrics
+        .CreateHistogram("background_job_duration_seconds",
+            "Job execution duration",
+            new[] { "job_type", "job_name", "status" },
+            new HistogramConfiguration
+            {
+                Buckets = new[] { 0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1800.0, 3600.0 }
+            });
+
+    /// <summary>
+    /// Background job queue wait time histogram with job_type and job_name labels.
+    /// Uses custom buckets optimized for queue wait timing.
+    /// </summary>
+    public static readonly Histogram BackgroundJobQueueWait = Metrics
+        .CreateHistogram("background_job_queue_wait_seconds",
+            "Queue wait time",
+            new[] { "job_type", "job_name" },
+            new HistogramConfiguration
+            {
+                Buckets = new[] { 0.01, 0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0 }
+            });
+
+    /// <summary>
+    /// Background jobs pending gauge with job_type label.
+    /// </summary>
+    public static readonly Gauge BackgroundJobsPending = Metrics
+        .CreateGauge("background_jobs_pending",
+            "Pending jobs in queue",
+            new[] { "job_type" });
+
+    /// <summary>
+    /// Background jobs running gauge with job_type label.
+    /// </summary>
+    public static readonly Gauge BackgroundJobsRunning = Metrics
+        .CreateGauge("background_jobs_running",
+            "Currently running jobs",
+            new[] { "job_type" });
+
+    // Script Engine Metrics
+
+    /// <summary>
+    /// Script executions counter with script_type, language, and status labels.
+    /// </summary>
+    public static readonly Counter ScriptExecutions = Metrics
+        .CreateCounter("script_executions_total",
+            "Total script executions",
+            new[] { "script_type", "language", "status" });
+
+    /// <summary>
+    /// Script compilation errors counter with script_type, language, and error_type labels.
+    /// </summary>
+    public static readonly Counter ScriptCompilationErrors = Metrics
+        .CreateCounter("script_compilation_errors_total",
+            "Script compilation errors",
+            new[] { "script_type", "language", "error_type" });
+
+    /// <summary>
+    /// Script runtime errors counter with script_type, language, and error_type labels.
+    /// </summary>
+    public static readonly Counter ScriptRuntimeErrors = Metrics
+        .CreateCounter("script_runtime_errors_total",
+            "Script runtime errors",
+            new[] { "script_type", "language", "error_type" });
+
+    /// <summary>
+    /// Script compilation duration histogram with script_type, language, and status labels.
+    /// Uses custom buckets optimized for script compilation timing.
+    /// </summary>
+    public static readonly Histogram ScriptCompilationDuration = Metrics
+        .CreateHistogram("script_compilation_duration_seconds",
+            "Script compilation time",
+            new[] { "script_type", "language", "status" },
+            new HistogramConfiguration
+            {
+                Buckets = new[] { 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0 }
+            });
+
+    /// <summary>
+    /// Script execution duration histogram with script_type, language, and status labels.
+    /// Uses custom buckets optimized for script execution timing.
+    /// </summary>
+    public static readonly Histogram ScriptExecutionDuration = Metrics
+        .CreateHistogram("script_execution_duration_seconds",
+            "Script execution time",
+            new[] { "script_type", "language", "status" },
+            new HistogramConfiguration
+            {
+                Buckets = new[] { 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0 }
+            });
+
+    // Error Handling and System Health Metrics
+
+    /// <summary>
+    /// Total workflow errors counter with error_type, severity, and component labels.
+    /// </summary>
+    public static readonly Counter WorkflowErrors = Metrics
+        .CreateCounter("workflow_errors_total",
+            "Total errors by type and severity",
+            new[] { "error_type", "severity", "component" });
+
+    /// <summary>
+    /// Unhandled exceptions counter with exception_type, component, and operation labels.
+    /// </summary>
+    public static readonly Counter WorkflowExceptions = Metrics
+        .CreateCounter("workflow_exceptions_total",
+            "Unhandled exceptions",
+            new[] { "exception_type", "component", "operation" });
+
+    /// <summary>
+    /// Validation failures counter with validation_type, component, and field labels.
+    /// </summary>
+    public static readonly Counter ValidationFailures = Metrics
+        .CreateCounter("workflow_validation_failures_total",
+            "Validation failures",
+            new[] { "validation_type", "component", "field" });
+
+    /// <summary>
+    /// Current error rate gauge with component label.
+    /// Represents error rate as a percentage (0.0 to 100.0).
+    /// </summary>
+    public static readonly Gauge WorkflowErrorRate = Metrics
+        .CreateGauge("workflow_error_rate",
+            "Current error rate percentage",
+            new[] { "component" });
+
+    /// <summary>
+    /// Overall system health status gauge with component label.
+    /// 0 = unhealthy, 1 = healthy.
+    /// </summary>
+    public static readonly Gauge WorkflowHealthStatus = Metrics
+        .CreateGauge("workflow_health_status",
+            "Overall system health status",
+            new[] { "component" });
+
+    // Additional Dashboard Metrics
+
+    /// <summary>
+    /// Task executions counter with task_type and status labels.
+    /// </summary>
+    public static readonly Counter TaskExecutions = Metrics
+        .CreateCounter("workflow_tasks_executed_total",
+            "Total task executions",
+            new[] { "task_type", "status" });
+
+    /// <summary>
+    /// Task completions counter with task_type and status labels.
+    /// </summary>
+    public static readonly Counter TaskCompletions = Metrics
+        .CreateCounter("workflow_tasks_completed_total", 
+            "Total task completions",
+            new[] { "task_type", "status" });
+
+    /// <summary>
+    /// Workflow instance completions counter with workflow_type and status labels.
+    /// </summary>
+    public static readonly Counter WorkflowInstanceCompletions = Metrics
+        .CreateCounter("workflow_instances_completed_total",
+            "Total workflow instance completions",
+            new[] { "workflow_type", "status" });
+
+    /// <summary>
+    /// Workflow instance duration histogram with workflow_type and status labels.
+    /// </summary>
+    public static readonly Histogram WorkflowInstanceDuration = Metrics
+        .CreateHistogram("workflow_instance_duration_seconds",
+            "Workflow instance duration",
+            new[] { "workflow_type", "status" },
+            new HistogramConfiguration
+            {
+                Buckets = new[] { 1.0, 5.0, 10.0, 30.0, 60.0, 300.0, 600.0, 1800.0, 3600.0 }
+            });
+
+    /// <summary>
+    /// Active workflow instances gauge with workflow_type label.
+    /// </summary>
+    public static readonly Gauge ActiveWorkflowInstances = Metrics
+        .CreateGauge("workflow_instances_active",
+            "Active workflow instances",
+            new[] { "workflow_type" });
 }

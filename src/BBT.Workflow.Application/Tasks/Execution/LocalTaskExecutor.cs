@@ -71,9 +71,8 @@ public sealed class LocalTaskExecutor(
         var taskType = task.GetTaskType().ToString();
         var workflowKey = context.Workflow.Key;
         
-        // Record task execution start and update gauges
-        workflowMetrics.RecordTaskExecuted(taskType, workflowKey);
-        workflowMetrics.StartTaskExecution(taskType, workflowKey); // pending--, running++
+        // Record task execution start 
+        workflowMetrics.RecordTaskExecution(taskType, "started");
         
         var stopwatch = Stopwatch.StartNew();
         try
@@ -103,19 +102,17 @@ public sealed class LocalTaskExecutor(
             instanceTask.Completed(
                 new JsonData(JsonSerializer.Serialize(response, JsonSerializerConstants.JsonOptions)));
             
-            // Record successful task completion with duration
+            // Record successful task completion 
             stopwatch.Stop();
-            workflowMetrics.RecordTaskCompleted(taskType, workflowKey, stopwatch.Elapsed.TotalSeconds);
-            workflowMetrics.FinishTaskExecution(taskType, workflowKey); // running--
+            workflowMetrics.RecordTaskExecution(taskType, "success");
         }
         catch (Exception e)
         {
             stopwatch.Stop();
             instanceTask.Faulted(e.Message);
             
-            // Record task failure with duration
-            workflowMetrics.RecordTaskFailed(taskType, workflowKey, stopwatch.Elapsed.TotalSeconds);
-            workflowMetrics.FinishTaskExecution(taskType, workflowKey); // running--
+            // Record task failure
+            workflowMetrics.RecordTaskExecution(taskType, "failure");
         }
 
         // Handle task completion persistence

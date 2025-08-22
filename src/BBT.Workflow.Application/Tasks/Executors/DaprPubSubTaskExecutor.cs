@@ -1,5 +1,6 @@
 using System.Text.Json;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Monitoring;
 using BBT.Workflow.Scripting;
 using Dapr.Client;
 using Microsoft.Extensions.Logging;
@@ -12,10 +13,12 @@ namespace BBT.Workflow.Tasks;
 /// </summary>
 /// <param name="scriptEngine">The script engine used for compiling input/output mapping scripts.</param>
 /// <param name="daprClient">The DAPR client for publishing messages to pub/sub topics.</param>
+/// <param name="workflowMetrics">The workflow metrics service for recording DAPR metrics.</param>
 /// <param name="logger">The logger instance for logging DAPR pub/sub task execution details.</param>
 public sealed class DaprPubSubTaskExecutor(
     IScriptEngine scriptEngine,
     DaprClient daprClient,
+    IWorkflowMetrics workflowMetrics,
     ILogger<DaprPubSubTaskExecutor> logger) : TaskExecutor(scriptEngine, logger), ITaskExecutor
 {
     /// <summary>
@@ -77,6 +80,9 @@ public sealed class DaprPubSubTaskExecutor(
 
             stopwatch.Stop();
 
+            // Record successful DAPR pub/sub message published
+            workflowMetrics.RecordDaprPubsubMessagePublished(daprTask.PubSubName, daprTask.Topic, "success");
+
             Logger.LogInformation("DAPR pub/sub task {TaskKey} completed successfully in {Duration}ms", 
                 daprTask.Key, stopwatch.ElapsedMilliseconds);
 
@@ -93,6 +99,10 @@ public sealed class DaprPubSubTaskExecutor(
         catch (TaskCanceledException ex) when (ex.CancellationToken.IsCancellationRequested)
         {
             stopwatch.Stop();
+            
+            // Record cancelled DAPR pub/sub message publishing
+            workflowMetrics.RecordDaprPubsubMessagePublished(daprTask.PubSubName, daprTask.Topic, "cancelled");
+            
             Logger.LogWarning("DAPR pub/sub task {TaskKey} was cancelled after {Duration}ms", 
                 daprTask.Key, stopwatch.ElapsedMilliseconds);
                 
@@ -111,6 +121,10 @@ public sealed class DaprPubSubTaskExecutor(
         catch (Exception ex)
         {
             stopwatch.Stop();
+            
+            // Record failed DAPR pub/sub message publishing
+            workflowMetrics.RecordDaprPubsubMessagePublished(daprTask.PubSubName, daprTask.Topic, "failure");
+            
             Logger.LogError(ex, "Error occurred during DAPR pub/sub task {TaskKey} execution after {Duration}ms - PubSubName: {PubSubName}, Topic: {Topic}", 
                 daprTask.Key, stopwatch.ElapsedMilliseconds, daprTask.PubSubName, daprTask.Topic);
                 
