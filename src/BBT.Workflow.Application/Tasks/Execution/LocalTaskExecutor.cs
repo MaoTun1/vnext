@@ -1,11 +1,13 @@
 using System.Text;
 using System.Text.Json;
+using System.Diagnostics;
 using BBT.Aether.Guids;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks.Factory;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Tasks.Persistence;
+using BBT.Workflow.Monitoring;
 
 namespace BBT.Workflow.Tasks.Execution;
 
@@ -17,11 +19,13 @@ namespace BBT.Workflow.Tasks.Execution;
 /// <param name="guidGenerator">Generator for creating unique identifiers.</param>
 /// <param name="taskPersistenceStrategyFactory">Factory for task persistence strategies.</param>
 /// <param name="taskFactory">Factory for creating task instances.</param>
+/// <param name="workflowMetrics">Service for recording task execution metrics.</param>
 public sealed class LocalTaskExecutor(
     ITaskExecutorFactory taskExecutorFactory,
     IGuidGenerator guidGenerator,
     ITaskPersistenceStrategyFactory taskPersistenceStrategyFactory,
-    ITaskFactory taskFactory) : ITaskOrchestrator
+    ITaskFactory taskFactory,
+    IWorkflowMetrics workflowMetrics) : ITaskOrchestrator
 {
     /// <summary>
     /// Executes a task locally with comprehensive error handling and state management.
@@ -64,6 +68,12 @@ public sealed class LocalTaskExecutor(
         // Handle task creation persistence
         await persistenceStrategy.HandleCreationAsync(instanceTask, cancellationToken);
 
+        var taskType = task.GetTaskType().ToString();
+        
+        // Record task execution start 
+        workflowMetrics.RecordTaskExecution(taskType, "started");
+        
+        var stopwatch = Stopwatch.StartNew();
         try
         {
             var response = await taskExecutor.ExecuteAsync(
@@ -90,10 +100,18 @@ public sealed class LocalTaskExecutor(
 
             instanceTask.Completed(
                 new JsonData(JsonSerializer.Serialize(response, JsonSerializerConstants.JsonOptions)));
+            
+            // Record successful task completion 
+            stopwatch.Stop();
+            workflowMetrics.RecordTaskExecution(taskType, "success");
         }
         catch (Exception e)
         {
+            stopwatch.Stop();
             instanceTask.Faulted(e.Message);
+            
+            // Record task failure
+            workflowMetrics.RecordTaskExecution(taskType, "failure");
         }
 
         // Handle task completion persistence
@@ -121,7 +139,8 @@ public sealed class LocalTaskExecutor(
         // Capture initial state for comparison
         var initialBody = context.Body;
         var initialInstanceDataCount = context.Instance.DataList.Count;
-        // Execute the task
+        
+        // Execute the task (this already includes metrics recording)
         await ExecuteTaskAsync(onExecuteTask, instanceTransition, taskTrigger, context, cancellationToken);
 
         // Capture context changes

@@ -1,10 +1,12 @@
 using BBT.Aether.Domain.Services;
 using BBT.Aether.Threading;
 using BBT.Workflow.Data;
+using BBT.Workflow.Middlewares;
 using BBT.Workflow.Runtime;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Prometheus;
 
 namespace Microsoft.AspNetCore.Builder;
 
@@ -40,6 +42,9 @@ public static class WorkflowApiBaseApplicationBuilderExtensions
         app.UseStaticFiles();
         app.UseAetherApiVersioning();
         app.UseRouting();
+        app.UseWorkflowHttpMetrics(); // Track comprehensive HTTP metrics automatically
+        app.UseHttpMetrics(); // Track basic Prometheus HTTP metrics
+        app.MapMetrics(); // Expose /metrics endpoint for Prometheus scraping
         app.MapControllers();
         app.UseExceptionHandler();
 

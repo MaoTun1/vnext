@@ -136,6 +136,8 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     public void Fault()
     {
         Status = InstanceStatus.Faulted;
+        CompletedAt = DateTime.UtcNow;
+        Duration = CompletedAt - CreatedAt;
     }
 
     /// <summary>

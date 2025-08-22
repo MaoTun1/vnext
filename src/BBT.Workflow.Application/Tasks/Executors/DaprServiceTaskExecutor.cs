@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Monitoring;
 using BBT.Workflow.Scripting;
 using Dapr;
 using Dapr.Client;
@@ -14,10 +15,12 @@ namespace BBT.Workflow.Tasks;
 /// </summary>
 /// <param name="scriptEngine">The script engine used for compiling input/output mapping scripts.</param>
 /// <param name="daprClient">The DAPR client for making service invocation calls to remote applications.</param>
+/// <param name="workflowMetrics">The workflow metrics service for recording DAPR metrics.</param>
 /// <param name="logger">The logger instance for logging DAPR service task execution details.</param>
 public sealed class DaprServiceTaskExecutor(
     IScriptEngine scriptEngine,
     DaprClient daprClient,
+    IWorkflowMetrics workflowMetrics,
     ILogger<DaprServiceTaskExecutor> logger) : TaskExecutor(scriptEngine, logger), ITaskExecutor
 {
     /// <summary>
@@ -78,6 +81,9 @@ public sealed class DaprServiceTaskExecutor(
 
             stopwatch.Stop();
 
+            // Record successful DAPR service invocation
+            workflowMetrics.RecordDaprServiceInvocation(daprTask.AppId, daprTask.MethodName, "success");
+
             Logger.LogInformation("DAPR service task {TaskKey} completed successfully in {Duration}ms", 
                 daprTask.Key, stopwatch.ElapsedMilliseconds);
 
@@ -95,6 +101,10 @@ public sealed class DaprServiceTaskExecutor(
         catch (DaprException ex)
         {
             stopwatch.Stop();
+            
+            // Record failed DAPR service invocation
+            workflowMetrics.RecordDaprServiceInvocation(daprTask.AppId, daprTask.MethodName, "failure");
+            
             Logger.LogError(ex, "DAPR service invocation failed for task {TaskKey} - AppId: {AppId}, Method: {MethodName}, Duration: {Duration}ms", 
                 daprTask.Key, daprTask.AppId, daprTask.MethodName, stopwatch.ElapsedMilliseconds);
                 
@@ -113,6 +123,10 @@ public sealed class DaprServiceTaskExecutor(
         catch (TaskCanceledException ex) when (ex.CancellationToken.IsCancellationRequested)
         {
             stopwatch.Stop();
+            
+            // Record cancelled DAPR service invocation
+            workflowMetrics.RecordDaprServiceInvocation(daprTask.AppId, daprTask.MethodName, "cancelled");
+            
             Logger.LogWarning("DAPR service task {TaskKey} was cancelled after {Duration}ms", 
                 daprTask.Key, stopwatch.ElapsedMilliseconds);
                 
@@ -132,6 +146,10 @@ public sealed class DaprServiceTaskExecutor(
         catch (Exception ex)
         {
             stopwatch.Stop();
+            
+            // Record failed DAPR service invocation
+            workflowMetrics.RecordDaprServiceInvocation(daprTask.AppId, daprTask.MethodName, "failure");
+            
             Logger.LogError(ex, "Unexpected error occurred during DAPR service task {TaskKey} execution after {Duration}ms", 
                 daprTask.Key, stopwatch.ElapsedMilliseconds);
                 

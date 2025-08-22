@@ -2,6 +2,8 @@ using BBT.Aether.Domain.EntityFrameworkCore;
 using BBT.Aether.Domain.Services;
 using BBT.Workflow.Data;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Monitoring;
+using BBT.Workflow.Runtime;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -13,7 +15,9 @@ public sealed class EfCoreInstanceRepository(
     WorkflowDbContext dbContext,
     IServiceProvider serviceProvider,
     ITransactionService transactionService,
-    IConfiguration configuration)
+    IConfiguration configuration,
+    IWorkflowMetrics workflowMetrics,
+    IRuntimeInfoProvider runtimeInfoProvider)
     : EfCoreRepository<WorkflowDbContext, Instance, Guid>(dbContext, serviceProvider, transactionService),
         IInstanceRepository
 {
@@ -21,6 +25,75 @@ public sealed class EfCoreInstanceRepository(
     {
         return (await base.WithDetailsAsync())
             .Include(i => i.DataList);
+    }
+
+    /// <summary>
+    /// Inserts a new instance and automatically records metrics
+    /// </summary>
+    public override async Task<Instance> InsertAsync(Instance entity, bool autoSave = false, CancellationToken cancellationToken = default)
+    {
+        var result = await base.InsertAsync(entity, autoSave, cancellationToken);
+        
+        // Database metrics are automatically recorded by WorkflowDatabaseInterceptor
+        // Only record business-specific instance metrics here
+        workflowMetrics.RecordInstanceCreated(entity.Flow, runtimeInfoProvider.Domain);
+        
+        return result;
+    }
+
+    /// <summary>
+    /// Updates an instance and automatically records status change metrics
+    /// </summary>
+    public override async Task<Instance> UpdateAsync(Instance entity, bool autoSave = false, CancellationToken cancellationToken = default)
+    {
+        // Get the original entity to compare status changes
+        var originalEntity = await FindAsync(entity.Id, includeDetails: false, cancellationToken);
+        var originalStatus = originalEntity?.Status;
+        
+        var result = await base.UpdateAsync(entity, autoSave, cancellationToken);
+        
+        // Database metrics are automatically recorded by WorkflowDatabaseInterceptor
+        // Only handle business-specific status change metrics here
+        if (originalStatus != null && !originalStatus.Equals(entity.Status))
+        {
+            await HandleStatusChangeMetrics(entity, originalStatus, entity.Status);
+        }
+        
+        return result;
+    }
+
+    // Transaction metrics are now automatically handled by WorkflowDatabaseInterceptor
+    // No need for manual transaction tracking helpers
+
+    /// <summary>
+    /// Handles metrics recording for instance status changes
+    /// </summary>
+    private async Task HandleStatusChangeMetrics(Instance entity, InstanceStatus oldStatus, InstanceStatus newStatus)
+    {
+        // Update status transition metrics (handles all status gauge changes)
+        workflowMetrics.UpdateInstanceStatusMetrics(entity.Flow, oldStatus.Code, newStatus.Code);
+        
+        // Record specific completion events with duration
+        if (newStatus.Equals(InstanceStatus.Completed))
+        {
+            var durationSeconds = entity.Duration?.TotalSeconds;
+            workflowMetrics.RecordInstanceCompleted(entity.Flow, runtimeInfoProvider.Domain, durationSeconds);
+        }
+        
+        // Record specific error events with duration
+        if (newStatus.Equals(InstanceStatus.Faulted))
+        {
+            var durationSeconds = entity.Duration?.TotalSeconds;
+            workflowMetrics.RecordError("instance_faulted", "High", "Instance");
+            
+            // Record duration for faulted instances
+            if (durationSeconds.HasValue)
+            {
+                workflowMetrics.RecordInstanceDuration(entity.Flow, "Faulted", durationSeconds.Value);
+            }
+        }
+        
+        await Task.CompletedTask; // For potential future async operations
     }
 
     public async Task<Instance?> FindByKeyAsync(

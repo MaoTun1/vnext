@@ -1,4 +1,5 @@
 using System.Text.Json;
+using BBT.Workflow.Monitoring;
 using Dapr.Client;
 using Dapr.Jobs;
 using Dapr.Jobs.Models;
@@ -14,10 +15,12 @@ namespace BBT.Workflow.BackgroundJobs;
 /// <param name="logger">Logger instance for recording job scheduling activities and errors.</param>
 /// <param name="daprJobsClient">Dapr jobs client for interacting with the Dapr job scheduling service.</param>
 /// <param name="jobStore">Job store for persisting job information and state.</param>
+/// <param name="workflowMetrics">Service for recording background job metrics.</param>
 public sealed class DaprBackgroundJobService(
     ILogger<DaprBackgroundJobService> logger,
     DaprJobsClient daprJobsClient,
-    IJobStore jobStore
+    IJobStore jobStore,
+    IWorkflowMetrics workflowMetrics
 ) : IBackgroundJobService
 {
     /// <summary>
@@ -59,14 +62,27 @@ public sealed class DaprBackgroundJobService(
             Metadata = metadata
         };
 
-        await jobStore.SaveAsync(jobId, jobData, cancellationToken);
+        try
+        {
+            await jobStore.SaveAsync(jobId, jobData, cancellationToken);
 #pragma warning disable CS0618 // Type or member is obsolete
-        await daprJobsClient.ScheduleJobAsync(
-            jobName,
-            schedule,
-            JsonSerializer.SerializeToUtf8Bytes(jobData),
-            cancellationToken: cancellationToken
-        );
+            await daprJobsClient.ScheduleJobAsync(
+                jobName,
+                schedule,
+                JsonSerializer.SerializeToUtf8Bytes(jobData),
+                cancellationToken: cancellationToken
+            );
 #pragma warning restore CS0618 // Type or member is obsolete
+
+            // Record successful background job scheduling
+            workflowMetrics.RecordBackgroundJobScheduled(typeof(T).Name, jobName);
+            
+            logger.LogInformation("Successfully scheduled job {jobName} - {jobId}.", jobName, jobId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to schedule job {jobName} - {jobId}.", jobName, jobId);
+            throw;
+        }
     }
 }
