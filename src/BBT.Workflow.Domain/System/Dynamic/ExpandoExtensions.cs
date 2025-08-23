@@ -44,7 +44,7 @@ public static class ExpandoExtensions
     /// <param name="obj">The dynamic object</param>
     /// <param name="propertyName">The property name</param>
     /// <returns>The property value or null if not found</returns>
-    public static object GetPropertyValue(this object obj, string propertyName)
+    public static object? GetPropertyValue(this object obj, string propertyName)
     {
         if (obj == null) return null;
         

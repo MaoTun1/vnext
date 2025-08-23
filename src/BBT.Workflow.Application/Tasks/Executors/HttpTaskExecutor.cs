@@ -49,7 +49,7 @@ public sealed class HttpTaskExecutor(
         try
         {
             Logger.LogDebug("Preparing input for HTTP task {TaskKey}", httpTask.Key);
-            var inputResponse = await PrepareInputAsync(httpTask, scriptCode, context, cancellationToken);
+            await PrepareInputAsync(httpTask, scriptCode, context, cancellationToken);
             
             var httpClient = httpClientFactory.CreateClient();
             var request = new HttpRequestMessage(new HttpMethod(httpTask.Method), httpTask.Url);

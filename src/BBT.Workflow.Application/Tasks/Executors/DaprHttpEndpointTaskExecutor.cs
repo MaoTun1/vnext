@@ -45,7 +45,7 @@ public sealed class DaprHttpEndpointTaskExecutor(
         try
         {
             Logger.LogDebug("Preparing input for DAPR HTTP endpoint task {TaskKey}", daprTask.Key);
-            var inputResponse = await PrepareInputAsync(daprTask, scriptCode, context, cancellationToken);
+            await PrepareInputAsync(daprTask, scriptCode, context, cancellationToken);
 
             Logger.LogInformation("Invoking DAPR HTTP endpoint for task {TaskKey}: {EndpointName}{Path} via {Method}", 
                 daprTask.Key, daprTask.EndpointName, daprTask.Path, daprTask.Method);
@@ -55,7 +55,7 @@ public sealed class DaprHttpEndpointTaskExecutor(
                 new HttpMethod(daprTask.Method),
                 daprTask.EndpointName,
                 daprTask.Path,
-                inputResponse.Data,
+                daprTask.Body,
                 cancellationToken: cancellationToken
             );
 

@@ -51,7 +51,7 @@ public sealed class DaprServiceTaskExecutor(
         try
         {
             Logger.LogDebug("Preparing input for DAPR service task {TaskKey}", daprTask.Key);
-            var inputResponse = await PrepareInputAsync(daprTask, scriptCode, context, cancellationToken);
+            await PrepareInputAsync(daprTask, scriptCode, context, cancellationToken);
 
             Logger.LogDebug("Creating DAPR service invocation request for AppId: {AppId}, Method: {MethodName}", 
                 daprTask.AppId, daprTask.MethodName);

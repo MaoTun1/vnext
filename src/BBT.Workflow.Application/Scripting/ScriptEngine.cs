@@ -1,4 +1,3 @@
-using System.Dynamic;
 using BBT.Workflow.Scripting.Evaluators;
 using BBT.Workflow.Scripting.Functions;
 using Microsoft.CodeAnalysis;
@@ -36,8 +35,7 @@ public sealed class ScriptEngine(DaprClient daprClient) : IScriptEngine
         MetadataReference.CreateFromFile(typeof(Task).Assembly.Location),
         MetadataReference.CreateFromFile(typeof(Dictionary<,>).Assembly.Location),
         MetadataReference.CreateFromFile(typeof(Microsoft.CSharp.RuntimeBinder.CSharpArgumentInfo).Assembly.Location),
-        MetadataReference.CreateFromFile(typeof(ScriptHelper).Assembly.Location),
-        MetadataReference.CreateFromFile(typeof(ExpandoExtensions).Assembly.Location),
+        MetadataReference.CreateFromFile(typeof(ScriptHelper).Assembly.Location)
     });
 
     /// <summary>
