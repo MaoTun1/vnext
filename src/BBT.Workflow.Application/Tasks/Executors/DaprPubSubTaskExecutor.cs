@@ -51,7 +51,7 @@ public sealed class DaprPubSubTaskExecutor(
         try
         {
             Logger.LogDebug("Preparing input for DAPR pub/sub task {TaskKey}", daprTask.Key);
-            var inputResponse = await PrepareInputAsync(daprTask, scriptCode, context, cancellationToken);
+            await PrepareInputAsync(daprTask, scriptCode, context, cancellationToken);
 
             //Usage
             var metadata = daprTask.Metadata.ValueKind != JsonValueKind.Null && daprTask.Metadata.ValueKind != JsonValueKind.Undefined 
@@ -73,7 +73,7 @@ public sealed class DaprPubSubTaskExecutor(
             await daprClient.PublishEventAsync(
                 daprTask.PubSubName,
                 daprTask.Topic,
-                inputResponse.Data,
+                daprTask.Data,
                 metadata,
                 cancellationToken: cancellationToken
             );

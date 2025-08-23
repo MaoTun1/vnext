@@ -38,7 +38,7 @@ public sealed class DaprServiceTask : WorkflowTask
     /// <summary>
     /// Data
     /// </summary>
-    public JsonElement Data { get; private set; }
+    public JsonElement? Data { get; private set; }
 
     /// <summary>
     /// Query String
@@ -64,7 +64,7 @@ public sealed class DaprServiceTask : WorkflowTask
     internal void SetAppIdInternal(string appId) => AppId = appId;
     internal void SetMethodNameInternal(string methodName) => MethodName = methodName;
     internal void SetHttpVerbInternal(string httpVerb) => HttpVerb = httpVerb;
-    internal void SetDataInternal(JsonElement data) => Data = data;
+    internal void SetDataInternal(JsonElement? data) => Data = data;
     internal void SetQueryStringInternal(string? queryString) => QueryString = queryString;
     internal void SetTimeoutSecondsInternal(int timeoutSeconds) => TimeoutSeconds = timeoutSeconds;
 

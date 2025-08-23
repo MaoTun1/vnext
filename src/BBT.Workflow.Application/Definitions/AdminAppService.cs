@@ -151,12 +151,12 @@ public sealed class AdminAppService(
         var existingInstanceData = instance.FindData(input.Version);
         if (existingInstanceData != null)
         {
-            Logger.LogWarning("Instance {InstanceKey} already has data version {Version}", instance.Key, input.Version);
             if (input.Data?.Any() == true)
             {
+                Logger.LogWarning("Instance {InstanceKey} already has data version {Version}", instance.Key, input.Version);
                 await HandleAdditionalDataVersionsAsync(input, cancellationToken);
             }
-            return;
+            throw new ConflictException();
         }   
 
         var workflow = CreateAndValidateWorkflow(input);

@@ -49,7 +49,7 @@ public sealed class DaprBindingTaskExecutor(
         try
         {
             Logger.LogDebug("Preparing input for DAPR binding task {TaskKey}", daprTask.Key);
-            var inputResponse = await PrepareInputAsync(daprTask, scriptCode, context, cancellationToken);
+            await PrepareInputAsync(daprTask, scriptCode, context, cancellationToken);
 
             var metadata = daprTask.Metadata.ToDictionary();
             Logger.LogDebug("Prepared metadata for DAPR binding task {TaskKey}: {MetadataCount} entries", 
@@ -61,7 +61,7 @@ public sealed class DaprBindingTaskExecutor(
             await daprClient.InvokeBindingAsync(
                 daprTask.BindingName,
                 daprTask.Operation,
-                inputResponse.Data,
+                daprTask.Data,
                 metadata,
                 cancellationToken: cancellationToken
             );

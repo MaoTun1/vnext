@@ -49,7 +49,7 @@ public sealed class HttpTaskExecutor(
         try
         {
             Logger.LogDebug("Preparing input for HTTP task {TaskKey}", httpTask.Key);
-            var inputResponse = await PrepareInputAsync(httpTask, scriptCode, context, cancellationToken);
+            await PrepareInputAsync(httpTask, scriptCode, context, cancellationToken);
             
             var httpClient = httpClientFactory.CreateClient();
             var request = new HttpRequestMessage(new HttpMethod(httpTask.Method), httpTask.Url);
@@ -72,9 +72,9 @@ public sealed class HttpTaskExecutor(
                 }
             }
             
-            if (request.Method != HttpMethod.Get && inputResponse.Data != null)
+            if (request.Method != HttpMethod.Get && httpTask.Body.HasValue)
             {
-                var requestContent = JsonSerializer.Serialize(inputResponse.Data);
+                var requestContent = httpTask.Body.Value.GetRawText();
                 request.Content = new StringContent(
                     requestContent,
                     System.Text.Encoding.UTF8,

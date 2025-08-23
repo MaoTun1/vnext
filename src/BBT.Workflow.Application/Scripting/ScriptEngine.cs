@@ -53,6 +53,7 @@ public sealed class ScriptEngine(DaprClient daprClient, IWorkflowMetrics workflo
         "System.Collections.Generic",
         "System.Threading",
         "System.Threading.Tasks",
+        "System.Dynamic",
         "BBT.Workflow.Scripting",
         "BBT.Workflow.Definitions",
         "BBT.Workflow.Instances",

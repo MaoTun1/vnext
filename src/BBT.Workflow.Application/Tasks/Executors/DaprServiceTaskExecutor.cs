@@ -54,7 +54,7 @@ public sealed class DaprServiceTaskExecutor(
         try
         {
             Logger.LogDebug("Preparing input for DAPR service task {TaskKey}", daprTask.Key);
-            var inputResponse = await PrepareInputAsync(daprTask, scriptCode, context, cancellationToken);
+            await PrepareInputAsync(daprTask, scriptCode, context, cancellationToken);
 
             Logger.LogDebug("Creating DAPR service invocation request for AppId: {AppId}, Method: {MethodName}", 
                 daprTask.AppId, daprTask.MethodName);
@@ -64,9 +64,9 @@ public sealed class DaprServiceTaskExecutor(
                 daprTask.AppId,
                 daprTask.MethodName);
 
-            if (request.Method != HttpMethod.Get && inputResponse.Data != null)
+            if (request.Method != HttpMethod.Get && daprTask.Data.HasValue)
             {
-                var requestContent = JsonSerializer.Serialize(inputResponse.Data);
+                var requestContent = daprTask.Data.Value.GetRawText();
                 request.Content = new StringContent(requestContent, Encoding.UTF8, "application/json");
                 
                 Logger.LogDebug("Added request body to DAPR service call for task {TaskKey}", daprTask.Key);

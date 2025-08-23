@@ -37,7 +37,7 @@ public sealed class DaprBindingTask : WorkflowTask
     /// <summary>
     /// Data
     /// </summary>
-    public JsonElement Data { get; private set; }
+    public JsonElement? Data { get; private set; }
 
     /// <summary>
     /// Internal property setters for object pooling
@@ -45,7 +45,7 @@ public sealed class DaprBindingTask : WorkflowTask
     internal void SetBindingNameInternal(string bindingName) => BindingName = bindingName;
     internal void SetOperationInternal(string operation) => Operation = operation;
     internal void SetMetadataInternal(JsonElement metadata) => Metadata = metadata;
-    internal void SetDataInternal(JsonElement data) => Data = data;
+    internal void SetDataInternal(JsonElement? data) => Data = data;
 
     protected override void Configure(JsonElement config)
     {

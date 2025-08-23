@@ -1,5 +1,7 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Dynamic;
 using System.Linq;
 using System.Threading.Tasks;
 using Dapr.Client;
@@ -104,5 +106,73 @@ public static class ScriptHelper
         
         var secretsResponse = await _daprClient.GetSecretAsync(storeName, secretStore);
         return secretsResponse ?? new Dictionary<string, string>();
+    }
+
+    /// <summary>
+    /// Checks if a dynamic object has a specific property
+    /// </summary>
+    /// <param name="obj">The dynamic object to check</param>
+    /// <param name="propertyName">The property name to check for</param>
+    /// <returns>True if the property exists, false otherwise</returns>
+    public static bool HasProperty(object obj, string propertyName)
+    {
+        if (obj == null) return false;
+        
+        // Check if it's an ExpandoObject
+        if (obj is ExpandoObject expando)
+        {
+            return ((IDictionary<string, object>)expando).ContainsKey(propertyName);
+        }
+        
+        // Check if it's another IDictionary<string, object>
+        if (obj is IDictionary<string, object> dictionary)
+        {
+            return dictionary.ContainsKey(propertyName);
+        }
+        
+        // For other dynamic objects, try to access the property using reflection
+        var objType = obj.GetType();
+        return objType.GetProperty(propertyName) != null || 
+               objType.GetField(propertyName) != null;
+    }
+    
+    /// <summary>
+    /// Gets a property value from a dynamic object safely
+    /// </summary>
+    /// <param name="obj">The dynamic object</param>
+    /// <param name="propertyName">The property name</param>
+    /// <returns>The property value or null if not found</returns>
+    public static object? GetPropertyValue(object obj, string propertyName)
+    {
+        if (obj == null) return null;
+        
+        // Check if it's an ExpandoObject
+        if (obj is ExpandoObject expando)
+        {
+            IDictionary<string, object> dict = (IDictionary<string, object>)expando;
+            return dict.TryGetValue(propertyName, out var value) ? value : null;
+        }
+        
+        // Check if it's another IDictionary<string, object>
+        if (obj is IDictionary<string, object> dictionary)
+        {
+            return dictionary.TryGetValue(propertyName, out var value) ? value : null;
+        }
+        
+        // For other dynamic objects, try to access the property using reflection
+        var objType = obj.GetType();
+        var property = objType.GetProperty(propertyName);
+        if (property != null)
+        {
+            return property.GetValue(obj);
+        }
+        
+        var field = objType.GetField(propertyName);
+        if (field != null)
+        {
+            return field.GetValue(obj);
+        }
+        
+        return null;
     }
 }
