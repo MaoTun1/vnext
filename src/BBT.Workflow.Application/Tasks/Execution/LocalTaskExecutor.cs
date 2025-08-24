@@ -73,7 +73,6 @@ public sealed class LocalTaskExecutor(
         // Record task execution start 
         workflowMetrics.RecordTaskExecution(taskType, "started");
         
-        var stopwatch = Stopwatch.StartNew();
         try
         {
             var response = await taskExecutor.ExecuteAsync(
@@ -102,12 +101,10 @@ public sealed class LocalTaskExecutor(
                 new JsonData(JsonSerializer.Serialize(response, JsonSerializerConstants.JsonOptions)));
             
             // Record successful task completion 
-            stopwatch.Stop();
             workflowMetrics.RecordTaskExecution(taskType, "success");
         }
         catch (Exception e)
         {
-            stopwatch.Stop();
             instanceTask.Faulted(e.Message);
             
             // Record task failure

@@ -53,7 +53,7 @@ public static class ScriptHelper
 
         if (string.IsNullOrWhiteSpace(storeName))
             throw new ArgumentException("Dapr Store name cannot be null or empty", nameof(storeName));
-        
+
         if (string.IsNullOrWhiteSpace(secretStore))
             throw new ArgumentException("Store name cannot be null or empty", nameof(secretStore));
 
@@ -84,7 +84,7 @@ public static class ScriptHelper
     /// <returns>Dictionary of secret keys and values</returns>
     public static Dictionary<string, string> GetSecrets(string storeName, string secretStore)
     {
-        return GetSecretsAsync(storeName,  secretStore).GetAwaiter().GetResult();
+        return GetSecretsAsync(storeName, secretStore).GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -97,13 +97,13 @@ public static class ScriptHelper
     {
         if (_daprClient == null)
             throw new InvalidOperationException("Dapr client is not initialized. Call SetDaprClient first.");
-        
+
         if (string.IsNullOrWhiteSpace(storeName))
             throw new ArgumentException("Dapr Store name cannot be null or empty", nameof(storeName));
 
         if (string.IsNullOrWhiteSpace(secretStore))
             throw new ArgumentException("Store name cannot be null or empty", nameof(storeName));
-        
+
         var secretsResponse = await _daprClient.GetSecretAsync(storeName, secretStore);
         return secretsResponse ?? new Dictionary<string, string>();
     }
@@ -116,26 +116,30 @@ public static class ScriptHelper
     /// <returns>True if the property exists, false otherwise</returns>
     public static bool HasProperty(object obj, string propertyName)
     {
-        if (obj == null) return false;
-        
+        if (obj == null || string.IsNullOrWhiteSpace(propertyName)) return false;
+
         // Check if it's an ExpandoObject
-        if (obj is ExpandoObject expando)
+        if (obj is IDictionary<string, object> dict)
         {
-            return ((IDictionary<string, object>)expando).ContainsKey(propertyName);
+            return dict.ContainsKey(propertyName);
         }
-        
+
         // Check if it's another IDictionary<string, object>
         if (obj is IDictionary<string, object> dictionary)
         {
             return dictionary.ContainsKey(propertyName);
         }
-        
+
         // For other dynamic objects, try to access the property using reflection
         var objType = obj.GetType();
-        return objType.GetProperty(propertyName) != null || 
-               objType.GetField(propertyName) != null;
+        return objType.GetProperty(propertyName,
+                   System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance |
+                   System.Reflection.BindingFlags.IgnoreCase) != null ||
+               objType.GetField(propertyName,
+                   System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance |
+                   System.Reflection.BindingFlags.IgnoreCase) != null;
     }
-    
+
     /// <summary>
     /// Gets a property value from a dynamic object safely
     /// </summary>
@@ -144,35 +148,30 @@ public static class ScriptHelper
     /// <returns>The property value or null if not found</returns>
     public static object? GetPropertyValue(object obj, string propertyName)
     {
-        if (obj == null) return null;
-        
-        // Check if it's an ExpandoObject
-        if (obj is ExpandoObject expando)
+        if (obj == null || string.IsNullOrWhiteSpace(propertyName)) return null;
+
+        if (obj is IDictionary<string, object> dict)
         {
-            IDictionary<string, object> dict = (IDictionary<string, object>)expando;
             return dict.TryGetValue(propertyName, out var value) ? value : null;
         }
-        
-        // Check if it's another IDictionary<string, object>
-        if (obj is IDictionary<string, object> dictionary)
-        {
-            return dictionary.TryGetValue(propertyName, out var value) ? value : null;
-        }
-        
-        // For other dynamic objects, try to access the property using reflection
+
         var objType = obj.GetType();
-        var property = objType.GetProperty(propertyName);
+        var property = objType.GetProperty(propertyName,
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.IgnoreCase);
         if (property != null)
         {
             return property.GetValue(obj);
         }
         
-        var field = objType.GetField(propertyName);
+        var field = objType.GetField(propertyName,
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.IgnoreCase);
         if (field != null)
         {
             return field.GetValue(obj);
         }
-        
+
         return null;
     }
 }

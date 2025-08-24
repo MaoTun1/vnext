@@ -89,7 +89,7 @@ public sealed class FlowTimeoutJobHandler(
 
             jobInfo.IsTriggered = true;
             await jobStore.SaveAsync(jobInfo.JobId, jobInfo, cancellationToken);
-            
+
             var workflow =
                 await componentCacheStore.GetFlowAsync(jobInfo.Payload.Domain, jobInfo.Payload.FlowName,
                     jobInfo.Payload.Version, cancellationToken);
@@ -107,13 +107,20 @@ public sealed class FlowTimeoutJobHandler(
             {
                 // Record current status before timeout
                 var currentStatus = instance.Status.Code;
-                
+
+                if (workflow.Timeout is null)
+                {
+                    logger.LogWarning("FlowTimeoutJobHandler: Timeout configuration missing for {Flow}", instance.Flow);
+                    return;
+                }
+
                 instance.ChangeState(workflow.Timeout!);
                 instance.Complete(); // This calculates the Duration
-                
+
                 // Record timeout metrics with duration - this will also decrement the current status gauge
                 var durationSeconds = instance.Duration?.TotalSeconds;
-                workflowMetrics.RecordInstanceTimedOut(instance.Flow, runtimeInfoProvider.Domain, currentStatus, durationSeconds);
+                workflowMetrics.RecordInstanceTimedOut(instance.Flow, runtimeInfoProvider.Domain, currentStatus,
+                    durationSeconds);
                 await instanceRepository.UpdateAsync(instance, true, cancellationToken);
             }
         }
