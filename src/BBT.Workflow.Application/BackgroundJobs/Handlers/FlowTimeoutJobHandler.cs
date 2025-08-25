@@ -2,6 +2,8 @@ using System.Text.Json;
 using BBT.Workflow.BackgroundJobs;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Monitoring;
+using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
 using Microsoft.Extensions.Logging;
 
@@ -15,12 +17,16 @@ namespace BBT.Workflow.BackgroundJobs.Handlers;
 /// <param name="instanceRepository">Repository for accessing and updating workflow instances.</param>
 /// <param name="componentCacheStore">Cache store for retrieving workflow definitions and components.</param>
 /// <param name="currentSchema">Service for managing schema context during multi-tenant operations.</param>
+/// <param name="workflowMetrics">Service for recording workflow metrics including timeouts.</param>
+/// <param name="runtimeInfoProvider">Provider for accessing runtime information such as domain context.</param>
 /// <param name="logger">Logger instance for recording handler activities and errors.</param>
 public sealed class FlowTimeoutJobHandler(
     IJobStore jobStore,
     IInstanceRepository instanceRepository,
     IComponentCacheStore componentCacheStore,
     ICurrentSchema currentSchema,
+    IWorkflowMetrics workflowMetrics,
+    IRuntimeInfoProvider runtimeInfoProvider,
     ILogger<FlowTimeoutJobHandler> logger
 ) : IJobHandler
 {
@@ -83,7 +89,7 @@ public sealed class FlowTimeoutJobHandler(
 
             jobInfo.IsTriggered = true;
             await jobStore.SaveAsync(jobInfo.JobId, jobInfo, cancellationToken);
-            
+
             var workflow =
                 await componentCacheStore.GetFlowAsync(jobInfo.Payload.Domain, jobInfo.Payload.FlowName,
                     jobInfo.Payload.Version, cancellationToken);
@@ -99,8 +105,22 @@ public sealed class FlowTimeoutJobHandler(
 
             if (instance.Status.Equals(InstanceStatus.Active) || instance.Status.Equals(InstanceStatus.Busy))
             {
+                // Record current status before timeout
+                var currentStatus = instance.Status.Code;
+
+                if (workflow.Timeout is null)
+                {
+                    logger.LogWarning("FlowTimeoutJobHandler: Timeout configuration missing for {Flow}", instance.Flow);
+                    return;
+                }
+
                 instance.ChangeState(workflow.Timeout!);
-                instance.Complete();
+                instance.Complete(); // This calculates the Duration
+
+                // Record timeout metrics with duration - this will also decrement the current status gauge
+                var durationSeconds = instance.Duration?.TotalSeconds;
+                workflowMetrics.RecordInstanceTimedOut(instance.Flow, runtimeInfoProvider.Domain, currentStatus,
+                    durationSeconds);
                 await instanceRepository.UpdateAsync(instance, true, cancellationToken);
             }
         }

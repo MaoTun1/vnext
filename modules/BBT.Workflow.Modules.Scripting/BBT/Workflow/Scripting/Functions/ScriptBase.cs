@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Dynamic;
 
 namespace BBT.Workflow.Scripting.Functions;
 
@@ -53,5 +54,27 @@ public abstract class ScriptBase
         string secretStore)
     {
         return await ScriptHelper.GetSecretsAsync(storeName, secretStore);
+    }
+
+    /// <summary>
+    /// Checks if a dynamic object has a specific property
+    /// </summary>
+    /// <param name="obj">The dynamic object to check</param>
+    /// <param name="propertyName">The property name to check for</param>
+    /// <returns>True if the property exists, false otherwise</returns>
+    protected static bool HasProperty(object obj, string propertyName)
+    {
+        return ScriptHelper.HasProperty(obj, propertyName);
+    }
+
+    /// <summary>
+    /// Gets a property value from a dynamic object safely
+    /// </summary>
+    /// <param name="obj">The dynamic object</param>
+    /// <param name="propertyName">The property name</param>
+    /// <returns>The property value or null if not found</returns>
+    protected static object? GetPropertyValue(object obj, string propertyName)
+    {
+        return ScriptHelper.GetPropertyValue(obj, propertyName);
     }
 }

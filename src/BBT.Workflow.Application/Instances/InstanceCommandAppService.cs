@@ -54,6 +54,7 @@ public sealed class InstanceCommandAppService(
 
             if (instance.IsTransient)
             {
+                // Metrics are now automatically recorded by MetricsEnabledInstanceRepository decorator
                 await instanceRepository.InsertAsync(instance, true, cancellationToken);
             }
 

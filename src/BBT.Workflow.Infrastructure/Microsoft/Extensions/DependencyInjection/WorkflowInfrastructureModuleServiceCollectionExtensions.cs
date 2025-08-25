@@ -1,6 +1,8 @@
 using BBT.Workflow.BackgroundJobs;
 using BBT.Workflow.Data;
+using BBT.Workflow.Infrastructure.HostedServices;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Monitoring;
 using BBT.Workflow.Remote.Extensions;
 using BBT.Workflow.Schemas;
 using Microsoft.EntityFrameworkCore;
@@ -42,6 +44,15 @@ public static class WorkflowInfrastructureModuleServiceCollectionExtensions
         
         // Remote vnext api
         services.AddVNextApiServices();
+        
+        // Monitoring
+        services.AddSingleton<IWorkflowMetrics, PrometheusWorkflowMetrics>();
+        services.AddScoped<WorkflowDatabaseInterceptor>();
+        services.AddScoped<WorkflowTransactionInterceptor>();
+        
+        // Hosted Services
+        services.AddHostedService<BackgroundJobMetricsHostedService>();
+        services.AddHostedService<SystemHealthMonitoringHostedService>();
         
         return services;
     }

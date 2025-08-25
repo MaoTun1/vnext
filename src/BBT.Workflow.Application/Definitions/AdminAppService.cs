@@ -7,6 +7,7 @@ using BBT.Workflow.Definitions.CastHandlers;
 using BBT.Workflow.Definitions.Validators;
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,6 +29,7 @@ namespace BBT.Workflow.Definitions;
 /// <param name="workflowValidator">The workflow validator</param>
 /// <param name="domainCacheContext">The domain cache context</param>
 /// <param name="castProcessor">The workflow cast processor</param>
+/// <param name="workflowMetrics">The workflow metrics service for recording metrics</param>
 public sealed class AdminAppService(
     IServiceProvider serviceProvider,
     ISchemaManager schemaManager,
@@ -37,7 +39,8 @@ public sealed class AdminAppService(
     IInstanceRepository instanceRepository,
     WorkflowValidator workflowValidator,
     DomainCacheContext domainCacheContext,
-    WorkflowCastProcessor castProcessor)
+    WorkflowCastProcessor castProcessor,
+    IWorkflowMetrics workflowMetrics)
     : ApplicationService(serviceProvider), IAdminAppService
 {
     /// <inheritdoc />
@@ -95,7 +98,16 @@ public sealed class AdminAppService(
         var validationResult = workflowValidator.Validate(workflow);
 
         if (!validationResult.IsValid)
+        {
+            // Record validation failure metrics
+            foreach (var error in validationResult.ValidationErrors)
+            {
+                var memberName = error.MemberNames.FirstOrDefault() ?? "unknown";
+                workflowMetrics.RecordValidationFailure("workflow_definition", "AdminAppService", memberName);
+            }
+            
             throw new AetherValidationException(validationResult.ValidationErrors);
+        }
 
         return workflow;
     }
@@ -139,12 +151,12 @@ public sealed class AdminAppService(
         var existingInstanceData = instance.FindData(input.Version);
         if (existingInstanceData != null)
         {
-            Logger.LogWarning("Instance {InstanceKey} already has data version {Version}", instance.Key, input.Version);
             if (input.Data?.Any() == true)
             {
+                Logger.LogWarning("Instance {InstanceKey} already has data version {Version}", instance.Key, input.Version);
                 await HandleAdditionalDataVersionsAsync(input, cancellationToken);
             }
-            return;
+            throw new ConflictException();
         }   
 
         var workflow = CreateAndValidateWorkflow(input);

@@ -151,8 +151,8 @@ public sealed class HttpTask : WorkflowTask
         base.Reset();
         Url = string.Empty;
         Method = "GET";
-        Headers = default;
-        Body = default;
+        Headers = null;
+        Body = null;
         TimeoutSeconds = 30;
         ValidateSSL = true;
     }

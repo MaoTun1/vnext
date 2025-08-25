@@ -3,6 +3,7 @@ using BBT.Aether.Guids;
 using BBT.Workflow.BackgroundJobs;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Monitoring;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.States;
 using BBT.Workflow.SubFlow;
@@ -17,7 +18,8 @@ public sealed class StateMachineExecutor(
     IBackgroundJobService backgroundJobService,
     IGuidGenerator guidGenerator,
     IInstanceTransitionRepository instanceTransitionRepository,
-    ISubFlowService subFlowService) : IStateMachineExecutor
+    ISubFlowService subFlowService,
+    IWorkflowMetrics workflowMetrics) : IStateMachineExecutor
 {
     /// <inheritdoc />
     public async Task ExecuteTransitionAsync(
@@ -35,6 +37,13 @@ public sealed class StateMachineExecutor(
         );
 
         await instanceTransitionRepository.InsertAsync(instanceTransition, true, cancellationToken);
+
+        // Record state transition metric
+        workflowMetrics.RecordStateTransition(
+            context.Workflow.Key,
+            context.Instance.CurrentState!,
+            context.Transition.Target
+        );
 
         //1. Transition OnExecutions
         await taskExecutionService.ExecuteAsync(
@@ -59,6 +68,12 @@ public sealed class StateMachineExecutor(
 
         //3. Change state
         context.Instance.ChangeState(context.Transition);
+
+        // Record state entry metric
+        workflowMetrics.RecordStateEntry(
+            context.Workflow.Key,
+            context.Instance.CurrentState!
+        );
 
         //4. Target State OnEntries
         if (context.Workflow.GetState(context.Instance.CurrentState!).OnEntries.Any())
@@ -98,6 +113,17 @@ public sealed class StateMachineExecutor(
         await InstanceStatusHandleAsync(context.Instance, targetState, cancellationToken);
 
         instanceTransition.Completed(context.Instance.CurrentState!);
+        
+        // Record state duration metric if duration is available
+        if (instanceTransition.Duration.HasValue)
+        {
+            workflowMetrics.RecordStateDuration(
+                context.Workflow.Key,
+                instanceTransition.FromState,
+                instanceTransition.Duration.Value.TotalSeconds
+            );
+        }
+        
         await instanceTransitionRepository.UpdateAsync(instanceTransition, true, cancellationToken);
     }
 

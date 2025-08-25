@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Prometheus;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -16,7 +17,7 @@ public static class HealthChecksServiceCollectionExtensions
     public static IServiceCollection AddAppHealthChecks(this IServiceCollection services)
     {
         var configuration = services.GetConfiguration();
-        var healthChecksBuilder = services.AddHealthChecks();
+        var healthChecksBuilder = services.AddHealthChecks().ForwardToPrometheus();
 
         var endpoint = configuration["Redis:Standalone:EndPoints:0"];
         var password = configuration["Redis:Password"];

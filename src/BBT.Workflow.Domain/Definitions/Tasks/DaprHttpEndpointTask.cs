@@ -41,12 +41,18 @@ public sealed class DaprHttpEndpointTask : WorkflowTask
     public JsonElement Headers { get; private set; }
     
     /// <summary>
+    /// Body
+    /// </summary>
+    public JsonElement? Body { get; private set; }
+    
+    /// <summary>
     /// Internal property setters for object pooling
     /// </summary>
     internal void SetEndpointNameInternal(string endpointName) => EndpointName = endpointName;
     internal void SetPathInternal(string path) => Path = path;
     internal void SetMethodInternal(string method) => Method = method;
     internal void SetHeadersInternal(JsonElement headers) => Headers = headers;
+    internal void SetBodyInternal(JsonElement? body) => Body = body;
 
     protected override void Configure(JsonElement config)
     {
@@ -63,6 +69,12 @@ public sealed class DaprHttpEndpointTask : WorkflowTask
 
         if (config.TryGetProperty("headers", out var headers))
             Headers = headers;
+
+        if (config.TryGetProperty("body", out var bodyElement))
+        {
+            var body = bodyElement.GetRawText();
+            Body = string.IsNullOrWhiteSpace(body) ? null : bodyElement;
+        }
     }
 
     public override WorkflowTask Clone()
@@ -82,6 +94,7 @@ public sealed class DaprHttpEndpointTask : WorkflowTask
         cloned.Path = Path;
         cloned.Method = Method;
         cloned.Headers = Headers;
+        cloned.Body = Body;
         
         return cloned;
     }
@@ -97,6 +110,7 @@ public sealed class DaprHttpEndpointTask : WorkflowTask
         SetPathInternal(source.Path);
         SetMethodInternal(source.Method);
         SetHeadersInternal(source.Headers);
+        SetBodyInternal(source.Body);
     }
 
     /// <summary>
@@ -109,6 +123,7 @@ public sealed class DaprHttpEndpointTask : WorkflowTask
         Path = string.Empty;
         Method = string.Empty;
         Headers = default;
+        Body = null;
     }
 
     /// <summary>

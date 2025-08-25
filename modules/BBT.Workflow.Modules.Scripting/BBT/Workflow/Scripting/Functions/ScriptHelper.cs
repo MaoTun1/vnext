@@ -1,5 +1,7 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Dynamic;
 using System.Linq;
 using System.Threading.Tasks;
 using Dapr.Client;
@@ -51,7 +53,7 @@ public static class ScriptHelper
 
         if (string.IsNullOrWhiteSpace(storeName))
             throw new ArgumentException("Dapr Store name cannot be null or empty", nameof(storeName));
-        
+
         if (string.IsNullOrWhiteSpace(secretStore))
             throw new ArgumentException("Store name cannot be null or empty", nameof(secretStore));
 
@@ -82,7 +84,7 @@ public static class ScriptHelper
     /// <returns>Dictionary of secret keys and values</returns>
     public static Dictionary<string, string> GetSecrets(string storeName, string secretStore)
     {
-        return GetSecretsAsync(storeName,  secretStore).GetAwaiter().GetResult();
+        return GetSecretsAsync(storeName, secretStore).GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -95,14 +97,81 @@ public static class ScriptHelper
     {
         if (_daprClient == null)
             throw new InvalidOperationException("Dapr client is not initialized. Call SetDaprClient first.");
-        
+
         if (string.IsNullOrWhiteSpace(storeName))
             throw new ArgumentException("Dapr Store name cannot be null or empty", nameof(storeName));
 
         if (string.IsNullOrWhiteSpace(secretStore))
             throw new ArgumentException("Store name cannot be null or empty", nameof(storeName));
-        
+
         var secretsResponse = await _daprClient.GetSecretAsync(storeName, secretStore);
         return secretsResponse ?? new Dictionary<string, string>();
+    }
+
+    /// <summary>
+    /// Checks if a dynamic object has a specific property
+    /// </summary>
+    /// <param name="obj">The dynamic object to check</param>
+    /// <param name="propertyName">The property name to check for</param>
+    /// <returns>True if the property exists, false otherwise</returns>
+    public static bool HasProperty(object obj, string propertyName)
+    {
+        if (obj == null || string.IsNullOrWhiteSpace(propertyName)) return false;
+
+        // Check if it's an ExpandoObject
+        if (obj is IDictionary<string, object> dict)
+        {
+            return dict.ContainsKey(propertyName);
+        }
+
+        // Check if it's another IDictionary<string, object>
+        if (obj is IDictionary<string, object> dictionary)
+        {
+            return dictionary.ContainsKey(propertyName);
+        }
+
+        // For other dynamic objects, try to access the property using reflection
+        var objType = obj.GetType();
+        return objType.GetProperty(propertyName,
+                   System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance |
+                   System.Reflection.BindingFlags.IgnoreCase) != null ||
+               objType.GetField(propertyName,
+                   System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance |
+                   System.Reflection.BindingFlags.IgnoreCase) != null;
+    }
+
+    /// <summary>
+    /// Gets a property value from a dynamic object safely
+    /// </summary>
+    /// <param name="obj">The dynamic object</param>
+    /// <param name="propertyName">The property name</param>
+    /// <returns>The property value or null if not found</returns>
+    public static object? GetPropertyValue(object obj, string propertyName)
+    {
+        if (obj == null || string.IsNullOrWhiteSpace(propertyName)) return null;
+
+        if (obj is IDictionary<string, object> dict)
+        {
+            return dict.TryGetValue(propertyName, out var value) ? value : null;
+        }
+
+        var objType = obj.GetType();
+        var property = objType.GetProperty(propertyName,
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.IgnoreCase);
+        if (property != null)
+        {
+            return property.GetValue(obj);
+        }
+        
+        var field = objType.GetField(propertyName,
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.IgnoreCase);
+        if (field != null)
+        {
+            return field.GetValue(obj);
+        }
+
+        return null;
     }
 }
