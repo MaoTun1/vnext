@@ -31,10 +31,19 @@ jobs:
       orchestrator_image: ${{ steps.meta-orchestrator.outputs.tags }}
     
     steps:
+    # Option 1: GitHub App Token (Recommended)
+    - name: Generate GitHub App Token
+      id: generate_token
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ secrets.APP_ID }}
+        private-key: ${{ secrets.APP_PRIVATE_KEY }}
+    
     - name: Checkout code
       uses: actions/checkout@v4
       with:
         fetch-depth: 0  # Fetch all history for version calculation
+        token: ${{ steps.generate_token.outputs.token }}
     
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
@@ -350,7 +359,7 @@ jobs:
       run: |
         VERSION="${{ steps.version.outputs.version }}"
         
-        # Configure git
+        # Configure git with bot credentials
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         
@@ -359,6 +368,8 @@ jobs:
           git add common.props
           git add etc/docker/docker-compose*.yml || true
           git commit -m "chore: bump version to $VERSION [skip ci]"
+          
+          # Push with the token that has bypass permissions
           git push origin ${{ github.ref_name }}
           echo "Committed and pushed version updates"
         else
