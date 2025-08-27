@@ -18,6 +18,7 @@ The BBT Workflow Engine is a comprehensive, domain-driven workflow management sy
 - [Caching Strategy](./caching-strategy.md) - Caching implementation and patterns
 - [Background Jobs](./background-jobs.md) - Asynchronous job processing
 - [Multi-Schema Support](./multi-schema-support.md) - Multi-tenant schema management
+- [Instance Filtering](./instance-filtering.md) - Advanced filtering capabilities for workflow instances
 - [Examples](./examples/) - Code examples and usage patterns
 
 ## Key Features
