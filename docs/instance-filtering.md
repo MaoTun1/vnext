@@ -136,52 +136,52 @@ Consider these workflow instances with the following `InstanceData.Data`:
 ### Basic Filtering Examples
 
 #### Find specific client
-```
-GET /api/v1.0/workflows/my-workflow/instances?filter=attributes=clientId=eq:122
+```bash
+curl -X GET "http://localhost:4201/api/v1.0/{domain}/workflows/my-workflow/instances?filter=attributes=clientId=eq:122"
 ```
 **Result:** Returns instance with clientId "122"
 
 #### Find all except specific client
-```
-GET /api/v1.0/workflows/my-workflow/instances?filter=attributes=clientId=ne:122
+```bash
+curl -X GET "http://localhost:4201/api/v1.0/{domain}/workflows/my-workflow/instances?filter=attributes=clientId=ne:122"
 ```
 **Result:** Returns all instances except clientId "122"
 
 #### Find instances with high test values
-```
-GET /api/v1.0/workflows/my-workflow/instances?filter=attributes=testValue=gt:2
+```bash
+curl -X GET "http://localhost:4201/api/v1.0/{domain}/workflows/my-workflow/instances?filter=attributes=testValue=gt:2"
 ```
 **Result:** Returns instances with testValue 3 and 4
 
 ### Advanced Filtering Examples
 
 #### Multiple conditions (AND logic)
-```
-GET /api/v1.0/workflows/my-workflow/instances?filter=attributes=status=eq:active&filter=attributes=testValue=ge:2
+```bash
+curl -X GET "http://localhost:4201/api/v1.0/{domain}/workflows/my-workflow/instances?filter=attributes=status=eq:active&filter=attributes=testValue=ge:2"
 ```
 **Result:** Returns active instances with testValue >= 2
 
 #### Range filtering
-```
-GET /api/v1.0/workflows/my-workflow/instances?filter=attributes=amount=between:100.00,200.00
+```bash
+curl -X GET "http://localhost:4201/api/v1.0/{domain}/workflows/my-workflow/instances?filter=attributes=amount=between:100.00,200.00"
 ```
 **Result:** Returns instances with amount between 100.00 and 200.00
 
 #### List filtering
-```
-GET /api/v1.0/workflows/my-workflow/instances?filter=attributes=clientId=in:110,122,83
+```bash
+curl -X GET "http://localhost:4201/api/v1.0/{domain}/workflows/my-workflow/instances?filter=attributes=clientId=in:110,122,83"
 ```
 **Result:** Returns instances for clients 110, 122, and 83
 
 #### Text search
-```
-GET /api/v1.0/workflows/my-workflow/instances?filter=attributes=status=startswith:act
+```bash
+curl -X GET "http://localhost:4201/api/v1.0/{domain}/workflows/my-workflow/instances?filter=attributes=status=startswith:act"
 ```
 **Result:** Returns instances with status starting with "act" (e.g., "active")
 
 #### Exclusion filtering
-```
-GET /api/v1.0/workflows/my-workflow/instances?filter=attributes=status=nin:completed,cancelled
+```bash
+curl -X GET "http://localhost:4201/api/v1.0/{domain}/workflows/my-workflow/instances?filter=attributes=status=nin:completed,cancelled"
 ```
 **Result:** Returns instances that are NOT completed or cancelled
 
