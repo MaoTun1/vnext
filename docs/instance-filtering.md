@@ -13,7 +13,7 @@ The filtering system is built on three main components:
 │   API Controller    │    │  Application Layer   │    │ PostgreSQL Native   │
 │                     │    │                      │    │                     │
 │ Query Parameters    │───▶│  Filter Processing   │───▶│   JSONB Operators   │
-│ ?filter=field=op:val│    │                      │    │                     │
+│ ?filter=attributes=field=op:val│    │                      │    │                     │
 └─────────────────────┘    └──────────────────────┘    └─────────────────────┘
 ```
 
@@ -28,13 +28,13 @@ The filtering system is built on three main components:
 ### Basic Format
 
 ```
-attributes={field}={operator}:{value}
+filter=attributes={field}={operator}:{value}
 ```
 
 ### Multiple Filters
 
 ```
-?filter=clientId=eq:122&filter=testValue=gt:2
+?filter=attributes=clientId=eq:122&filter=attributes=testValue=gt:2
 ```
 
 ### URL Encoding
@@ -42,8 +42,8 @@ attributes={field}={operator}:{value}
 When using special characters, ensure proper URL encoding:
 
 ```
-?filter=name=like:John%20Doe    # John Doe
-?filter=email=startswith:test%40 # test@
+?filter=attributes%3Dname%3Dlike%3AJohn%20Doe    # John Doe
+?filter=attributes%3Demail%3Dstartswith%3Atest%40 # test@
 ```
 
 ## Supported Operators
@@ -52,33 +52,33 @@ When using special characters, ensure proper URL encoding:
 
 | Operator | Description | Example | SQL Equivalent |
 |----------|-------------|---------|----------------|
-| `eq` | Equal to | `clientId=eq:122` | `Data @> '{"clientId":"122"}'` |
-| `ne` | Not equal to | `clientId=ne:122` | `NOT (Data @> '{"clientId":"122"}')` |
+| `eq` | Equal to | `filter=attributes=clientId=eq:122` | `Data @> '{"clientId":"122"}'` |
+| `ne` | Not equal to | `filter=attributes=clientId=ne:122` | `NOT (Data @> '{"clientId":"122"}')` |
 
 ### Comparison Operators
 
 | Operator | Description | Example | SQL Equivalent |
 |----------|-------------|---------|----------------|
-| `gt` | Greater than | `testValue=gt:2` | `(Data ->> 'testValue')::numeric > 2` |
-| `ge` | Greater than or equal | `testValue=ge:3` | `(Data ->> 'testValue')::numeric >= 3` |
-| `lt` | Less than | `testValue=lt:4` | `(Data ->> 'testValue')::numeric < 4` |
-| `le` | Less than or equal | `testValue=le:3` | `(Data ->> 'testValue')::numeric <= 3` |
-| `between` | Between two values | `testValue=between:2,4` | `(Data ->> 'testValue')::numeric BETWEEN 2 AND 4` |
+| `gt` | Greater than | `filter=attributes=testValue=gt:2` | `(Data ->> 'testValue')::numeric > 2` |
+| `ge` | Greater than or equal | `filter=attributes=testValue=ge:3` | `(Data ->> 'testValue')::numeric >= 3` |
+| `lt` | Less than | `filter=attributes=testValue=lt:4` | `(Data ->> 'testValue')::numeric < 4` |
+| `le` | Less than or equal | `filter=attributes=testValue=le:3` | `(Data ->> 'testValue')::numeric <= 3` |
+| `between` | Between two values | `filter=attributes=testValue=between:2,4` | `(Data ->> 'testValue')::numeric BETWEEN 2 AND 4` |
 
 ### String Operators
 
 | Operator | Description | Example | SQL Equivalent |
 |----------|-------------|---------|----------------|
-| `like`/`match` | Contains substring | `name=like:John` | `(Data ->> 'name') ILIKE '%John%'` |
-| `startswith` | Starts with | `email=startswith:test` | `(Data ->> 'email') ILIKE 'test%'` |
-| `endswith` | Ends with | `email=endswith:.com` | `(Data ->> 'email') ILIKE '%.com'` |
+| `like`/`match` | Contains substring | `filter=attributes=name=like:John` | `(Data ->> 'name') ILIKE '%John%'` |
+| `startswith` | Starts with | `filter=attributes=email=startswith:test` | `(Data ->> 'email') ILIKE 'test%'` |
+| `endswith` | Ends with | `filter=attributes=email=endswith:.com` | `(Data ->> 'email') ILIKE '%.com'` |
 
 ### Collection Operators
 
 | Operator | Description | Example | SQL Equivalent |
 |----------|-------------|---------|----------------|
-| `in` | Value in list | `clientId=in:122,177,83` | `(Data ->> 'clientId') IN ('122','177','83')` |
-| `nin` | Value not in list | `clientId=nin:122,177` | `(Data ->> 'clientId') NOT IN ('122','177')` |
+| `in` | Value in list | `filter=attributes=clientId=in:122,177,83` | `(Data ->> 'clientId') IN ('122','177','83')` |
+| `nin` | Value not in list | `filter=attributes=clientId=nin:122,177` | `(Data ->> 'clientId') NOT IN ('122','177')` |
 
 ## Data Type Support
 
@@ -91,9 +91,9 @@ The filtering system automatically handles different data types:
 
 **Examples:**
 ```
-attributes=clientId=eq:177
-attributes=status=ne:inactive
-attributes=email=endswith:@example.com
+filter=attributes=clientId=eq:177
+filter=attributes=status=ne:inactive
+filter=attributes=email=endswith:@example.com
 ```
 
 ### Numeric Values
@@ -103,9 +103,9 @@ attributes=email=endswith:@example.com
 
 **Examples:**
 ```
-attributes=testValue=gt:2
-attributes=amount=between:50.00,150.00
-attributes=count=le:100
+filter=attributes=testValue=gt:2
+filter=attributes=amount=between:50.00,150.00
+filter=attributes=count=le:100
 ```
 
 ### Boolean Values
@@ -115,8 +115,8 @@ attributes=count=le:100
 
 **Examples:**
 ```
-attributes=isActive=eq:true
-attributes=isVerified=ne:false
+filter=attributes=isActive=eq:true
+filter=attributes=isVerified=ne:false
 ```
 
 ## Practical Examples
@@ -136,52 +136,52 @@ Consider these workflow instances with the following `InstanceData.Data`:
 ### Basic Filtering Examples
 
 #### Find specific client
-```
-GET /api/v1.0/workflows/my-workflow/instances?filter=clientId=eq:122
+```bash
+curl -X GET "http://localhost:4201/api/v1.0/{domain}/workflows/my-workflow/instances?filter=attributes=clientId=eq:122"
 ```
 **Result:** Returns instance with clientId "122"
 
 #### Find all except specific client
-```
-GET /api/v1.0/workflows/my-workflow/instances?filter=clientId=ne:122
+```bash
+curl -X GET "http://localhost:4201/api/v1.0/{domain}/workflows/my-workflow/instances?filter=attributes=clientId=ne:122"
 ```
 **Result:** Returns all instances except clientId "122"
 
 #### Find instances with high test values
-```
-GET /api/v1.0/workflows/my-workflow/instances?filter=testValue=gt:2
+```bash
+curl -X GET "http://localhost:4201/api/v1.0/{domain}/workflows/my-workflow/instances?filter=attributes=testValue=gt:2"
 ```
 **Result:** Returns instances with testValue 3 and 4
 
 ### Advanced Filtering Examples
 
 #### Multiple conditions (AND logic)
-```
-GET /api/v1.0/workflows/my-workflow/instances?filter=status=eq:active&filter=testValue=ge:2
+```bash
+curl -X GET "http://localhost:4201/api/v1.0/{domain}/workflows/my-workflow/instances?filter=attributes=status=eq:active&filter=attributes=testValue=ge:2"
 ```
 **Result:** Returns active instances with testValue >= 2
 
 #### Range filtering
-```
-GET /api/v1.0/workflows/my-workflow/instances?filter=amount=between:100.00,200.00
+```bash
+curl -X GET "http://localhost:4201/api/v1.0/{domain}/workflows/my-workflow/instances?filter=attributes=amount=between:100.00,200.00"
 ```
 **Result:** Returns instances with amount between 100.00 and 200.00
 
 #### List filtering
-```
-GET /api/v1.0/workflows/my-workflow/instances?filter=clientId=in:110,122,83
+```bash
+curl -X GET "http://localhost:4201/api/v1.0/{domain}/workflows/my-workflow/instances?filter=attributes=clientId=in:110,122,83"
 ```
 **Result:** Returns instances for clients 110, 122, and 83
 
 #### Text search
-```
-GET /api/v1.0/workflows/my-workflow/instances?filter=status=startswith:act
+```bash
+curl -X GET "http://localhost:4201/api/v1.0/{domain}/workflows/my-workflow/instances?filter=attributes=status=startswith:act"
 ```
 **Result:** Returns instances with status starting with "act" (e.g., "active")
 
 #### Exclusion filtering
-```
-GET /api/v1.0/workflows/my-workflow/instances?filter=status=nin:completed,cancelled
+```bash
+curl -X GET "http://localhost:4201/api/v1.0/{domain}/workflows/my-workflow/instances?filter=attributes=status=nin:completed,cancelled"
 ```
 **Result:** Returns instances that are NOT completed or cancelled
 
