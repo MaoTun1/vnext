@@ -80,25 +80,31 @@ public sealed class LocalTaskExecutor(
                 onExecuteTask.Mapping.DecodedCode,
                 context,
                 cancellationToken);
-
+            
             if (response != null)
             {
                 var variableKey = task.Key.ToVariableName();
                 context.TaskResponse[variableKey] = response;
-
                 if (taskTrigger != TaskTrigger.Extension)
                 {
-                    // NoTracking Instance
-                    context.Instance.AddData(
-                        guidGenerator.Create(),
-                        new JsonData(JsonSerializer.Serialize(response, JsonSerializerConstants.JsonOptions)),
-                        VersionStrategy.IncreasePatch
-                    );
+                    if (response is ScriptResponse scriptResponse)
+                    {
+                        if (scriptResponse.Data != null)
+                        {
+                            // NoTracking Instance
+                            context.Instance.AddData(
+                                guidGenerator.Create(),
+                                new JsonData(JsonSerializer.Serialize(
+                                    scriptResponse.Data, JsonSerializerConstants.JsonOptions)),
+                                VersionStrategy.IncreasePatch
+                            );
+                        }
+                    }
                 }
             }
 
             instanceTask.Completed(
-                new JsonData(JsonSerializer.Serialize(response, JsonSerializerConstants.JsonOptions)));
+                new JsonData(JsonSerializer.Serialize(response ?? new {}, JsonSerializerConstants.JsonOptions)));
             
             // Record successful task completion 
             workflowMetrics.RecordTaskExecution(taskType, "success");

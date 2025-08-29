@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using BBT.Aether;
 using BBT.Aether.Auditing;
 using BBT.Aether.Domain.Entities;
@@ -263,11 +264,11 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
                 return exactMatch;
 
             // Partial versiyon: 1.0 → tüm 1.0.x versiyonları içinde en büyük olanı bul
-            var partial = version.Split('.');
-            if (partial.Length == 2)
+            var match = Regex.Match(version, @"^(\d+)\.(\d+)$");
+            if (match.Success)
             {
-                var prefix = $"{partial[0]}.{partial[1]}.";
-
+                var prefix = $"{match.Groups[1].Value}.{match.Groups[2].Value}.";
+                
                 var matched = _dataList
                     .Where(d => d.Version.StartsWith(prefix))
                     .OrderByDescending(d => d, InstanceDataVersionComparer.Instance)

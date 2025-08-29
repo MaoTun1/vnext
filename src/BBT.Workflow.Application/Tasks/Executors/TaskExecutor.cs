@@ -112,6 +112,7 @@ public abstract class TaskExecutor(
     protected virtual StandardTaskResponse CreateErrorResponse(
         string errorMessage, 
         string taskType,
+        object? data = null,
         long? executionDurationMs = null,
         int? statusCode = null,
         Exception? exception = null,
@@ -122,7 +123,7 @@ public abstract class TaskExecutor(
         
         var response = new StandardTaskResponse
         {
-            Data = null,
+            Data = data,
             IsSuccess = false,
             ErrorMessage = errorMessage,
             StatusCode = statusCode,

@@ -35,7 +35,7 @@ public sealed class StateMachineExecutor(
             new JsonData(JsonSerializer.Serialize(context.Headers ?? new Dictionary<string, string>())
             )
         );
-
+ 
         await instanceTransitionRepository.InsertAsync(instanceTransition, true, cancellationToken);
 
         // Record state transition metric

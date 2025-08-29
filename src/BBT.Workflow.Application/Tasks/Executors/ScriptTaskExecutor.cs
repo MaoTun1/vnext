@@ -49,7 +49,7 @@ public sealed class ScriptTaskExecutor(
             Logger.LogInformation("Script task {TaskKey} completed successfully in {Duration}ms", 
                 task.Key, stopwatch.ElapsedMilliseconds);
             
-            return upResponse.Data;
+            return upResponse;
         }
         catch (Exception ex)
         {

@@ -159,12 +159,15 @@ public sealed class DaprTaskExecutor(
 
                     if (dataInfo != null)
                     {
-                        // Add the new data entry with the correct version
-                        context.Instance.AddData(
-                            dataInfo.Id,
-                            new JsonData(dataInfo.Data),
-                            VersionStrategy.IncreasePatch
-                        );
+                        if (!dataInfo.Data.IsNullOrEmpty())
+                        {
+                            // Add the new data entry with the correct version
+                            context.Instance.AddData(
+                                dataInfo.Id,
+                                new JsonData(dataInfo.Data),
+                                VersionStrategy.IncreasePatch
+                            );
+                        }
                     }
                 }
             }

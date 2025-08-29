@@ -54,16 +54,30 @@ public static class WorkflowApiServiceCollectionExtensions
     {
         services.AddDaprClient();
         services.AddDaprJobsClient();
-        // TODO: A strategy should be determined on a task basis. 
-        // HTTP client with connection pooling 
-        services.AddHttpClient<HttpTaskExecutor>(client =>
+        
+        // Default HTTP client with SSL validation enabled
+        services.AddHttpClient(HttpTaskExecutor.DefaultHttpClientName, client =>
         {
+            // Default timeout - will be overridden per request
             client.Timeout = TimeSpan.FromSeconds(30);
         })
         .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
         {
             MaxConnectionsPerServer = 10,
             UseCookies = false
+        });
+
+        // HTTP client with SSL validation disabled
+        services.AddHttpClient(HttpTaskExecutor.NoSslValidationHttpClientName, client =>
+        {
+            // Default timeout - will be overridden per request
+            client.Timeout = TimeSpan.FromSeconds(30);
+        })
+        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            MaxConnectionsPerServer = 10,
+            UseCookies = false,
+            ServerCertificateCustomValidationCallback = (message, cert, chain, sslPolicyErrors) => true
         });
     }
 

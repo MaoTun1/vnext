@@ -173,6 +173,6 @@ public sealed class DaprServiceTaskExecutor(
         var outputResponse = await ProcessOutputAsync(scriptCode, context, cancellationToken);
         
         Logger.LogInformation("DAPR service task {TaskKey} execution completed, returning processed output", daprTask.Key);
-        return outputResponse.Data;
+        return outputResponse;
     }
 }

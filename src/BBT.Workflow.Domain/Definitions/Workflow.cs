@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using BBT.Aether;
 using BBT.Aether.Auditing;
 using BBT.Workflow.ExceptionHandling;
@@ -79,7 +80,7 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     /// <summary>
     /// Semantic version
     /// </summary>
-    public string SemanticVersion => Version.Contains('+') ? Version.Split('+')[0] : Version;
+    public string SemanticVersion => Version.Contains('+') ? Regex.Match(Version, @"^([^+]+)").Groups[1].Value : Version;
 
     public string CacheKey => $"{nameof(Workflow)}:{Domain}:{Flow}:{Key}:{Version}";
 

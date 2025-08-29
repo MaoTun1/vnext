@@ -47,4 +47,9 @@ public sealed class GetAvailableTransitionOutput
     /// Current state of the instance
     /// </summary>
     public string? CurrentState { get; set; }
+
+    /// <summary>
+    /// Active SubFlow/SubProcess correlations for this instance
+    /// </summary>
+    public List<InstanceCorrelationInfo> ActiveCorrelations { get; set; } = [];
 }

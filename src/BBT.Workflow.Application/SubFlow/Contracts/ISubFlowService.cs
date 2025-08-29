@@ -40,12 +40,25 @@ public interface ISubFlowService
 
     /// <summary>
     /// Retrieves the SubFlow workflow definition and its available transitions for the current state.
-    /// This method now checks for active SubFlow correlations where the parent instance is blocked by a SubFlow.
+    /// This method checks for active SubFlow correlations.
+    /// For SubFlow (Type "S"): Returns SubFlow running on main instance.
+    /// For SubProcess (Type "P"): Returns blocking SubFlow correlations (unchanged behavior).
     /// </summary>
     /// <param name="instanceId">The workflow instance ID.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>The SubFlow workflow definition and state information if active; otherwise, null.</returns>
     Task<(Definitions.Workflow SubFlowWorkflow, InstanceCorrelation Correlation)?> GetActiveSubFlowContextAsync(
+        Guid instanceId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the SubFlow workflow definition and current state for SubFlow running on main instance.
+    /// This method returns the SubFlow workflow and correlation when a SubFlow is active.
+    /// </summary>
+    /// <param name="instanceId">The workflow instance ID.</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
+    /// <returns>The SubFlow workflow definition and correlation if active; otherwise, null.</returns>
+    Task<(Definitions.Workflow SubFlowWorkflow, InstanceCorrelation Correlation)?> GetActiveSubFlowOnMainInstanceAsync(
         Guid instanceId,
         CancellationToken cancellationToken = default);
 
