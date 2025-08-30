@@ -91,6 +91,13 @@ public sealed class StateMachineExecutor(
 
         if (targetState.StateType != StateType.Finish)
         {
+            //WARNING!: If a state has a subflow, the auto transition process must continue when the subflow is completed. The main flow is already preserving the state.
+            //5. Handle SubFlow/SubProcess if target state is SubFlow type
+            if (targetState.StateType == StateType.SubFlow)
+            {
+                await HandleSubFlowAsync(context.Instance, targetState, context, cancellationToken);
+            }
+
             // Check for delay transition and execution
             await ScheduleTransitionsForLaterExecutionAsync(
                 context.Instance,
@@ -102,12 +109,6 @@ public sealed class StateMachineExecutor(
                 context.Workflow,
                 context.Instance,
                 cancellationToken);
-
-            //5. Handle SubFlow/SubProcess if target state is SubFlow type
-            if (targetState.StateType == StateType.SubFlow)
-            {
-                await HandleSubFlowAsync(context.Instance, targetState, context, cancellationToken);
-            }
         }
 
         await InstanceStatusHandleAsync(context.Instance, targetState, cancellationToken);

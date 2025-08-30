@@ -39,70 +39,18 @@ public interface ISubFlowService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Retrieves the SubFlow workflow definition and its available transitions for the current state.
-    /// This method checks for active SubFlow correlations.
-    /// For SubFlow (Type "S"): Returns SubFlow running on main instance.
-    /// For SubProcess (Type "P"): Returns blocking SubFlow correlations (unchanged behavior).
+    /// Checks if transition should be forwarded to SubFlow instance.
+    /// If SubFlow is active, forwards the transition to SubFlow instance via remote call.
+    /// Returns true if transition was forwarded, false if should be processed locally.
     /// </summary>
-    /// <param name="instanceId">The workflow instance ID.</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>The SubFlow workflow definition and state information if active; otherwise, null.</returns>
-    Task<(Definitions.Workflow SubFlowWorkflow, InstanceCorrelation Correlation)?> GetActiveSubFlowContextAsync(
+    /// <param name="instanceId">The main instance ID</param>
+    /// <param name="transitionKey">The transition key to execute</param>
+    /// <param name="input">The transition input data</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests</param>
+    /// <returns>True if transition was forwarded to SubFlow, false if should be processed locally</returns>
+    Task<bool> TryForwardTransitionToSubFlowAsync(
         Guid instanceId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Gets the SubFlow workflow definition and current state for SubFlow running on main instance.
-    /// This method returns the SubFlow workflow and correlation when a SubFlow is active.
-    /// </summary>
-    /// <param name="instanceId">The workflow instance ID.</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>The SubFlow workflow definition and correlation if active; otherwise, null.</returns>
-    Task<(Definitions.Workflow SubFlowWorkflow, InstanceCorrelation Correlation)?> GetActiveSubFlowOnMainInstanceAsync(
-        Guid instanceId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Checks if a workflow instance has pending sub-flows that would block transitions.
-    /// This method is used to determine if a transition can be executed or should be blocked.
-    /// Only SubFlow type "S" instances block the parent workflow, SubProcess type "P" instances do not.
-    /// </summary>
-    /// <param name="instanceId">The unique identifier of the workflow instance to check.</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>
-    /// A task representing the asynchronous blocking check operation.
-    /// The result is true if the instance has blocking sub-flows (Type "S"); otherwise, false.
-    /// </returns>
-    Task<bool> HasBlockingSubFlowsAsync(
-        Guid instanceId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Handles the completion of a SubFlow by checking if the SubFlow instance has completed
-    /// and updating the parent workflow accordingly.
-    /// This method is now used primarily for managing SubFlow completion signals.
-    /// </summary>
-    /// <param name="instance">The workflow instance.</param>
-    /// <param name="currentSubFlowState">The current state in the SubFlow that is finishing.</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>A task representing the asynchronous completion handling operation.</returns>
-    Task HandleSubFlowCompletionAsync(
-        Instance instance,
-        State currentSubFlowState,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Checks if a SubFlow instance has completed by querying its status.
-    /// This is a placeholder method that will be implemented with a dedicated endpoint.
-    /// </summary>
-    /// <param name="subFlowInstanceId">The SubFlow instance ID to check for completion.</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>True if the SubFlow has completed; otherwise, false.</returns>
-    /// <remarks>
-    /// TODO: Implement this method to call a dedicated endpoint that checks SubFlow completion status.
-    /// This endpoint will be responsible for determining if a SubFlow instance has reached a completion state.
-    /// </remarks>
-    Task<bool> IsSubFlowCompletedAsync(
-        Guid subFlowInstanceId,
+        string transitionKey,
+        TransitionInput input,
         CancellationToken cancellationToken = default);
 }
