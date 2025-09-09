@@ -97,18 +97,21 @@ public sealed class StateMachineExecutor(
             {
                 await HandleSubFlowAsync(context.Instance, targetState, context, cancellationToken);
             }
+            else
+            {
+                //WARN: Subflow'dan sonra buraya bir point koymak gerekiyor ve subflow completed olduğun da kaldı yerden devam etmelidir.
+                // Check for delay transition and execution
+                await ScheduleTransitionsForLaterExecutionAsync(
+                    context.Instance,
+                    context.Workflow,
+                    cancellationToken);
 
-            // Check for delay transition and execution
-            await ScheduleTransitionsForLaterExecutionAsync(
-                context.Instance,
-                context.Workflow,
-                cancellationToken);
-
-            // Check for automatic transitions after state change 
-            await CheckAndExecuteAutomaticTransitionsAsync(
-                context.Workflow,
-                context.Instance,
-                cancellationToken);
+                // Check for automatic transitions after state change 
+                await CheckAndExecuteAutomaticTransitionsAsync(
+                    context.Workflow,
+                    context.Instance,
+                    cancellationToken);
+            }
         }
 
         await InstanceStatusHandleAsync(context.Instance, targetState, cancellationToken);

@@ -2,6 +2,7 @@ using System.Text.Json;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Scripting;
+using WorkflowExecutionContext = BBT.Workflow.Shared.ExecutionContext;
 
 namespace BBT.Workflow.States;
 
@@ -45,6 +46,7 @@ public interface IStateMachineService
         string transitionKey,
         ScriptContext scriptContext,
         JsonElement? data = null,
+        WorkflowExecutionContext executionContext = WorkflowExecutionContext.User,
         CancellationToken cancellationToken = default);
 
     /// <summary>

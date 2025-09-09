@@ -1,12 +1,13 @@
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Definitions.Rules;
 using BBT.Workflow.Rules;
+using WorkflowExecutionContext = BBT.Workflow.Shared.ExecutionContext;
 
 namespace BBT.Workflow.Instances.Policies;
 
 public class StateTransitionPolicy(IRuleEngine<State> ruleEngine)
 {
-    public void Validate(State currentState, Transition transition)
+    public void Validate(State currentState, Transition transition, WorkflowExecutionContext executionContext = WorkflowExecutionContext.User)
     {
         var rules = new List<BaseRule<State>>();
 
@@ -21,6 +22,8 @@ public class StateTransitionPolicy(IRuleEngine<State> ruleEngine)
         }
 
         rules.Add(new ManualTriggerRule(transition));
+        
+        rules.Add(new TransitionAuthorizationRule(transition, executionContext));
 
         ruleEngine.SetRules(rules);
         ruleEngine.Process(currentState);

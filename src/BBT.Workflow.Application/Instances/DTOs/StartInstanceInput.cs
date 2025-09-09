@@ -31,7 +31,6 @@ public sealed class CreateInstanceInput
 public sealed class StartInstanceOutput
 {
     public Guid Id { get; set; }
-    public List<string> AvailableTransitions { get; set; } = [];
     
     /// <summary>
     /// Instance status (Active, Busy, Completed, etc.)

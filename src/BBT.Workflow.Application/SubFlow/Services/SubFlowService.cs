@@ -184,14 +184,14 @@ public sealed class SubFlowService(
     /// <summary>
     /// Checks if transition should be forwarded to SubFlow instance.
     /// If SubFlow is active, forwards the transition to SubFlow instance via remote call.
-    /// Returns true if transition was forwarded, false if should be processed locally.
+    /// Returns SubFlow response data if forwarded, null if should be processed locally.
     /// </summary>
     /// <param name="instanceId">The main instance ID</param>
     /// <param name="transitionKey">The transition key to execute</param>
     /// <param name="input">The transition input data</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests</param>
-    /// <returns>True if transition was forwarded to SubFlow, false if should be processed locally</returns>
-    public async Task<bool> TryForwardTransitionToSubFlowAsync(
+    /// <returns>SubFlow transition response if forwarded, null if should be processed locally</returns>
+    public async Task<InstanceServiceResponse<TransitionOutput>?> TryForwardTransitionToSubFlowAsync(
         Guid instanceId,
         string transitionKey,
         TransitionInput input,
@@ -224,9 +224,9 @@ public sealed class SubFlowService(
             // TODO: Handle SubFlow completion detection here
             // If SubFlow completed, we might need to trigger SubFlow completion handling
 
-            return true; // Transition was forwarded
+            return subFlowResult; // Return SubFlow response
         }
 
-        return false; // No SubFlow active, process locally
+        return null; // No SubFlow active, process locally
     }
 }

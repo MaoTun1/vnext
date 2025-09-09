@@ -8,6 +8,7 @@ using BBT.Workflow.Headers;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
 using BBT.Workflow.Scripting;
+using WorkflowExecutionContext = BBT.Workflow.Shared.ExecutionContext;
 using BBT.Workflow.States;
 using BBT.Workflow.SubFlow;
 using Microsoft.AspNetCore.Http;
@@ -76,6 +77,7 @@ public sealed class InstanceCommandAppService(
                 workflow.StartTransition.Key,
                 scriptContext,
                 input.Instance.Attributes,
+                WorkflowExecutionContext.User, // Start transitions are always user-initiated
                 cancellationToken
             );
 
@@ -105,15 +107,14 @@ public sealed class InstanceCommandAppService(
                 WorkflowInfo.Generate(runtimeInfoProvider.Domain, workflow.Key, workflow.Version, instance.Id)
             );
 
-            // Build instance transition information (status, state, available transitions, and correlations)
-            var transitionInfo = await BuildInstanceTransitionInfoAsync(instance, workflow, cancellationToken);
+            // Build instance transition information (status, state, and correlations)
+            var transitionInfo = await BuildInstanceTransitionInfoAsync(instance, cancellationToken);
 
             return new InstanceServiceResponse<StartInstanceOutput>(new StartInstanceOutput
             {
                 Id = instance.Id,
                 Status = transitionInfo.Status,
                 CurrentState = transitionInfo.CurrentState,
-                AvailableTransitions = transitionInfo.AvailableTransitions,
                 ActiveCorrelations = transitionInfo.ActiveCorrelations
             });
         }
@@ -133,32 +134,37 @@ public sealed class InstanceCommandAppService(
 
         try
         {
-            // Transition was forwarded to SubFlow, get the main instance for response
             using (currentSchema.Change(input.Workflow))
             {
                 // Check if transition should be forwarded to SubFlow instance
-                if (await subFlowService.TryForwardTransitionToSubFlowAsync(instanceId, transitionKey, input,
-                        cancellationToken))
+                var subFlowResponse = await subFlowService.TryForwardTransitionToSubFlowAsync(instanceId, transitionKey, input, cancellationToken);
+                
+                if (subFlowResponse != null)
                 {
-                    instance = await instanceRepository.GetActiveAsync(instanceId, cancellationToken);
-                }
-                else
-                {
-                    // Acquire distributed lock for the instance
-                    lockAcquired = await distributedLockService.TryAcquireLockAsync(
-                        resourceId,
-                        InstanceConstants.TransitionLockExpiryInSeconds,
-                        cancellationToken);
-
-                    if (!lockAcquired)
+                    // Transition was forwarded to SubFlow, return SubFlow response with main instance ID
+                    return new InstanceServiceResponse<TransitionOutput>(new TransitionOutput
                     {
-                        throw new TransitionLockedException(instanceId, transitionKey);
-                    }
-
-                    // Execute transition within lock
-                    instance = await ExecuteTransitionWithinLockAsync(instanceId, transitionKey, input,
-                        cancellationToken);
+                        Id = instanceId, // Keep main instance ID for client
+                        Status = subFlowResponse.Data.Status,
+                        CurrentState = subFlowResponse.Data.CurrentState,
+                        ActiveCorrelations = subFlowResponse.Data.ActiveCorrelations
+                    });
                 }
+
+                // Process transition locally lock for the instance
+                // Acquire distributed 
+                lockAcquired = await distributedLockService.TryAcquireLockAsync(
+                    resourceId,
+                    InstanceConstants.TransitionLockExpiryInSeconds,
+                    cancellationToken);
+
+                if (!lockAcquired)
+                {
+                    throw new TransitionLockedException(instanceId, transitionKey);
+                }
+
+                // Execute transition within lock
+                instance = await ExecuteTransitionWithinLockAsync(instanceId, transitionKey, input, cancellationToken);
             }
         }
         finally
@@ -188,9 +194,9 @@ public sealed class InstanceCommandAppService(
                 input.Domain, input.Workflow,
                 input.Version, cancellationToken);
 
-            // Build instance transition information (status, state, available transitions, and correlations)
+            // Build instance transition information (status, state, and correlations)
             var transitionInfo =
-                await BuildInstanceTransitionInfoAsync(instance, workflowForTransitions, cancellationToken);
+                await BuildInstanceTransitionInfoAsync(instance, cancellationToken);
 
             headerService.AddHeader(
                 WorkflowInfo.Name,
@@ -204,42 +210,31 @@ public sealed class InstanceCommandAppService(
                 Id = instance.Id,
                 Status = transitionInfo.Status,
                 CurrentState = transitionInfo.CurrentState,
-                AvailableTransitions = transitionInfo.AvailableTransitions,
                 ActiveCorrelations = transitionInfo.ActiveCorrelations
             });
         }
     }
 
     /// <summary>
-    /// Builds instance transition information including status, current state, available user transitions, and correlations.
-    /// This method consolidates the logic for determining available transitions based on instance status.
+    /// Builds instance transition information including status, current state, and correlations.
+    /// This method consolidates the logic for determining instance information based on instance status.
     /// </summary>
     /// <param name="instance">The workflow instance</param>
-    /// <param name="currentWorkflow">The current workflow definition</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>A tuple containing status, current state, available user transitions, and correlations</returns>
+    /// <returns>A tuple containing status, current state, and correlations</returns>
     private async
-        Task<(string Status, string? CurrentState, List<string> AvailableTransitions, List<InstanceCorrelationInfo>
+        Task<(string Status, string? CurrentState, List<InstanceCorrelationInfo>
             ActiveCorrelations)> BuildInstanceTransitionInfoAsync(
             Instance instance,
-            Definitions.Workflow currentWorkflow,
             CancellationToken cancellationToken = default)
     {
         var status = instance.Status.Description;
         var currentState = instance.CurrentState;
-        var availableTransitions = new List<string>();
-
-        // For other statuses (Busy, Completed, Faulted, Passive), no transitions are available
-        // If instance is active, return user-triggered transitions
-        if (instance.Status.Equals(InstanceStatus.Active))
-        {
-            availableTransitions = await GetAvailableUserTransitionsAsync(instance, currentWorkflow, cancellationToken);
-        }
         
         // Get active correlations
         var activeCorrelations = await GetActiveCorrelationsAsync(instance.Id, cancellationToken);
 
-        return (status, currentState, availableTransitions, activeCorrelations);
+        return (status, currentState, activeCorrelations);
     }
 
     /// <summary>
@@ -270,19 +265,6 @@ public sealed class InstanceCommandAppService(
             .ToList();
     }
 
-    /// <summary>
-    /// Gets available user-triggered transitions for the current instance.
-    /// When SubFlow is active, no transitions are available on the main instance (they are forwarded).
-    /// When no SubFlow is active, returns main workflow transitions.
-    /// </summary>
-    private Task<List<string>> GetAvailableUserTransitionsAsync(
-        Instance instance,
-        Definitions.Workflow currentWorkflow,
-        CancellationToken cancellationToken = default)
-    {
-        // Return main workflow user transitions
-        return Task.FromResult(stateMachineService.AvailableUserTransitionKeys(currentWorkflow, instance));
-    }
 
     /// <summary>
     /// Executes the transition logic within the distributed lock context.
@@ -321,14 +303,15 @@ public sealed class InstanceCommandAppService(
                         currentWorkflow.GetState(instance.CurrentState!))!)
                     .BuildAsync(cancellationToken);
 
-                var transition = await stateMachineService.GetTransitionAsync(
-                    currentWorkflow,
-                    instance,
-                    transitionKey,
-                    scriptContext,
-                    input.Data,
-                    cancellationToken
-                );
+            var transition = await stateMachineService.GetTransitionAsync(
+                currentWorkflow,
+                instance,
+                transitionKey,
+                scriptContext,
+                input.Data,
+                input.ExecutionContext,
+                cancellationToken
+            );
 
                 var data = new JsonData(input.Data);
                 if (input.Data != null)

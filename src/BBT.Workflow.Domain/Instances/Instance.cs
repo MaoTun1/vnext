@@ -4,6 +4,7 @@ using BBT.Aether.Auditing;
 using BBT.Aether.Domain.Entities;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances.Policies;
+using WorkflowExecutionContext = BBT.Workflow.Shared.ExecutionContext;
 
 namespace BBT.Workflow.Instances;
 
@@ -204,9 +205,10 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         }
     }
 
-    public bool CanExecuteTransition(Transition transition, State state, StateTransitionPolicy policy)
+    public bool CanExecuteTransition(Transition transition, State state, StateTransitionPolicy policy, WorkflowExecutionContext executionContext = WorkflowExecutionContext.User)
     {
-        return transition.CanExecute(state, policy);
+        policy.Validate(state, transition, executionContext);
+        return true;
     }
 
     public InstanceData AddDataWithVersion(Guid id, JsonData inputData, string version)

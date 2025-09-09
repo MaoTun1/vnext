@@ -7,7 +7,6 @@ using BBT.Workflow.Scripting;
 using BBT.Aether.Domain.Entities;
 using BBT.Workflow.Extentions;
 using BBT.Workflow.States;
-using BBT.Workflow.SubFlow;
 using Microsoft.AspNetCore.Http;
 
 namespace BBT.Workflow.Instances;
@@ -21,7 +20,6 @@ public sealed class InstanceQueryAppService(
     IInstanceCorrelationRepository instanceCorrelationRepository,
     IInstanceExtensionService instanceExtensionService,
     IStateMachineService stateMachineService,
-    ISubFlowService subFlowService,
     IScriptContextFactory scriptContextFactory,
     IHttpContextAccessor httpContextAccessor)
     : ApplicationService(serviceProvider), IInstanceQueryAppService
@@ -153,24 +151,28 @@ public sealed class InstanceQueryAppService(
             var instance = await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken);
 
             // Get workflow for available transitions (may have changed after transition execution)
-            var workflowForTransitions = await componentCacheStore.GetFlowAsync(
+            var currentWorkflow = await componentCacheStore.GetFlowAsync(
                 input.Domain, 
                 input.Workflow, 
                 input.Version, 
                 cancellationToken);
 
             // Build instance transition information using shared logic
-            var transitionInfo = await BuildInstanceTransitionInfoAsync(instance, workflowForTransitions, cancellationToken);
+            var transitionInfo = await BuildInstanceTransitionInfoAsync(instance, cancellationToken);
 
-            // Get active correlations
-            var activeCorrelations = await GetActiveCorrelationsAsync(instance.Id, cancellationToken);
+            // Get available transitions directly
+            var availableTransitions = new List<string>();
+            if (instance.Status.Equals(InstanceStatus.Active))
+            {
+                availableTransitions = stateMachineService.AvailableUserTransitionKeys(currentWorkflow, instance);
+            }
 
             var result = new GetAvailableTransitionOutput
             {
                 Status = transitionInfo.Status,
                 CurrentState = transitionInfo.CurrentState,
-                Items = transitionInfo.AvailableTransitions,
-                ActiveCorrelations = activeCorrelations
+                Items = availableTransitions,
+                ActiveCorrelations = transitionInfo.ActiveCorrelations
             };
 
             return new InstanceServiceResponse<GetAvailableTransitionOutput>(result);
@@ -178,30 +180,25 @@ public sealed class InstanceQueryAppService(
     }
 
     /// <summary>
-    /// Builds instance transition information including status, current state, and available user transitions.
-    /// This method consolidates the logic for determining available transitions based on instance status.
+    /// Builds instance transition information including status, current state, and correlations.
+    /// This method consolidates the logic for determining instance information based on instance status.
     /// </summary>
     /// <param name="instance">The workflow instance</param>
-    /// <param name="currentWorkflow">The current workflow definition</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>A tuple containing status, current state, and available user transitions</returns>
-    private Task<(string Status, string? CurrentState, List<string> AvailableTransitions)> BuildInstanceTransitionInfoAsync(
-        Instance instance,
-        Definitions.Workflow currentWorkflow,
-        CancellationToken cancellationToken = default)
+    /// <returns>A tuple containing status, current state, and correlations</returns>
+    private async
+        Task<(string Status, string? CurrentState, List<InstanceCorrelationInfo>
+            ActiveCorrelations)> BuildInstanceTransitionInfoAsync(
+            Instance instance,
+            CancellationToken cancellationToken = default)
     {
         var status = instance.Status.Description;
         var currentState = instance.CurrentState;
-        var availableTransitions = new List<string>();
+        
+        // Get active correlations
+        var activeCorrelations = await GetActiveCorrelationsAsync(instance.Id, cancellationToken);
 
-        // If instance is active, return user-triggered transitions
-        if (instance.Status.Equals(InstanceStatus.Active))
-        {
-            availableTransitions = stateMachineService.AvailableUserTransitionKeys(currentWorkflow, instance);
-        }
-        // For other statuses (Busy, Completed, Faulted, Passive), no transitions are available
-
-        return Task.FromResult((status, currentState, availableTransitions));
+        return (status, currentState, activeCorrelations);
     }
 
     /// <summary>

@@ -41,14 +41,14 @@ public interface ISubFlowService
     /// <summary>
     /// Checks if transition should be forwarded to SubFlow instance.
     /// If SubFlow is active, forwards the transition to SubFlow instance via remote call.
-    /// Returns true if transition was forwarded, false if should be processed locally.
+    /// Returns SubFlow response data if forwarded, null if should be processed locally.
     /// </summary>
     /// <param name="instanceId">The main instance ID</param>
     /// <param name="transitionKey">The transition key to execute</param>
     /// <param name="input">The transition input data</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests</param>
-    /// <returns>True if transition was forwarded to SubFlow, false if should be processed locally</returns>
-    Task<bool> TryForwardTransitionToSubFlowAsync(
+    /// <returns>SubFlow transition response if forwarded, null if should be processed locally</returns>
+    Task<InstanceServiceResponse<TransitionOutput>?> TryForwardTransitionToSubFlowAsync(
         Guid instanceId,
         string transitionKey,
         TransitionInput input,

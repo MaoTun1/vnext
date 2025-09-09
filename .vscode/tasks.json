@@ -234,6 +234,7 @@
                 "DAPR_SECRET_STORE_NAME": "vnext-secret",
                 "DAPR_STATE_STORE_NAME": "vnext-state",
                 "DAPR_PUBSUB_STORE_NAME": "vnext-pubsub",
+                "DAPR_PUBSUB_BROADCAST_STORE_NAME": "vnext-pubsub-broadcast",
                 "DAPR_LOCK_STORE_NAME": "vnext-lock"
             },
             "group": {
@@ -272,6 +273,7 @@
                 "DAPR_SECRET_STORE_NAME": "vnext-execution-secret",
                 "DAPR_STATE_STORE_NAME": "vnext-execution-state",
                 "DAPR_PUBSUB_STORE_NAME": "vnext-execution-pubsub",
+                "DAPR_PUBSUB_BROADCAST_STORE_NAME": "vnext-execution-pubsub-broadcast",
                 "DAPR_LOCK_STORE_NAME": "vnext-execution-lock"
             },
             "group": {

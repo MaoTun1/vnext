@@ -1,3 +1,4 @@
+using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -9,8 +10,19 @@ namespace BBT.Workflow.Orchestration.Controllers.Utilities;
 [Route("api/v{version:apiVersion}")]
 [ServiceFilter(typeof(ResponseHeaderFilter))]
 public sealed class UtilityController(
-    IInstanceQueryAppService queryAppService) : ControllerBase
+    IInstanceQueryAppService queryAppService,
+    IAdminAppService adminAppService) : ControllerBase
 {
+    [ApiExplorerSettings(IgnoreApi = true)]
+    [HttpPost("utilities/invalidate")]
+    public async Task<IActionResult> InvalidateCacheAsync(
+        [FromBody] InvalidateCacheInput input,
+        CancellationToken cancellationToken = default)
+    {
+        await adminAppService.InvalidateCacheAsync(input, cancellationToken);
+        return Ok(new { result = "ok" });
+    }
+    
     [ApiExplorerSettings(IgnoreApi = true)]
     [HttpGet("{domain}/workflows/{workflow}/instances/{instance}/transitions/available")]
     public async Task<IActionResult> GetAvailableTransitionsAsync(

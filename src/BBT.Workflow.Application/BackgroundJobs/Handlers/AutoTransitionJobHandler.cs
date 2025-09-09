@@ -2,6 +2,7 @@ using System.Text.Json;
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Schemas;
+using WorkflowExecutionContext = BBT.Workflow.Shared.ExecutionContext;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.BackgroundJobs.Handlers;
@@ -48,14 +49,19 @@ public sealed class AutoTransitionJobHandler(
             {
                 try
                 {
+                    var input = new TransitionInput(
+                        jobInfo.Payload.Domain,
+                        jobInfo.Payload.FlowName,
+                        jobInfo.Payload.Version
+                    )
+                    {
+                        ExecutionContext = WorkflowExecutionContext.System // System context for auto transitions
+                    };
+
                     await instanceAppService.TransitionAsync(
                         jobInfo.Payload.InstanceId,
                         transitionKey,
-                        new TransitionInput(
-                            jobInfo.Payload.Domain,
-                            jobInfo.Payload.FlowName,
-                            jobInfo.Payload.Version
-                        ),
+                        input,
                         cancellationToken
                     );
                     break;

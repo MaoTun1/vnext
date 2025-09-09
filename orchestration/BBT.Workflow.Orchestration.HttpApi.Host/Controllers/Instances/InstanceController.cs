@@ -52,14 +52,6 @@ public sealed class InstanceController(
         CancellationToken cancellationToken = default
     )
     {
-        /*
-            TODO: Version handling -
-            Start Instance adımında versiyon opsiyonel ve mutluaka bir version ile işlem sonlandırılır.
-            X-Workflow header'ında versiyon bilgisi döner.
-            Transition tetiklendiğinde X-Workflow headerı MUTLAKA beklenir,
-            çünkü versiyon bilgisini göndermediği durumda instance hangi versiyonla başladı bilmez.
-            Workflow tanımı için başlatılan versiyonla ilerlemesi için gereklidir?
-        */
         if (version.IsNullOrEmpty())
         {
             var flowInfo = HttpContext.GetWorkflowInfo();
