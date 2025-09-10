@@ -72,6 +72,11 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// </summary>
     public DateTime? CompletedAt { get; private set; }
 
+    public bool IsCompleted => 
+        Status.Equals(InstanceStatus.Completed) 
+        || Status.Equals(InstanceStatus.Faulted) 
+        || Status.Equals(InstanceStatus.Passive);
+
     public TimeSpan? Duration { get; private set; }
 
     public List<string> Tags { get; private set; }

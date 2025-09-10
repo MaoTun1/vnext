@@ -23,11 +23,46 @@ public interface IInstanceCorrelationRepository : IRepository<InstanceCorrelatio
         Guid parentInstanceId, 
         CancellationToken cancellationToken = default);
     
-    Task<bool> AnyActiveByParentAsync(
+    /// <summary>
+    /// Checks whether there are any active SubFlow correlations for the specified parent instance.
+    /// This method provides a fast existence check without retrieving the actual correlation records.
+    /// </summary>
+    /// <param name="parentInstanceId">The unique identifier of the parent workflow instance.</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
+    /// <returns>
+    /// A task representing the asynchronous operation.
+    /// The result contains true if any active SubFlow correlations exist for the parent instance, false otherwise.
+    /// </returns>
+    Task<bool> AnyActiveSubFlowByParentAsync(
         Guid parentInstanceId,
         CancellationToken cancellationToken = default);
     
-    Task<InstanceCorrelation?> FindActiveByParentAsync(
+    /// <summary>
+    /// Finds the active SubFlow correlation for the specified parent instance.
+    /// This method retrieves the correlation record linking a parent workflow to its active SubFlow.
+    /// </summary>
+    /// <param name="parentInstanceId">The unique identifier of the parent workflow instance.</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
+    /// <returns>
+    /// A task representing the asynchronous operation.
+    /// The result contains the active SubFlow correlation if found, null if no active SubFlow exists for the parent.
+    /// </returns>
+    Task<InstanceCorrelation?> FindActiveSubFlowByParentAsync(
         Guid parentInstanceId,
+        CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Finds a correlation by SubFlow instance ID.
+    /// This method is used when a SubFlow or SubProcess completes to find the correlation record
+    /// linking it to the parent workflow.
+    /// </summary>
+    /// <param name="subInstanceId">The unique identifier of the SubFlow or SubProcess instance.</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
+    /// <returns>
+    /// A task representing the asynchronous operation.
+    /// The result contains the correlation record if found, null otherwise.
+    /// </returns>
+    Task<InstanceCorrelation?> FindBySubInstanceIdAsync(
+        Guid subInstanceId,
         CancellationToken cancellationToken = default);
 } 

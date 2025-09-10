@@ -21,16 +21,7 @@ public sealed class EfCoreInstanceCorrelationRepository(
     : EfCoreRepository<WorkflowDbContext, InstanceCorrelation, Guid>(dbContext, serviceProvider, transactionService),
         IInstanceCorrelationRepository
 {
-    /// <summary>
-    /// Finds active correlations where the specified instance ID is the parent instance.
-    /// This method returns correlations that are not yet completed.
-    /// </summary>
-    /// <param name="parentInstanceId">The unique identifier of the parent workflow instance.</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>
-    /// A task representing the asynchronous operation.
-    /// The result contains a collection of active correlations where the instance is a parent.
-    /// </returns>
+    /// <inheritdoc />
     public async Task<List<InstanceCorrelation>> GetActiveByParentAsync(
         Guid parentInstanceId,
         CancellationToken cancellationToken = default)
@@ -41,7 +32,8 @@ public sealed class EfCoreInstanceCorrelationRepository(
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<bool> AnyActiveByParentAsync(Guid parentInstanceId, CancellationToken cancellationToken = default)
+     /// <inheritdoc />
+    public async Task<bool> AnyActiveSubFlowByParentAsync(Guid parentInstanceId, CancellationToken cancellationToken = default)
     {
         return await (await GetDbSetAsync())
             .Where(c =>
@@ -51,7 +43,8 @@ public sealed class EfCoreInstanceCorrelationRepository(
             .AnyAsync(cancellationToken);
     }
 
-    public async Task<InstanceCorrelation?> FindActiveByParentAsync(Guid parentInstanceId, CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public async Task<InstanceCorrelation?> FindActiveSubFlowByParentAsync(Guid parentInstanceId, CancellationToken cancellationToken = default)
     {
         return await (await GetDbSetAsync())
             .FirstOrDefaultAsync(c =>
@@ -59,5 +52,14 @@ public sealed class EfCoreInstanceCorrelationRepository(
                     && !c.IsCompleted
                     && c.SubFlowType == SubFlowType.SubFlow,
                 cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<InstanceCorrelation?> FindBySubInstanceIdAsync(
+        Guid subInstanceId, 
+        CancellationToken cancellationToken = default)
+    {
+        return await (await GetDbSetAsync())
+            .FirstOrDefaultAsync(c => c.SubFlowInstanceId == subInstanceId, cancellationToken);
     }
 }

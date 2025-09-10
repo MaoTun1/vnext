@@ -23,13 +23,13 @@ public class ExpandoObjectJsonConverter : JsonConverter<ExpandoObject>
             var propertyName = reader.GetString();
             reader.Read();
 
-            dictionary[propertyName] = ReadValue(ref reader);
+            if (propertyName != null) dictionary[propertyName] = ReadValue(ref reader);
         }
 
         throw new JsonException();
     }
 
-    private object ReadValue(ref Utf8JsonReader reader)
+    private object? ReadValue(ref Utf8JsonReader reader)
     {
         return reader.TokenType switch
         {

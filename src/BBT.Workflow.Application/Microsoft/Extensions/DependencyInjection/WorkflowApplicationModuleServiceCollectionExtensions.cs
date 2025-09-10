@@ -101,6 +101,7 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddScoped<IStateMachineExecutor, StateMachineExecutor>();
         services.AddScoped<ITaskOrchestrationService, TaskOrchestrationService>();
         services.AddScoped<ISubFlowService, SubFlowService>();
+        services.AddScoped<ISubFlowCompletionService, SubFlowCompletionService>();
         services.AddScoped<ITaskExecutorFactory, TaskExecutorFactory>();
         services.AddScoped<HttpTaskExecutor>();
         services.AddScoped<DaprBindingTaskExecutor>();

@@ -19,7 +19,6 @@ namespace BBT.Workflow.Tasks;
 public class TaskOrchestrationService(
     ITaskOrchestrator taskOrchestrator,
     ITaskExecutorFactory taskExecutorFactory,
-    ITaskFactory taskFactory,
     IWorkflowMetrics workflowMetrics) : ITaskOrchestrationService
 {
     /// <summary>

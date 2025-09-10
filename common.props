@@ -2,7 +2,7 @@
   <PropertyGroup>
     <LangVersion>latest</LangVersion>
     <Version>0.0.9</Version>
-    <NoWarn>$(NoWarn);CS1591;CS8618;EF1001</NoWarn>
+    <NoWarn>$(NoWarn);CS1591;CS8618;EF1001;CS1570</NoWarn>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 

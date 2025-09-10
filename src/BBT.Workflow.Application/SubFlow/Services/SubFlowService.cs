@@ -28,6 +28,7 @@ public sealed class SubFlowService(
     /// SubFlow: Runs on the main flow, maintains state within the main instance.
     /// SubProcess: Creates separate instances via remote calls (unchanged behavior).
     /// </summary>
+    /// <param name="workflow">The main workflow.</param>
     /// <param name="parentInstance">The main workflow instance that initiates the sub-flow.</param>
     /// <param name="targetState">The target state containing SubFlow configuration.</param>
     /// <param name="context">The script context containing execution data and headers.</param>
@@ -46,6 +47,7 @@ public sealed class SubFlowService(
     /// </para>
     /// </remarks>
     public async Task HandleSubFlowAsync(
+        Definitions.Workflow workflow,
         Instance parentInstance,
         State targetState,
         ScriptContext context,
@@ -59,7 +61,7 @@ public sealed class SubFlowService(
 
         // Both SubFlow and SubProcess now create separate instances via remote call
         // The difference is in blocking behavior handled by correlation tracking
-        await CreateSubFlowInstanceAsync(parentInstance, targetState, context, cancellationToken);
+        await CreateSubFlowInstanceAsync(workflow, parentInstance, targetState, context, cancellationToken);
     }
 
     /// <summary>
@@ -69,6 +71,7 @@ public sealed class SubFlowService(
     /// Uses mapping handlers to process input and output data transformations.
     /// </summary>
     private async Task CreateSubFlowInstanceAsync(
+        Definitions.Workflow workflow,
         Instance parentInstance,
         State targetState,
         ScriptContext context,
@@ -92,9 +95,12 @@ public sealed class SubFlowService(
                 : null,
             Tags = 
             [
-                $"parent:{parentInstance.Id}",
-                $"parent-state:{targetState.Key}",
-                $"type:{subFlowConfig.Type.Code}"
+                $"parent.id:{parentInstance.Id}",
+                $"parent.key:{parentInstance.Key}",
+                $"parent.domain:{workflow.Domain}",
+                $"parent.flow:{workflow.Key}",
+                $"parent.version:{workflow.Version}",
+                $"parent.state:{targetState.Key}"
             ]
         };
 
@@ -172,7 +178,8 @@ public sealed class SubFlowService(
         {
             return await subFlowMapping.InputHandler(context);
         }
-        else if (subFlowConfig.Type.Code == "P" && mappingInstance is ISubProcessMapping subProcessMapping)
+
+        if (subFlowConfig.Type.Code == "P" && mappingInstance is ISubProcessMapping subProcessMapping)
         {
             return await subProcessMapping.InputHandler(context);
         }
@@ -199,7 +206,7 @@ public sealed class SubFlowService(
     {
         // Check if there's an active SubFlow that blocks the main instance
         var correlation = await instanceCorrelationRepository
-            .FindActiveByParentAsync(instanceId, cancellationToken);
+            .FindActiveSubFlowByParentAsync(instanceId, cancellationToken);
         
         if (correlation != null)
         {

@@ -423,11 +423,12 @@ public sealed class PrometheusWorkflowMetrics : IWorkflowMetrics
             .Inc();
     }
 
-    public void RecordDaprPubsubMessagePublished(string pubsubName, string topic, string status)
+    public void RecordDaprPubsubMessagePublished(string? pubsubName, string topic, string status)
     {
-        WorkflowMetrics.DaprPubsubMessagesPublished
-            .WithLabels(pubsubName, topic, status)
-            .Inc();
+        if (pubsubName != null)
+            WorkflowMetrics.DaprPubsubMessagesPublished
+                .WithLabels(pubsubName, topic, status)
+                .Inc();
     }
 
     public void RecordDaprPubsubMessageReceived(string pubsubName, string topic, string status)

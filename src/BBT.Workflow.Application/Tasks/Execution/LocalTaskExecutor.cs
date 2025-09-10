@@ -80,7 +80,6 @@ public sealed class LocalTaskExecutor(
                 onExecuteTask.Mapping.DecodedCode,
                 context,
                 cancellationToken);
-            
             if (response != null)
             {
                 var variableKey = task.Key.ToVariableName();
@@ -170,7 +169,7 @@ public sealed class LocalTaskExecutor(
 
         // Check if body was modified
         var bodyModified = !ReferenceEquals(initialBody, context.Body) ||
-                           (initialBody != null && context.Body != null && !initialBody.Equals(context.Body));
+                           (initialBody != null && context.Body != null && !initialBody?.Equals(context.Body));
 
         if (bodyModified)
         {

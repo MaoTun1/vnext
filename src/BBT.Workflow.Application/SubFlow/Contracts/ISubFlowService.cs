@@ -15,6 +15,7 @@ public interface ISubFlowService
     /// Handles the initiation of SubFlow execution.
     /// Both SubFlow and SubProcess now create separate instances via remote calls.
     /// </summary>
+    /// <param name="workflow">The main workflow.</param>
     /// <param name="parentInstance">The main workflow instance that initiates the sub-flow.</param>
     /// <param name="targetState">The target state containing SubFlow configuration.</param>
     /// <param name="context">The script context containing execution data and headers.</param>
@@ -33,6 +34,7 @@ public interface ISubFlowService
     /// </para>
     /// </remarks>
     Task HandleSubFlowAsync(
+        Definitions.Workflow workflow,
         Instance parentInstance,
         State targetState,
         ScriptContext context,

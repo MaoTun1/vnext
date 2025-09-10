@@ -72,6 +72,8 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     /// </summary>
     public WorkflowType Type { get; private set; }
 
+    public bool IsSub => Type.Equals(WorkflowType.SubFlow) || Type.Equals(WorkflowType.SubProcess);
+ 
     /// <summary>
     /// Created at
     /// </summary>

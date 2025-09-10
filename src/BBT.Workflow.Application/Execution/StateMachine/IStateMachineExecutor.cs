@@ -94,4 +94,93 @@ public interface IStateMachineExecutor
         Definitions.Workflow workflow,
         Instance instance,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Asynchronously schedules workflow transitions for later execution based on their timing configurations.
+    /// This method identifies transitions that are configured to be executed at specific times or delays
+    /// and enqueues them as background jobs for future execution.
+    /// </summary>
+    /// <param name="workflow">
+    /// The workflow definition containing transitions that may need to be scheduled.
+    /// The method examines all transitions within this workflow for scheduling requirements.
+    /// </param>
+    /// <param name="instance">
+    /// The workflow instance for which transitions will be scheduled.
+    /// The scheduling context will be associated with this specific instance.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// The cancellation token used to cancel the operation. Default value is default.
+    /// </param>
+    /// <returns>
+    /// A Task representing the scheduling operation. The task completes when all applicable 
+    /// transitions have been scheduled for later execution.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when the workflow or instance parameter is null.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// This method processes transitions that have timing-based execution requirements such as:
+    /// </para>
+    /// <list type="bullet">
+    /// <item>Delayed transitions (execute after a specific time period)</item>
+    /// <item>Scheduled transitions (execute at a specific date/time)</item>
+    /// <item>Recurring transitions (execute periodically)</item>
+    /// </list>
+    /// <para>
+    /// The scheduled transitions are queued as background jobs and will be executed 
+    /// when their scheduled time arrives.
+    /// </para>
+    /// </remarks>
+    Task ScheduleTransitionsForLaterExecutionAsync(
+        Definitions.Workflow workflow,
+        Instance instance,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Asynchronously checks for and executes automatic transitions that are eligible for immediate execution.
+    /// This method evaluates conditions and triggers for automatic transitions and executes them 
+    /// if their criteria are met.
+    /// </summary>
+    /// <param name="workflow">
+    /// The workflow definition containing automatic transitions to be evaluated.
+    /// The method examines all automatic transitions within this workflow.
+    /// </param>
+    /// <param name="instance">
+    /// The workflow instance for which automatic transitions will be evaluated and executed.
+    /// The current state and context of this instance will be used for condition evaluation.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// The cancellation token used to cancel the operation. Default value is default.
+    /// </param>
+    /// <returns>
+    /// A Task representing the automatic transition evaluation and execution operation. 
+    /// The task completes when all eligible automatic transitions have been processed.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when the workflow or instance parameter is null.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// This method processes automatic transitions that meet the following criteria:
+    /// </para>
+    /// <list type="bullet">
+    /// <item>Transitions configured for automatic execution</item>
+    /// <item>Transitions whose conditions are satisfied</item>
+    /// <item>Transitions that are valid from the current state</item>
+    /// <item>Transitions that have no timing constraints or whose timing has been met</item>
+    /// </list>
+    /// <para>
+    /// Automatic transitions are executed immediately without external triggers, 
+    /// allowing workflows to progress automatically based on predefined rules and conditions.
+    /// </para>
+    /// <para>
+    /// This method may result in multiple state transitions if multiple automatic 
+    /// transitions are eligible for execution in sequence.
+    /// </para>
+    /// </remarks>
+    Task CheckAndExecuteAutomaticTransitionsAsync(
+        Definitions.Workflow workflow,
+        Instance instance,
+        CancellationToken cancellationToken = default);
 }
