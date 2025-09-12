@@ -39,9 +39,9 @@ public record FlowCompletedData
     public JsonElement? InstanceData { get; init; }
     
     /// <summary>
-    /// Tags associated with the completed flow instance
+    /// MetaData associated with the completed flow instance
     /// </summary>
-    public string[]? Tags { get; init; }
+    public ObjectDictionary MetaData { get; init; }
     
     /// <summary>
     /// When the flow was completed

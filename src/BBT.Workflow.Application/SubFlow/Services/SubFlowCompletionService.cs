@@ -37,12 +37,12 @@ public sealed class SubFlowCompletionService(
             "Processing SubFlow completion for instance {InstanceId} in domain {Domain}",
             completedData.InstanceId, completedData.Domain);
 
-        // Parse parent information from tags
-        var parentInfo = ParseParentInfoFromTags(completedData.Tags);
+        // Parse parent information from metadata
+        var parentInfo = ParseParentInfoFromMetaData(completedData.MetaData);
         if (parentInfo == null)
         {
             logger.LogWarning(
-                "No parent information found in tags for completed SubFlow instance {InstanceId}. This may be a standalone flow.",
+                "No parent information found in metadata for completed SubFlow instance {InstanceId}. This may be a standalone flow.",
                 completedData.InstanceId);
             return;
         }
@@ -279,70 +279,66 @@ public sealed class SubFlowCompletionService(
     }
 
     /// <summary>
-    /// Parses parent workflow information from the SubFlow instance tags.
-    /// Tags are expected to follow the pattern: "parent.{property}:{value}"
+    /// Parses parent workflow information from the SubFlow instance metadata.
+    /// MetaData is expected to contain keys with "parent." prefix.
     /// </summary>
-    /// <param name="tags">The tags array from the completed SubFlow instance</param>
+    /// <param name="metaData">The metadata dictionary from the completed SubFlow instance</param>
     /// <returns>Parsed parent information or null if not found</returns>
-    private ParentInfo? ParseParentInfoFromTags(string[]? tags)
+    private ParentInfo? ParseParentInfoFromMetaData(ObjectDictionary? metaData)
     {
-        if (tags == null || tags.Length == 0)
+        if (metaData == null || metaData.Count == 0)
         {
             return null;
         }
 
         var parentInfo = new ParentInfo();
-        var foundAnyParentTag = false;
+        var foundAnyParentData = false;
 
-        foreach (var tag in tags)
+        foreach (var kvp in metaData)
         {
-            if (!tag.StartsWith("parent.", StringComparison.OrdinalIgnoreCase))
+            var key = kvp.Key;
+            var value = kvp.Value;
+            var stringValue = value?.ToString();
+
+            if (string.IsNullOrEmpty(stringValue))
                 continue;
 
-            var colonIndex = tag.IndexOf(':');
-            if (colonIndex == -1)
-                continue;
-
-            var key = tag.Substring(7, colonIndex - 7); // Skip "parent." prefix
-            var value = tag.Substring(colonIndex + 1);
-
-            switch (key.ToLowerInvariant())
+            switch (key)
             {
-                case "id":
-                    if (Guid.TryParse(value, out var parentId))
+                case DomainConsts.MetaDataKeys.Id:
+                    if (Guid.TryParse(stringValue, out var parentId))
                     {
                         parentInfo.Id = parentId;
-                        foundAnyParentTag = true;
+                        foundAnyParentData = true;
                     }
-
                     break;
-                case "key":
-                    parentInfo.Key = value;
-                    foundAnyParentTag = true;
+                case DomainConsts.MetaDataKeys.Key:
+                    parentInfo.Key = stringValue;
+                    foundAnyParentData = true;
                     break;
-                case "domain":
-                    parentInfo.Domain = value;
-                    foundAnyParentTag = true;
+                case DomainConsts.MetaDataKeys.Domain:
+                    parentInfo.Domain = stringValue;
+                    foundAnyParentData = true;
                     break;
-                case "flow":
-                    parentInfo.Flow = value;
-                    foundAnyParentTag = true;
+                case DomainConsts.MetaDataKeys.Flow:
+                    parentInfo.Flow = stringValue;
+                    foundAnyParentData = true;
                     break;
-                case "version":
-                    parentInfo.Version = value;
-                    foundAnyParentTag = true;
+                case DomainConsts.MetaDataKeys.Version:
+                    parentInfo.Version = stringValue;
+                    foundAnyParentData = true;
                     break;
-                case "state":
-                    parentInfo.State = value;
-                    foundAnyParentTag = true;
+                case DomainConsts.MetaDataKeys.State:
+                    parentInfo.State = stringValue;
+                    foundAnyParentData = true;
                     break;
             }
         }
 
-        if (!foundAnyParentTag || string.IsNullOrEmpty(parentInfo.Domain) || string.IsNullOrEmpty(parentInfo.Flow))
+        if (!foundAnyParentData || string.IsNullOrEmpty(parentInfo.Domain) || string.IsNullOrEmpty(parentInfo.Flow))
         {
             logger.LogWarning(
-                "Incomplete parent information found in tags. Domain: {Domain}, Flow: {Flow}",
+                "Incomplete parent information found in metadata. Domain: {Domain}, Flow: {Flow}",
                 parentInfo.Domain ?? "null", parentInfo.Flow ?? "null");
             return null;
         }
@@ -351,7 +347,7 @@ public sealed class SubFlowCompletionService(
     }
 
     /// <summary>
-    /// Contains parsed parent workflow information from SubFlow tags
+    /// Contains parsed parent workflow information from SubFlow metadata
     /// </summary>
     private class ParentInfo
     {

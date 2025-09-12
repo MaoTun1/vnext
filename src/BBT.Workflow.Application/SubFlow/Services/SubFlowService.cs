@@ -5,6 +5,7 @@ using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Instances.Remote;
 using BBT.Workflow.Scripting;
+using Microsoft.Extensions.Configuration;
 
 namespace BBT.Workflow.SubFlow;
 
@@ -16,11 +17,13 @@ namespace BBT.Workflow.SubFlow;
 /// <param name="instanceCorrelationRepository">Repository for managing instance correlations.</param>
 /// <param name="guidGenerator">Service for generating unique identifiers.</param>
 /// <param name="remoteInstanceCommandAppService">Manages remote requests to trigger SubProcess only.</param>
+/// <param name="configuration">Configuration provider for accessing application settings.</param>
 /// <param name="scriptEngine">Script engine for compiling and executing mapping scripts.</param>
 public sealed class SubFlowService(
     IInstanceCorrelationRepository instanceCorrelationRepository,
     IGuidGenerator guidGenerator,
     IRemoteInstanceCommandAppService remoteInstanceCommandAppService,
+    IConfiguration configuration,
     IScriptEngine scriptEngine) : ISubFlowService
 {
     /// <summary>
@@ -85,23 +88,31 @@ public sealed class SubFlowService(
         {
             inputMappingResult = await HandleInputMappingAsync(subFlowConfig, context, cancellationToken);
         }
-        
+
         // Prepare instance creation input
         var createInstanceInput = new CreateInstanceInput
         {
+            Id = guidGenerator.Create(),
+            Callback = configuration["DAPR_APP_ID"],
             Key = parentInstance.Key ?? string.Empty,
-            Attributes = inputMappingResult?.Data != null 
+            Attributes = inputMappingResult?.Data != null
                 ? JsonSerializer.SerializeToElement(inputMappingResult.Data)
                 : null,
-            Tags = 
+            Tags =
             [
-                $"parent.id:{parentInstance.Id}",
                 $"parent.key:{parentInstance.Key}",
                 $"parent.domain:{workflow.Domain}",
-                $"parent.flow:{workflow.Key}",
-                $"parent.version:{workflow.Version}",
-                $"parent.state:{targetState.Key}"
-            ]
+                $"parent.flow:{workflow.Key}"
+            ],
+            MetaData = new ObjectDictionary
+            {
+                [DomainConsts.MetaDataKeys.Id] = parentInstance.Id,
+                [DomainConsts.MetaDataKeys.Key] = parentInstance.Key ?? string.Empty,
+                [DomainConsts.MetaDataKeys.Domain] = workflow.Domain,
+                [DomainConsts.MetaDataKeys.Flow] = workflow.Key,
+                [DomainConsts.MetaDataKeys.Version] = workflow.Version ?? string.Empty,
+                [DomainConsts.MetaDataKeys.State] = targetState.Key
+            }
         };
 
         // Apply additional properties from input mapping if available
@@ -124,14 +135,12 @@ public sealed class SubFlowService(
             subFlowConfig.Process.Domain,
             subFlowConfig.Process.Key,
             subFlowConfig.Process.Version,
-            false)
+            Convert.ToBoolean(parentInstance.MetaData[DomainConsts.MetaDataKeys.Sync]!.ToString()))
         {
             Instance = createInstanceInput,
             Headers = inputMappingResult?.Headers,
             RouteValues = inputMappingResult?.RouteValues
         };
-
-        var subFlowResult = await remoteInstanceCommandAppService.StartAsync(subFlowStartInput, cancellationToken);
 
         // Create correlation to track SubFlow/SubProcess instance
         // SubFlow (Type "S"): Blocks parent workflow until completion
@@ -140,13 +149,15 @@ public sealed class SubFlowService(
             guidGenerator.Create(),
             parentInstance.Id,
             targetState.Key,
-            subFlowResult.Data.Id,
+            createInstanceInput.Id.Value,
             subFlowConfig.Type.Code,
             subFlowConfig.Process.Domain,
             subFlowConfig.Process.Key,
             subFlowConfig.Process.Version);
 
         await instanceCorrelationRepository.InsertAsync(correlation, true, cancellationToken);
+
+        await remoteInstanceCommandAppService.StartSubAsync(subFlowStartInput, cancellationToken);
     }
 
     /// <summary>
@@ -207,7 +218,7 @@ public sealed class SubFlowService(
         // Check if there's an active SubFlow that blocks the main instance
         var correlation = await instanceCorrelationRepository
             .FindActiveSubFlowByParentAsync(instanceId, cancellationToken);
-        
+
         if (correlation != null)
         {
             // Forward transition to SubFlow instance

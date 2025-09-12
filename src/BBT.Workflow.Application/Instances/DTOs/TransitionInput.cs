@@ -31,15 +31,5 @@ public sealed class TransitionOutput
     /// <summary>
     /// Instance status (Active, Busy, Completed, etc.)
     /// </summary>
-    public string? Status { get; set; }
-
-    /// <summary>
-    /// Current state of the instance
-    /// </summary>
-    public string? CurrentState { get; set; }
-
-    /// <summary>
-    /// Active SubFlow/SubProcess correlations for this instance
-    /// </summary>
-    public List<InstanceCorrelationInfo> ActiveCorrelations { get; set; } = [];
+    public InstanceStatus? Status { get; set; }
 }

@@ -1,5 +1,8 @@
+using System.Text.Json;
+using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Scripting;
+using WorkflowExecutionContext = BBT.Workflow.Shared.ExecutionContext;
 
 namespace BBT.Workflow.Execution.StateMachine;
 
@@ -182,5 +185,72 @@ public interface IStateMachineExecutor
     Task CheckAndExecuteAutomaticTransitionsAsync(
         Definitions.Workflow workflow,
         Instance instance,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Asynchronously starts a new workflow instance with the provided configuration.
+    /// This method handles the complete instance initialization and start transition execution.
+    /// </summary>
+    /// <param name="workflow">The workflow definition to start an instance for</param>
+    /// <param name="instanceId">The unique id for the instance</param>
+    /// <param name="instanceKey">The unique key for the instance</param>
+    /// <param name="tags">Optional tags to associate with the instance</param>
+    /// <param name="metadata">>Optional metadata to associate with the instance</param>
+    /// <param name="attributes">Initial data attributes for the instance</param>
+    /// <param name="headers">Request headers for the start transition</param>
+    /// <param name="routeValues">Route values for the start transition</param>
+    /// <param name="executionContext">The execution context (User or System)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The created and initialized workflow instance</returns>
+    /// <remarks>
+    /// This method performs:
+    /// 1. Instance creation or retrieval if exists
+    /// 2. Initial state assignment
+    /// 3. Data versioning setup
+    /// 4. Start transition execution
+    /// 5. Automatic transition checking
+    /// 6. Flow timeout scheduling
+    /// </remarks>
+    Task<Instance> StartInstanceAsync(
+        Definitions.Workflow workflow,
+        Guid instanceId,
+        string instanceKey,
+        List<string>? tags,
+        ObjectDictionary metadata,
+        JsonElement? attributes,
+        Dictionary<string, string>? headers,
+        Dictionary<string, object?>? routeValues,
+        WorkflowExecutionContext executionContext = WorkflowExecutionContext.User,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Asynchronously executes a manual transition for an existing workflow instance.
+    /// This method handles the complete transition lifecycle with proper state management.
+    /// </summary>
+    /// <param name="workflow">The workflow definition containing the transition</param>
+    /// <param name="instance">The instance to execute the transition for</param>
+    /// <param name="transitionKey">The key of the transition to execute</param>
+    /// <param name="data">Optional data to pass to the transition</param>
+    /// <param name="headers">Request headers for the transition</param>
+    /// <param name="routeValues">Route values for the transition</param>
+    /// <param name="executionContext">The execution context (User or System)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>A task representing the transition execution</returns>
+    /// <remarks>
+    /// This method performs:
+    /// 1. Transition validation and preparation
+    /// 2. Data versioning and persistence
+    /// 3. Transition execution with full lifecycle
+    /// 4. Automatic transition checking
+    /// 5. Instance status management
+    /// </remarks>
+    Task ExecuteManualTransitionAsync(
+        Definitions.Workflow workflow,
+        Instance instance,
+        string transitionKey,
+        JsonElement? data,
+        Dictionary<string, string>? headers,
+        Dictionary<string, object?>? routeValues,
+        WorkflowExecutionContext executionContext = WorkflowExecutionContext.User,
         CancellationToken cancellationToken = default);
 }

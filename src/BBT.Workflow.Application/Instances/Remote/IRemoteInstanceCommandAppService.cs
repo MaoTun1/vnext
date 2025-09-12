@@ -8,8 +8,18 @@ public interface IRemoteInstanceCommandAppService
     Task<InstanceServiceResponse<StartInstanceOutput>> StartAsync(
         StartInstanceInput input,
         CancellationToken cancellationToken = default);
+    
+    Task<InstanceServiceResponse<StartInstanceOutput>> StartSubAsync(
+        StartInstanceInput input,
+        CancellationToken cancellationToken = default);
 
     Task<InstanceServiceResponse<TransitionOutput>> TransitionAsync(
+        Guid instanceId,
+        string transitionKey,
+        TransitionInput input,
+        CancellationToken cancellationToken = default);
+    
+    Task<InstanceServiceResponse<TransitionOutput>> AutoTransitionAsync(
         Guid instanceId,
         string transitionKey,
         TransitionInput input,

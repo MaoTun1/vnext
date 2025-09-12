@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
+using BBT.Workflow.Definitions;
 using BBT.Workflow.Shared;
 
 namespace BBT.Workflow.Instances;
@@ -21,42 +22,37 @@ public sealed class StartInstanceInput(
 
 public sealed class CreateInstanceInput
 {
+    public Guid? Id { get; set; }
+
     [Required]
     [StringLength(InstanceConstants.MaxKeyLength)]
     public string Key { get; set; }
+
     public string[]? Tags { get; set; }
     public JsonElement? Attributes { get; set; }
+    public string? Callback { get; set; }
+    public ObjectDictionary MetaData { get; set; } = new();
 }
 
 public sealed class StartInstanceOutput
 {
     public Guid Id { get; set; }
-    
+
     /// <summary>
     /// Instance status (Active, Busy, Completed, etc.)
     /// </summary>
-    public string? Status { get; set; }
-
-    /// <summary>
-    /// Current state of the instance
-    /// </summary>
-    public string? CurrentState { get; set; }
-
-    /// <summary>
-    /// Active SubFlow/SubProcess correlations for this instance
-    /// </summary>
-    public List<InstanceCorrelationInfo> ActiveCorrelations { get; set; } = [];
+    public InstanceStatus? Status { get; set; }
 }
 
 /// <summary>
 /// Information about active SubFlow/SubProcess correlations
 /// </summary>
- public sealed class InstanceCorrelationInfo
+public sealed class InstanceCorrelationInfo
 {
     public Guid CorrelationId { get; set; }
     public string ParentState { get; set; } = string.Empty;
     public Guid SubFlowInstanceId { get; set; }
-    public string SubFlowType { get; set; } = string.Empty;
+    public SubFlowType SubFlowType { get; set; }
     public string SubFlowDomain { get; set; } = string.Empty;
     public string SubFlowName { get; set; } = string.Empty;
     public string? SubFlowVersion { get; set; }

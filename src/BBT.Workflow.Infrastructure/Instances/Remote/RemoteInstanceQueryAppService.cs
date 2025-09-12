@@ -1,6 +1,8 @@
 using System.Text.Json;
 using BBT.Aether.Application.Services;
+using BBT.Aether.Http;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Remote.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -184,6 +186,33 @@ public sealed class RemoteInstanceQueryAppService(
         var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
         var statusCode = (int)response.StatusCode;
 
+        // Check if response has Aether error format header
+        if (response.Headers.TryGetValues("_bbt_error_format", out var values) && 
+            values.Any(v => v.Equals("true", StringComparison.OrdinalIgnoreCase)))
+        {
+            try
+            {
+                var jsonOptions = new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                };
+
+                var errorResponse = JsonSerializer.Deserialize<ServiceErrorResponse>(errorContent, jsonOptions);
+                if (errorResponse?.Error != null)
+                {
+                    throw new RemoteServiceException(
+                        $"Remote service error: {errorResponse.Error.Message}", 
+                        errorResponse.Error, 
+                        statusCode);
+                }
+            }
+            catch (JsonException)
+            {
+                // If JSON deserialization fails, fall back to the default behavior
+            }
+        }
+
+        // Default behavior for non-Aether format or deserialization failures
         throw new HttpRequestException($"HTTP {statusCode}: {response.ReasonPhrase}. Content: {errorContent}");
     }
 }

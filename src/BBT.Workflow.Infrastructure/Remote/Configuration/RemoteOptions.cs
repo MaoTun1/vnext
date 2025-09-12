@@ -36,12 +36,22 @@ public sealed class RemoteOptions
     public int RetryDelayMilliseconds { get; set; } = 1000;
 
     /// <summary>
-    /// Circuit breaker failure threshold (default: 5)
+    /// Circuit breaker failure threshold (default: 20 for auto-transition scenarios)
     /// </summary>
-    public int CircuitBreakerFailureThreshold { get; set; } = 5;
+    public int CircuitBreakerFailureThreshold { get; set; } = 20;
 
     /// <summary>
-    /// Circuit breaker timeout in seconds (default: 60 seconds)
+    /// Circuit breaker timeout in seconds (default: 30 seconds)
     /// </summary>
-    public int CircuitBreakerTimeoutSeconds { get; set; } = 60;
+    public int CircuitBreakerTimeoutSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// Enable circuit breaker bypass for internal operations (default: true)
+    /// </summary>
+    public bool EnableCircuitBreakerBypass { get; set; } = true;
+
+    /// <summary>
+    /// Internal operation header name for bypass identification
+    /// </summary>
+    public string InternalOperationHeader { get; set; } = "X-Internal-Operation";
 } 

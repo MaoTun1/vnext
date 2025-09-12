@@ -11,7 +11,7 @@ namespace BBT.Workflow.Instances;
 /// <summary>
 /// Instance
 /// </summary>
-public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTime
+public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTime, IObjectDictionary
 {
     private Instance()
     {
@@ -30,6 +30,8 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         Status = InstanceStatus.Active;
 
         Tags = [];
+
+        MetaData = new ObjectDictionary();
 
         _dataList = [];
     }
@@ -92,6 +94,12 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     public DateTime? ModifiedAt { get; set; }
 
     public bool IsTransient { get; private set; }
+
+    public ObjectDictionary MetaData  { get; set; }
+    public void SetMetaData(ObjectDictionary data)
+    {
+        MetaData = data;
+    }
 
     private readonly List<InstanceData> _dataList = new();
     private readonly object _dataListLock = new(); // Thread-safe lock for data operations

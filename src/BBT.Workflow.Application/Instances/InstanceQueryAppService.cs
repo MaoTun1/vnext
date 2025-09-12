@@ -219,7 +219,7 @@ public sealed class InstanceQueryAppService(
                 CorrelationId = c.Id,
                 ParentState = c.ParentState,
                 SubFlowInstanceId = c.SubFlowInstanceId,
-                SubFlowType = c.SubFlowType.Code,
+                SubFlowType = c.SubFlowType,
                 SubFlowDomain = c.SubFlowDomain,
                 SubFlowName = c.SubFlowName,
                 SubFlowVersion = c.SubFlowVersion,
