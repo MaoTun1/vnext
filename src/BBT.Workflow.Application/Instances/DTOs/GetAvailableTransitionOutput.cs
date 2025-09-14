@@ -41,7 +41,7 @@ public sealed class GetAvailableTransitionOutput
     /// <summary>
     /// Instance status (Active, Busy, Completed, etc.)
     /// </summary>
-    public string? Status { get; set; }
+    public InstanceStatus? Status { get; set; }
 
     /// <summary>
     /// Current state of the instance

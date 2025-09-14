@@ -110,7 +110,7 @@ public sealed class SubFlowService(
                 [DomainConsts.MetaDataKeys.Key] = parentInstance.Key ?? string.Empty,
                 [DomainConsts.MetaDataKeys.Domain] = workflow.Domain,
                 [DomainConsts.MetaDataKeys.Flow] = workflow.Key,
-                [DomainConsts.MetaDataKeys.Version] = workflow.Version ?? string.Empty,
+                [DomainConsts.MetaDataKeys.Version] = workflow.Version,
                 [DomainConsts.MetaDataKeys.State] = targetState.Key
             }
         };
@@ -238,9 +238,6 @@ public sealed class SubFlowService(
                 transitionKey,
                 subFlowTransitionInput,
                 cancellationToken);
-
-            // TODO: Handle SubFlow completion detection here
-            // If SubFlow completed, we might need to trigger SubFlow completion handling
 
             return subFlowResult; // Return SubFlow response
         }

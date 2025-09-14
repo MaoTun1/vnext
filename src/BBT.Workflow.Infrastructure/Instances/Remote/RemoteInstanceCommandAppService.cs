@@ -17,7 +17,7 @@ public sealed class RemoteInstanceCommandAppService(
 {
     private readonly RemoteOptions _options = options.Value;
 
-    private readonly JsonSerializerOptions _jsonOptions = new()
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = false
@@ -49,7 +49,7 @@ public sealed class RemoteInstanceCommandAppService(
             Attributes = input.Instance.Attributes
         };
 
-        var jsonContent = JsonSerializer.Serialize(requestBody, _jsonOptions);
+        var jsonContent = JsonSerializer.Serialize(requestBody, JsonOptions);
         var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         var requestMessage = new HttpRequestMessage(HttpMethod.Post, url)
@@ -71,7 +71,7 @@ public sealed class RemoteInstanceCommandAppService(
         if (response.IsSuccessStatusCode)
         {
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<StartInstanceOutput>(responseContent, _jsonOptions);
+            var result = JsonSerializer.Deserialize<StartInstanceOutput>(responseContent, JsonOptions);
             return new InstanceServiceResponse<StartInstanceOutput>(result!);
         }
 
@@ -108,7 +108,7 @@ public sealed class RemoteInstanceCommandAppService(
             MetaData = input.Instance.MetaData
         };
 
-        var jsonContent = JsonSerializer.Serialize(requestBody, _jsonOptions);
+        var jsonContent = JsonSerializer.Serialize(requestBody, JsonOptions);
         var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         var requestMessage = new HttpRequestMessage(HttpMethod.Post, url)
@@ -130,7 +130,7 @@ public sealed class RemoteInstanceCommandAppService(
         if (response.IsSuccessStatusCode)
         {
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<StartInstanceOutput>(responseContent, _jsonOptions);
+            var result = JsonSerializer.Deserialize<StartInstanceOutput>(responseContent, JsonOptions);
             return new InstanceServiceResponse<StartInstanceOutput>(result!);
         }
 
@@ -182,7 +182,7 @@ public sealed class RemoteInstanceCommandAppService(
         if (response.IsSuccessStatusCode)
         {
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<TransitionOutput>(responseContent, _jsonOptions);
+            var result = JsonSerializer.Deserialize<TransitionOutput>(responseContent, JsonOptions);
             return new InstanceServiceResponse<TransitionOutput>(result!);
         }
 
@@ -234,7 +234,7 @@ public sealed class RemoteInstanceCommandAppService(
         if (response.IsSuccessStatusCode)
         {
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<TransitionOutput>(responseContent, _jsonOptions);
+            var result = JsonSerializer.Deserialize<TransitionOutput>(responseContent, JsonOptions);
             return new InstanceServiceResponse<TransitionOutput>(result!);
         }
 
@@ -264,12 +264,7 @@ public sealed class RemoteInstanceCommandAppService(
         {
             try
             {
-                var jsonOptions = new JsonSerializerOptions
-                {
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                };
-
-                var errorResponse = JsonSerializer.Deserialize<ServiceErrorResponse>(errorContent, jsonOptions);
+                var errorResponse = JsonSerializer.Deserialize<ServiceErrorResponse>(errorContent, JsonOptions);
                 if (errorResponse?.Error != null)
                 {
                     throw new RemoteServiceException(

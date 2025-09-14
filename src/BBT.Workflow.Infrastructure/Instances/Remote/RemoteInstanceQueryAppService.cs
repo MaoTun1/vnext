@@ -18,7 +18,7 @@ public sealed class RemoteInstanceQueryAppService(
 {
     private readonly RemoteOptions _options = options.Value;
 
-    private readonly JsonSerializerOptions _jsonOptions = new()
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = false
@@ -65,7 +65,7 @@ public sealed class RemoteInstanceQueryAppService(
         if (response.IsSuccessStatusCode)
         {
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<GetInstanceOutput>(responseContent, _jsonOptions);
+            var result = JsonSerializer.Deserialize<GetInstanceOutput>(responseContent, JsonOptions);
             return InstanceServiceResult<GetInstanceOutput>.Success(result!);
         }
 
@@ -104,7 +104,7 @@ public sealed class RemoteInstanceQueryAppService(
         if (response.IsSuccessStatusCode)
         {
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<PaginationResult<GetInstanceOutput>>(responseContent, _jsonOptions);
+            var result = JsonSerializer.Deserialize<PaginationResult<GetInstanceOutput>>(responseContent, JsonOptions);
             return new InstanceServiceResponse<PaginationResult<GetInstanceOutput>>(result!);
         }
 
@@ -140,7 +140,7 @@ public sealed class RemoteInstanceQueryAppService(
         if (response.IsSuccessStatusCode)
         {
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<GetInstanceHistoryOutput>(responseContent, _jsonOptions);
+            var result = JsonSerializer.Deserialize<GetInstanceHistoryOutput>(responseContent, JsonOptions);
             return new InstanceServiceResponse<GetInstanceHistoryOutput>(result!);
         }
 
@@ -170,7 +170,7 @@ public sealed class RemoteInstanceQueryAppService(
         if (response.IsSuccessStatusCode)
         {
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<GetAvailableTransitionOutput>(responseContent, _jsonOptions);
+            var result = JsonSerializer.Deserialize<GetAvailableTransitionOutput>(responseContent, JsonOptions);
             return new InstanceServiceResponse<GetAvailableTransitionOutput>(result!);
         }
 
@@ -192,12 +192,7 @@ public sealed class RemoteInstanceQueryAppService(
         {
             try
             {
-                var jsonOptions = new JsonSerializerOptions
-                {
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                };
-
-                var errorResponse = JsonSerializer.Deserialize<ServiceErrorResponse>(errorContent, jsonOptions);
+                var errorResponse = JsonSerializer.Deserialize<ServiceErrorResponse>(errorContent, JsonOptions);
                 if (errorResponse?.Error != null)
                 {
                     throw new RemoteServiceException(
