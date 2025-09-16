@@ -15,7 +15,8 @@ public enum TaskType
     Human = 5,
     Http = 6,
     Script = 7,
-    Condition = 8
+    Condition = 8,
+    Timer = 9
 }
 
 /// <summary>

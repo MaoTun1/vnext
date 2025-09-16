@@ -1,5 +1,8 @@
 using BBT.Aether.Application.Services;
 using BBT.Aether.DistributedLock;
+using BBT.Aether.Guids;
+using BBT.Workflow.BackgroundJobs;
+using BBT.Workflow.BackgroundJobs.Payloads;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.ExceptionHandling;
@@ -11,6 +14,7 @@ using BBT.Workflow.Scripting;
 using WorkflowExecutionContext = BBT.Workflow.Shared.ExecutionContext;
 using BBT.Workflow.States;
 using BBT.Workflow.SubFlow;
+using Dapr.Jobs.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
@@ -26,7 +30,9 @@ public sealed class InstanceCommandAppService(
     IStateMachineExecutor stateMachineExecutor,
     IHeaderService headerService,
     ISubFlowService subFlowService,
-    IDistributedLockService distributedLockService)
+    IDistributedLockService distributedLockService,
+    IBackgroundJobService backgroundJobService,
+    IGuidGenerator guidGenerator)
     : ApplicationService(serviceProvider), IInstanceCommandAppService
 {
     public async Task<InstanceServiceResponse<StartInstanceOutput>> StartAsync(
@@ -35,13 +41,20 @@ public sealed class InstanceCommandAppService(
     {
         // Validate runtime and prepare schema
         runtimeInfoProvider.Check(input.Domain);
+
+        // If Sync=false, enqueue as background job
+        if (!input.Sync)
+        {
+            return await EnqueueStartInstanceJobAsync(input, cancellationToken);
+        }
+
         using (currentSchema.Change(input.Workflow))
         {
             // Load workflow and ensure schema
             var workflow = await componentCacheStore.GetFlowAsync(
                 input.Domain, input.Workflow, input.Version, cancellationToken);
             await schemaManager.EnsureSchemaAndTablesAsync(currentSchema.Name, cancellationToken);
-            
+
             input.Instance.MetaData.Add(DomainConsts.MetaDataKeys.Sync, input.Sync.ToString().ToLower());
             input.Instance.MetaData.Add(DomainConsts.MetaDataKeys.Callback, input.Instance.Callback);
             // Delegate instance creation and execution to StateMachineExecutor
@@ -78,9 +91,15 @@ public sealed class InstanceCommandAppService(
         TransitionInput input,
         CancellationToken cancellationToken = default)
     {
-        var resourceId = $"instance-{instanceId}";
         runtimeInfoProvider.Check(input.Domain);
 
+        // If Sync=false, enqueue as background job
+        if (!input.Sync)
+        {
+            return await EnqueueTransitionJobAsync(instanceId, transitionKey, input, cancellationToken);
+        }
+
+        var resourceId = $"instance-{instanceId}";
         var lockAcquired = false;
         Instance instance;
 
@@ -89,8 +108,10 @@ public sealed class InstanceCommandAppService(
             using (currentSchema.Change(input.Workflow))
             {
                 // Check if transition should be forwarded to SubFlow instance
-                var subFlowResponse = await subFlowService.TryForwardTransitionToSubFlowAsync(instanceId, transitionKey, input, cancellationToken);
-                
+                var subFlowResponse =
+                    await subFlowService.TryForwardTransitionToSubFlowAsync(instanceId, transitionKey, input,
+                        cancellationToken);
+
                 if (subFlowResponse != null)
                 {
                     // Transition was forwarded to SubFlow, return SubFlow response with main instance ID
@@ -143,7 +164,7 @@ public sealed class InstanceCommandAppService(
             var workflowForTransitions = await componentCacheStore.GetFlowAsync(
                 input.Domain, input.Workflow,
                 input.Version, cancellationToken);
-            
+
             headerService.AddHeader(
                 WorkflowInfo.Name,
                 WorkflowInfo.Generate(runtimeInfoProvider.Domain, workflowForTransitions.Key,
@@ -158,7 +179,7 @@ public sealed class InstanceCommandAppService(
             });
         }
     }
-    
+
     /// <summary>
     /// Executes the transition logic within the distributed lock context.
     /// This method delegates the actual transition execution to StateMachineExecutor.
@@ -174,7 +195,7 @@ public sealed class InstanceCommandAppService(
             var instance = await instanceRepository.GetActiveAsync(instanceId, cancellationToken);
             var workflow = await componentCacheStore.GetFlowAsync(
                 input.Domain, input.Workflow, input.Version, cancellationToken);
-            
+
             await ExecuteWithBusyStatusAsync(instance, input.ExecutionContext, async () =>
             {
                 // Delegate to StateMachineExecutor for actual transition execution
@@ -188,7 +209,7 @@ public sealed class InstanceCommandAppService(
                     input.RouteValues?.ToDictionary(kvp => kvp.Key, kvp => (object?)kvp.Value),
                     input.ExecutionContext,
                     cancellationToken);
-                
+
                 return instance;
             }, cancellationToken);
 
@@ -210,7 +231,7 @@ public sealed class InstanceCommandAppService(
             instance.Busy();
             await instanceRepository.UpdateAsync(instance, true, cancellationToken);
         }
-        
+
         try
         {
             // Execute the operation
@@ -262,7 +283,7 @@ public sealed class InstanceCommandAppService(
             instance.Busy();
             await instanceRepository.UpdateAsync(instance, true, cancellationToken);
         }
-        
+
         try
         {
             // Execute the operation
@@ -275,7 +296,6 @@ public sealed class InstanceCommandAppService(
                 // Always reset to active, even on failure
                 try
                 {
-                
                     if (!instance.Status.Equals(InstanceStatus.Completed))
                     {
                         instance.Active();
@@ -300,4 +320,127 @@ public sealed class InstanceCommandAppService(
         }
     }
 
+    /// <summary>
+    /// Enqueues a start instance operation as a background job when Sync=true.
+    /// </summary>
+    private async Task<InstanceServiceResponse<StartInstanceOutput>> EnqueueStartInstanceJobAsync(
+        StartInstanceInput input,
+        CancellationToken cancellationToken = default)
+    {
+        using (currentSchema.Change(input.Workflow))
+        {
+            var instanceId = input.Instance.Id ?? guidGenerator.Create();
+            var jobId = $"start-instance-{instanceId}";
+
+            // Create job payload
+            var payload = new StartInstanceJobPayload
+            {
+                Domain = input.Domain,
+                Workflow = input.Workflow,
+                Version = input.Version,
+                InstanceId = instanceId,
+                InstanceKey = input.Instance.Key,
+                Tags = input.Instance.Tags,
+                Attributes = input.Instance.Attributes,
+                Callback = input.Instance.Callback,
+                MetaData = input.Instance.MetaData.ToDictionary(kvp => kvp.Key,
+                    kvp => kvp.Value ?? (object)string.Empty),
+                Headers = input.Headers,
+                RouteValues = input.RouteValues
+            };
+
+            // Add sync metadata
+            payload.MetaData.Add(DomainConsts.MetaDataKeys.Sync, input.Sync.ToString().ToLower());
+            payload.MetaData.Add(DomainConsts.MetaDataKeys.Callback, input.Instance.Callback ?? string.Empty);
+
+            // Create job metadata
+            var jobMetadata = new Dictionary<string, string>
+            {
+                ["domain"] = input.Domain,
+                ["flowName"] = input.Workflow,
+                ["instanceId"] = instanceId.ToString()
+            };
+
+            // Schedule job to run immediately
+            var schedule = DaprJobSchedule.FromDateTime(DateTime.UtcNow.AddSeconds(1));
+
+            await backgroundJobService.EnqueueAsync(
+                BackgroundJobConsts.StartInstanceJobName,
+                jobId,
+                schedule,
+                payload,
+                jobMetadata,
+                cancellationToken);
+
+            Logger.LogInformation(
+                "Enqueued start instance job {JobId} for workflow {Workflow} with instance {InstanceId}",
+                jobId, input.Workflow, instanceId);
+
+            // Return response with instance ID and Busy status to indicate background processing
+            return new InstanceServiceResponse<StartInstanceOutput>(new StartInstanceOutput
+            {
+                Id = instanceId,
+                Status = InstanceStatus.Busy // Indicate that the instance is being processed in background
+            });
+        }
+    }
+
+    /// <summary>
+    /// Enqueues a transition operation as a background job when Sync=true.
+    /// </summary>
+    private async Task<InstanceServiceResponse<TransitionOutput>> EnqueueTransitionJobAsync(
+        Guid instanceId,
+        string transitionKey,
+        TransitionInput input,
+        CancellationToken cancellationToken = default)
+    {
+        using (currentSchema.Change(input.Workflow))
+        {
+            var jobId = $"transition-{instanceId}-{transitionKey}-{DateTimeOffset.UtcNow.Ticks}";
+
+            // Create job payload
+            var payload = new TransitionJobPayload
+            {
+                InstanceId = instanceId,
+                TransitionKey = transitionKey,
+                Domain = input.Domain,
+                Workflow = input.Workflow,
+                Version = input.Version,
+                Data = input.Data,
+                Headers = input.Headers,
+                RouteValues = input.RouteValues,
+                ExecutionContext = input.ExecutionContext
+            };
+
+            // Create job metadata
+            var jobMetadata = new Dictionary<string, string>
+            {
+                ["domain"] = input.Domain,
+                ["flowName"] = input.Workflow,
+                ["instanceId"] = instanceId.ToString()
+            };
+
+            // Schedule job to run immediately
+            var schedule = DaprJobSchedule.FromDateTime(DateTime.UtcNow.AddSeconds(1));
+
+            await backgroundJobService.EnqueueAsync(
+                BackgroundJobConsts.TransitionJobName,
+                jobId,
+                schedule,
+                payload,
+                jobMetadata,
+                cancellationToken);
+
+            Logger.LogInformation(
+                "Enqueued transition job {JobId} for instance {InstanceId} with transition {TransitionKey}",
+                jobId, instanceId, transitionKey);
+
+            // Return response with Busy status to indicate background processing
+            return new InstanceServiceResponse<TransitionOutput>(new TransitionOutput
+            {
+                Id = instanceId,
+                Status = InstanceStatus.Busy // Indicate that the transition is being processed in background
+            });
+        }
+    }
 }

@@ -22,6 +22,7 @@ namespace BBT.Workflow.Execution.StateMachine;
 public sealed class StateMachineExecutor(
     ITaskOrchestrationService taskExecutionService,
     IStateMachineService stateMachineService,
+    ITimerExecutionService timerExecutionService,
     IBackgroundJobService backgroundJobService,
     IGuidGenerator guidGenerator,
     IInstanceTransitionRepository instanceTransitionRepository,
@@ -113,19 +114,36 @@ public sealed class StateMachineExecutor(
             if (targetState.StateType == StateType.SubFlow)
             {
                 await HandleSubFlowAsync(context.Workflow, context.Instance, targetState, context, cancellationToken);
+                
+                if (targetState.SubFlow != null && targetState.SubFlow.Type.Equals(SubFlowType.SubProcess))
+                {
+                    // Check for automatic transitions after state change 
+                    await CheckAndExecuteAutomaticTransitionsAsync(
+                        context.Workflow,
+                        context.Instance,
+                        cancellationToken);
+                
+                    // Check for delay transition and execution
+                    await ScheduleTransitionsForLaterExecutionAsync(
+                        context.Workflow,
+                        context.Instance,
+                        context,
+                        cancellationToken);
+                }
             }
             else
             {
-                // Check for delay transition and execution
-                await ScheduleTransitionsForLaterExecutionAsync(
-                    context.Workflow,
-                    context.Instance,
-                    cancellationToken);
-                
                 // Check for automatic transitions after state change 
                 await CheckAndExecuteAutomaticTransitionsAsync(
                     context.Workflow,
                     context.Instance,
+                    cancellationToken);
+                
+                // Check for delay transition and execution
+                await ScheduleTransitionsForLaterExecutionAsync(
+                    context.Workflow,
+                    context.Instance,
+                    context,
                     cancellationToken);
             }
         }
@@ -190,23 +208,33 @@ public sealed class StateMachineExecutor(
     public async Task ScheduleTransitionsForLaterExecutionAsync(
         Definitions.Workflow workflow,
         Instance instance,
+        ScriptContext context,
         CancellationToken cancellationToken = default)
     {
         var autoTransitions = stateMachineService.GetScheduledTransitions(workflow, instance);
         var transitions = autoTransitions as Transition[] ?? autoTransitions.ToArray();
         if (transitions.Any())
         {
-            var tasks = transitions.Select(transition =>
-                backgroundJobService.EnqueueTransitionTimerAsync(
+            foreach (var transition in transitions)
+            {
+                if(transition.Timer == null)
+                    continue;
+                
+                var timer = await timerExecutionService.ExecuteRuleAsync(
+                    transition.Timer,
+                    context,
+                    cancellationToken);
+
+               await backgroundJobService.EnqueueTransitionTimerAsync(
                     instance.Id,
                     workflow.Key,
                     workflow.Domain,
                     workflow.Version,
                     transition.Key,
-                    transition.Timer!.Duration,
-                    cancellationToken));
+                    timer,
+                    cancellationToken);
 
-            await Task.WhenAll(tasks);
+            }
         }
     }
 
@@ -233,8 +261,13 @@ public sealed class StateMachineExecutor(
                     new TransitionInput(
                         workflow.Domain,
                         workflow.Key,
-                        workflow.Version
-                    ),
+                        workflow.Version,
+                        null,
+                        true
+                    )
+                    {
+                        ExecutionContext = WorkflowExecutionContext.System
+                    },
                     cancellationToken
                 );
                 break;

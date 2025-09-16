@@ -11,7 +11,7 @@ public sealed class AutoTransitionJobHandler(
     IJobStore jobStore,
     IInstanceCommandAppService instanceAppService,
     ICurrentSchema currentSchema,
-    ILogger<FlowTimeoutJobHandler> logger) : IJobHandler
+    ILogger<AutoTransitionJobHandler> logger) : IJobHandler
 {
     public string JobName => BackgroundJobConsts.AutoTransitionJobName;
 

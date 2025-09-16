@@ -134,6 +134,14 @@ public sealed class SubFlowCompletionService(
         // Get the state where SubFlow was initiated
         var parentState = parentWorkflow.GetState(correlation.ParentState);
 
+        // Create script context for output mapping with completed SubFlow data
+        var scriptContextBuilder = scriptContextFactory.NewBuilder()
+            .WithWorkflow(parentWorkflow)
+            .WithInstance(parentInstance)
+            .WithRuntime(runtimeInfoProvider)
+            .WithBody(completedData.InstanceData?.Deserialize<Dictionary<string, object>>() ??
+                      new Dictionary<string, object>());
+        
         if (parentState.SubFlow?.Mapping != null)
         {
             logger.LogInformation(
@@ -145,6 +153,7 @@ public sealed class SubFlowCompletionService(
                 parentInstance,
                 parentState,
                 completedData,
+                await scriptContextBuilder.BuildAsync(cancellationToken),
                 cancellationToken);
         }
 
@@ -152,8 +161,13 @@ public sealed class SubFlowCompletionService(
         logger.LogInformation(
             "Resuming automatic transitions for parent instance {ParentInstanceId} after SubFlow completion",
             parentInstance.Id);
+        
 
-        await ResumeAutomaticProcessesAsync(parentInstance, parentWorkflow, cancellationToken);
+        await ResumeAutomaticProcessesAsync(
+            parentInstance, 
+            parentWorkflow,
+            await scriptContextBuilder.BuildAsync(cancellationToken),
+            cancellationToken);
     }
 
     /// <summary>
@@ -169,6 +183,7 @@ public sealed class SubFlowCompletionService(
         Instance parentInstance,
         Definitions.State parentState,
         FlowCompletedData completedData,
+        ScriptContext scriptContext,
         CancellationToken cancellationToken)
     {
         try
@@ -179,16 +194,6 @@ public sealed class SubFlowCompletionService(
             logger.LogDebug(
                 "Executing SubFlow output mapping for parent instance {ParentInstanceId}",
                 parentInstance.Id);
-
-            // Create script context for output mapping with completed SubFlow data
-            var scriptContextBuilder = scriptContextFactory.NewBuilder()
-                .WithWorkflow(parentWorkflow)
-                .WithInstance(parentInstance)
-                .WithRuntime(runtimeInfoProvider)
-                .WithBody(completedData.InstanceData?.Deserialize<Dictionary<string, object>>() ??
-                          new Dictionary<string, object>());
-
-            var scriptContext = await scriptContextBuilder.BuildAsync(cancellationToken);
             
             // Compile the mapping script to the appropriate interface
             var mappingInstance = await scriptEngine.CompileToInstanceAsync<object>(
@@ -246,10 +251,12 @@ public sealed class SubFlowCompletionService(
     /// </summary>
     /// <param name="parentInstance">The parent workflow instance</param>
     /// <param name="parentWorkflow">The parent workflow definition</param>
+    /// <param name="scriptContext"></param>
     /// <param name="cancellationToken">Cancellation token</param>
     private async Task ResumeAutomaticProcessesAsync(
         Instance parentInstance,
         Definitions.Workflow parentWorkflow,
+        ScriptContext scriptContext,
         CancellationToken cancellationToken)
     {
         try
@@ -257,11 +264,14 @@ public sealed class SubFlowCompletionService(
             logger.LogInformation(
                 "Resuming automatic processes for parent instance {ParentInstanceId} in state {CurrentState}",
                 parentInstance.Id, parentInstance.CurrentState);
-
-            await stateMachineExecutor.ScheduleTransitionsForLaterExecutionAsync(parentWorkflow, parentInstance,
-                cancellationToken);
             
             await stateMachineExecutor.CheckAndExecuteAutomaticTransitionsAsync(parentWorkflow, parentInstance,
+                cancellationToken);
+            
+            await stateMachineExecutor.ScheduleTransitionsForLaterExecutionAsync(
+                parentWorkflow, 
+                parentInstance,
+                scriptContext,
                 cancellationToken);
             
             logger.LogInformation(

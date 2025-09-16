@@ -70,7 +70,7 @@ public sealed class Transition : IHasKey
     /// <see cref="TriggerType"/>
     /// </summary>
     public TriggerType TriggerType { get; private set; }
-    [JsonInclude] public TimerConfig? Timer { get; private set; }
+    [JsonInclude] public ScriptCode? Timer { get; private set; }
     [JsonInclude] public ScriptCode? Rule { get; private set; }
     [JsonInclude] public Reference? Schema { get; private set; }
     [JsonInclude] public List<string> AvailableIn { get; private set; }
@@ -155,9 +155,9 @@ public sealed class Transition : IHasKey
         Rule = new ScriptCode(location, scriptCode);
     }
     
-    public void SetTimer(string reset, string duration)
+    public void SetTimer(string location, string code)
     {
-        Timer = new TimerConfig(reset, duration);
+        Timer = new ScriptCode(location, code);
     }
 
     public bool CanExecute(State currentState, StateTransitionPolicy policy)

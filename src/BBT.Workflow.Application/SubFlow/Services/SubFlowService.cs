@@ -81,7 +81,6 @@ public sealed class SubFlowService(
         CancellationToken cancellationToken = default)
     {
         var subFlowConfig = targetState.SubFlow!;
-
         // Handle input mapping if mapping is configured
         ScriptResponse? inputMappingResult = null;
         if (subFlowConfig.Mapping != null)

@@ -91,7 +91,7 @@ public class CSharpEvaluator : IEvaluator
 
         var compilation = CSharpCompilation.Create(
             assemblyName: Path.GetRandomFileName(),
-            syntaxTrees: new[] { syntaxTree },
+            syntaxTrees: [syntaxTree],
             references: references,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         

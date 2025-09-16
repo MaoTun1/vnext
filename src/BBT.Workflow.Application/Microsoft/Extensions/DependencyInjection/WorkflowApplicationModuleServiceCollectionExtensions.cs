@@ -111,12 +111,14 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddScoped<DaprServiceTaskExecutor>();
         services.AddScoped<ScriptTaskExecutor>();
         services.AddScoped<ConditionTaskExecutor>();
+        services.AddScoped<TimerTaskExecutor>();
 
         // Scripting service
         services.AddScoped<IScriptEngine, ScriptEngine>();
 
         // Rule execution service
         services.AddScoped<IRuleExecutionService, RuleExecutionService>();
+        services.AddScoped<ITimerExecutionService, TimerExecutionService>();
 
         // Cast handlers
         services.AddSingleton<IWorkflowCastHandler, FlowCastHandler>();

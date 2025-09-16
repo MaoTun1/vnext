@@ -111,6 +111,7 @@ public interface IStateMachineExecutor
     /// The workflow instance for which transitions will be scheduled.
     /// The scheduling context will be associated with this specific instance.
     /// </param>
+    /// <param name="context"></param>
     /// <param name="cancellationToken">
     /// The cancellation token used to cancel the operation. Default value is default.
     /// </param>
@@ -138,6 +139,7 @@ public interface IStateMachineExecutor
     Task ScheduleTransitionsForLaterExecutionAsync(
         Definitions.Workflow workflow,
         Instance instance,
+        ScriptContext context,
         CancellationToken cancellationToken = default);
 
     /// <summary>
