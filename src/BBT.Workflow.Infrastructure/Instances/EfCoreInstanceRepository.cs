@@ -1,5 +1,6 @@
 using BBT.Aether.Domain.EntityFrameworkCore;
 using BBT.Aether.Domain.Services;
+using BBT.Workflow.ClickHouse;
 using BBT.Workflow.Data;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Monitoring;
@@ -17,7 +18,8 @@ public sealed class EfCoreInstanceRepository(
     ITransactionService transactionService,
     IConfiguration configuration,
     IWorkflowMetrics workflowMetrics,
-    IRuntimeInfoProvider runtimeInfoProvider)
+    IRuntimeInfoProvider runtimeInfoProvider,
+    IClickHouseDataTransfer? clickHouseDataTransfer = null)
     : EfCoreRepository<WorkflowDbContext, Instance, Guid>(dbContext, serviceProvider, transactionService),
         IInstanceRepository
 {
@@ -38,6 +40,20 @@ public sealed class EfCoreInstanceRepository(
         // Only record business-specific instance metrics here
         workflowMetrics.RecordInstanceCreated(entity.Flow, runtimeInfoProvider.Domain);
         
+        // Transfer to ClickHouse if enabled
+        if (clickHouseDataTransfer != null)
+        {
+            try
+            {
+                await clickHouseDataTransfer.TransferInstanceAsync(result, DataTransferOperation.Insert, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                // Log error but don't fail the main operation
+                Console.WriteLine($"Failed to transfer instance to ClickHouse: {ex.Message}");
+            }
+        }
+        
         return result;
     }
 
@@ -57,6 +73,20 @@ public sealed class EfCoreInstanceRepository(
         if (originalStatus != null && !originalStatus.Equals(entity.Status))
         {
             await HandleStatusChangeMetrics(entity, originalStatus, entity.Status);
+        }
+        
+        // Transfer to ClickHouse if enabled
+        if (clickHouseDataTransfer != null)
+        {
+            try
+            {
+                await clickHouseDataTransfer.TransferInstanceAsync(result, DataTransferOperation.Update, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                // Log error but don't fail the main operation
+                Console.WriteLine($"Failed to transfer instance to ClickHouse: {ex.Message}");
+            }
         }
         
         return result;
