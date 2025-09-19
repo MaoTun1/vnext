@@ -1,24 +1,29 @@
-# ClickHouse Integration
+# DataSink Integration with ClickHouse
 
-This document describes the ClickHouse integration for the BBT Workflow system, which provides real-time analytics and data warehousing capabilities for workflow instances, transitions, and tasks.
+This document describes the DataSink integration for the BBT Workflow system, which provides a pluggable architecture for analytics and data warehousing capabilities. The system uses a DataSink pattern that allows multiple analytics providers (including ClickHouse) to be easily integrated and managed.
 
 ## Overview
 
-The ClickHouse integration is implemented as a pluggable component that automatically transfers data from the main PostgreSQL database to ClickHouse for analytics purposes. This allows for:
+The DataSink integration is implemented as a pluggable component architecture that automatically transfers data from the main PostgreSQL database to various analytics providers. This allows for:
 
 - Real-time analytics on workflow performance
 - Historical data analysis
 - Performance monitoring and reporting
 - Data warehousing for business intelligence
+- Easy addition of new analytics providers
+- Decoupled architecture for better maintainability
 
 ## Architecture
 
 The integration consists of several components:
 
-1. **ClickHouse Data Transfer Service** - Handles the actual data transfer
-2. **Repository Integration** - Automatically triggers data transfer on CRUD operations
-3. **Configuration Management** - Manages ClickHouse connection and settings
-4. **Docker Integration** - Provides ClickHouse container setup
+1. **DataSink Interface** - Abstract interface for all analytics providers
+2. **DataSink Registry** - Manages registration and discovery of DataSink implementations
+3. **DataSink Manager** - Coordinates data transfer operations across all registered sinks
+4. **ClickHouse DataSink Implementation** - Specific implementation for ClickHouse
+5. **Repository Integration** - Automatically triggers data transfer on CRUD operations
+6. **Configuration Management** - Manages connection and settings for each provider
+7. **Docker Integration** - Provides container setup for analytics providers
 
 ## Configuration
 
@@ -54,21 +59,44 @@ The ClickHouse integration is configured through the `ClickHouse` section in app
 - **RetryDelayMilliseconds**: Delay between retry attempts
 - **Tables**: Mapping of entity types to ClickHouse table names
 
-## Data Transfer Operations
+## DataSink Pattern
+
+The DataSink pattern provides a clean, extensible architecture for analytics data transfer:
+
+### Core Interfaces
+
+- **`IDataSink<TEntity>`**: Generic interface for entity-specific data sinks
+- **`IDataSink`**: Base interface for all data sinks
+- **`IDataSinkRegistry`**: Manages registration and discovery of data sinks
+- **`IDataSinkManager`**: Coordinates operations across all registered sinks
+
+### Data Transfer Operations
 
 The integration automatically transfers data for the following operations:
 
-### Instance Operations
+#### Instance Operations
 - **Insert**: When a new workflow instance is created
 - **Update**: When an instance status or properties change
+- **Delete**: When an instance is deleted (if implemented)
 
-### Instance Transition Operations
+#### Instance Transition Operations
 - **Insert**: When a new transition is created
 - **Update**: When a transition is completed or updated
+- **Delete**: When a transition is deleted (if implemented)
 
-### Instance Task Operations
+#### Instance Task Operations
 - **Insert**: When a new task is created
 - **Update**: When a task status or properties change
+- **Delete**: When a task is deleted (if implemented)
+
+### Benefits of DataSink Pattern
+
+1. **Pluggable Architecture**: Easy to add new analytics providers
+2. **Decoupled Design**: Analytics logic is separated from business logic
+3. **Error Isolation**: Failures in one sink don't affect others
+4. **Configuration Flexibility**: Each sink can have its own configuration
+5. **Performance**: Parallel processing of data across multiple sinks
+6. **Maintainability**: Clear separation of concerns
 
 ## ClickHouse Schema
 
@@ -180,7 +208,58 @@ clickhouse:
 
 2. The ClickHouse database and tables will be automatically created from the init.sql script.
 
-3. The workflow system will automatically start transferring data to ClickHouse.
+3. The workflow system will automatically start transferring data to all registered DataSinks.
+
+### Adding New DataSink Implementations
+
+To add a new analytics provider, follow these steps:
+
+1. **Create DataSink Implementation**:
+   ```csharp
+   public class MyAnalyticsDataSink : AbstractDataSink<Instance>
+   {
+       public override string Name => "MyAnalytics-Instance";
+       public override bool IsEnabled => _configuration.Enabled;
+       
+       protected override async Task OnInsertAsync(Instance entity, CancellationToken cancellationToken)
+       {
+           // Implementation for insert operation
+       }
+       
+       protected override async Task OnUpdateAsync(Instance entity, CancellationToken cancellationToken)
+       {
+           // Implementation for update operation
+       }
+       
+       protected override async Task OnDeleteAsync(Instance entity, CancellationToken cancellationToken)
+       {
+           // Implementation for delete operation
+       }
+       
+       protected override async Task OnFlushAsync(CancellationToken cancellationToken)
+       {
+           // Implementation for flush operation
+       }
+   }
+   ```
+
+2. **Register in Dependency Injection**:
+   ```csharp
+   services.AddSingleton<IDataSink<Instance>, MyAnalyticsDataSink>();
+   ```
+
+3. **Configure Settings**:
+   ```json
+   {
+     "MyAnalytics": {
+       "Enabled": true,
+       "ConnectionString": "...",
+       "BatchSize": 1000
+     }
+   }
+   ```
+
+The DataSink will be automatically registered and used by the system.
 
 ### Querying Data
 
@@ -250,4 +329,9 @@ Potential future improvements include:
 3. **Advanced Analytics** - Machine learning integration for predictive analytics
 4. **Multi-tenant Support** - Schema-based data isolation
 5. **Data Compression** - Advanced compression strategies for cost optimization
+6. **Additional DataSink Providers** - Elasticsearch, Kafka, BigQuery, etc.
+7. **DataSink Health Monitoring** - Health checks and circuit breakers
+8. **DataSink Metrics** - Performance metrics for each DataSink
+9. **DataSink Configuration UI** - Web interface for managing DataSink configurations
+10. **DataSink Templates** - Pre-built templates for common analytics providers
 
