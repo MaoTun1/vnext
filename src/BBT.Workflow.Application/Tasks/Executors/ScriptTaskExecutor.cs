@@ -41,8 +41,10 @@ public sealed class ScriptTaskExecutor(
             var scriptRunner = await ScriptEngine.CompileToInstanceAsync<IMapping>(
                 scriptCode, 
                 cancellationToken: cancellationToken);
-
             Logger.LogDebug("Script compiled successfully, executing output handler for task {TaskKey}", task.Key);
+            
+            await scriptRunner.InputHandler((task as ScriptTask)!, context);
+            
             var upResponse = await scriptRunner.OutputHandler(context);
             
             stopwatch.Stop();

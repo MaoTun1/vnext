@@ -52,7 +52,8 @@ public sealed class TransitionJobHandler(
 
             try
             {
-                // Reconstruct the original TransitionInput with Sync=false
+                // For async processing, instance should already be pre-reserved and in Busy status
+                // Reconstruct the original TransitionInput with Sync=true
                 var transitionInput = new TransitionInput(
                     jobInfo.Payload.Domain,
                     jobInfo.Payload.Workflow,
@@ -65,8 +66,8 @@ public sealed class TransitionJobHandler(
                     ExecutionContext = jobInfo.Payload.ExecutionContext
                 };
 
-                // Use the existing service method - much cleaner!
-                var result = await instanceCommandAppService.TransitionAsync(
+                // Use the background-specific method that handles pre-reserved instances
+                var result = await instanceCommandAppService.ExecuteBackgroundTransitionAsync(
                     jobInfo.Payload.InstanceId,
                     jobInfo.Payload.TransitionKey,
                     transitionInput,

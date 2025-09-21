@@ -190,35 +190,27 @@ public interface IStateMachineExecutor
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Asynchronously starts a new workflow instance with the provided configuration.
-    /// This method handles the complete instance initialization and start transition execution.
+    /// Asynchronously executes the start transition for a workflow instance.
+    /// This method handles only the state machine logic, expecting the instance to be already prepared.
     /// </summary>
-    /// <param name="workflow">The workflow definition to start an instance for</param>
-    /// <param name="instanceId">The unique id for the instance</param>
-    /// <param name="instanceKey">The unique key for the instance</param>
-    /// <param name="tags">Optional tags to associate with the instance</param>
-    /// <param name="metadata">>Optional metadata to associate with the instance</param>
+    /// <param name="workflow">The workflow definition containing the start transition</param>
+    /// <param name="instance">The prepared instance to start</param>
     /// <param name="attributes">Initial data attributes for the instance</param>
     /// <param name="headers">Request headers for the start transition</param>
     /// <param name="routeValues">Route values for the start transition</param>
     /// <param name="executionContext">The execution context (User or System)</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The created and initialized workflow instance</returns>
+    /// <returns>A task representing the start transition execution</returns>
     /// <remarks>
     /// This method performs:
-    /// 1. Instance creation or retrieval if exists
-    /// 2. Initial state assignment
-    /// 3. Data versioning setup
-    /// 4. Start transition execution
-    /// 5. Automatic transition checking
-    /// 6. Flow timeout scheduling
+    /// 1. Instance status validation and activation if needed
+    /// 2. Start transition execution
+    /// 3. Instance persistence
+    /// 4. Flow timeout scheduling
     /// </remarks>
-    Task<Instance> StartInstanceAsync(
+    Task ExecuteInstanceStartAsync(
         Definitions.Workflow workflow,
-        Guid instanceId,
-        string instanceKey,
-        List<string>? tags,
-        ObjectDictionary metadata,
+        Instance instance,
         JsonElement? attributes,
         Dictionary<string, string>? headers,
         Dictionary<string, object?>? routeValues,

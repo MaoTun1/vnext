@@ -5,6 +5,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Scripting;
 using Dapr.Client;
 using System.Diagnostics;
+using BBT.Workflow.Definitions.Timer;
 
 namespace BBT.Workflow.Scripting;
 
@@ -35,6 +36,7 @@ public sealed class ScriptEngine(DaprClient daprClient, IWorkflowMetrics workflo
     {
         MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
         MetadataReference.CreateFromFile(typeof(IMapping).Assembly.Location),
+        MetadataReference.CreateFromFile(typeof(TimerSchedule).Assembly.Location),
         MetadataReference.CreateFromFile(typeof(Task).Assembly.Location),
         MetadataReference.CreateFromFile(typeof(Dictionary<,>).Assembly.Location),
         MetadataReference.CreateFromFile(typeof(Microsoft.CSharp.RuntimeBinder.CSharpArgumentInfo).Assembly.Location),
@@ -58,7 +60,8 @@ public sealed class ScriptEngine(DaprClient daprClient, IWorkflowMetrics workflo
         "BBT.Workflow.Definitions",
         "BBT.Workflow.Instances",
         "BBT.Workflow.Runtime",
-        "BBT.Workflow.Scripting.Functions"
+        "BBT.Workflow.Scripting.Functions",
+        "BBT.Workflow.Definitions.Timer"
     };
 
     /// <summary>

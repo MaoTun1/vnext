@@ -1,5 +1,6 @@
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Definitions.Tasks;
+using BBT.Workflow.Definitions.Timer;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks;
 using BBT.Workflow.Instances;
@@ -84,27 +85,34 @@ public class TaskOrchestrationService(
     }
 
     /// <summary>
-    /// Executes a timer script and returns the calculated DateTime result.
+    /// Executes a timer script and returns the calculated WorkflowTimerSchedule result.
     /// </summary>
     /// <param name="script">The script code containing the timer logic to evaluate.</param>
     /// <param name="context">The script execution context for timer calculation.</param>
     /// <param name="cancellationToken">Cancellation token for async operation control.</param>
     /// <returns>
     /// A task representing the asynchronous operation. The task result contains 
-    /// the DateTime value calculated by the timer script execution, or default DateTime if execution fails.
+    /// the WorkflowTimerSchedule calculated by the timer script execution, or an Immediate schedule if execution fails.
     /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when script or context is null.</exception>
     /// <remarks>
     /// This method creates a timer task instance and delegates the execution to the appropriate
-    /// task executor. The result is cast to DateTime with a fallback to default(DateTime) if the cast fails.
+    /// task executor. The result is cast to WorkflowTimerSchedule with a fallback to immediate execution if the cast fails.
     /// </remarks>
-    public async Task<DateTime> ExecuteTimerAsync(ScriptCode script, ScriptContext context, CancellationToken cancellationToken = default)
+    public async Task<TimerSchedule> ExecuteTimerAsync(ScriptCode script, ScriptContext context, CancellationToken cancellationToken = default)
     {
         var task = TimerTask.Create();
         var taskExecutor = taskExecutorFactory.GetExecutor(task.GetTaskType());
 
         var response = await taskExecutor.ExecuteAsync(task, script.DecodedCode, context, cancellationToken);
-        return response as DateTime? ??  default(DateTime);
+        
+        // Handle different response types for backward compatibility
+        return response switch
+        {
+            TimerSchedule schedule => schedule,
+            DateTime dateTime => TimerSchedule.FromDateTime(dateTime),
+            _ => TimerSchedule.Immediate() // Fallback to immediate execution
+        };
     }
 
     /// <summary>

@@ -51,7 +51,10 @@ public sealed class StartInstanceJobHandler(
 
             try
             {
-                // Reconstruct the original StartInstanceInput with Sync=false
+                // For async processing, instance should already be pre-created and in Busy status
+                // We need to use the StateMachineExecutor directly to handle the pre-created instance properly
+                
+                // Reconstruct the original StartInstanceInput with Sync=true
                 var startInput = new StartInstanceInput(
                     jobInfo.Payload.Domain,
                     jobInfo.Payload.Workflow,
@@ -71,8 +74,8 @@ public sealed class StartInstanceJobHandler(
                     RouteValues = jobInfo.Payload.RouteValues
                 };
 
-                // Use the existing service method - much cleaner!
-                var result = await instanceCommandAppService.StartAsync(startInput, cancellationToken);
+                // Use the background-specific method that handles pre-created instances
+                var result = await instanceCommandAppService.ExecuteBackgroundStartAsync(startInput, cancellationToken);
 
                 logger.LogInformation(
                     "StartInstanceJobHandler: Successfully started instance {InstanceId} for workflow {Workflow}",

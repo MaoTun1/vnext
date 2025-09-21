@@ -1,4 +1,5 @@
 using System.Xml;
+using BBT.Workflow.Definitions.Timer;
 using Dapr.Jobs.Models;
 using ExecutionContext = BBT.Workflow.Shared.ExecutionContext;
 
@@ -134,7 +135,7 @@ public static class WorkflowTimeoutJobExtensions
         string domain,
         string version,
         string transitionKey,
-        DateTime timer,
+        TimerSchedule timer,
         CancellationToken cancellationToken = default)
     {
         var jobId = $"timer-transition-{flowName}-{instanceId}-{transitionKey}";
@@ -151,7 +152,7 @@ public static class WorkflowTimeoutJobExtensions
         return jobService.EnqueueAsync(
             jobName: BackgroundJobConsts.TransitionTimerJobName,
             jobId: jobId,
-            schedule: DaprJobSchedule.FromDateTime(timer),
+            schedule: timer.ToDaprJobSchedule(),
             payload: payload,
             new Dictionary<string, string>()
             {

@@ -130,11 +130,17 @@ public sealed class SubFlowService(
             }
         }
 
+        var sync = Convert.ToBoolean(parentInstance.MetaData[DomainConsts.MetaDataKeys.Sync]!.ToString());
+        if (subFlowConfig.Type.Equals(SubFlowType.SubProcess))
+        {
+            sync = false;
+        }
         var subFlowStartInput = new StartInstanceInput(
             subFlowConfig.Process.Domain,
             subFlowConfig.Process.Key,
             subFlowConfig.Process.Version,
-            Convert.ToBoolean(parentInstance.MetaData[DomainConsts.MetaDataKeys.Sync]!.ToString()))
+            sync
+            )
         {
             Instance = createInstanceInput,
             Headers = inputMappingResult?.Headers,

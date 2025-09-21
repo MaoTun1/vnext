@@ -58,7 +58,7 @@ public sealed class AutoTransitionJobHandler(
                         ExecutionContext = WorkflowExecutionContext.System // System context for auto transitions
                     };
 
-                    await instanceAppService.TransitionAsync(
+                    await instanceAppService.ExecuteBackgroundTransitionAsync(
                         jobInfo.Payload.InstanceId,
                         transitionKey,
                         input,

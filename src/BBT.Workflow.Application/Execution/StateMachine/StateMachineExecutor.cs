@@ -203,8 +203,7 @@ public sealed class StateMachineExecutor(
     {
         await subFlowService.HandleSubFlowAsync(workflow, instance, targetState, context, cancellationToken);
     }
-
-    /// <inheritdoc />
+    
     public async Task ScheduleTransitionsForLaterExecutionAsync(
         Definitions.Workflow workflow,
         Instance instance,
@@ -220,7 +219,7 @@ public sealed class StateMachineExecutor(
                 if(transition.Timer == null)
                     continue;
                 
-                var timer = await timerExecutionService.ExecuteRuleAsync(
+                var timerSchedule = await timerExecutionService.ExecuteRuleAsync(
                     transition.Timer,
                     context,
                     cancellationToken);
@@ -231,7 +230,7 @@ public sealed class StateMachineExecutor(
                     workflow.Domain,
                     workflow.Version,
                     transition.Key,
-                    timer,
+                    timerSchedule,
                     cancellationToken);
 
             }
@@ -375,12 +374,9 @@ public sealed class StateMachineExecutor(
     }
 
     /// <inheritdoc />
-    public async Task<Instance> StartInstanceAsync(
+    public async Task ExecuteInstanceStartAsync(
         Definitions.Workflow workflow,
-        Guid instanceId,
-        string instanceKey,
-        List<string>? tags,
-        ObjectDictionary metadata,
+        Instance instance,
         JsonElement? attributes,
         Dictionary<string, string>? headers,
         Dictionary<string, object?>? routeValues,
@@ -388,32 +384,15 @@ public sealed class StateMachineExecutor(
         CancellationToken cancellationToken = default)
     {
         logger.LogDebug(
-            "Starting workflow instance with key {InstanceKey} for workflow {WorkflowKey}",
-            instanceKey, workflow.Key);
+            "Executing start transition for instance {InstanceId} in workflow {WorkflowKey}",
+            instance.Id, workflow.Key);
 
-        var initialState = workflow.GetInitialState();
-
-        // Create or retrieve existing instance
-        var instance = await instanceRepository.FindByKeyAsync(instanceKey, cancellationToken)
-                       ?? Instance.Create(
-                           instanceId,
-                           workflow.Key,
-                           instanceKey);
-
-        instance.SetMetaData(metadata);
-        // Initialize instance state and tags
-        instance.ChangeState(initialState);
-        if (tags?.Any() == true)
+        // Ensure instance is in proper state for processing
+        if (instance.Status.Equals(InstanceStatus.Busy))
         {
-            instance.AddTags(tags.ToArray());
-        }
-
-        // Persist new instance if transient
-        if (instance.IsTransient)
-        {
-            await instanceRepository.InsertAsync(instance, true, cancellationToken);
-            logger.LogDebug("Created new instance {InstanceId} with key {InstanceKey}", 
-                instance.Id, instanceKey);
+            instance.Active();
+            logger.LogDebug("Activated pre-created instance {InstanceId} for processing", 
+                instance.Id);
         }
 
         // Execute start transition
@@ -432,11 +411,9 @@ public sealed class StateMachineExecutor(
         // Schedule flow timeout if configured
         await FlowTimeoutAsync(workflow, instance, cancellationToken);
 
-        logger.LogInformation(
-            "Successfully started workflow instance {InstanceId} with key {InstanceKey} in state {CurrentState}",
-            instance.Id, instanceKey, instance.CurrentState);
-
-        return instance;
+        logger.LogDebug(
+            "Successfully executed start transition for instance {InstanceId}. Current state: {CurrentState}",
+            instance.Id, instance.CurrentState);
     }
 
     /// <inheritdoc />
@@ -454,6 +431,14 @@ public sealed class StateMachineExecutor(
             "Executing manual transition {TransitionKey} for instance {InstanceId}",
             transitionKey, instance.Id);
 
+        // Ensure instance is in proper state for processing
+        if (instance.Status.Equals(InstanceStatus.Busy))
+        {
+            instance.Active();
+            logger.LogDebug("Activated pre-reserved instance {InstanceId} for transition processing", 
+                instance.Id);
+        }
+
         // Build script context for the manual transition
         var scriptContextBuilder = scriptContextFactory.NewBuilder()
             .WithWorkflow(workflow)
@@ -467,7 +452,7 @@ public sealed class StateMachineExecutor(
         var workflowTransition = workflow.FindTransition(transitionKey, workflow.GetState(instance.CurrentState!));
         if (workflowTransition == null)
         {
-            throw new InvalidOperationException($"Transition '{transitionKey}' not found for current state '{instance.CurrentState}'");
+            throw new InvalidStateException(transitionKey, instance.CurrentState);
         }
 
         var scriptContext = await scriptContextBuilder

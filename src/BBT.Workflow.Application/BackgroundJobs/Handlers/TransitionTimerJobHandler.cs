@@ -56,7 +56,7 @@ public sealed class TransitionTimerJobHandler(
                     ExecutionContext = WorkflowExecutionContext.System // System context for scheduled transitions
                 };
 
-                await instanceAppService.TransitionAsync(
+                await instanceAppService.ExecuteBackgroundTransitionAsync(
                     jobInfo.Payload.InstanceId,
                     jobInfo.Payload.TransitionKey,
                     input,

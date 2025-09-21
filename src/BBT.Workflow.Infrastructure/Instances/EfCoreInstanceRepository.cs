@@ -108,6 +108,15 @@ public sealed class EfCoreInstanceRepository(
             p => p.Key == key, cancellationToken);
     }
 
+    public async Task<Instance?> FindByKeyAsReadOnlyAsync(string key, CancellationToken cancellationToken = default)
+    {
+        return await (await GetDbSetAsync())
+            .Include(i => i.DataList)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                p => p.Key == key, cancellationToken);
+    }
+
     public async Task<Instance?> FindByIdAsync(
         Guid id,
         CancellationToken cancellationToken = default)
