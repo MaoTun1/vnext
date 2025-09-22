@@ -1,6 +1,7 @@
 using BBT.Aether.Domain.EntityFrameworkCore;
 using BBT.Aether.Domain.Services;
 using BBT.Workflow.Data;
+using BBT.Workflow.DataSink;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
@@ -17,7 +18,8 @@ public sealed class EfCoreInstanceRepository(
     ITransactionService transactionService,
     IConfiguration configuration,
     IWorkflowMetrics workflowMetrics,
-    IRuntimeInfoProvider runtimeInfoProvider)
+    IRuntimeInfoProvider runtimeInfoProvider,
+    IDataSinkManager dataSinkManager)
     : EfCoreRepository<WorkflowDbContext, Instance, Guid>(dbContext, serviceProvider, transactionService),
         IInstanceRepository
 {
@@ -40,6 +42,17 @@ public sealed class EfCoreInstanceRepository(
         // Only record business-specific instance metrics here
         workflowMetrics.RecordInstanceCreated(entity.Flow, runtimeInfoProvider.Domain);
         
+        // Transfer to data sinks (e.g., ClickHouse) if enabled
+        try
+        {
+            await dataSinkManager.HandleInsertAsync(result, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Log error but don't fail the main operation
+            Console.WriteLine($"Failed to transfer instance to data sinks: {ex.Message}");
+        }
+        
         return result;
     }
 
@@ -59,6 +72,17 @@ public sealed class EfCoreInstanceRepository(
         if (originalStatus != null && !originalStatus.Equals(entity.Status))
         {
             await HandleStatusChangeMetrics(entity, originalStatus, entity.Status);
+        }
+        
+        // Transfer to data sinks (e.g., ClickHouse) if enabled
+        try
+        {
+            await dataSinkManager.HandleUpdateAsync(result, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Log error but don't fail the main operation
+            Console.WriteLine($"Failed to transfer instance to data sinks: {ex.Message}");
         }
         
         return result;
@@ -246,14 +270,6 @@ public sealed class EfCoreInstanceRepository(
         if (onlyLatest)
         {
             query = query.Where(d => d.IsLatest == true);
-        }
-
-        // For now, using basic filtering - can be enhanced later with InstanceData-specific filters
-        if (filters?.Any() == true)
-        {
-            // Basic filtering could be implemented here if needed
-            // For now, just return the latest data
-            Console.WriteLine("Note: Advanced filtering not implemented for InstanceData-only queries");
         }
 
         return query;

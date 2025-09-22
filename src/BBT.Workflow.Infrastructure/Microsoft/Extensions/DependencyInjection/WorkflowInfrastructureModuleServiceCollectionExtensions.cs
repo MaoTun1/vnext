@@ -1,5 +1,6 @@
 using BBT.Workflow.BackgroundJobs;
 using BBT.Workflow.Data;
+using BBT.Workflow.Infrastructure.DataSink;
 using BBT.Workflow.Infrastructure.HostedServices;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Monitoring;
@@ -53,6 +54,11 @@ public static class WorkflowInfrastructureModuleServiceCollectionExtensions
         // Hosted Services
         services.AddHostedService<BackgroundJobMetricsHostedService>();
         services.AddHostedService<SystemHealthMonitoringHostedService>();
+        
+        // DataSink Integration (replaces ClickHouse integration)
+        services.AddDataSinkServices();
+        services.AddClickHouseDataSinks();
+        services.RegisterDataSinks();
         
         return services;
     }
