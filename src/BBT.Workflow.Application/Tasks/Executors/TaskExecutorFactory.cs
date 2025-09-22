@@ -52,6 +52,8 @@ public sealed class TaskExecutorFactory(IServiceProvider serviceProvider) : ITas
                 return serviceProvider.GetRequiredService<DaprHumanTaskExecutor>();
             case TaskType.Condition:
                 return serviceProvider.GetRequiredService<ConditionTaskExecutor>();
+            case TaskType.Timer:
+                return serviceProvider.GetRequiredService<TimerTaskExecutor>();
             default:
                 throw new ArgumentOutOfRangeException(nameof(type), type, null);
         }

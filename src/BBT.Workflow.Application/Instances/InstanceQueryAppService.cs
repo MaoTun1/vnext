@@ -7,8 +7,9 @@ using BBT.Workflow.Scripting;
 using BBT.Aether.Domain.Entities;
 using BBT.Workflow.Extentions;
 using BBT.Workflow.States;
-using BBT.Workflow.SubFlow;
 using Microsoft.AspNetCore.Http;
+using BBT.Workflow.Instances.Remote;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Instances;
 
@@ -18,11 +19,13 @@ public sealed class InstanceQueryAppService(
     IRuntimeInfoProvider runtimeInfoProvider,
     IComponentCacheStore componentCacheStore,
     IInstanceRepository instanceRepository,
+    IInstanceCorrelationRepository instanceCorrelationRepository,
     IInstanceExtensionService instanceExtensionService,
     IStateMachineService stateMachineService,
-    ISubFlowService subFlowService,
     IScriptContextFactory scriptContextFactory,
-    IHttpContextAccessor httpContextAccessor)
+    IHttpContextAccessor httpContextAccessor,
+    IRemoteInstanceQueryAppService remoteInstanceQueryAppService,
+    ILogger<InstanceQueryAppService> logger)
     : ApplicationService(serviceProvider), IInstanceQueryAppService
 {
     public async Task<InstanceServiceResult<GetInstanceOutput>> GetInstanceAsync(
@@ -152,17 +155,31 @@ public sealed class InstanceQueryAppService(
             var instance = await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken);
 
             // Get workflow for available transitions (may have changed after transition execution)
-            var workflowForTransitions = await GetCurrentWorkflowAsync(instance.Id, input.Domain, input.Workflow,
-                input.Version, cancellationToken);
+            var currentWorkflow = await componentCacheStore.GetFlowAsync(
+                input.Domain, 
+                input.Workflow, 
+                input.Version, 
+                cancellationToken);
 
             // Build instance transition information using shared logic
-            var transitionInfo = await BuildInstanceTransitionInfoAsync(instance, workflowForTransitions, cancellationToken);
+            var transitionInfo = await BuildInstanceTransitionInfoAsync(instance, cancellationToken);
+
+            // Check if there are any active SubFlow correlations
+            var activeSubFlowCorrelation = transitionInfo.ActiveCorrelations
+                .Where(c => c.SubFlowType == SubFlowType.SubFlow && !c.IsCompleted)
+                .OrderByDescending(c => c.CorrelationId) // Get the latest active SubFlow
+                .FirstOrDefault();
+
+            (List<string> availableTransitions, string? currentState, InstanceStatus? status) = activeSubFlowCorrelation != null
+                ? await GetSubFlowTransitionsAsync(activeSubFlowCorrelation, instance, currentWorkflow, cancellationToken)
+                : GetMainFlowTransitions(instance, currentWorkflow, transitionInfo);
 
             var result = new GetAvailableTransitionOutput
             {
-                Status = transitionInfo.Status,
-                CurrentState = transitionInfo.CurrentState,
-                Items = transitionInfo.AvailableTransitions
+                Status = status,
+                CurrentState = currentState,
+                Items = availableTransitions,
+                ActiveCorrelations = transitionInfo.ActiveCorrelations
             };
 
             return new InstanceServiceResponse<GetAvailableTransitionOutput>(result);
@@ -170,82 +187,122 @@ public sealed class InstanceQueryAppService(
     }
 
     /// <summary>
-    /// Builds instance transition information including status, current state, and available user transitions.
-    /// This method consolidates the logic for determining available transitions based on instance status.
+    /// Builds instance transition information including status, current state, and correlations.
+    /// This method consolidates the logic for determining instance information based on instance status.
+    /// </summary>
+    /// <param name="instance">The workflow instance</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>A tuple containing status, current state, and correlations</returns>
+    private async
+        Task<(InstanceStatus Status, string? CurrentState, List<InstanceCorrelationInfo>
+            ActiveCorrelations)> BuildInstanceTransitionInfoAsync(
+            Instance instance,
+            CancellationToken cancellationToken = default)
+    {
+        // Get active correlations
+        var activeCorrelations = await GetActiveCorrelationsAsync(instance.Id, cancellationToken);
+
+        return ( instance.Status, instance.CurrentState, activeCorrelations);
+    }
+
+    /// <summary>
+    /// Gets available transitions from a remote SubFlow instance.
+    /// </summary>
+    /// <param name="activeSubFlowCorrelation">The active SubFlow correlation</param>
+    /// <param name="mainInstance">The main workflow instance</param>
+    /// <param name="currentWorkflow">The current workflow definition</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Tuple containing available transitions and current state from SubFlow, status always from main flow</returns>
+    private async Task<(List<string> AvailableTransitions, string? CurrentState, InstanceStatus? Status)> GetSubFlowTransitionsAsync(
+        InstanceCorrelationInfo activeSubFlowCorrelation,
+        Instance mainInstance,
+        BBT.Workflow.Definitions.Workflow currentWorkflow,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var subFlowInput = new GetAvailableTransitionInput
+            {
+                Domain = activeSubFlowCorrelation.SubFlowDomain,
+                Workflow = activeSubFlowCorrelation.SubFlowName,
+                Version = activeSubFlowCorrelation.SubFlowVersion,
+                Instance = activeSubFlowCorrelation.SubFlowInstanceId.ToString()
+            };
+
+            var subFlowResult = await remoteInstanceQueryAppService.GetAvailableTransitionsAsync(
+                subFlowInput, 
+                cancellationToken);
+
+            if (subFlowResult?.Data != null)
+            {
+                // Use SubFlow transitions and current state, but always use main instance status
+                return (subFlowResult.Data.Items, subFlowResult.Data.CurrentState, mainInstance.Status);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Log the exception and fall back to main flow transitions
+            logger.LogWarning(ex, 
+                "Failed to get available transitions from SubFlow {SubFlowDomain}/{SubFlowName} for instance {InstanceId}. Falling back to main flow transitions.", 
+                activeSubFlowCorrelation.SubFlowDomain, 
+                activeSubFlowCorrelation.SubFlowName, 
+                activeSubFlowCorrelation.SubFlowInstanceId);
+        }
+
+        // Fallback to main flow transitions
+        return GetMainFlowTransitions(mainInstance, currentWorkflow);
+    }
+
+    /// <summary>
+    /// Gets available transitions from the main workflow instance.
     /// </summary>
     /// <param name="instance">The workflow instance</param>
     /// <param name="currentWorkflow">The current workflow definition</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>A tuple containing status, current state, and available user transitions</returns>
-    private async Task<(string Status, string? CurrentState, List<string> AvailableTransitions)> BuildInstanceTransitionInfoAsync(
+    /// <param name="transitionInfo">Optional transition info (used when called from main method)</param>
+    /// <returns>Tuple containing available transitions, current state, and status from main flow</returns>
+    private (List<string> AvailableTransitions, string? CurrentState, InstanceStatus? Status) GetMainFlowTransitions(
         Instance instance,
-        Definitions.Workflow currentWorkflow,
-        CancellationToken cancellationToken = default)
+        BBT.Workflow.Definitions.Workflow currentWorkflow,
+        (InstanceStatus Status, string? CurrentState, List<InstanceCorrelationInfo> ActiveCorrelations)? transitionInfo = null)
     {
-        var status = instance.Status.Description;
-        var currentState = instance.CurrentState;
         var availableTransitions = new List<string>();
-
-        // If instance is active, return user-triggered transitions
+        
         if (instance.Status.Equals(InstanceStatus.Active))
         {
-            availableTransitions = await GetAvailableUserTransitionsAsync(instance, currentWorkflow, cancellationToken);
+            availableTransitions = stateMachineService.AvailableUserTransitionKeys(currentWorkflow, instance);
         }
-        // For other statuses (Busy, Completed, Faulted, Passive), no transitions are available
 
-        return (status, currentState, availableTransitions);
+        var currentState = transitionInfo?.CurrentState ?? instance.CurrentState;
+        var status = transitionInfo?.Status ?? instance.Status;
+
+        return (availableTransitions, currentState, status);
     }
 
     /// <summary>
-    /// Gets the current workflow definition based on whether the instance is in SubFlow mode or main workflow mode.
+    /// Gets active SubFlow/SubProcess correlations for the instance.
     /// </summary>
-    private async Task<Definitions.Workflow> GetCurrentWorkflowAsync(
+    /// <param name="instanceId">The workflow instance ID</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>List of active correlation information</returns>
+    private async Task<List<InstanceCorrelationInfo>> GetActiveCorrelationsAsync(
         Guid instanceId,
-        string domain,
-        string workflowName,
-        string? version,
         CancellationToken cancellationToken = default)
     {
-        var activeSubFlowContext = await subFlowService.GetActiveSubFlowContextAsync(instanceId, cancellationToken);
-
-        if (activeSubFlowContext.HasValue)
-        {
-            // Instance is in SubFlow mode, use SubFlow workflow
-            return activeSubFlowContext.Value.SubFlowWorkflow;
-        }
-
-        // Instance is in main workflow mode
-        return await componentCacheStore.GetFlowAsync(domain, workflowName, version, cancellationToken);
-    }
-
-    /// <summary>
-    /// Gets available user-triggered transitions for the current instance context (either SubFlow or main workflow).
-    /// This method filters out automatic and scheduled transitions, returning only manual transitions that users can trigger.
-    /// </summary>
-    private async Task<List<string>> GetAvailableUserTransitionsAsync(
-        Instance instance,
-        Definitions.Workflow currentWorkflow,
-        CancellationToken cancellationToken = default)
-    {
-        // Check if we're in SubFlow mode after the transition
-        var activeSubFlowContext = await subFlowService.GetActiveSubFlowContextAsync(instance.Id, cancellationToken);
-
-        if (activeSubFlowContext.HasValue)
-        {
-            // Verify that the current state exists in the SubFlow workflow
-            // If not, the SubFlow has finished and we should use the main workflow
-            var subFlowWorkflow = activeSubFlowContext.Value.SubFlowWorkflow;
-            var currentStateExistsInSubFlow = subFlowWorkflow.States.Any(s => s.Key == instance.CurrentState);
-
-            if (currentStateExistsInSubFlow)
+        var correlations = await instanceCorrelationRepository.GetActiveByParentAsync(instanceId, cancellationToken);
+        
+        return correlations
+            .Select(c => new InstanceCorrelationInfo
             {
-                // Return SubFlow user transitions
-                return stateMachineService.AvailableUserTransitionKeys(subFlowWorkflow, instance);
-            }
-        }
-
-        // Return main workflow user transitions
-        return stateMachineService.AvailableUserTransitionKeys(currentWorkflow, instance);
+                CorrelationId = c.Id,
+                ParentState = c.ParentState,
+                SubFlowInstanceId = c.SubFlowInstanceId,
+                SubFlowType = c.SubFlowType,
+                SubFlowDomain = c.SubFlowDomain,
+                SubFlowName = c.SubFlowName,
+                SubFlowVersion = c.SubFlowVersion,
+                IsCompleted = c.IsCompleted
+            })
+            .ToList();
     }
     
     private async Task<Instance> GetInstanceByIdOrKeyAsync(string instanceIdentifier,

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using BBT.Aether;
 using BBT.Aether.Domain.Entities;
 using BBT.Workflow.Definitions;
@@ -84,10 +85,13 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
 
     private string IncrementVersion(string currentVersion, VersionStrategy versionStrategy)
     {
-        var parts = currentVersion.Split('.');
-        var major = int.Parse(parts[0]);
-        var minor = int.Parse(parts[1]);
-        var patch = int.Parse(parts[2]);
+        var match = Regex.Match(currentVersion, @"^(\d+)\.(\d+)\.(\d+)");
+        if (!match.Success)
+            return currentVersion;
+
+        var major = int.Parse(match.Groups[1].Value);
+        var minor = int.Parse(match.Groups[2].Value);
+        var patch = int.Parse(match.Groups[3].Value);
 
         return versionStrategy.Code switch
         {

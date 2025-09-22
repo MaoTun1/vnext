@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Caching;
 
-public class DomainCacheContext : CacheContext
+public class DomainCacheContext : CacheContext, IDisposable
 {
     private readonly IServiceProvider _serviceProvider;
     public CacheSet<Definitions.Workflow> Workflows { get; }
@@ -32,5 +32,13 @@ public class DomainCacheContext : CacheContext
     {
         using var scope = _serviceProvider.CreateScope();
         return scope.ServiceProvider.GetRequiredService<IDistributedCacheService>();
+    }
+
+    public void Dispose()
+    {
+        foreach (var cacheSet in CacheSets)
+        {
+            cacheSet?.Dispose();
+        }
     }
 }

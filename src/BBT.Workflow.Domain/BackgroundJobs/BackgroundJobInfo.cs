@@ -89,8 +89,6 @@ public class BackgroundJobInfo<T> where T : class
             return altFlowName;
         
         return string.Empty;
-        
-        return flowName;
     }
 
     /// <summary>

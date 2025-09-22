@@ -7,6 +7,7 @@ using BBT.Workflow.Instances;
 using BBT.Workflow.Instances.Policies;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Validation;
+using WorkflowExecutionContext = BBT.Workflow.Shared.ExecutionContext;
 
 namespace BBT.Workflow.States;
 
@@ -32,6 +33,7 @@ public class StateMachineService(
     /// <param name="transitionKey">The unique identifier of the transition to execute</param>
     /// <param name="scriptContext">The script execution context for rule evaluation</param>
     /// <param name="data">Optional JSON data to validate against the transition's schema</param>
+    /// <param name="executionContext"></param>
     /// <param name="cancellationToken">Cancellation token to cancel the operation</param>
     /// <returns>
     /// A <see cref="Transition"/> object representing the validated transition that can be executed.
@@ -58,6 +60,7 @@ public class StateMachineService(
         string transitionKey,
         ScriptContext scriptContext,
         JsonElement? data = null,
+        WorkflowExecutionContext executionContext = WorkflowExecutionContext.User,
         CancellationToken cancellationToken = default)
     {
         var currentState = workflow.GetState(instance.CurrentState!);
@@ -68,7 +71,7 @@ public class StateMachineService(
             throw new NotFoundTransitionException(transitionKey);
         }
 
-        await ValidateAndProcessTransitionAsync(instance, currentState, transition, scriptContext, data, cancellationToken);
+        await ValidateAndProcessTransitionAsync(instance, currentState, transition, scriptContext, data, executionContext, cancellationToken);
         return transition;
     }
 
@@ -81,10 +84,11 @@ public class StateMachineService(
         Transition transition,
         ScriptContext scriptContext,
         JsonElement? data,
+        WorkflowExecutionContext executionContext,
         CancellationToken cancellationToken)
     {
-        // Validate that the instance can execute this transition
-        instance.CanExecuteTransition(transition, currentState, stateTransitionPolicy);
+        // Validate that the instance can execute this transition (includes authorization check)
+        instance.CanExecuteTransition(transition, currentState, stateTransitionPolicy, executionContext);
         
         // Execute transition rules if present
         if (transition.Rule != null)

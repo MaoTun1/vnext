@@ -1,6 +1,7 @@
 using BBT.Aether.Domain.EntityFrameworkCore;
 using BBT.Aether.Domain.Services;
 using BBT.Workflow.Data;
+using BBT.Workflow.DataSink;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
@@ -17,10 +18,13 @@ public sealed class EfCoreInstanceRepository(
     ITransactionService transactionService,
     IConfiguration configuration,
     IWorkflowMetrics workflowMetrics,
-    IRuntimeInfoProvider runtimeInfoProvider)
+    IRuntimeInfoProvider runtimeInfoProvider,
+    IDataSinkManager dataSinkManager)
     : EfCoreRepository<WorkflowDbContext, Instance, Guid>(dbContext, serviceProvider, transactionService),
         IInstanceRepository
 {
+    private readonly WorkflowDbContext _dbContext = dbContext;
+
     public override async Task<IQueryable<Instance>> WithDetailsAsync()
     {
         return (await base.WithDetailsAsync())
@@ -37,6 +41,17 @@ public sealed class EfCoreInstanceRepository(
         // Database metrics are automatically recorded by WorkflowDatabaseInterceptor
         // Only record business-specific instance metrics here
         workflowMetrics.RecordInstanceCreated(entity.Flow, runtimeInfoProvider.Domain);
+        
+        // Transfer to data sinks (e.g., ClickHouse) if enabled
+        try
+        {
+            await dataSinkManager.HandleInsertAsync(result, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Log error but don't fail the main operation
+            Console.WriteLine($"Failed to transfer instance to data sinks: {ex.Message}");
+        }
         
         return result;
     }
@@ -57,6 +72,17 @@ public sealed class EfCoreInstanceRepository(
         if (originalStatus != null && !originalStatus.Equals(entity.Status))
         {
             await HandleStatusChangeMetrics(entity, originalStatus, entity.Status);
+        }
+        
+        // Transfer to data sinks (e.g., ClickHouse) if enabled
+        try
+        {
+            await dataSinkManager.HandleUpdateAsync(result, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Log error but don't fail the main operation
+            Console.WriteLine($"Failed to transfer instance to data sinks: {ex.Message}");
         }
         
         return result;
@@ -106,6 +132,15 @@ public sealed class EfCoreInstanceRepository(
             p => p.Key == key, cancellationToken);
     }
 
+    public async Task<Instance?> FindByKeyAsReadOnlyAsync(string key, CancellationToken cancellationToken = default)
+    {
+        return await (await GetDbSetAsync())
+            .Include(i => i.DataList)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                p => p.Key == key, cancellationToken);
+    }
+
     public async Task<Instance?> FindByIdAsync(
         Guid id,
         CancellationToken cancellationToken = default)
@@ -141,10 +176,8 @@ public sealed class EfCoreInstanceRepository(
         string[]? filters,
         CancellationToken cancellationToken = default)
     {
-        var context = await GetDbContextAsync();
-        
         // Apply PostgreSQL native JSON filters if provided
-        if (filters != null && filters.Any())
+        if (filters?.Any() == true)
         {
             try
             {
@@ -155,7 +188,7 @@ public sealed class EfCoreInstanceRepository(
                         filters: filters,
                         jsonColumnName: "Data", // InstanceData.Data is the JSON column
                         tableName: "InstancesData", // Filter table name
-                        schema:  dbContext.SchemaName ?? "public" // Default schema
+                        schema:  _dbContext.SchemaName ?? "public" // Default schema
                     );
 
                 return filteredInstances
@@ -191,7 +224,7 @@ public sealed class EfCoreInstanceRepository(
     {
         var context = await GetDbContextAsync();
         
-        if (filters != null && filters.Any())
+        if (filters?.Any() == true)
         {
             // Apply PostgreSQL native JSON filters on Instance DbSet
             // CTE inside ApplyJsonFilters handles InstanceData filtering and returns Instances
@@ -237,14 +270,6 @@ public sealed class EfCoreInstanceRepository(
         if (onlyLatest)
         {
             query = query.Where(d => d.IsLatest == true);
-        }
-
-        // For now, using basic filtering - can be enhanced later with InstanceData-specific filters
-        if (filters != null && filters.Any())
-        {
-            // Basic filtering could be implemented here if needed
-            // For now, just return the latest data
-            Console.WriteLine("Note: Advanced filtering not implemented for InstanceData-only queries");
         }
 
         return query;

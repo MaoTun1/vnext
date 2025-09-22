@@ -58,6 +58,10 @@ namespace BBT.Workflow.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("MetaData")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
                     b.Property<DateTime?>("ModifiedAt")
                         .HasColumnType("timestamp without time zone")
                         .HasColumnName("ModifiedAt");
@@ -233,8 +237,6 @@ namespace BBT.Workflow.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("InstanceId");
-
                     b.HasIndex("JobId")
                         .IsUnique();
 
@@ -387,12 +389,6 @@ namespace BBT.Workflow.Migrations
 
             modelBuilder.Entity("BBT.Workflow.Instances.InstanceJob", b =>
                 {
-                    b.HasOne("BBT.Workflow.Instances.Instance", null)
-                        .WithMany()
-                        .HasForeignKey("InstanceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
                     b.OwnsOne("BBT.Workflow.JsonData", "Payload", b1 =>
                         {
                             b1.Property<Guid>("InstanceJobId")

@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using BBT.Aether.DistributedCache;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Runtime;
@@ -14,8 +15,17 @@ public class CacheSet<T>(
     where T : class, IDomainEntity, IReferenceSetter
 {
     private readonly ReaderWriterLockSlim _cacheLock = new();
-    private Dictionary<string, T> _localCache = new();
+    private Dictionary<string, CacheItem<T>> _localCache = new();
     private readonly Dictionary<string, SortedSet<string>> _index = new();
+    private DateTime _lastCleanupTime = DateTime.UtcNow;
+    private readonly SemaphoreSlim _cleanupSemaphore = new(1, 1); // Cleanup in order
+
+    // Cache configuration
+    private const int DefaultMaxCacheSize = 1000;
+    private const int DefaultCleanupThreshold = 1200; // Trigger cleanup when cache exceeds this size
+    private static readonly TimeSpan DefaultMaxCacheAge = TimeSpan.FromHours(2);
+    private static readonly TimeSpan DefaultCleanupInterval = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(10); // Add Lock timeout
 
     private static readonly DistributedCacheEntryOptions CacheOptions = new()
     {
@@ -27,7 +37,7 @@ public class CacheSet<T>(
         if (data is not IEnumerable<T> entities)
             throw new ArgumentException($"Invalid data type for {typeof(T).Name}");
 
-        var allEntities = new Dictionary<string, T>();
+        var allEntities = new Dictionary<string, CacheItem<T>>();
         var allIndex = new Dictionary<string, SortedSet<string>>();
         foreach (var entity in entities)
         {
@@ -40,7 +50,7 @@ public class CacheSet<T>(
             {
                 logger.LogWarning(ex, "Failed to cache entity during load: {CacheKey}. Cache may not be available.", cacheKey);
             }
-            allEntities[cacheKey] = entity;
+            allEntities[cacheKey] = new CacheItem<T>(entity);
             UpdateIndex(allIndex, entity);
         }
 
@@ -67,22 +77,35 @@ public class CacheSet<T>(
 
     public async Task<T?> GetAsync(string cacheKey, CancellationToken cancellationToken = default)
     {
-        // Step 1: Check memory cache
-        _cacheLock.EnterReadLock();
-        try
+        // Step 1: Check memory cache with timeout
+        if (_cacheLock.TryEnterReadLock(LockTimeout))
         {
-            if (_localCache.TryGetValue(cacheKey, out var cachedValue))
+            try
             {
-                logger.LogDebug("Cache hit in memory for {CacheKey}", cacheKey);
-                return cachedValue;
+                if (_localCache.TryGetValue(cacheKey, out var cachedItem))
+                {
+                    cachedItem.UpdateAccess();
+                    logger.LogDebug("Cache hit in memory for {CacheKey}", cacheKey);
+                    
+                    // Check if cleanup is needed (do this outside the read lock)
+                    var shouldCleanup = ShouldTriggerCleanup();
+                    if (shouldCleanup)
+                    {
+                        // Non-blocking cleanup trigger
+                        _ = TriggerCleanupAsync();
+                    }
+                    
+                    return cachedItem.Value;
+                }
             }
-        }
-        finally
-        {
-            if (_cacheLock.IsReadLockHeld)
+            finally
             {
                 _cacheLock.ExitReadLock();
             }
+        }
+        else
+        {
+            logger.LogWarning("Failed to acquire read lock for cache key: {CacheKey}. Proceeding without memory cache check.", cacheKey);
         }
 
         // Step 2: Check distributed cache
@@ -95,8 +118,9 @@ public class CacheSet<T>(
 
                 // Ensure reference information is properly set after deserialization
                 EnsureReferenceIsSet(distributedCacheValue, cacheKey);
-
-                SetLocalCache(cacheKey, distributedCacheValue);
+                
+                // Try to set in local cache without blocking
+                _ = TrySetLocalCacheAsync(cacheKey, distributedCacheValue);
                 return distributedCacheValue;
             }
         }
@@ -113,17 +137,8 @@ public class CacheSet<T>(
             // Ensure reference information is properly set after database load
             EnsureReferenceIsSet(databaseValue, cacheKey);
 
-            // Cache the entity in both distributed and memory cache
-            try
-            {
-                await SetAsync(databaseValue, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to cache database-loaded entity: {CacheKey}. Cache may not be available.", cacheKey);
-                // Still set in local cache even if distributed cache fails
-                SetLocalCache(cacheKey, databaseValue);
-            }
+            // Try to cache the entity without blocking the main flow
+            _ = TrySetAsync(databaseValue, cancellationToken);
             logger.LogInformation("Loaded {EntityType} from database and cached: {CacheKey}", typeof(T).Name, cacheKey);
             return databaseValue;
         }
@@ -146,20 +161,33 @@ public class CacheSet<T>(
             logger.LogWarning(ex, "Failed to set entity in distributed cache: {CacheKey}. Cache may not be available.", cacheKey);
         }
 
-        // LOCAL CACHE - always update local cache regardless of distributed cache status
-        _cacheLock.EnterWriteLock();
-        try
+        // LOCAL CACHE - use timeout to prevent blocking
+        if (_cacheLock.TryEnterWriteLock(LockTimeout))
         {
-            _localCache[cacheKey] = entity;
-            // INDEX
-            UpdateIndex(_index, entity);
-        }
-        finally
-        {
-            if (_cacheLock.IsWriteLockHeld)
+            try
+            {
+                _localCache[cacheKey] = new CacheItem<T>(entity);
+                // INDEX
+                UpdateIndex(_index, entity);
+                
+                // Check if we need to trigger cleanup due to size
+                if (_localCache.Count > DefaultCleanupThreshold)
+                {
+                    logger.LogDebug("Cache size exceeded threshold ({Count} > {Threshold}). Triggering cleanup.", 
+                        _localCache.Count, DefaultCleanupThreshold);
+                    
+                    // Non-blocking cleanup trigger
+                    _ = TriggerCleanupAsync();
+                }
+            }
+            finally
             {
                 _cacheLock.ExitWriteLock();
             }
+        }
+        else
+        {
+            logger.LogWarning("Failed to acquire write lock for cache key: {CacheKey}. Local cache not updated.", cacheKey);
         }
     }
 
@@ -269,32 +297,48 @@ public class CacheSet<T>(
     {
         string? latestVersion;
 
-        _cacheLock.EnterReadLock();
-        try
+        // With timeout acquire ReadLock
+        if (_cacheLock.TryEnterReadLock(LockTimeout))
         {
-            string indexKey = CreateIndexKey(domain, name);
-            // var selectedIndexSet = _index.OrderByDescending(f => f.Value).Where(f => f.Key == indexKey);
-            if (!_index.TryGetValue(indexKey, out var versionSet))
+            try
             {
-                // If not found in index, try to load from database
-                var databaseEntity = await LoadLatestFromDatabaseAsync(domain, flow, name, cancellationToken);
-                if (databaseEntity != null)
+                string indexKey = CreateIndexKey(domain, name);
+                if (!_index.TryGetValue(indexKey, out var versionSet) || versionSet.Count == 0)
                 {
-                    await SetAsync(databaseEntity, cancellationToken);
-                    return databaseEntity;
+                    // Release ReadLock, perform database operation
+                    _cacheLock.ExitReadLock();
+                    
+                    // Load from database
+                    var databaseEntity = await LoadLatestFromDatabaseAsync(domain, flow, name, cancellationToken);
+                    if (databaseEntity != null)
+                    {
+                        // Non-blocking cache set
+                        _ = TrySetAsync(databaseEntity, cancellationToken);
+                        return databaseEntity;
+                    }
+                    return null;
                 }
-                return null;
+                latestVersion = versionSet.Max;
             }
-            if (versionSet.Count == 0)
-                return null;
-            latestVersion = versionSet.Max;
-        }
-        finally
-        {
-            if (_cacheLock.IsReadLockHeld)
+            finally
             {
-                _cacheLock.ExitReadLock();
+                if (_cacheLock.IsReadLockHeld)
+                {
+                    _cacheLock.ExitReadLock();
+                }
             }
+        }
+        else
+        {
+            logger.LogWarning("Failed to acquire read lock for GetLatestByNameAsync: {Domain}:{Name}. Loading directly from database.", domain, name);
+            // Fallback: Load directly from database
+            var databaseEntity = await LoadLatestFromDatabaseAsync(domain, flow, name, cancellationToken);
+            if (databaseEntity != null)
+            {
+                _ = TrySetAsync(databaseEntity, cancellationToken);
+                return databaseEntity;
+            }
+            return null;
         }
 
         if (latestVersion == null)
@@ -309,6 +353,146 @@ public class CacheSet<T>(
         await cacheResolver().RemoveAsync(cacheKey, cancellationToken);
         InvalidateLocalCache(cacheKey);
     }
+    
+    /// <summary>
+    /// Checks if cleanup should be triggered based on cache size and time
+    /// </summary>
+    private bool ShouldTriggerCleanup()
+    {
+        return _localCache.Count > DefaultCleanupThreshold || 
+               DateTime.UtcNow - _lastCleanupTime > DefaultCleanupInterval;
+    }
+
+    // Non-blocking cleanup trigger, trigger cleanup in background
+    private async Task TriggerCleanupAsync()
+    {
+        if (await _cleanupSemaphore.WaitAsync(0)) // Non-blocking wait
+        {
+            try
+            {
+                await Task.Run(() => CleanupExpiredItems());
+            }
+            finally
+            {
+                _cleanupSemaphore.Release();
+            }
+        }
+        else
+        {
+            logger.LogDebug("Cleanup already in progress, skipping...");
+        }
+    }
+
+    // Non-blocking cache set
+    private async Task TrySetAsync(T entity, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await SetAsync(entity, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to cache entity in background: {CacheKey}", entity.CacheKey);
+        }
+    }
+
+    // Non-blocking local cache set
+    private async Task TrySetLocalCacheAsync(string cacheKey, T entity)
+    {
+        await Task.Run(() =>
+        {
+            if (_cacheLock.TryEnterWriteLock(TimeSpan.FromSeconds(1)))
+            {
+                try
+                {
+                    _localCache[cacheKey] = new CacheItem<T>(entity);
+                    UpdateIndex(_index, entity);
+                }
+                finally
+                {
+                    _cacheLock.ExitWriteLock();
+                }
+            }
+            else
+            {
+                logger.LogDebug("Could not acquire write lock for local cache update: {CacheKey}", cacheKey);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Cleans up expired and least recently used items from the cache
+    /// </summary>
+    private void CleanupExpiredItems()
+    {
+        try
+        {
+            if (_cacheLock.TryEnterWriteLock(LockTimeout))
+            {
+                try
+                {
+                    var now = DateTime.UtcNow;
+                    var initialCount = _localCache.Count;
+                    
+                    // Step 1: Remove expired items (based on max age)
+                    var expiredKeys = _localCache
+                        .Where(kvp => now - kvp.Value.LastAccessTime > DefaultMaxCacheAge)
+                        .Select(kvp => kvp.Key)
+                        .ToList();
+                    
+                    foreach (var key in expiredKeys)
+                    {
+                        if (_localCache.Remove(key, out var removedItem))
+                        {
+                            RemoveFromIndex(_index, removedItem.Value);
+                        }
+                    }
+                    
+                    // Step 2: If still over limit, remove least recently used items
+                    if (_localCache.Count > DefaultMaxCacheSize)
+                    {
+                        var itemsToRemove = _localCache.Count - DefaultMaxCacheSize;
+                        var lruKeys = _localCache
+                            .OrderBy(kvp => kvp.Value.LastAccessTime)
+                            .Take(itemsToRemove)
+                            .Select(kvp => kvp.Key)
+                            .ToList();
+                        
+                        foreach (var key in lruKeys)
+                        {
+                            if (_localCache.Remove(key, out var removedItem))
+                            {
+                                RemoveFromIndex(_index, removedItem.Value);
+                            }
+                        }
+                    }
+                    
+                    _lastCleanupTime = now;
+                    
+                    var finalCount = _localCache.Count;
+                    var removedCount = initialCount - finalCount;
+                    
+                    if (removedCount > 0)
+                    {
+                        logger.LogInformation("Cache cleanup completed. Removed {RemovedCount} items. Cache size: {InitialCount} -> {FinalCount}", 
+                            removedCount, initialCount, finalCount);
+                    }
+                }
+                finally
+                {
+                    _cacheLock.ExitWriteLock();
+                }
+            }
+            else
+            {
+                logger.LogWarning("Failed to acquire write lock for cleanup. Skipping cleanup cycle.");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error during cache cleanup");
+        }
+    }
 
     /// <summary>
     /// Loads entity from database using the cache key.
@@ -322,17 +506,17 @@ public class CacheSet<T>(
         try
         {
             // Parse cache key: {EntityType}:{Domain}:{Flow}:{Key}:{Version}
-            var parts = cacheKey.Split(':');
-            if (parts.Length != 5)
+            var match = Regex.Match(cacheKey, @"^([^:]+):([^:]+):([^:]+):([^:]+):([^:]+)$");
+            if (!match.Success)
             {
                 logger.LogWarning("Invalid cache key format: {CacheKey}", cacheKey);
                 return null;
             }
 
-            var domain = parts[1];
-            var flow = parts[2];
-            var key = parts[3];
-            var version = parts[4];
+            var domain = match.Groups[2].Value;
+            var flow = match.Groups[3].Value;
+            var key = match.Groups[4].Value;
+            var version = match.Groups[5].Value;
 
             return await LoadEntityFromDatabaseAsync(domain, flow, key, version, cancellationToken);
         }
@@ -421,7 +605,7 @@ public class CacheSet<T>(
 
             // Return latest version based on semantic versioning
             var latestEntity = filteredEntities
-                .OrderByDescending(e => e.Version, new SemVersionComparer())
+                .OrderByDescending(e => e?.Version ?? string.Empty, new SemVersionComparer())
                 .FirstOrDefault();
 
             if (latestEntity != null)
@@ -461,7 +645,7 @@ public class CacheSet<T>(
         _cacheLock.EnterWriteLock();
         try
         {
-            _localCache[cacheKey] = entity;
+            _localCache[cacheKey] = new CacheItem<T>(entity);
             UpdateIndex(_index, entity);
         }
         finally
@@ -478,9 +662,9 @@ public class CacheSet<T>(
         _cacheLock.EnterWriteLock();
         try
         {
-            if (_localCache.Remove(cacheKey, out var removedEntity) && removedEntity != null)
+            if (_localCache.Remove(cacheKey, out var removedItem) && removedItem != null)
             {
-                RemoveFromIndex(_index, removedEntity);
+                RemoveFromIndex(_index, removedItem.Value);
             }
         }
         finally
@@ -572,13 +756,14 @@ public class CacheSet<T>(
             try
             {
                 // Parse cache key: {EntityType}:{Domain}:{Flow}:{Key}:{Version}
-                var parts = cacheKey.Split(':');
-                if (parts.Length == 5)
+                // Parse cache key: {EntityType}:{Domain}:{Flow}:{Key}:{Version}
+                var match = Regex.Match(cacheKey, @"^([^:]+):([^:]+):([^:]+):([^:]+):([^:]+)$");
+                if (match.Success)
                 {
-                    var domain = parts[1];
-                    var flow = parts[2];
-                    var key = parts[3];
-                    var version = parts[4];
+                    var domain = match.Groups[2].Value;
+                    var flow = match.Groups[3].Value;
+                    var key = match.Groups[4].Value;
+                    var version = match.Groups[5].Value;
 
                     // Create reference and set it
                     var reference = new Reference(key, domain, flow, version);
@@ -597,5 +782,11 @@ public class CacheSet<T>(
                 logger.LogError(ex, "Error setting reference for entity from cache key: {CacheKey}", cacheKey);
             }
         }
+    }
+
+    public void Dispose()
+    {
+        _cacheLock?.Dispose();
+        _cleanupSemaphore?.Dispose();
     }
 }

@@ -32,8 +32,8 @@ public static class ScriptContextFactoryExtensions
             .WithHeaders(input.Context.Headers)
             .WithRouteValues(input.Context.RouteValues)
             .WithTaskResponse(input.Context.TaskResponse)
-            .WithMetadata(input.Context.MetaData)
-            .WithDefinitions(input.Context.Definitions)
+            .WithMetadata(input.Context.MetaData ?? new Dictionary<string, object>())
+            .WithDefinitions(input.Context.Definitions ?? new Dictionary<string, object>())
             .BuildAsync(cancellationToken);
     }
 }

@@ -18,7 +18,7 @@ public sealed class FunctionAppService(IServiceProvider serviceProvider,
      IInstanceRepository instanceRepository,
     IComponentCacheStore componentCacheStore, ITaskOrchestrationService taskExecutionService) : ApplicationService(serviceProvider), IFunctionAppService
 {
-    public async Task<Dictionary<string, dynamic?>?> GetFunctionByFunctionKey(
+    public async Task<Dictionary<string, dynamic?>> GetFunctionByFunctionKey(
      string key,
      string flow,
      string domain,
@@ -32,7 +32,7 @@ public sealed class FunctionAppService(IServiceProvider serviceProvider,
         }
 
     }
-    public async Task<Dictionary<string, dynamic?>?> GetFunctionByInstance(
+    public async Task<Dictionary<string, dynamic?>> GetFunctionByInstance(
        string key,
        string flow,
        string domain,

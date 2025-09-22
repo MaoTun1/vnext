@@ -20,20 +20,6 @@ public sealed class GetInstanceOutput
 }
 
 /// <summary>
-/// Paginated result for instance list retrieval
-/// </summary>
-public sealed class GetInstanceListOutput
-{
-    public List<GetInstanceOutput> Items { get; set; } = [];
-    public int TotalCount { get; set; }
-    public int Page { get; set; }
-    public int PageSize { get; set; }
-    public int TotalPages => (int)Math.Ceiling((double)TotalCount / PageSize);
-    public bool HasNextPage => Page < TotalPages;
-    public bool HasPreviousPage => Page > 1;
-}
-
-/// <summary>
 /// Output for instance history (all data transitions)
 /// </summary>
 public sealed class GetInstanceHistoryOutput

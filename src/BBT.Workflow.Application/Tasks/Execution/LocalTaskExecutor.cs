@@ -69,10 +69,10 @@ public sealed class LocalTaskExecutor(
         await persistenceStrategy.HandleCreationAsync(instanceTask, cancellationToken);
 
         var taskType = task.GetTaskType().ToString();
-        
+
         // Record task execution start 
         workflowMetrics.RecordTaskExecution(taskType, "started");
-        
+
         try
         {
             var response = await taskExecutor.ExecuteAsync(
@@ -80,33 +80,35 @@ public sealed class LocalTaskExecutor(
                 onExecuteTask.Mapping.DecodedCode,
                 context,
                 cancellationToken);
-
             if (response != null)
             {
                 var variableKey = task.Key.ToVariableName();
                 context.TaskResponse[variableKey] = response;
-
-                if (taskTrigger != TaskTrigger.Extension)
+                if (taskTrigger != TaskTrigger.Extension && response is ScriptResponse scriptResponse)
                 {
-                    // NoTracking Instance
-                    context.Instance.AddData(
-                        guidGenerator.Create(),
-                        new JsonData(JsonSerializer.Serialize(response, JsonSerializerConstants.JsonOptions)),
-                        VersionStrategy.IncreasePatch
-                    );
+                    if (scriptResponse.Data != null)
+                    {
+                        // NoTracking Instance
+                        context.Instance.AddData(
+                            guidGenerator.Create(),
+                            new JsonData(JsonSerializer.Serialize(
+                                scriptResponse.Data, JsonSerializerConstants.JsonOptions)),
+                            VersionStrategy.IncreasePatch
+                        );
+                    }
                 }
             }
 
             instanceTask.Completed(
-                new JsonData(JsonSerializer.Serialize(response, JsonSerializerConstants.JsonOptions)));
-            
+                new JsonData(JsonSerializer.Serialize(response ?? new { }, JsonSerializerConstants.JsonOptions)));
+
             // Record successful task completion 
             workflowMetrics.RecordTaskExecution(taskType, "success");
         }
         catch (Exception e)
         {
             instanceTask.Faulted(e.Message);
-            
+
             // Record task failure
             workflowMetrics.RecordTaskExecution(taskType, "failure");
         }
@@ -136,7 +138,7 @@ public sealed class LocalTaskExecutor(
         // Capture initial state for comparison
         var initialBody = context.Body;
         var initialInstanceDataCount = context.Instance.DataList.Count;
-        
+
         // Execute the task (this already includes metrics recording)
         await ExecuteTaskAsync(onExecuteTask, instanceTransition, taskTrigger, context, cancellationToken);
 
@@ -164,7 +166,7 @@ public sealed class LocalTaskExecutor(
 
         // Check if body was modified
         var bodyModified = !ReferenceEquals(initialBody, context.Body) ||
-                           (initialBody != null && context.Body != null && !initialBody.Equals(context.Body));
+                           (initialBody != null && context.Body != null && !initialBody?.Equals(context.Body));
 
         if (bodyModified)
         {
