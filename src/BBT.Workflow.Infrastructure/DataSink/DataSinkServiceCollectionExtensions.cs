@@ -136,6 +136,8 @@ public static class DataSinkServiceCollectionExtensions
                     case "port":
                         port = value;
                         break;
+                    default:
+                        break;
                 }
             }
         }

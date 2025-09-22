@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -39,7 +40,7 @@ public class ClickHouseInstanceDataSink : AbstractDataSink<Instance>, IDataSink
         _flushSemaphore = new SemaphoreSlim(1, 1);
 
         // Setup periodic flush timer
-        _flushTimer = new Timer(FlushTimerCallback, null, 
+        _flushTimer = new Timer(async _ => await FlushTimerCallback(), null, 
             TimeSpan.FromSeconds(_configuration.FlushIntervalSeconds), 
             TimeSpan.FromSeconds(_configuration.FlushIntervalSeconds));
     }
@@ -147,8 +148,7 @@ public class ClickHouseInstanceDataSink : AbstractDataSink<Instance>, IDataSink
     /// <summary>
     /// Flush timer callback
     /// </summary>
-    /// <param name="state">Timer state</param>
-    private async void FlushTimerCallback(object? state)
+    private async Task FlushTimerCallback()
     {
         try
         {
@@ -206,11 +206,10 @@ public class ClickHouseInstanceDataSink : AbstractDataSink<Instance>, IDataSink
                         data.Count, tableName);
                     return;
                 }
-                else
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                    throw new HttpRequestException($"ClickHouse request failed with status {response.StatusCode}: {errorContent}");
-                }
+
+                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                throw new HttpRequestException($"ClickHouse request failed with status {response.StatusCode}: {errorContent}");
+                
             }
             catch (Exception ex) when (retryCount < _configuration.RetryAttempts - 1)
             {
@@ -288,6 +287,8 @@ public class ClickHouseInstanceDataSink : AbstractDataSink<Instance>, IDataSink
                     case "port":
                         port = value;
                         break;
+                          default:
+                        break;
                 }
             }
         }
@@ -350,7 +351,7 @@ public class ClickHouseDateTimeConverter : JsonConverter<DateTime>
 {
     public override DateTime Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        return DateTime.Parse(reader.GetString()!);
+        return DateTime.Parse(reader.GetString()!, new CultureInfo("en-US"));
     }
 
     public override void Write(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options)
@@ -368,7 +369,7 @@ public class ClickHouseNullableDateTimeConverter : JsonConverter<DateTime?>
     public override DateTime? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         var stringValue = reader.GetString();
-        return string.IsNullOrEmpty(stringValue) ? null : DateTime.Parse(stringValue);
+        return string.IsNullOrEmpty(stringValue) ? null : DateTime.Parse(stringValue, new CultureInfo("en-US"));
     }
 
     public override void Write(Utf8JsonWriter writer, DateTime? value, JsonSerializerOptions options)

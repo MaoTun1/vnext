@@ -38,8 +38,8 @@ public class ClickHouseInstanceTransitionDataSink : AbstractDataSink<InstanceTra
         _flushSemaphore = new SemaphoreSlim(1, 1);
 
         // Setup periodic flush timer
-        _flushTimer = new Timer(FlushTimerCallback, null, 
-            TimeSpan.FromSeconds(_configuration.FlushIntervalSeconds), 
+        _flushTimer = new Timer(async _ => await FlushTimerCallback(), null,
+            TimeSpan.FromSeconds(_configuration.FlushIntervalSeconds),
             TimeSpan.FromSeconds(_configuration.FlushIntervalSeconds));
     }
 
@@ -124,7 +124,7 @@ public class ClickHouseInstanceTransitionDataSink : AbstractDataSink<InstanceTra
         try
         {
             var dataToFlush = new List<ClickHouseInstanceTransitionData>();
-            
+
             // Dequeue all items
             while (_queue.TryDequeue(out var item))
             {
@@ -146,8 +146,7 @@ public class ClickHouseInstanceTransitionDataSink : AbstractDataSink<InstanceTra
     /// <summary>
     /// Flush timer callback
     /// </summary>
-    /// <param name="state">Timer state</param>
-    private async void FlushTimerCallback(object? state)
+    private async Task FlushTimerCallback()
     {
         try
         {
@@ -177,51 +176,49 @@ public class ClickHouseInstanceTransitionDataSink : AbstractDataSink<InstanceTra
                     PropertyNamingPolicy = null, // Keep PascalCase for ClickHouse compatibility
                     WriteIndented = false
                 };
-                
+
                 // Custom converters for DateTime and Guid fields to ClickHouse format
                 jsonOptions.Converters.Add(new ClickHouseDateTimeConverter());
                 jsonOptions.Converters.Add(new ClickHouseNullableDateTimeConverter());
                 jsonOptions.Converters.Add(new ClickHouseGuidConverter());
                 jsonOptions.Converters.Add(new ClickHouseNullableGuidConverter());
-                
+
                 var json = JsonSerializer.Serialize(data, jsonOptions);
                 var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-                
+
                 var baseUrl = ExtractBaseUrlFromConnectionString(_configuration.ConnectionString);
                 if (string.IsNullOrEmpty(baseUrl))
                 {
                     throw new InvalidOperationException("Invalid ClickHouse connection string. Could not extract base URL.");
                 }
-                
+
                 var database = ExtractDatabaseFromConnectionString(_configuration.ConnectionString);
                 var fullTableName = !string.IsNullOrEmpty(database) ? $"{database}.{tableName}" : tableName;
-                
+
                 var url = $"{baseUrl}/?query=INSERT INTO {fullTableName} FORMAT JSONEachRow";
                 var response = await _httpClient.PostAsync(url, content, cancellationToken);
-                
+
                 if (response.IsSuccessStatusCode)
                 {
-                    Logger.LogDebug("Successfully sent {Count} instance transition records to ClickHouse table {TableName}", 
+                    Logger.LogDebug("Successfully sent {Count} instance transition records to ClickHouse table {TableName}",
                         data.Count, tableName);
                     return;
                 }
-                else
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                    throw new HttpRequestException($"ClickHouse request failed with status {response.StatusCode}: {errorContent}");
-                }
+
+                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                throw new HttpRequestException($"ClickHouse request failed with status {response.StatusCode}: {errorContent}");
             }
             catch (Exception ex) when (retryCount < _configuration.RetryAttempts - 1)
             {
                 retryCount++;
-                Logger.LogWarning(ex, "ClickHouse request failed, retrying {RetryCount}/{MaxRetries}", 
+                Logger.LogWarning(ex, "ClickHouse request failed, retrying {RetryCount}/{MaxRetries}",
                     retryCount, _configuration.RetryAttempts);
-                
+
                 await Task.Delay(_configuration.RetryDelayMilliseconds, cancellationToken);
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "Failed to send instance transition data to ClickHouse table {TableName} after {RetryCount} attempts", 
+                Logger.LogError(ex, "Failed to send instance transition data to ClickHouse table {TableName} after {RetryCount} attempts",
                     tableName, _configuration.RetryAttempts);
                 throw;
             }
@@ -285,6 +282,9 @@ public class ClickHouseInstanceTransitionDataSink : AbstractDataSink<InstanceTra
                         break;
                     case "port":
                         port = value;
+                        break;
+                    default:
+
                         break;
                 }
             }

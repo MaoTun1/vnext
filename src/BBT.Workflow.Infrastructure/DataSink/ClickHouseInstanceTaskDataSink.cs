@@ -38,7 +38,7 @@ public class ClickHouseInstanceTaskDataSink : AbstractDataSink<InstanceTask>, ID
         _flushSemaphore = new SemaphoreSlim(1, 1);
 
         // Setup periodic flush timer
-        _flushTimer = new Timer(FlushTimerCallback, null, 
+        _flushTimer = new Timer(async _ => await FlushTimerCallback(), null, 
             TimeSpan.FromSeconds(_configuration.FlushIntervalSeconds), 
             TimeSpan.FromSeconds(_configuration.FlushIntervalSeconds));
     }
@@ -146,8 +146,7 @@ public class ClickHouseInstanceTaskDataSink : AbstractDataSink<InstanceTask>, ID
     /// <summary>
     /// Flush timer callback
     /// </summary>
-    /// <param name="state">Timer state</param>
-    private async void FlushTimerCallback(object? state)
+    private async Task FlushTimerCallback()
     {
         try
         {
@@ -205,11 +204,10 @@ public class ClickHouseInstanceTaskDataSink : AbstractDataSink<InstanceTask>, ID
                         data.Count, tableName);
                     return;
                 }
-                else
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                    throw new HttpRequestException($"ClickHouse request failed with status {response.StatusCode}: {errorContent}");
-                }
+
+                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                throw new HttpRequestException($"ClickHouse request failed with status {response.StatusCode}: {errorContent}");
+                
             }
             catch (Exception ex) when (retryCount < _configuration.RetryAttempts - 1)
             {
@@ -285,6 +283,8 @@ public class ClickHouseInstanceTaskDataSink : AbstractDataSink<InstanceTask>, ID
                         break;
                     case "port":
                         port = value;
+                        break;
+                        default:
                         break;
                 }
             }

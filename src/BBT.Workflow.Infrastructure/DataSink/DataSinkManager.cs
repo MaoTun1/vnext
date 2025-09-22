@@ -30,7 +30,7 @@ public class DataSinkManager : IDataSinkManager
     /// <returns>Task representing the async operation</returns>
     public async Task HandleInsertAsync<TEntity>(TEntity entity, CancellationToken cancellationToken = default)
     {
-        if (entity == null)
+        if (entity is null)
         {
             throw new ArgumentNullException(nameof(entity));
         }
@@ -59,7 +59,7 @@ public class DataSinkManager : IDataSinkManager
     /// <returns>Task representing the async operation</returns>
     public async Task HandleUpdateAsync<TEntity>(TEntity entity, CancellationToken cancellationToken = default)
     {
-        if (entity == null)
+        if (entity is null)
         {
             throw new ArgumentNullException(nameof(entity));
         }
@@ -88,7 +88,7 @@ public class DataSinkManager : IDataSinkManager
     /// <returns>Task representing the async operation</returns>
     public async Task HandleDeleteAsync<TEntity>(TEntity entity, CancellationToken cancellationToken = default)
     {
-        if (entity == null)
+        if (entity is null)
         {
             throw new ArgumentNullException(nameof(entity));
         }
