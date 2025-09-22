@@ -36,7 +36,7 @@ public sealed class TransitionJobHandler(
             logger.LogWarning("TransitionJobHandler: Job Flow Name is empty for JobId {JobId}", jobData.JobId);
             return;
         }
-        
+
         using (currentSchema.Change(flowName))
         {
             var jobInfo = await jobStore.GetAsync<TransitionJobPayload>(jobData.JobId, cancellationToken);
@@ -55,19 +55,19 @@ public sealed class TransitionJobHandler(
                 // For async processing, instance should already be pre-reserved and in Busy status
                 // Reconstruct the original TransitionInput with Sync=true
                 var transitionInput = new TransitionInput(
-                    jobInfo.Payload.Domain,
-                    jobInfo.Payload.Workflow,
-                    jobInfo.Payload.Version,
-                    jobInfo.Payload.Data,
-                    sync: true) // Force sync=true to avoid infinite loop
-                {
-                    Headers = jobInfo.Payload.Headers,
-                    RouteValues = jobInfo.Payload.RouteValues,
-                    ExecutionContext = jobInfo.Payload.ExecutionContext
-                };
+                        jobInfo.Payload.Domain,
+                        jobInfo.Payload.Workflow,
+                        jobInfo.Payload.Version,
+                        jobInfo.Payload.Data,
+                        sync: true) // Force sync=true to avoid infinite loop
+                    {
+                        Headers = jobInfo.Payload.Headers,
+                        RouteValues = jobInfo.Payload.RouteValues,
+                        ExecutionContext = jobInfo.Payload.ExecutionContext
+                    };
 
                 // Use the background-specific method that handles pre-reserved instances
-                var result = await instanceCommandAppService.ExecuteBackgroundTransitionAsync(
+                await instanceCommandAppService.ExecuteBackgroundTransitionAsync(
                     jobInfo.Payload.InstanceId,
                     jobInfo.Payload.TransitionKey,
                     transitionInput,
@@ -79,15 +79,15 @@ public sealed class TransitionJobHandler(
             }
             catch (TransitionRuleFailedException ex)
             {
-                logger.LogWarning(ex, 
-                    "TransitionJobHandler: Transition rule failed for JobId {JobId}: {Message}", 
+                logger.LogWarning(ex,
+                    "TransitionJobHandler: Transition rule failed for JobId {JobId}: {Message}",
                     jobData.JobId, ex.Message);
                 // Don't rethrow for rule failures as they are expected business logic
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, 
-                    "TransitionJobHandler: Failed to execute transition for JobId {JobId}", 
+                logger.LogError(ex,
+                    "TransitionJobHandler: Failed to execute transition for JobId {JobId}",
                     jobData.JobId);
                 throw;
             }

@@ -343,6 +343,10 @@ public sealed class SubFlowCompletionService(
                     parentInfo.State = stringValue;
                     foundAnyParentData = true;
                     break;
+                default:
+                    parentInfo.State = stringValue;
+                    foundAnyParentData = true;
+                    break;
             }
         }
 

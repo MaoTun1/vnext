@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace BBT.Workflow.Instances;
 
 [JsonConverter(typeof(IEquatableJsonConverter<InstanceStatus>))]
-public class InstanceStatus : IEquatable<InstanceStatus>
+public sealed class InstanceStatus : IEquatable<InstanceStatus>
 {
     public static readonly InstanceStatus Busy = new InstanceStatus("B", "Busy");
     public static readonly InstanceStatus Active = new InstanceStatus("A", "Active");

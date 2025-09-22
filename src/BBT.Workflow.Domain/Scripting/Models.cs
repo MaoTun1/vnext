@@ -59,7 +59,7 @@ public sealed class ScriptResponse
     /// Tags can be used for workflow analytics, debugging, conditional processing, or organizational purposes.
     /// </summary>
     /// <value>Array of string tags. Initialize as empty array if no tags are needed.</value>
-    public string[] Tags { get; set; } = [];
+    public string[] Tags { get; set; }
 }
 
 /// <summary>

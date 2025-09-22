@@ -152,10 +152,8 @@ public sealed class EfCoreInstanceRepository(
         string[]? filters,
         CancellationToken cancellationToken = default)
     {
-        var context = await GetDbContextAsync();
-        
         // Apply PostgreSQL native JSON filters if provided
-        if (filters != null && filters.Any())
+        if (filters?.Any() == true)
         {
             try
             {
@@ -202,7 +200,7 @@ public sealed class EfCoreInstanceRepository(
     {
         var context = await GetDbContextAsync();
         
-        if (filters != null && filters.Any())
+        if (filters?.Any() == true)
         {
             // Apply PostgreSQL native JSON filters on Instance DbSet
             // CTE inside ApplyJsonFilters handles InstanceData filtering and returns Instances
@@ -251,7 +249,7 @@ public sealed class EfCoreInstanceRepository(
         }
 
         // For now, using basic filtering - can be enhanced later with InstanceData-specific filters
-        if (filters != null && filters.Any())
+        if (filters?.Any() == true)
         {
             // Basic filtering could be implemented here if needed
             // For now, just return the latest data

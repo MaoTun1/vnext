@@ -348,7 +348,7 @@ public sealed class InstanceCommandAppService(
 
         // Check for existing instance
         var existingInstance = await instanceRepository.FindByKeyAsReadOnlyAsync(instanceKey, cancellationToken);
-        
+
         // If instance exists and is not completed, throw conflict exception
         if (existingInstance is { IsCompleted: false })
         {
@@ -365,15 +365,16 @@ public sealed class InstanceCommandAppService(
 
         // Initialize instance state and tags (always for new instances)
         instance.ChangeState(initialState);
-        
+
         if (tags?.Any() == true)
         {
             instance.AddTags(tags.ToArray());
         }
 
+
         // Persist new instance
         await instanceRepository.InsertAsync(instance, true, cancellationToken);
-        Logger.LogDebug("Created new instance {InstanceId} with key {InstanceKey}", 
+        Logger.LogDebug("Created new instance {InstanceId} with key {InstanceKey}",
             instance.Id, instanceKey);
 
         return instance;
@@ -395,7 +396,7 @@ public sealed class InstanceCommandAppService(
 
             // 2. Generate or use provided instance ID
             var instanceId = input.Instance.Id ?? guidGenerator.Create();
-            
+
             // 3. Create and prepare instance for background processing (includes duplicate key check)
             var instance = await CreateAndPrepareInstanceAsync(
                 workflow,
@@ -450,14 +451,9 @@ public sealed class InstanceCommandAppService(
             };
 
             // Ensure sync metadata is set
-            if (!payload.MetaData.ContainsKey(DomainConsts.MetaDataKeys.Sync))
-            {
-                payload.MetaData.Add(DomainConsts.MetaDataKeys.Sync, input.Sync.ToString().ToLower());
-            }
-            if (!payload.MetaData.ContainsKey(DomainConsts.MetaDataKeys.Callback))
-            {
-                payload.MetaData.Add(DomainConsts.MetaDataKeys.Callback, input.Instance.Callback ?? string.Empty);
-            }
+
+            payload.MetaData.TryAdd(DomainConsts.MetaDataKeys.Sync, input.Sync.ToString().ToLower());
+            payload.MetaData.TryAdd(DomainConsts.MetaDataKeys.Callback, input.Instance.Callback ?? string.Empty);
 
             // Create job metadata
             var jobMetadata = new Dictionary<string, string>
@@ -523,7 +519,7 @@ public sealed class InstanceCommandAppService(
 
             // 3. Get and validate instance exists and is in valid state
             var instance = await instanceRepository.GetActiveAsync(instanceId, cancellationToken);
-            
+
             // 4. Validate transition exists and is available from current state
             var currentState = workflow.GetState(instance.CurrentState!);
             var availableTransition = workflow.FindTransition(transitionKey, currentState);
@@ -651,7 +647,7 @@ public sealed class InstanceCommandAppService(
     {
         // Validate runtime
         runtimeInfoProvider.Check(input.Domain);
-        
+
         using (currentSchema.Change(input.Workflow))
         {
             // Load workflow and ensure schema

@@ -62,11 +62,11 @@ public sealed class DaprTaskExecutor(
         // Extract task info for metrics
         var taskType = input.OnExecuteTask.Task.Key; // Task key can represent task type
         var workflowKey = context.Workflow.Key;
-        
+
         // Record task execution start and update gauges (remote execution)
         workflowMetrics.RecordTaskExecuted(taskType, workflowKey);
         workflowMetrics.StartTaskExecution(taskType, workflowKey); // pending--, running++
-        
+
         var stopwatch = Stopwatch.StartNew();
         try
         {
@@ -78,7 +78,7 @@ public sealed class DaprTaskExecutor(
                 cancellationToken);
 
             stopwatch.Stop();
-            
+
             if (!response.Success)
             {
                 // Record task failure (remote execution failed)
@@ -110,11 +110,11 @@ public sealed class DaprTaskExecutor(
         catch (Exception ex) when (ex is not InvalidOperationException)
         {
             stopwatch.Stop();
-            
+
             // Record task failure (communication error with execution service)
             workflowMetrics.RecordTaskFailed(taskType, workflowKey, stopwatch.Elapsed.TotalSeconds);
             workflowMetrics.FinishTaskExecution(taskType, workflowKey); // running--
-            
+
             logger.LogError(ex, "Error calling Execution service for task {TaskKey} for instance {InstanceId}",
                 onExecuteTask.Task.Key, context.Instance.Id);
             throw new InvalidOperationException($"Failed to execute task via Execution service: {ex.Message}", ex);
@@ -157,21 +157,18 @@ public sealed class DaprTaskExecutor(
                 {
                     var dataInfo = kvp.Value;
 
-                    if (dataInfo != null)
+                    if (dataInfo != null && dataInfo.Data.IsNullOrEmpty())
                     {
-                        if (!dataInfo.Data.IsNullOrEmpty())
-                        {
-                            // Add the new data entry with the correct version
-                            context.Instance.AddData(
-                                dataInfo.Id,
-                                new JsonData(dataInfo.Data),
-                                VersionStrategy.IncreasePatch
-                            );
-                        }
+                        // Add the new data entry with the correct version
+                        context.Instance.AddData(
+                            dataInfo.Id,
+                            new JsonData(dataInfo.Data),
+                            VersionStrategy.IncreasePatch
+                        );
                     }
                 }
             }
-            
+
             // Apply body updates if modified
             if (contextUpdate.BodyModified && contextUpdate.Body != null)
             {
