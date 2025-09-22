@@ -1,7 +1,10 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Scripting;
+using WorkflowExecutionContext = BBT.Workflow.Shared.ExecutionContext;
 
 namespace BBT.Workflow.States;
 
@@ -19,6 +22,7 @@ public interface IStateMachineService
     /// <param name="transitionKey">The unique identifier of the transition to execute</param>
     /// <param name="scriptContext">The script execution context for rule evaluation</param>
     /// <param name="data">Optional JSON data to validate against the transition's schema</param>
+    /// <param name="executionContext">Execution context</param>
     /// <param name="cancellationToken">Cancellation token to cancel the operation</param>
     /// <returns>
     /// A <see cref="Transition"/> object representing the validated transition that can be executed.
@@ -45,6 +49,7 @@ public interface IStateMachineService
         string transitionKey,
         ScriptContext scriptContext,
         JsonElement? data = null,
+        WorkflowExecutionContext executionContext = WorkflowExecutionContext.User,
         CancellationToken cancellationToken = default);
 
     /// <summary>

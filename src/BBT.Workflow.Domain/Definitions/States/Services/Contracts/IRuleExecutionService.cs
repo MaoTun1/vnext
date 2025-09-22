@@ -5,10 +5,10 @@ namespace BBT.Workflow.States;
 
 /// <summary>
 /// Provides rule execution functionality by delegating script execution to the task execution service.
-/// This service acts as a specialized wrapper around <see cref="TaskExecutionService"/> for rule-based conditions.
+/// This service acts as a specialized wrapper around TaskExecutionService for rule-based conditions.
 /// </summary>
 /// <remarks>
-/// The <see cref="RuleExecutionService"/> is designed to execute conditional logic defined in scripts
+/// The RuleExecutionService is designed to execute conditional logic defined in scripts
 /// within the context of workflow state transitions. It leverages the underlying task execution 
 /// infrastructure to evaluate business rules and return boolean results that determine workflow flow.
 /// </remarks>

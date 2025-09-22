@@ -77,7 +77,7 @@ public sealed class DaprHttpEndpointTaskExecutor(
             var outputResponse = await ProcessOutputAsync(scriptCode, context, cancellationToken);
             
             Logger.LogInformation("DAPR HTTP endpoint task {TaskKey} execution completed, returning processed output", daprTask.Key);
-            return outputResponse.Data;
+            return outputResponse;
         }
         catch (TaskCanceledException ex) when (ex.CancellationToken.IsCancellationRequested)
         {

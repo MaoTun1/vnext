@@ -5,29 +5,33 @@ using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Instances.Remote;
 using BBT.Workflow.Scripting;
+using Microsoft.Extensions.Configuration;
 
 namespace BBT.Workflow.SubFlow;
 
 /// <summary>
 /// Service for managing SubFlow and SubProcess workflows.
-/// This service handles the execution and correlation management
-/// between parent workflow and SubFlow definitions without creating separate instances.
-/// SubFlow states and transitions are managed within the main instance context.
+/// SubFlow: Runs on the main flow, preserves main flow state, acts as a wrapper.
+/// SubProcess: Creates separate instances via remote calls (unchanged behavior).
 /// </summary>
-/// <param name="componentCacheStore">Cache store for retrieving workflow definitions.</param>
 /// <param name="instanceCorrelationRepository">Repository for managing instance correlations.</param>
 /// <param name="guidGenerator">Service for generating unique identifiers.</param>
-/// <param name="remoteInstanceCommandAppService">Manages remote requests to trigger SubFlow.</param>
+/// <param name="remoteInstanceCommandAppService">Manages remote requests to trigger SubProcess only.</param>
+/// <param name="configuration">Configuration provider for accessing application settings.</param>
+/// <param name="scriptEngine">Script engine for compiling and executing mapping scripts.</param>
 public sealed class SubFlowService(
-    IComponentCacheStore componentCacheStore,
     IInstanceCorrelationRepository instanceCorrelationRepository,
     IGuidGenerator guidGenerator,
-    IRemoteInstanceCommandAppService remoteInstanceCommandAppService) : ISubFlowService
+    IRemoteInstanceCommandAppService remoteInstanceCommandAppService,
+    IConfiguration configuration,
+    IScriptEngine scriptEngine) : ISubFlowService
 {
     /// <summary>
-    /// Handles the initiation of SubFlow execution.
-    /// Both SubFlow and SubProcess now create separate instances via remote calls.
+    /// Handles the initiation of SubFlow and SubProcess execution.
+    /// SubFlow: Runs on the main flow, maintains state within the main instance.
+    /// SubProcess: Creates separate instances via remote calls (unchanged behavior).
     /// </summary>
+    /// <param name="workflow">The main workflow.</param>
     /// <param name="parentInstance">The main workflow instance that initiates the sub-flow.</param>
     /// <param name="targetState">The target state containing SubFlow configuration.</param>
     /// <param name="context">The script context containing execution data and headers.</param>
@@ -37,8 +41,8 @@ public sealed class SubFlowService(
     /// <exception cref="InvalidOperationException">Thrown when the SubFlow configuration is invalid.</exception>
     /// <remarks>
     /// <para>
-    /// SubFlow (Type: "S"): Creates a separate instance and blocks the parent workflow until completion. 
-    /// The parent workflow cannot continue until the SubFlow is completed.
+    /// SubFlow (Type: "S"): Runs on the main flow instance, preserves main flow state. 
+    /// Main flow wraps SubFlow, tracks which SubFlow is started, and routes transition requests to SubFlow.
     /// </para>
     /// <para>
     /// SubProcess (Type: "P"): Creates a separate instance and runs in parallel without blocking the parent workflow. 
@@ -46,6 +50,7 @@ public sealed class SubFlowService(
     /// </para>
     /// </remarks>
     public async Task HandleSubFlowAsync(
+        Definitions.Workflow workflow,
         Instance parentInstance,
         State targetState,
         ScriptContext context,
@@ -57,254 +62,191 @@ public sealed class SubFlowService(
                 $"State \"{targetState.Key}\" is marked as SubFlow but has no SubFlow configuration.");
         }
 
-        var subFlowConfig = targetState.SubFlow;
-
-        // Load the sub-workflow definition
-        var subWorkflow = await componentCacheStore.GetFlowAsync(
-            subFlowConfig.Process.Domain,
-            subFlowConfig.Process.Key,
-            subFlowConfig.Process.Version,
-            cancellationToken);
-
-        // Both SubFlow (Type "S") and SubProcess (Type "P") now create separate instances via remote calls
-        // The difference is that SubFlow blocks the parent workflow while SubProcess runs in parallel
-        await HandleSubFlowWithRemoteCallAsync(parentInstance, targetState, subWorkflow, context, cancellationToken);
+        // Both SubFlow and SubProcess now create separate instances via remote call
+        // The difference is in blocking behavior handled by correlation tracking
+        await CreateSubFlowInstanceAsync(workflow, parentInstance, targetState, context, cancellationToken);
     }
 
     /// <summary>
-    /// Handles both SubFlow and SubProcess execution by creating separate instances via remote calls.
-    /// SubFlow blocks the parent workflow while SubProcess runs in parallel.
+    /// Creates a SubFlow or SubProcess instance via remote call.
+    /// Both SubFlow (Type "S") and SubProcess (Type "P") create separate instances.
+    /// The difference is in blocking behavior: SubFlow blocks parent, SubProcess doesn't.
+    /// Uses mapping handlers to process input and output data transformations.
     /// </summary>
-    private async Task HandleSubFlowWithRemoteCallAsync(
+    private async Task CreateSubFlowInstanceAsync(
+        Definitions.Workflow workflow,
         Instance parentInstance,
         State targetState,
-        Definitions.Workflow subWorkflow,
         ScriptContext context,
         CancellationToken cancellationToken = default)
     {
         var subFlowConfig = targetState.SubFlow!;
-
-        // Get safely converted properties from context
-        var (body, headers, routeValues) = context.GetSafeProperties();
-
-        // Generate appropriate key based on SubFlow type
-        var instanceKeySuffix = subFlowConfig.Type.Code == "S" ? "subflow" : "subprocess";
-
-        var subFlowStartInput = new StartInstanceInput(
-                subFlowConfig.Process.Domain,
-                subFlowConfig.Process.Key,
-                subFlowConfig.Process.Version,
-                false)
+        // Handle input mapping if mapping is configured
+        ScriptResponse? inputMappingResult = null;
+        if (subFlowConfig.Mapping != null)
         {
-            Instance = new CreateInstanceInput
+            inputMappingResult = await HandleInputMappingAsync(subFlowConfig, context, cancellationToken);
+        }
+
+        // Prepare instance creation input
+        var createInstanceInput = new CreateInstanceInput
+        {
+            Id = guidGenerator.Create(),
+            Callback = configuration["DAPR_APP_ID"],
+            Key = parentInstance.Key ?? string.Empty,
+            Attributes = inputMappingResult?.Data != null
+                ? JsonSerializer.SerializeToElement(inputMappingResult.Data)
+                : null,
+            Tags =
+            [
+                $"parent.key:{parentInstance.Key}",
+                $"parent.domain:{workflow.Domain}",
+                $"parent.flow:{workflow.Key}"
+            ],
+            MetaData = new ObjectDictionary
             {
-                Key = parentInstance.Key ?? $"{parentInstance.Key}-{instanceKeySuffix}-{targetState.Key}-{guidGenerator.Create()}",
-                Attributes = body,
-                Tags =
-                    [
-                        $"parent:{parentInstance.Id}",
-                        $"parent-state:{targetState.Key}",
-                        $"type:{subFlowConfig.Type.Code}"
-                    ]
-            },
-            Headers = headers,
-            RouteValues = routeValues
+                [DomainConsts.MetaDataKeys.Id] = parentInstance.Id,
+                [DomainConsts.MetaDataKeys.Key] = parentInstance.Key ?? string.Empty,
+                [DomainConsts.MetaDataKeys.Domain] = workflow.Domain,
+                [DomainConsts.MetaDataKeys.Flow] = workflow.Key,
+                [DomainConsts.MetaDataKeys.Version] = workflow.Version,
+                [DomainConsts.MetaDataKeys.State] = targetState.Key
+            }
         };
 
-        var subFlowResult = await remoteInstanceCommandAppService.StartAsync(subFlowStartInput, cancellationToken);
+        // Apply additional properties from input mapping if available
+        if (inputMappingResult != null)
+        {
+            if (!inputMappingResult.Key.IsNullOrEmpty())
+            {
+                createInstanceInput.Key = inputMappingResult.Key;
+            }
 
+            if (inputMappingResult.Tags != null && inputMappingResult.Tags.Length > 0)
+            {
+                var existingTags = createInstanceInput.Tags?.ToList() ?? new List<string>();
+                existingTags.AddRange(inputMappingResult.Tags);
+                createInstanceInput.Tags = existingTags.ToArray();
+            }
+        }
+
+        var sync = Convert.ToBoolean(parentInstance.MetaData[DomainConsts.MetaDataKeys.Sync]!.ToString());
+        if (subFlowConfig.Type.Equals(SubFlowType.SubProcess))
+        {
+            sync = false;
+        }
+        var subFlowStartInput = new StartInstanceInput(
+            subFlowConfig.Process.Domain,
+            subFlowConfig.Process.Key,
+            subFlowConfig.Process.Version,
+            sync
+            )
+        {
+            Instance = createInstanceInput,
+            Headers = inputMappingResult?.Headers,
+            RouteValues = inputMappingResult?.RouteValues
+        };
+
+        // Create correlation to track SubFlow/SubProcess instance
+        // SubFlow (Type "S"): Blocks parent workflow until completion
+        // SubProcess (Type "P"): Runs in parallel without blocking parent
         var correlation = new InstanceCorrelation(
             guidGenerator.Create(),
             parentInstance.Id,
             targetState.Key,
-            subFlowResult.Data.Id,
+            createInstanceInput.Id.Value,
             subFlowConfig.Type.Code,
             subFlowConfig.Process.Domain,
             subFlowConfig.Process.Key,
             subFlowConfig.Process.Version);
 
         await instanceCorrelationRepository.InsertAsync(correlation, true, cancellationToken);
+
+        await remoteInstanceCommandAppService.StartSubAsync(subFlowStartInput, cancellationToken);
     }
 
     /// <summary>
-    /// Checks if a SubFlow instance has completed by querying its status.
-    /// This is a placeholder method that will be implemented with a dedicated endpoint.
+    /// Handles input mapping for SubFlow/SubProcess by compiling and executing the mapping script.
     /// </summary>
-    /// <param name="subFlowInstanceId">The SubFlow instance ID to check for completion.</param>
+    /// <param name="subFlowConfig">The SubFlow configuration containing mapping information.</param>
+    /// <param name="context">The script context for mapping execution.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>True if the SubFlow has completed; otherwise, false.</returns>
-    /// <remarks>
-    /// TODO: Implement this method to call a dedicated endpoint that checks SubFlow completion status.
-    /// This endpoint will be responsible for determining if a SubFlow instance has reached a completion state.
-    /// </remarks>
-    public async Task<bool> IsSubFlowCompletedAsync(
-        Guid subFlowInstanceId,
+    /// <returns>The result of the input mapping handler.</returns>
+    private async Task<ScriptResponse?> HandleInputMappingAsync(
+        Definitions.SubFlow subFlowConfig,
+        ScriptContext context,
         CancellationToken cancellationToken = default)
     {
-        // PLACEHOLDER: This method should be implemented to check SubFlow completion
-        // via a dedicated endpoint that monitors the SubFlow instance status
+        var mappingCode = subFlowConfig.Mapping.DecodedCode;
 
-        // For now, return false to maintain existing behavior
-        // In the actual implementation, this would make an HTTP call to check the SubFlow instance status
+        // Determine the appropriate mapping interface based on SubFlow type
+        var mappingInterfaceType = subFlowConfig.Type.Code == "S"
+            ? typeof(ISubFlowMapping)
+            : typeof(ISubProcessMapping);
 
-        await Task.CompletedTask; // Remove this when implementing the actual logic
-        return false;
-    }
+        // Compile the mapping script to the appropriate interface
+        var mappingInstance = await scriptEngine.CompileToInstanceAsync<object>(
+            mappingCode,
+            cancellationToken: cancellationToken);
 
-
-
-    /// <summary>
-    /// Retrieves the SubFlow workflow definition and its available transitions for the current state.
-    /// This method now checks for active SubFlow correlations where the parent instance is blocked by a SubFlow.
-    /// </summary>
-    /// <param name="instanceId">The workflow instance ID.</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>The SubFlow workflow definition and state information if active; otherwise, null.</returns>
-    public async Task<(Definitions.Workflow SubFlowWorkflow, InstanceCorrelation Correlation)?> GetActiveSubFlowContextAsync(
-        Guid instanceId,
-        CancellationToken cancellationToken = default)
-    {
-        var activeCorrelation = await instanceCorrelationRepository
-            .FindActiveByParentInstanceIdAsync(instanceId, cancellationToken);
-
-        // Since SubFlow now creates separate instances, we look for blocking SubFlow correlations
-        // where the parent instance is the one being checked
-        var subFlowCorrelation = activeCorrelation
-            .FirstOrDefault(c => c.SubFlowType.Equals(SubFlowType.SubFlow) &&
-                                c.ParentInstanceId == instanceId &&
-                                !c.IsCompleted);
-
-        if (subFlowCorrelation == null)
-            return null;
-
-        var subWorkflow = await componentCacheStore.GetFlowAsync(
-            subFlowCorrelation.SubFlowDomain,
-            subFlowCorrelation.SubFlowName,
-            subFlowCorrelation.SubFlowVersion,
-            cancellationToken);
-
-        return (subWorkflow, subFlowCorrelation);
-    }
-
-    /// <summary>
-    /// Checks if a workflow instance has pending sub-flows that would block transitions.
-    /// This method is used to determine if a transition can be executed or should be blocked.
-    /// Only SubFlow type "S" instances block the parent workflow, SubProcess type "P" instances do not.
-    /// </summary>
-    /// <param name="instanceId">The unique identifier of the workflow instance to check.</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>
-    /// A task representing the asynchronous blocking check operation.
-    /// The result is true if the instance has blocking sub-flows (Type "S"); otherwise, false.
-    /// </returns>
-    public async Task<bool> HasBlockingSubFlowsAsync(
-        Guid instanceId,
-        CancellationToken cancellationToken = default)
-    {
-        return await instanceCorrelationRepository.HasActiveBlockingSubFlowsAsync(instanceId, cancellationToken);
-    }
-
-    /// <summary>
-    /// Handles the completion of a SubFlow by checking if the SubFlow instance has completed
-    /// and updating the parent workflow accordingly.
-    /// This method is now used primarily for managing SubFlow completion signals.
-    /// </summary>
-    /// <param name="instance">The workflow instance.</param>
-    /// <param name="currentSubFlowState">The current state in the SubFlow that is finishing.</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>A task representing the asynchronous completion handling operation.</returns>
-    public async Task HandleSubFlowCompletionAsync(
-        Instance instance,
-        State currentSubFlowState,
-        CancellationToken cancellationToken = default)
-    {
-        // This method is now primarily used for handling completion signals
-        // The actual completion checking will be done via the dedicated endpoint
-
-        // Find active blocking SubFlow correlations for this instance
-        var activeCorrelations = await instanceCorrelationRepository
-            .FindActiveByParentInstanceIdAsync(instance.Id, cancellationToken);
-
-        var blockingSubFlowCorrelations = activeCorrelations
-            .Where(c => c.SubFlowType.Equals(SubFlowType.SubFlow) &&
-                       c.ParentInstanceId == instance.Id &&
-                       !c.IsCompleted)
-            .ToList();
-
-        // Check each blocking SubFlow for completion
-        foreach (var correlation in blockingSubFlowCorrelations)
+        // Cast to the appropriate mapping interface and execute InputHandler
+        if (subFlowConfig.Type.Code == "S" && mappingInstance is ISubFlowMapping subFlowMapping)
         {
-            var isCompleted = await IsSubFlowCompletedAsync(correlation.SubFlowInstanceId, cancellationToken);
+            return await subFlowMapping.InputHandler(context);
+        }
 
-            if (isCompleted)
+        if (subFlowConfig.Type.Code == "P" && mappingInstance is ISubProcessMapping subProcessMapping)
+        {
+            return await subProcessMapping.InputHandler(context);
+        }
+
+        throw new InvalidOperationException(
+            $"Failed to cast mapping instance to {mappingInterfaceType.Name} for SubFlow type '{subFlowConfig.Type.Code}'");
+    }
+
+    /// <summary>
+    /// Checks if transition should be forwarded to SubFlow instance.
+    /// If SubFlow is active, forwards the transition to SubFlow instance via remote call.
+    /// Returns SubFlow response data if forwarded, null if should be processed locally.
+    /// </summary>
+    /// <param name="instanceId">The main instance ID</param>
+    /// <param name="transitionKey">The transition key to execute</param>
+    /// <param name="input">The transition input data</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests</param>
+    /// <returns>SubFlow transition response if forwarded, null if should be processed locally</returns>
+    public async Task<InstanceServiceResponse<TransitionOutput>?> TryForwardTransitionToSubFlowAsync(
+        Guid instanceId,
+        string transitionKey,
+        TransitionInput input,
+        CancellationToken cancellationToken = default)
+    {
+        // Check if there's an active SubFlow that blocks the main instance
+        var correlation = await instanceCorrelationRepository
+            .FindActiveSubFlowByParentAsync(instanceId, cancellationToken);
+
+        if (correlation != null)
+        {
+            // Forward transition to SubFlow instance
+            var subFlowTransitionInput = new TransitionInput(
+                correlation.SubFlowDomain,
+                correlation.SubFlowName,
+                correlation.SubFlowVersion)
             {
-                // Mark SubFlow correlation as completed
-                correlation.Complete();
-                await instanceCorrelationRepository.UpdateAsync(correlation, true, cancellationToken);
+                Data = input.Data,
+                Headers = input.Headers,
+                RouteValues = input.RouteValues
+            };
 
-                // Get the parent workflow to determine the next state after SubFlow completion
-                var parentWorkflow = await componentCacheStore.GetFlowAsync(
-                    correlation.SubFlowDomain, // TODO: This should come from instance or correlation ??
-                    instance.Flow,
-                    null,
-                    cancellationToken);
+            // Forward the transition to the SubFlow instance
+            var subFlowResult = await remoteInstanceCommandAppService.TransitionAsync(
+                correlation.SubFlowInstanceId,
+                transitionKey,
+                subFlowTransitionInput,
+                cancellationToken);
 
-                // Find the parent state that initiated the SubFlow
-                var parentState = parentWorkflow.GetState(correlation.ParentState);
-
-                // Find transitions from the parent state that should be executed after SubFlow completion
-                var nextTransitions = parentState.Transitions
-                    .Where(t => t.TriggerType == TriggerType.Automatic)
-                    .ToList();
-
-                if (nextTransitions.Any())
-                {
-                    // If there are automatic transitions, execute the first one
-                    var nextTransition = nextTransitions.First();
-                    instance.ChangeState(nextTransition);
-
-                    // After changing state, check if the new target state is also a SubFlow state
-                    await HandleNewStateSubFlowAsync(instance, parentWorkflow, nextTransition.Target, cancellationToken);
-                }
-                else
-                {
-                    // If no automatic transitions, return to the parent state
-                    instance.ChangeState(parentState);
-                }
-            }
+            return subFlowResult; // Return SubFlow response
         }
-    }
 
-    /// <summary>
-    /// Checks if the newly transitioned state is a SubFlow state and handles it accordingly.
-    /// This ensures that SubFlow chains work correctly when one SubFlow completion leads to another SubFlow.
-    /// </summary>
-    /// <param name="instance">The workflow instance.</param>
-    /// <param name="parentWorkflow">The parent workflow definition.</param>
-    /// <param name="newStateKey">The key of the new state to check.</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>A task representing the asynchronous new state SubFlow handling operation.</returns>
-    private async Task HandleNewStateSubFlowAsync(
-        Instance instance,
-        Definitions.Workflow parentWorkflow,
-        string newStateKey,
-        CancellationToken cancellationToken = default)
-    {
-        var newState = parentWorkflow.GetState(newStateKey);
-
-        // If the new state is a SubFlow state, we need to initiate the SubFlow
-        if (newState.StateType == StateType.SubFlow && newState.SubFlow != null)
-        {
-            // Create a basic script context for SubFlow initialization
-            var scriptContext = new ScriptContext.Builder()
-                .SetWorkflow(parentWorkflow)
-                .SetInstance(instance)
-                .SetBody(new Dictionary<string, object>())
-                .SetHeaders(new Dictionary<string, string>())
-                .Build();
-
-            // Handle the SubFlow for the new state
-            await HandleSubFlowAsync(instance, newState, scriptContext, cancellationToken);
-        }
+        return null; // No SubFlow active, process locally
     }
 }

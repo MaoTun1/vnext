@@ -30,8 +30,10 @@ public sealed class EfCoreInstanceJobRepository(
                 cancellationToken: cancellationToken);
     }
 
-    public Task<List<InstanceJob>> GetListUntriggeredAsync(CancellationToken cancellationToken = default)
+    public async Task<List<InstanceJob>> GetListUntriggeredAsync(CancellationToken cancellationToken = default)
     {
-        throw new NotImplementedException();
+        return await (await GetQueryableAsync())
+            .Where(p => p.IsTriggered == false)
+            .ToListAsync(cancellationToken);
     }
 }

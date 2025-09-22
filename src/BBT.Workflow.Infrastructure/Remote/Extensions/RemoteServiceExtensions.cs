@@ -56,14 +56,20 @@ public static class RemoteServiceExtensions
                 client.DefaultRequestHeaders.Add("Accept", "application/json");
                 client.DefaultRequestHeaders.Add("User-Agent",
                     $"amorphie-runtime/{runtimeInfoProvider.Version} ({runtimeInfoProvider.Domain})");
+                
+                // Add internal operation header for circuit breaker context
+                if (clientOptions.EnableCircuitBreakerBypass)
+                {
+                    client.DefaultRequestHeaders.Add(clientOptions.InternalOperationHeader, "true");
+                }
             })
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler()
             {
                 AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
             })
+            .AddPolicyHandler(GetTimeoutPolicy(options))
             .AddPolicyHandler(GetRetryPolicy(options))
-            .AddPolicyHandler(GetCircuitBreakerPolicy(options))
-            .AddPolicyHandler(GetTimeoutPolicy(options));
+            .AddPolicyHandler(GetCircuitBreakerPolicy(options));
 
         services.AddHttpClient<IRemoteInstanceQueryAppService, RemoteInstanceQueryAppService>((sp, client) =>
             {
@@ -75,14 +81,20 @@ public static class RemoteServiceExtensions
                 client.DefaultRequestHeaders.Add("Accept", "application/json");
                 client.DefaultRequestHeaders.Add("User-Agent",
                     $"amorphie-runtime/{runtimeInfoProvider.Version} ({runtimeInfoProvider.Domain})");
+                
+                // Add internal operation header for circuit breaker context
+                if (clientOptions.EnableCircuitBreakerBypass)
+                {
+                    client.DefaultRequestHeaders.Add(clientOptions.InternalOperationHeader, "true");
+                }
             })
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler()
             {
                 AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
             })
+            .AddPolicyHandler(GetTimeoutPolicy(options))
             .AddPolicyHandler(GetRetryPolicy(options))
-            .AddPolicyHandler(GetCircuitBreakerPolicy(options))
-            .AddPolicyHandler(GetTimeoutPolicy(options));
+            .AddPolicyHandler(GetCircuitBreakerPolicy(options));
 
         return services;
     }
@@ -112,7 +124,7 @@ public static class RemoteServiceExtensions
     }
 
     /// <summary>
-    /// Creates a circuit breaker policy
+    /// Creates a circuit breaker policy with enhanced logging and internal operation awareness
     /// </summary>
     private static IAsyncPolicy<HttpResponseMessage> GetCircuitBreakerPolicy(RemoteOptions options)
     {
@@ -123,11 +135,20 @@ public static class RemoteServiceExtensions
                 durationOfBreak: TimeSpan.FromSeconds(options.CircuitBreakerTimeoutSeconds),
                 onBreak: (exception, duration) =>
                 {
-                    // Log circuit breaker opening if needed
+                    // Enhanced logging for circuit breaker opening
+                    // Note: Logging can be enhanced here if needed, but avoiding context access issue
+                    System.Diagnostics.Debug.WriteLine(
+                        $"Circuit breaker opened. Duration: {duration.TotalMilliseconds}ms. " +
+                        $"Failure threshold: {options.CircuitBreakerFailureThreshold}. Break duration: {options.CircuitBreakerTimeoutSeconds}s. " +
+                        $"Exception: {exception.Exception?.Message ?? exception.Result?.ReasonPhrase ?? "Unknown"}");
                 },
                 onReset: () =>
                 {
-                    // Log circuit breaker reset if needed
+                    // Log circuit breaker reset - could add logging here if needed
+                },
+                onHalfOpen: () =>
+                {
+                    // Log circuit breaker half-open state - could add logging here if needed
                 });
     }
 

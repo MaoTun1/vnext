@@ -367,7 +367,7 @@ public interface IWorkflowMetrics
     /// <param name="pubsubName">Name of the pub/sub component</param>
     /// <param name="topic">Topic name</param>
     /// <param name="status">Status of the publish (success/failure)</param>
-    void RecordDaprPubsubMessagePublished(string pubsubName, string topic, string status);
+    void RecordDaprPubsubMessagePublished(string? pubsubName, string topic, string status);
 
     /// <summary>
     /// Records Dapr pub/sub message received.

@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace System.Collections.Generic;
 
 public sealed class SemVersionComparer : IComparer<string>
@@ -70,18 +72,20 @@ public sealed class SemVersionComparer : IComparer<string>
             : coreAndPreRelease;
 
         // 3) Major, Minor, Patch parse
-        var splits = core.Split('.');
+        var match = Regex.Match(core, @"^(\d+)(?:\.(\d+))?(?:\.(\d+))?");
         var major = 0;
         var minor = 0;
         var patch = 0;
 
-        if (splits.Length > 0)
-            int.TryParse(splits[0], out major);
-        if (splits.Length > 1)
-            int.TryParse(splits[1], out minor);
-        if (splits.Length > 2)
-            int.TryParse(splits[2], out patch);
-
+        if (match.Success)
+        {
+            int.TryParse(match.Groups[1].Value, out major);
+            if (match.Groups[2].Success)
+                int.TryParse(match.Groups[2].Value, out minor);
+            if (match.Groups[3].Success)
+                int.TryParse(match.Groups[3].Value, out patch);
+        }
+        
         return new SemVersion(major, minor, patch, preRelease, build);
     }
 

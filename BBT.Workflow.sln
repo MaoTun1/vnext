@@ -34,8 +34,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BBT.Workflow.Orchestration.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BBT.Workflow.HttpApi.Shared", "src\BBT.Workflow.HttpApi.Shared\BBT.Workflow.HttpApi.Shared.csproj", "{3EF9AAC0-6256-4AD0-8B1C-6ADE8B770CA7}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BBT.Workflow.HttpApi.Host", "src\BBT.Workflow.HttpApi.Host\BBT.Workflow.HttpApi.Host.csproj", "{A4218836-A483-410B-83D1-395667EB83E0}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -56,7 +54,6 @@ Global
 		{C3065107-D000-4D4C-AE82-5BDC77820601} = {E33E4442-2B07-4F8F-BCE9-2B7B8BBCC1A2}
 		{3509EF1B-39C1-4662-B55D-C1AAF27086CB} = {FF223DC6-2E83-421D-B8D4-872DE1307397}
 		{3EF9AAC0-6256-4AD0-8B1C-6ADE8B770CA7} = {52B461AD-6511-4DE9-89DA-1105938761F9}
-		{A4218836-A483-410B-83D1-395667EB83E0} = {52B461AD-6511-4DE9-89DA-1105938761F9}
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{AE64F995-6AC6-4B2C-B9AB-B01B97137DAB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
@@ -103,9 +100,5 @@ Global
 		{3EF9AAC0-6256-4AD0-8B1C-6ADE8B770CA7}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3EF9AAC0-6256-4AD0-8B1C-6ADE8B770CA7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3EF9AAC0-6256-4AD0-8B1C-6ADE8B770CA7}.Release|Any CPU.Build.0 = Release|Any CPU
-		{A4218836-A483-410B-83D1-395667EB83E0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{A4218836-A483-410B-83D1-395667EB83E0}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{A4218836-A483-410B-83D1-395667EB83E0}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{A4218836-A483-410B-83D1-395667EB83E0}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

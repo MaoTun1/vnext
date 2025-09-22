@@ -87,9 +87,9 @@ internal sealed class ScriptContextBuilder(
         return this;
     }
 
-    public IScriptContextBuilder WithTransition(string transitionKey)
+    public IScriptContextBuilder WithTransition(string? transitionKey)
     {
-        _transitionKey = transitionKey;
+        _transitionKey = transitionKey ?? throw new ArgumentNullException(nameof(transitionKey));
         _transition = null; // Clear direct transition if set
         return this;
     }

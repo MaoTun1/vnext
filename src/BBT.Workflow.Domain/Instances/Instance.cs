@@ -1,15 +1,17 @@
+using System.Text.RegularExpressions;
 using BBT.Aether;
 using BBT.Aether.Auditing;
 using BBT.Aether.Domain.Entities;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances.Policies;
+using WorkflowExecutionContext = BBT.Workflow.Shared.ExecutionContext;
 
 namespace BBT.Workflow.Instances;
 
 /// <summary>
 /// Instance
 /// </summary>
-public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTime
+public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTime, IObjectDictionary
 {
     private Instance()
     {
@@ -28,6 +30,8 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         Status = InstanceStatus.Active;
 
         Tags = [];
+
+        MetaData = new ObjectDictionary();
 
         _dataList = [];
     }
@@ -70,6 +74,11 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// </summary>
     public DateTime? CompletedAt { get; private set; }
 
+    public bool IsCompleted => 
+        Status.Equals(InstanceStatus.Completed) 
+        || Status.Equals(InstanceStatus.Faulted) 
+        || Status.Equals(InstanceStatus.Passive);
+
     public TimeSpan? Duration { get; private set; }
 
     public List<string> Tags { get; private set; }
@@ -85,6 +94,12 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     public DateTime? ModifiedAt { get; set; }
 
     public bool IsTransient { get; private set; }
+
+    public ObjectDictionary MetaData  { get; set; }
+    public void SetMetaData(ObjectDictionary data)
+    {
+        MetaData = data;
+    }
 
     private readonly List<InstanceData> _dataList = new();
     private readonly object _dataListLock = new(); // Thread-safe lock for data operations
@@ -203,9 +218,10 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         }
     }
 
-    public bool CanExecuteTransition(Transition transition, State state, StateTransitionPolicy policy)
+    public bool CanExecuteTransition(Transition transition, State state, StateTransitionPolicy policy, WorkflowExecutionContext executionContext = WorkflowExecutionContext.User)
     {
-        return transition.CanExecute(state, policy);
+        policy.Validate(state, transition, executionContext);
+        return true;
     }
 
     public InstanceData AddDataWithVersion(Guid id, JsonData inputData, string version)
@@ -263,11 +279,11 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
                 return exactMatch;
 
             // Partial versiyon: 1.0 → tüm 1.0.x versiyonları içinde en büyük olanı bul
-            var partial = version.Split('.');
-            if (partial.Length == 2)
+            var match = Regex.Match(version, @"^(\d+)\.(\d+)$");
+            if (match.Success)
             {
-                var prefix = $"{partial[0]}.{partial[1]}.";
-
+                var prefix = $"{match.Groups[1].Value}.{match.Groups[2].Value}.";
+                
                 var matched = _dataList
                     .Where(d => d.Version.StartsWith(prefix))
                     .OrderByDescending(d => d, InstanceDataVersionComparer.Instance)

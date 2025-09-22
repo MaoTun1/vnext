@@ -76,7 +76,7 @@ public class FilterSpecification<T> : IFilterSpecification<T>
                 var value = match.Groups[2].Value;
 
                 var filterMapping = _filterMappings.FirstOrDefault(x => 
-                    string.Equals(x.Key, propertyName.Split('.')[0], StringComparison.OrdinalIgnoreCase));
+                    string.Equals(x.Key, Regex.Match(propertyName, @"^([^.]+)").Groups[1].Value, StringComparison.OrdinalIgnoreCase));
 
                 if (filterMapping.Key != null)
                 {

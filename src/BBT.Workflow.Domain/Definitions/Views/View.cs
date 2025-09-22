@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using BBT.Aether;
 using BBT.Workflow.Runtime;
 
@@ -59,7 +60,7 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
     /// <summary>
     /// Semantic Version
     /// </summary>
-    public string SemanticVersion => Version.Split('+')[0];
+    public string SemanticVersion => Regex.Match(Version, @"^([^+]+)").Groups[1].Value;
 
     /// <summary>
     /// Content

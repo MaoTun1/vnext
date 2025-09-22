@@ -34,20 +34,36 @@ public class JsonData : ValueObject
 
     public JsonData Merge(JsonData newData)
     {
-        var mergedDict = new Dictionary<string, JsonElement>();
-
-        if (JsonElement.ValueKind == JsonValueKind.Object)
+        if (JsonElement.ValueKind != JsonValueKind.Object || newData.JsonElement.ValueKind != JsonValueKind.Object)
         {
-            foreach (var property in JsonElement.EnumerateObject())
-            {
-                mergedDict[property.Name] = property.Value;
-            }
+            // If either is not an object, return the new data
+            return newData;
         }
 
-        if (newData.JsonElement.ValueKind == JsonValueKind.Object)
+        var mergedDict = new Dictionary<string, JsonElement>();
+
+        // First add all properties from the current object
+        foreach (var property in JsonElement.EnumerateObject())
         {
-            foreach (var property in newData.JsonElement.EnumerateObject())
+            mergedDict[property.Name] = property.Value;
+        }
+
+        // Then merge/override with properties from new data
+        foreach (var property in newData.JsonElement.EnumerateObject())
+        {
+            if (mergedDict.ContainsKey(property.Name) && 
+                mergedDict[property.Name].ValueKind == JsonValueKind.Object && 
+                property.Value.ValueKind == JsonValueKind.Object)
             {
+                // Deep merge nested objects
+                var currentNestedData = new JsonData(mergedDict[property.Name]);
+                var newNestedData = new JsonData(property.Value);
+                var mergedNestedData = currentNestedData.Merge(newNestedData);
+                mergedDict[property.Name] = mergedNestedData.JsonElement;
+            }
+            else
+            {
+                // Override or add new property
                 mergedDict[property.Name] = property.Value;
             }
         }

@@ -69,15 +69,30 @@ public static class WorkflowApiBaseServiceCollectionExtensions
     /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddWorkflowHttpClient(this IServiceCollection services)
     {
-        // services.AddHttpClient<HttpTaskExecutor>(client =>
-        // {
-        //     client.Timeout = TimeSpan.FromSeconds(30);
-        // })
-        // .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-        // {
-        //     MaxConnectionsPerServer = 10,
-        //     UseCookies = false
-        // });
+        // Default HTTP client with SSL validation enabled
+        services.AddHttpClient(HttpTaskExecutor.DefaultHttpClientName, client =>
+        {
+            // Default timeout - will be overridden per request
+            client.Timeout = TimeSpan.FromSeconds(30);
+        })
+        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            MaxConnectionsPerServer = 10,
+            UseCookies = false
+        });
+
+        // HTTP client with SSL validation disabled
+        services.AddHttpClient(HttpTaskExecutor.NoSslValidationHttpClientName, client =>
+        {
+            // Default timeout - will be overridden per request
+            client.Timeout = TimeSpan.FromSeconds(30);
+        })
+        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            MaxConnectionsPerServer = 10,
+            UseCookies = false,
+            ServerCertificateCustomValidationCallback = (message, cert, chain, sslPolicyErrors) => true
+        });
         
         return services;
     }

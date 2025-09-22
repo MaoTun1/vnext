@@ -7,10 +7,59 @@ using BBT.Workflow.Runtime;
 
 namespace BBT.Workflow.Scripting;
 
+/// <summary>
+/// Represents the response model returned by mapping interfaces for workflow script execution.
+/// This model is used to capture data modifications, audit information, and metadata during task processing,
+/// subflow operations, and instance data transformations.
+/// </summary>
+/// <remarks>
+/// ScriptResponse serves multiple purposes:
+/// <list type="bullet">
+/// <item><description>For IMapping: Captures task audit data and provides output data for instance merging</description></item>
+/// <item><description>For ISubFlowMapping/ISubProcessMapping: Provides input data for subflow/subprocess creation</description></item>
+/// <item><description>For ISubFlowMapping OutputHandler: Transforms completed subflow data for parent instance merging</description></item>
+/// </list>
+/// </remarks>
 public sealed class ScriptResponse
 {
+    /// <summary>
+    /// Unique identifier or key associated with the script response.
+    /// Can be used for correlation, caching, or referencing purposes in workflow execution.
+    /// </summary>
+    /// <value>A string key that identifies this response, or null if no specific identification is needed.</value>
+    public string? Key { get; set; }
+    
+    /// <summary>
+    /// The primary data payload returned by the script execution.
+    /// This data will be used differently based on the mapping interface context:
+    /// - IMapping InputHandler: Task audit data for logging
+    /// - IMapping OutputHandler: Instance data to be merged with current instance
+    /// - ISubFlowMapping/ISubProcessMapping: Input parameters for subflow/subprocess creation
+    /// - ISubFlowMapping OutputHandler: Transformed data from completed subflow to merge with parent instance
+    /// </summary>
+    /// <value>Dynamic data object containing the script execution results, or null if no data is produced.</value>
     public dynamic? Data { get; set; }
+    
+    /// <summary>
+    /// HTTP headers or metadata headers associated with the response.
+    /// Useful for passing additional context information, authentication tokens, or custom metadata.
+    /// </summary>
+    /// <value>Dynamic object containing header information, or null if no headers are needed.</value>
     public dynamic? Headers { get; set; }
+    
+    /// <summary>
+    /// Route values or routing parameters associated with the response.
+    /// Can be used for workflow routing decisions, URL generation, or parameter passing between workflow components.
+    /// </summary>
+    /// <value>Dynamic object containing route values, or null if no routing information is provided.</value>
+    public dynamic? RouteValues { get; set; }
+    
+    /// <summary>
+    /// Collection of tags for categorizing, filtering, or marking the response.
+    /// Tags can be used for workflow analytics, debugging, conditional processing, or organizational purposes.
+    /// </summary>
+    /// <value>Array of string tags. Initialize as empty array if no tags are needed.</value>
+    public string[] Tags { get; set; }
 }
 
 /// <summary>
@@ -68,15 +117,205 @@ public sealed class ScriptContext
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
+    /// <summary>
+    /// Contains the request payload data from workflow transitions or task execution responses,
+    /// with all property names automatically converted to camelCase format for consistency.
+    /// This dynamic object can hold either the incoming transition request data or the processed
+    /// <see cref="StandardTaskResponse"/> data from completed tasks.
+    /// </summary>
+    /// <value>
+    /// A dynamic object containing:
+    /// - For transition requests: The payload data sent with the transition (converted to camelCase)
+    /// - For task responses: The processed <see cref="StandardTaskResponse"/> containing execution results
+    /// - Can be null if no body data is available
+    /// 
+    /// When containing <see cref="StandardTaskResponse"/> data, includes:
+    /// - data: The actual response data from task execution
+    /// - statusCode: HTTP status code for HTTP-based tasks
+    /// - isSuccess: Boolean indicating execution success
+    /// - errorMessage: Error details if task execution failed
+    /// - headers: Response headers for HTTP-based tasks
+    /// - metadata: Additional execution metadata
+    /// - executionDurationMs: Task execution time in milliseconds
+    /// - taskType: Task type identifier
+    /// </value>
+    /// <remarks>
+    /// The Body property serves as the primary data container in script contexts. It's automatically
+    /// populated with request data during transitions and updated with task results during execution.
+    /// All data is processed through JSON serialization with camelCase property naming policy to ensure
+    /// consistent naming conventions across the entire workflow execution context.
+    /// Use SetBody() or SetStandardResponse() methods to modify this property safely.
+    /// </remarks>
     public dynamic? Body { get; private set; }
+    
+    /// <summary>
+    /// Contains HTTP headers from transition requests with all header keys normalized to lowercase.
+    /// This includes both standard HTTP headers and custom application-specific headers.
+    /// </summary>
+    /// <value>
+    /// A dynamic object containing header key-value pairs where:
+    /// - All header keys are automatically converted to lowercase for consistency
+    /// - Values preserve their original casing and format
+    /// - Can be null if no headers are present
+    /// </value>
+    /// <remarks>
+    /// Common headers include authentication tokens, content-type information, correlation IDs,
+    /// and custom business headers. The lowercase normalization ensures consistent header access
+    /// across different HTTP clients and frameworks.
+    /// </remarks>
     public dynamic? Headers { get; private set; }
+    
+    /// <summary>
+    /// Contains route values and URL parameters extracted from the transition request.
+    /// These values are typically derived from URL path segments and query parameters.
+    /// </summary>
+    /// <value>
+    /// A dynamic object containing routing parameter key-value pairs:
+    /// - Path segment values (e.g., /workflow/{workflowId}/instance/{instanceId})
+    /// - Query string parameters
+    /// - Custom routing values set by the application
+    /// - Can be null if no route values are available
+    /// </value>
+    /// <remarks>
+    /// Route values are essential for workflows that need to access URL-based parameters,
+    /// such as entity IDs, filter criteria, or navigation context. They provide a way
+    /// to pass structured data through the URL routing mechanism.
+    /// </remarks>
     public dynamic? RouteValues { get; private set; }
+    
+    /// <summary>
+    /// The active workflow instance that is currently being processed or executed.
+    /// This represents the live instance with its current state, data, and execution history.
+    /// </summary>
+    /// <value>
+    /// An <see cref="Instance"/> object containing:
+    /// - Current state information and workflow position
+    /// - Instance data accumulated throughout execution
+    /// - Execution history and audit trail
+    /// - Correlation information and metadata
+    /// </value>
+    /// <remarks>
+    /// The Instance property provides access to the complete workflow instance context,
+    /// including its current state, accumulated data, and execution history. This is
+    /// essential for making context-aware decisions in mapping implementations.
+    /// </remarks>
     public Instance Instance { get; private set; }
+    
+    /// <summary>
+    /// The workflow definition that describes the structure, states, transitions, and tasks
+    /// for the current workflow execution context.
+    /// </summary>
+    /// <value>
+    /// A <see cref="Definitions.Workflow"/> object containing:
+    /// - Workflow structure and state definitions
+    /// - Available transitions and their conditions
+    /// - Task definitions and configurations
+    /// - Workflow metadata and properties
+    /// </value>
+    /// <remarks>
+    /// The Workflow property provides access to the complete workflow blueprint,
+    /// enabling mapping implementations to understand the workflow structure,
+    /// available transitions, and task configurations for informed decision making.
+    /// </remarks>
     public Definitions.Workflow Workflow { get; private set; }
+    
+    /// <summary>
+    /// Provides runtime information and services for the current execution context,
+    /// including environment details, configuration, and operational capabilities.
+    /// </summary>
+    /// <value>
+    /// An <see cref="IRuntimeInfoProvider"/> interface providing:
+    /// - Current execution environment information
+    /// - Runtime configuration and settings
+    /// - Service discovery and dependency access
+    /// - Operational context and capabilities
+    /// </value>
+    /// <remarks>
+    /// The Runtime property enables mapping implementations to access environment-specific
+    /// information, configuration settings, and runtime services needed for context-aware
+    /// processing and integration with external systems.
+    /// </remarks>
     public IRuntimeInfoProvider Runtime { get; private set; }
+    
+    /// <summary>
+    /// The current transition being processed, containing information about the state change,
+    /// triggers, conditions, and associated tasks.
+    /// </summary>
+    /// <value>
+    /// A <see cref="Transition"/> object containing:
+    /// - Source and target state information
+    /// - Transition triggers and conditions
+    /// - Associated tasks and their configurations
+    /// - Transition metadata and properties
+    /// </value>
+    /// <remarks>
+    /// The Transition property provides detailed information about the current state change
+    /// being executed, including its configuration, conditions, and associated tasks.
+    /// This is particularly useful for transition-specific logic and task processing.
+    /// </remarks>
     public Transition Transition { get; private set; }
+    
+    /// <summary>
+    /// Contains workflow and component definitions available in the current execution context.
+    /// This includes reusable definitions, templates, and configuration objects.
+    /// </summary>
+    /// <value>
+    /// A dictionary containing definition key-value pairs where:
+    /// - Keys are definition identifiers or names
+    /// - Values are definition objects or configuration data
+    /// - Provides access to reusable workflow components and templates
+    /// </value>
+    /// <remarks>
+    /// The Definitions property enables access to shared workflow components, templates,
+    /// and configuration objects that can be reused across different workflow instances
+    /// and execution contexts.
+    /// </remarks>
     public Dictionary<string, dynamic> Definitions { get; private set; }
+    
+    /// <summary>
+    /// Contains the execution results and responses from completed workflow tasks,
+    /// with task keys converted to follow variable naming standards and values containing
+    /// <see cref="ScriptResponse"/> objects as data payload.
+    /// This collection is populated as tasks complete and is used by output handlers
+    /// to process and transform task results.
+    /// </summary>
+    /// <value>
+    /// A dictionary containing task response data where:
+    /// - Keys are task identifiers converted to proper variable naming standards (camelCase, alphanumeric)
+    /// - Values are <see cref="ScriptResponse"/> objects containing:
+    ///   * Key: Unique identifier for the task response
+    ///   * Data: The actual task execution results and response data
+    ///   * Headers: HTTP headers or metadata headers from task execution
+    ///   * RouteValues: Routing parameters or configuration values
+    ///   * Tags: Categorization tags for monitoring and auditing
+    /// - Updated automatically as tasks complete execution
+    /// - Can contain null values for tasks that produce no output
+    /// </value>
+    /// <remarks>
+    /// The TaskResponse collection is essential for output handlers in IMapping implementations,
+    /// providing access to task execution results that need to be processed, transformed,
+    /// and integrated into the workflow instance data. Task keys are normalized to ensure
+    /// consistent variable naming conventions, making them safe to use in script contexts
+    /// and dynamic property access scenarios.
+    /// </remarks>
     public Dictionary<string, dynamic?> TaskResponse { get; private set; } = new();
+    
+    /// <summary>
+    /// Contains execution metadata, performance metrics, and contextual information
+    /// about the current task, transition, or workflow execution.
+    /// </summary>
+    /// <value>
+    /// A dictionary containing metadata key-value pairs such as:
+    /// - Execution timing and performance metrics
+    /// - Processing context and environment information
+    /// - Audit and tracking data
+    /// - Custom metadata set by mapping implementations
+    /// </value>
+    /// <remarks>
+    /// The MetaData collection provides a flexible way to store and access execution
+    /// context information, performance metrics, and custom data that supports
+    /// monitoring, auditing, and debugging of workflow executions.
+    /// </remarks>
     public Dictionary<string, dynamic> MetaData { get; private set; } = new();
 
     /// <summary>
@@ -187,11 +426,14 @@ public sealed class ScriptContext
         // Handle JsonElement objects by converting them to ExpandoObjects first
         if (targetValue is JsonElement targetJsonElement && sourceValue is JsonElement sourceJsonElement)
         {
-            if (targetJsonElement.ValueKind == JsonValueKind.Object && sourceJsonElement.ValueKind == JsonValueKind.Object)
+            if (targetJsonElement.ValueKind == JsonValueKind.Object &&
+                sourceJsonElement.ValueKind == JsonValueKind.Object)
             {
-                var targetExpandoFromJson = JsonSerializer.Deserialize<ExpandoObject>(targetJsonElement.GetRawText(), JsonScriptBodyOptions);
-                var sourceExpandoFromJson = JsonSerializer.Deserialize<ExpandoObject>(sourceJsonElement.GetRawText(), JsonScriptBodyOptions);
-                
+                var targetExpandoFromJson =
+                    JsonSerializer.Deserialize<ExpandoObject>(targetJsonElement.GetRawText(), JsonScriptBodyOptions);
+                var sourceExpandoFromJson =
+                    JsonSerializer.Deserialize<ExpandoObject>(sourceJsonElement.GetRawText(), JsonScriptBodyOptions);
+
                 if (targetExpandoFromJson != null && sourceExpandoFromJson != null)
                 {
                     return MergeExpandoObjects(targetExpandoFromJson, sourceExpandoFromJson);
@@ -204,7 +446,8 @@ public sealed class ScriptContext
         {
             if (targetJson.ValueKind == JsonValueKind.Object)
             {
-                var targetExpandoFromJson = JsonSerializer.Deserialize<ExpandoObject>(targetJson.GetRawText(), JsonScriptBodyOptions);
+                var targetExpandoFromJson =
+                    JsonSerializer.Deserialize<ExpandoObject>(targetJson.GetRawText(), JsonScriptBodyOptions);
                 if (targetExpandoFromJson != null)
                 {
                     return MergeExpandoObjects(targetExpandoFromJson, sourceExp);
@@ -216,7 +459,8 @@ public sealed class ScriptContext
         {
             if (sourceJson.ValueKind == JsonValueKind.Object)
             {
-                var sourceExpandoFromJson = JsonSerializer.Deserialize<ExpandoObject>(sourceJson.GetRawText(), JsonScriptBodyOptions);
+                var sourceExpandoFromJson =
+                    JsonSerializer.Deserialize<ExpandoObject>(sourceJson.GetRawText(), JsonScriptBodyOptions);
                 if (sourceExpandoFromJson != null)
                 {
                     return MergeExpandoObjects(targetExp, sourceExpandoFromJson);
@@ -231,12 +475,12 @@ public sealed class ScriptContext
             {
                 var targetList = targetArray.EnumerateArray().ToList();
                 var sourceList = sourceArray.EnumerateArray().ToList();
-                
+
                 // For arrays, we append source items to target
                 var mergedArray = new List<JsonElement>();
                 mergedArray.AddRange(targetList);
                 mergedArray.AddRange(sourceList);
-                
+
                 // Convert back to JsonElement
                 var mergedJson = JsonSerializer.Serialize(mergedArray.Select(e => e.GetRawText()).ToArray());
                 return JsonSerializer.Deserialize<JsonElement>(mergedJson);
@@ -244,16 +488,17 @@ public sealed class ScriptContext
         }
 
         // Handle Dictionary<string, object> types that might come from different serialization contexts
-        if (targetValue is IDictionary<string, object?> targetDict && sourceValue is IDictionary<string, object?> sourceDict)
+        if (targetValue is IDictionary<string, object?> targetDict &&
+            sourceValue is IDictionary<string, object?> sourceDict)
         {
             var result = new ExpandoObject() as IDictionary<string, object?>;
-            
+
             // Add all target properties
             foreach (var kvp in targetDict)
             {
                 result[kvp.Key] = kvp.Value;
             }
-            
+
             // Merge source properties
             foreach (var kvp in sourceDict)
             {
@@ -266,7 +511,7 @@ public sealed class ScriptContext
                     result[kvp.Key] = kvp.Value;
                 }
             }
-            
+
             return (ExpandoObject)result;
         }
 

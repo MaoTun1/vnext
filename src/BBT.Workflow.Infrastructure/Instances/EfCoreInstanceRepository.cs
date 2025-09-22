@@ -23,6 +23,8 @@ public sealed class EfCoreInstanceRepository(
     : EfCoreRepository<WorkflowDbContext, Instance, Guid>(dbContext, serviceProvider, transactionService),
         IInstanceRepository
 {
+    private readonly WorkflowDbContext _dbContext = dbContext;
+
     public override async Task<IQueryable<Instance>> WithDetailsAsync()
     {
         return (await base.WithDetailsAsync())
@@ -130,6 +132,15 @@ public sealed class EfCoreInstanceRepository(
             p => p.Key == key, cancellationToken);
     }
 
+    public async Task<Instance?> FindByKeyAsReadOnlyAsync(string key, CancellationToken cancellationToken = default)
+    {
+        return await (await GetDbSetAsync())
+            .Include(i => i.DataList)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                p => p.Key == key, cancellationToken);
+    }
+
     public async Task<Instance?> FindByIdAsync(
         Guid id,
         CancellationToken cancellationToken = default)
@@ -165,7 +176,6 @@ public sealed class EfCoreInstanceRepository(
         string[]? filters,
         CancellationToken cancellationToken = default)
     {
-
         // Apply PostgreSQL native JSON filters if provided
         if (filters?.Any() == true)
         {
@@ -178,7 +188,7 @@ public sealed class EfCoreInstanceRepository(
                         filters: filters,
                         jsonColumnName: "Data", // InstanceData.Data is the JSON column
                         tableName: "InstancesData", // Filter table name
-                        schema:  dbContext.SchemaName ?? "public" // Default schema
+                        schema:  _dbContext.SchemaName ?? "public" // Default schema
                     );
 
                 return filteredInstances

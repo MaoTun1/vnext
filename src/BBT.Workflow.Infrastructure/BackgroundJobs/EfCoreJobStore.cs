@@ -39,13 +39,13 @@ public sealed class EfCoreJobStore(
     public async Task SaveAsync<T>(string jobId, BackgroundJobInfo<T> job,
         CancellationToken cancellationToken = default) where T : class
     {
-        var domain = job.GetDomain();
-        if (domain.IsNullOrEmpty())
+        var flowName = job.GetFlowName();
+        if (flowName.IsNullOrEmpty())
         {
             return;
         }
 
-        using (currentSchema.Change(domain))
+        using (currentSchema.Change(flowName))
         {
             var instanceJob = await jobRepository.FindByNameAsync(jobId, cancellationToken);
             if (instanceJob != null)

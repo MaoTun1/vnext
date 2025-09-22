@@ -1,6 +1,9 @@
+using System.Text.Json.Serialization;
+
 namespace BBT.Workflow.Instances;
 
-public class InstanceStatus : IEquatable<InstanceStatus>
+[JsonConverter(typeof(IEquatableJsonConverter<InstanceStatus>))]
+public sealed class InstanceStatus : IEquatable<InstanceStatus>
 {
     public static readonly InstanceStatus Busy = new InstanceStatus("B", "Busy");
     public static readonly InstanceStatus Active = new InstanceStatus("A", "Active");

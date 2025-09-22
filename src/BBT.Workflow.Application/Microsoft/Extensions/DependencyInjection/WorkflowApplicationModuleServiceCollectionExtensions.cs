@@ -18,6 +18,7 @@ using BBT.Workflow.Tasks.Persistence;
 using BBT.Workflow.Tasks.Persistence.Strategies;
 using TaskFactory = BBT.Workflow.Tasks.Factory.TaskFactory;
 using BBT.Workflow.Functions;
+using System.Net.Http;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -36,6 +37,30 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
     {
         services.AddDomainModule();
         services.AddAetherApplication();
+        
+        // Add HttpClient configuration for task executors (manual configuration)
+        // Default HTTP client with SSL validation enabled
+        services.AddHttpClient("WorkflowHttpClient", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        })
+        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            MaxConnectionsPerServer = 10,
+            UseCookies = false
+        });
+
+        // HTTP client with SSL validation disabled
+        services.AddHttpClient("WorkflowHttpClient.NoSslValidation", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        })
+        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            MaxConnectionsPerServer = 10,
+            UseCookies = false,
+            ServerCertificateCustomValidationCallback = (message, cert, chain, sslPolicyErrors) => true
+        });
 
         // You can register your application service here.
         services.AddSingleton<DomainCacheContext>();
@@ -76,6 +101,7 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddScoped<IStateMachineExecutor, StateMachineExecutor>();
         services.AddScoped<ITaskOrchestrationService, TaskOrchestrationService>();
         services.AddScoped<ISubFlowService, SubFlowService>();
+        services.AddScoped<ISubFlowCompletionService, SubFlowCompletionService>();
         services.AddScoped<ITaskExecutorFactory, TaskExecutorFactory>();
         services.AddScoped<HttpTaskExecutor>();
         services.AddScoped<DaprBindingTaskExecutor>();
@@ -85,12 +111,14 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddScoped<DaprServiceTaskExecutor>();
         services.AddScoped<ScriptTaskExecutor>();
         services.AddScoped<ConditionTaskExecutor>();
+        services.AddScoped<TimerTaskExecutor>();
 
         // Scripting service
         services.AddScoped<IScriptEngine, ScriptEngine>();
 
         // Rule execution service
         services.AddScoped<IRuleExecutionService, RuleExecutionService>();
+        services.AddScoped<ITimerExecutionService, TimerExecutionService>();
 
         // Cast handlers
         services.AddSingleton<IWorkflowCastHandler, FlowCastHandler>();
