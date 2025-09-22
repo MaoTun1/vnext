@@ -284,7 +284,7 @@ public class ClickHouseInstanceTransitionDataSink : AbstractDataSink<InstanceTra
                         port = value;
                         break;
                     default:
-
+                    // Unwanted parts
                         break;
                 }
             }

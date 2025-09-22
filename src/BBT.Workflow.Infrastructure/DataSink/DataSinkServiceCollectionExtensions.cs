@@ -137,6 +137,7 @@ public static class DataSinkServiceCollectionExtensions
                         port = value;
                         break;
                     default:
+                    // Unwanted parts
                         break;
                 }
             }

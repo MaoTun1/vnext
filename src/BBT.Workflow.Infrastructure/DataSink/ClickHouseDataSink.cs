@@ -270,7 +270,7 @@ public class ClickHouseInstanceDataSink : AbstractDataSink<Instance>, IDataSink
         var parts = connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries);
         string? host = null;
         string? port = null;
-
+        string? unwantedPart = string.Empty;
         foreach (var part in parts)
         {
             var keyValue = part.Split('=', 2);
@@ -288,6 +288,7 @@ public class ClickHouseInstanceDataSink : AbstractDataSink<Instance>, IDataSink
                         port = value;
                         break;
                           default:
+                           // Unwanted parts
                         break;
                 }
             }

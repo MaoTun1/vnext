@@ -285,6 +285,7 @@ public class ClickHouseInstanceTaskDataSink : AbstractDataSink<InstanceTask>, ID
                         port = value;
                         break;
                         default:
+                        // Unwanted parts
                         break;
                 }
             }
