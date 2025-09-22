@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -350,6 +351,7 @@ public class ClickHouseInstanceDataSink : AbstractDataSink<Instance>, IDataSink
 /// </summary>
 public class ClickHouseDateTimeConverter : JsonConverter<DateTime>
 {
+    [SuppressMessage("Style", "SA1201:Elements should appear in the correct order", Justification = "Interface implementation requires ref parameter order")]
     public override DateTime Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         return DateTime.Parse(reader.GetString()!, new CultureInfo("en-US"));
@@ -367,6 +369,7 @@ public class ClickHouseDateTimeConverter : JsonConverter<DateTime>
 /// </summary>
 public class ClickHouseNullableDateTimeConverter : JsonConverter<DateTime?>
 {
+    [SuppressMessage("Style", "SA1201:Elements should appear in the correct order", Justification = "Interface implementation requires ref parameter order")]
     public override DateTime? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         var stringValue = reader.GetString();
@@ -392,6 +395,7 @@ public class ClickHouseNullableDateTimeConverter : JsonConverter<DateTime?>
 /// </summary>
 public class ClickHouseGuidConverter : JsonConverter<Guid>
 {
+    [SuppressMessage("Style", "SA1201:Elements should appear in the correct order", Justification = "Interface implementation requires ref parameter order")]
     public override Guid Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         return Guid.Parse(reader.GetString()!);
@@ -409,6 +413,7 @@ public class ClickHouseGuidConverter : JsonConverter<Guid>
 /// </summary>
 public class ClickHouseNullableGuidConverter : JsonConverter<Guid?>
 {
+    [SuppressMessage("Style", "SA1201:Elements should appear in the correct order", Justification = "Interface implementation requires ref parameter order")]
     public override Guid? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         var stringValue = reader.GetString();
