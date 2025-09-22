@@ -33,6 +33,10 @@ public static class InstancesModelCreatingExtensions
                 .IsRequired()
                 .HasMaxLength(InstanceConstants.MaxStatusLength)
                 .HasConversion(new InstanceStatusConverter());
+            
+            b.Property(m => m.MetaData)
+                .HasConversion(new ObjectDictionaryConverter())
+                .HasColumnType("jsonb");
 
             b.HasMany(m => m.DataList)
                 .WithOne()
@@ -241,11 +245,6 @@ public static class InstancesModelCreatingExtensions
 
             b.HasIndex(i => i.JobId)
                 .IsUnique();
-
-            b.HasOne<Instance>()
-                .WithMany()
-                .HasForeignKey(p => p.InstanceId)
-                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

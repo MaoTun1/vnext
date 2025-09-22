@@ -19,6 +19,15 @@ public sealed class HttpTaskExecutor(
     ILogger<HttpTaskExecutor> logger) : TaskExecutor(scriptEngine, logger), ITaskExecutor
 {
     /// <summary>
+    /// Named HttpClient for SSL validation enabled requests (default behavior)
+    /// </summary>
+    public const string DefaultHttpClientName = "WorkflowHttpClient";
+
+    /// <summary>
+    /// Named HttpClient for SSL validation disabled requests
+    /// </summary>
+    public const string NoSslValidationHttpClientName = "WorkflowHttpClient.NoSslValidation";
+    /// <summary>
     /// Executes an HTTP task by preparing the request through script mapping, making the HTTP call,
     /// and processing the response through output mapping.
     /// </summary>
@@ -51,7 +60,8 @@ public sealed class HttpTaskExecutor(
             Logger.LogDebug("Preparing input for HTTP task {TaskKey}", httpTask.Key);
             await PrepareInputAsync(httpTask, scriptCode, context, cancellationToken);
             
-            var httpClient = httpClientFactory.CreateClient();
+            var httpClient = CreateHttpClient(httpTask);
+            
             var request = new HttpRequestMessage(new HttpMethod(httpTask.Method), httpTask.Url);
 
             Logger.LogDebug("Created HTTP request for {Method} {Url}", httpTask.Method, httpTask.Url);
@@ -215,6 +225,41 @@ public sealed class HttpTaskExecutor(
         var outputResponse = await ProcessOutputAsync(scriptCode, context, cancellationToken);
         
         Logger.LogInformation("HTTP task {TaskKey} execution completed, returning processed output", httpTask.Key);
-        return outputResponse.Data;
+        return outputResponse;
+    }
+
+    /// <summary>
+    /// Creates an HttpClient using the appropriate named client based on SSL validation settings.
+    /// This method leverages HttpClientFactory for connection pooling and proper disposal.
+    /// </summary>
+    /// <param name="httpTask">The HTTP task containing SSL validation and timeout configuration.</param>
+    /// <returns>A configured HttpClient instance from the factory pool.</returns>
+    private HttpClient CreateHttpClient(HttpTask httpTask)
+    {
+        string clientName;
+        
+        if (!httpTask.ValidateSSL)
+        {
+            Logger.LogWarning("SSL certificate validation is disabled for HTTP task {TaskKey} - URL: {Url}", 
+                httpTask.Key, httpTask.Url);
+            clientName = NoSslValidationHttpClientName;
+        }
+        else
+        {
+            Logger.LogDebug("Using standard SSL validation for HTTP task {TaskKey} - URL: {Url}", 
+                httpTask.Key, httpTask.Url);
+            clientName = DefaultHttpClientName;
+        }
+
+        // Get HttpClient from factory using named client
+        var httpClient = httpClientFactory.CreateClient(clientName);
+        
+        // Override timeout for this specific request
+        httpClient.Timeout = TimeSpan.FromSeconds(httpTask.TimeoutSeconds);
+        
+        Logger.LogDebug("Created HttpClient '{ClientName}' with {Timeout}s timeout for task {TaskKey}", 
+            clientName, httpTask.TimeoutSeconds, httpTask.Key);
+            
+        return httpClient;
     }
 }

@@ -180,8 +180,8 @@ public static class WorkflowFactory
         if (transitionInput.Timer != null)
         {
             transition.SetTimer(
-                transitionInput.Timer.Reset,
-                transitionInput.Timer.Reset
+                transitionInput.Timer.Location,
+                transitionInput.Timer.Code
             );
         }
 

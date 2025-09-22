@@ -147,6 +147,6 @@ public sealed class DaprPubSubTaskExecutor(
         var outputResponse = await ProcessOutputAsync(scriptCode, context, cancellationToken);
         
         Logger.LogInformation("DAPR pub/sub task {TaskKey} execution completed, returning processed output", daprTask.Key);
-        return outputResponse.Data;
+        return outputResponse;
     }
 }

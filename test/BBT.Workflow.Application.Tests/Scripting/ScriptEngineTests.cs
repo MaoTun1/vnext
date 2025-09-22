@@ -258,7 +258,7 @@ public class ScriptEngineTests : ApplicationTestBase<ApplicationEntryPoint>
                            var httpTask = (task as HttpTask)!;
                            httpTask.Url = "https://httpbin.org/post/" + context.Transition.Key;
                            httpTask.Method = "POST";
-                           
+                          
                            var apiKey = GetSecret("secret_store", "secret", "test_key");
                            return Task.FromResult(new ScriptResponse
                            {

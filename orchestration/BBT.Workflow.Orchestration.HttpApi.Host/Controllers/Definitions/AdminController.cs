@@ -18,16 +18,6 @@ public sealed class AdminController(IAdminAppService appService) : ControllerBas
     }
 
     [ApiExplorerSettings(IgnoreApi = true)]
-    [HttpPost("invalidate")]
-    public async Task<IActionResult> InvalidateCacheAsync(
-        [FromBody] InvalidateCacheInput input,
-        CancellationToken cancellationToken = default)
-    {
-        await appService.InvalidateCacheAsync(input, cancellationToken);
-        return Ok(new { result = "ok" });
-    }
-
-    [ApiExplorerSettings(IgnoreApi = true)]
     [HttpGet("re-initialize")]
     public async Task<IActionResult> ReInitializeAsync(
         CancellationToken cancellationToken = default)

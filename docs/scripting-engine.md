@@ -128,6 +128,45 @@ public interface IConditionMapping
 }
 ```
 
+### 4. ITimerMapping Interface
+
+For flexible timer scheduling with Dapr-compatible functionality:
+
+```csharp
+public interface ITimerMapping
+{
+    Task<TimerSchedule> Handler(ScriptContext context);
+}
+```
+
+The enhanced `ITimerMapping` interface supports:
+
+- **DateTime scheduling**: `TimerSchedule.FromDateTime(dateTime)`
+- **Cron expressions**: `TimerSchedule.FromCronExpression("0 9 * * *")`
+- **Duration-based**: `TimerSchedule.FromDuration(TimeSpan.FromHours(2))`
+- **Immediate execution**: `TimerSchedule.Immediate()`
+
+**Example Timer Implementation:**
+
+```csharp
+public class PaymentDueTimerRule : ITimerMapping
+{
+    public async Task<TimerSchedule> Handler(ScriptContext context)
+    {
+        var frequency = context.Instance.Data.paymentFrequency?.ToString() ?? "monthly";
+        
+        return frequency switch
+        {
+            "daily" => TimerSchedule.FromCronExpression("0 9 * * *"),
+            "weekly" => TimerSchedule.FromCronExpression("0 9 * * 1"),
+            "monthly" => TimerSchedule.FromCronExpression("0 9 1 * *"),
+            "immediate" => TimerSchedule.Immediate(),
+            _ => TimerSchedule.FromDuration(TimeSpan.FromDays(30))
+        };
+    }
+}
+```
+
 ## Script Context
 
 The `ScriptContext` provides execution context to scripts:

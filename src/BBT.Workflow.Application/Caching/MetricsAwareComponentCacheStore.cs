@@ -9,22 +9,12 @@ namespace BBT.Workflow.Caching;
 /// Decorator for ComponentCacheStore that automatically records cache metrics.
 /// This wrapper adds comprehensive cache monitoring without modifying the original ComponentCacheStore implementation.
 /// </summary>
-public sealed class MetricsAwareComponentCacheStore : IComponentCacheStore
+public sealed class MetricsAwareComponentCacheStore(
+    IComponentCacheStore innerStore,
+    IWorkflowMetrics workflowMetrics,
+    ILogger<MetricsAwareComponentCacheStore> logger)
+    : IComponentCacheStore
 {
-    private readonly IComponentCacheStore _innerStore;
-    private readonly IWorkflowMetrics _workflowMetrics;
-    private readonly ILogger<MetricsAwareComponentCacheStore> _logger;
-
-    public MetricsAwareComponentCacheStore(
-        IComponentCacheStore innerStore,
-        IWorkflowMetrics workflowMetrics,
-        ILogger<MetricsAwareComponentCacheStore> logger)
-    {
-        _innerStore = innerStore;
-        _workflowMetrics = workflowMetrics;
-        _logger = logger;
-    }
-
     public async Task<Definitions.Workflow> GetFlowAsync(
         string domain,
         string key,
@@ -33,7 +23,7 @@ public sealed class MetricsAwareComponentCacheStore : IComponentCacheStore
     {
         return await ExecuteWithMetricsAsync(
             "Workflow",
-            () => _innerStore.GetFlowAsync(domain, key, version, cancellationToken));
+            () => innerStore.GetFlowAsync(domain, key, version, cancellationToken));
     }
 
     public async Task<WorkflowTask> GetTaskAsync(
@@ -44,7 +34,7 @@ public sealed class MetricsAwareComponentCacheStore : IComponentCacheStore
     {
         return await ExecuteWithMetricsAsync(
             "WorkflowTask", 
-            () => _innerStore.GetTaskAsync(domain, key, version, cancellationToken));
+            () => innerStore.GetTaskAsync(domain, key, version, cancellationToken));
     }
 
     public async Task<SchemaDefinition> GetSchemaAsync(
@@ -55,7 +45,7 @@ public sealed class MetricsAwareComponentCacheStore : IComponentCacheStore
     {
         return await ExecuteWithMetricsAsync(
             "SchemaDefinition",
-            () => _innerStore.GetSchemaAsync(domain, key, version, cancellationToken));
+            () => innerStore.GetSchemaAsync(domain, key, version, cancellationToken));
     }
 
     public async Task<Function> GetFunctionAsync(
@@ -66,7 +56,7 @@ public sealed class MetricsAwareComponentCacheStore : IComponentCacheStore
     {
         return await ExecuteWithMetricsAsync(
             "Function",
-            () => _innerStore.GetFunctionAsync(domain, key, version, cancellationToken));
+            () => innerStore.GetFunctionAsync(domain, key, version, cancellationToken));
     }
 
     public async Task<View> GetViewAsync(
@@ -77,7 +67,7 @@ public sealed class MetricsAwareComponentCacheStore : IComponentCacheStore
     {
         return await ExecuteWithMetricsAsync(
             "View",
-            () => _innerStore.GetViewAsync(domain, key, version, cancellationToken));
+            () => innerStore.GetViewAsync(domain, key, version, cancellationToken));
     }
 
     public async Task<Extension> GetExtensionAsync(
@@ -88,7 +78,7 @@ public sealed class MetricsAwareComponentCacheStore : IComponentCacheStore
     {
         return await ExecuteWithMetricsAsync(
             "Extension",
-            () => _innerStore.GetExtensionAsync(domain, key, version, cancellationToken));
+            () => innerStore.GetExtensionAsync(domain, key, version, cancellationToken));
     }
 
     public async Task<IEnumerable<Extension>> GetAllExtensionsAsync(
@@ -97,20 +87,20 @@ public sealed class MetricsAwareComponentCacheStore : IComponentCacheStore
     {
         return await ExecuteWithMetricsAsync(
             "Extension_Bulk",
-            () => _innerStore.GetAllExtensionsAsync(domain, cancellationToken));
+            () => innerStore.GetAllExtensionsAsync(domain, cancellationToken));
     }
 
     public async Task SetAsync<T>(T entity, CancellationToken cancellationToken = default)
         where T : class, IDomainEntity, IReferenceSetter
     {
-        await _innerStore.SetAsync(entity, cancellationToken);
+        await innerStore.SetAsync(entity, cancellationToken);
         
         var cacheTypeName = typeof(T).Name;
         
         // Update cache size metrics after setting
         UpdateCacheSizeMetrics(cacheTypeName);
         
-        _logger.LogDebug("Entity {EntityType} cached with metrics updated", cacheTypeName);
+        logger.LogDebug("Entity {EntityType} cached with metrics updated", cacheTypeName);
     }
 
     /// <summary>
@@ -123,30 +113,30 @@ public sealed class MetricsAwareComponentCacheStore : IComponentCacheStore
             var result = await operation();
             
             // Record cache hit (if we got a result without exception)
-            _workflowMetrics.RecordCacheHit(cacheTypeName);
+            workflowMetrics.RecordCacheHit(cacheTypeName);
             
             // Update cache size metrics
             UpdateCacheSizeMetrics(cacheTypeName);
             
-            _logger.LogDebug("Cache hit for {CacheType}", cacheTypeName);
+            logger.LogDebug("Cache hit for {CacheType}", cacheTypeName);
             
             return result;
         }
         catch (EntityNotFoundException)
         {
             // Record cache miss for entity not found
-            _workflowMetrics.RecordCacheMiss(cacheTypeName);
+            workflowMetrics.RecordCacheMiss(cacheTypeName);
             
-            _logger.LogDebug("Cache miss for {CacheType}", cacheTypeName);
+            logger.LogDebug("Cache miss for {CacheType}", cacheTypeName);
             
             throw;
         }
         catch (Exception ex)
         {
             // Record cache miss for other errors
-            _workflowMetrics.RecordCacheMiss(cacheTypeName);
+            workflowMetrics.RecordCacheMiss(cacheTypeName);
             
-            _logger.LogWarning(ex, "Cache operation failed for {CacheType}", cacheTypeName);
+            logger.LogWarning(ex, "Cache operation failed for {CacheType}", cacheTypeName);
             
             throw;
         }
@@ -163,13 +153,13 @@ public sealed class MetricsAwareComponentCacheStore : IComponentCacheStore
             var entryCount = GetApproximateEntryCount(cacheTypeName);
             var sizeBytes = GetApproximateSizeBytes(cacheTypeName, entryCount);
             
-            _workflowMetrics.SetCacheEntries(cacheTypeName, entryCount);
-            _workflowMetrics.SetCacheSize(cacheTypeName, sizeBytes);
+            workflowMetrics.SetCacheEntries(cacheTypeName, entryCount);
+            workflowMetrics.SetCacheSize(cacheTypeName, sizeBytes);
         }
         catch (Exception ex)
         {
             // Don't fail operations if metrics recording fails
-            _logger.LogWarning(ex, "Failed to update cache size metrics for {CacheType}", cacheTypeName);
+            logger.LogWarning(ex, "Failed to update cache size metrics for {CacheType}", cacheTypeName);
         }
     }
 

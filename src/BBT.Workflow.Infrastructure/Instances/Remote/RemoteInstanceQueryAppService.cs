@@ -1,6 +1,8 @@
 using System.Text.Json;
 using BBT.Aether.Application.Services;
+using BBT.Aether.Http;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Remote.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -16,7 +18,7 @@ public sealed class RemoteInstanceQueryAppService(
 {
     private readonly RemoteOptions _options = options.Value;
 
-    private readonly JsonSerializerOptions _jsonOptions = new()
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = false
@@ -63,7 +65,7 @@ public sealed class RemoteInstanceQueryAppService(
         if (response.IsSuccessStatusCode)
         {
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<GetInstanceOutput>(responseContent, _jsonOptions);
+            var result = JsonSerializer.Deserialize<GetInstanceOutput>(responseContent, JsonOptions);
             return InstanceServiceResult<GetInstanceOutput>.Success(result!);
         }
 
@@ -102,7 +104,7 @@ public sealed class RemoteInstanceQueryAppService(
         if (response.IsSuccessStatusCode)
         {
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<PaginationResult<GetInstanceOutput>>(responseContent, _jsonOptions);
+            var result = JsonSerializer.Deserialize<PaginationResult<GetInstanceOutput>>(responseContent, JsonOptions);
             return new InstanceServiceResponse<PaginationResult<GetInstanceOutput>>(result!);
         }
 
@@ -138,7 +140,7 @@ public sealed class RemoteInstanceQueryAppService(
         if (response.IsSuccessStatusCode)
         {
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<GetInstanceHistoryOutput>(responseContent, _jsonOptions);
+            var result = JsonSerializer.Deserialize<GetInstanceHistoryOutput>(responseContent, JsonOptions);
             return new InstanceServiceResponse<GetInstanceHistoryOutput>(result!);
         }
 
@@ -168,7 +170,7 @@ public sealed class RemoteInstanceQueryAppService(
         if (response.IsSuccessStatusCode)
         {
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<GetAvailableTransitionOutput>(responseContent, _jsonOptions);
+            var result = JsonSerializer.Deserialize<GetAvailableTransitionOutput>(responseContent, JsonOptions);
             return new InstanceServiceResponse<GetAvailableTransitionOutput>(result!);
         }
 
@@ -184,6 +186,28 @@ public sealed class RemoteInstanceQueryAppService(
         var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
         var statusCode = (int)response.StatusCode;
 
+        // Check if response has Aether error format header
+        if (response.Headers.TryGetValues("_bbt_error_format", out var values) && 
+            values.Any(v => v.Equals("true", StringComparison.OrdinalIgnoreCase)))
+        {
+            try
+            {
+                var errorResponse = JsonSerializer.Deserialize<ServiceErrorResponse>(errorContent, JsonOptions);
+                if (errorResponse?.Error != null)
+                {
+                    throw new RemoteServiceException(
+                        $"Remote service error: {errorResponse.Error.Message}", 
+                        errorResponse.Error, 
+                        statusCode);
+                }
+            }
+            catch (JsonException)
+            {
+                // If JSON deserialization fails, fall back to the default behavior
+            }
+        }
+
+        // Default behavior for non-Aether format or deserialization failures
         throw new HttpRequestException($"HTTP {statusCode}: {response.ReasonPhrase}. Content: {errorContent}");
     }
 }

@@ -3,6 +3,7 @@ using System.Text.Json;
 using BBT.Workflow.Instances;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using ExecutionContext = BBT.Workflow.Shared.ExecutionContext;
 
 namespace BBT.Workflow.Orchestration.Controllers.Instances;
 
@@ -19,7 +20,7 @@ public sealed class InstanceController(
     public async Task<IActionResult> StartAsync(
         [FromRoute] string domain,
         [FromRoute] string workflow,
-        [FromBody] CreateInstanceInput request,
+        [FromBody] CreateInstanceDto request,
         [FromQuery] string? version = null,
         [FromQuery] bool sync = false,
         CancellationToken cancellationToken = default
@@ -27,7 +28,46 @@ public sealed class InstanceController(
     {
         var input = new StartInstanceInput(domain, workflow, version, sync)
         {
-            Instance = request
+            Instance = new CreateInstanceInput
+            {
+                Key = request.Key,
+                Tags = request.Tags,
+                Attributes = request.Attributes
+            }
+        };
+        var httpContext = httpContextAccessor.HttpContext;
+        if (httpContext is not null)
+        {
+            input.Headers = httpContext.Request.Headers.ToDictionary(s => s.Key.ToLower(), s => s.Value.ToString());
+            input.RouteValues = httpContext.Request.RouteValues.ToDictionary(s => s.Key, s => s.Value?.ToString());
+        }
+        
+        var response = await commandAppService.StartAsync(input, cancellationToken);
+        return Ok(response.Data);
+    }
+    
+    [ApiExplorerSettings(IgnoreApi = true)]
+    [HttpPost("{domain}/workflows/{workflow}/sub/instances/start")]
+    public async Task<IActionResult> StartSubAsync(
+        [FromRoute] string domain,
+        [FromRoute] string workflow,
+        [FromBody] CreateSubInstanceDto request,
+        [FromQuery] string? version = null,
+        [FromQuery] bool sync = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var input = new StartInstanceInput(domain, workflow, version, sync)
+        {
+            Instance = new CreateInstanceInput
+            {
+                Id = request.Id,
+                Key = request.Key,
+                Tags = request.Tags,
+                Attributes = request.Attributes,
+                Callback = request.Callback,
+                MetaData = new ObjectDictionary(request.MetaData)
+            }
         };
         var httpContext = httpContextAccessor.HttpContext;
         if (httpContext is not null)
@@ -52,14 +92,6 @@ public sealed class InstanceController(
         CancellationToken cancellationToken = default
     )
     {
-        /*
-            TODO: Version handling -
-            Start Instance adımında versiyon opsiyonel ve mutluaka bir version ile işlem sonlandırılır.
-            X-Workflow header'ında versiyon bilgisi döner.
-            Transition tetiklendiğinde X-Workflow headerı MUTLAKA beklenir,
-            çünkü versiyon bilgisini göndermediği durumda instance hangi versiyonla başladı bilmez.
-            Workflow tanımı için başlatılan versiyonla ilerlemesi için gereklidir?
-        */
         if (version.IsNullOrEmpty())
         {
             var flowInfo = HttpContext.GetWorkflowInfo();
@@ -67,6 +99,44 @@ public sealed class InstanceController(
         }
 
         var input = new TransitionInput(domain, workflow, version, attributes, sync);
+        var httpContext = httpContextAccessor.HttpContext;
+        if (httpContext is not null)
+        {
+            input.Headers = httpContext.Request.Headers.ToDictionary(s => s.Key.ToLower(), s => s.Value.ToString());
+            input.RouteValues = httpContext.Request.RouteValues.ToDictionary(s => s.Key, s => s.Value?.ToString());
+        }
+        
+        var response = await commandAppService.TransitionAsync(
+            instanceId,
+            transitionKey,
+            input,
+            cancellationToken);
+        return Ok(response.Data);
+    }
+    
+    [ApiExplorerSettings(IgnoreApi = true)]
+    [HttpPatch("{domain}/workflows/{workflow}/instances/{instanceId}/transitions/{transitionKey}/auto")]
+    public async Task<IActionResult> AutoTransitionAsync(
+        [FromRoute] string domain,
+        [FromRoute] string workflow,
+        [FromRoute] Guid instanceId,
+        [FromRoute] string transitionKey,
+        [FromBody] JsonElement? attributes,
+        [FromQuery] string? version = null,
+        [FromQuery] bool sync = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (version.IsNullOrEmpty())
+        {
+            var flowInfo = HttpContext.GetWorkflowInfo();
+            version = flowInfo?.Version;
+        }
+
+        var input = new TransitionInput(domain, workflow, version, attributes, sync)
+        {
+            ExecutionContext = ExecutionContext.System
+        };
         var httpContext = httpContextAccessor.HttpContext;
         if (httpContext is not null)
         {

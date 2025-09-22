@@ -1,5 +1,7 @@
 using System.Xml;
+using BBT.Workflow.Definitions.Timer;
 using Dapr.Jobs.Models;
+using ExecutionContext = BBT.Workflow.Shared.ExecutionContext;
 
 namespace BBT.Workflow.BackgroundJobs;
 
@@ -121,7 +123,7 @@ public static class WorkflowTimeoutJobExtensions
     /// <param name="domain">The domain context for the workflow.</param>
     /// <param name="version">The version of the workflow definition.</param>
     /// <param name="transitionKey">The key identifying the specific transition to execute.</param>
-    /// <param name="timerDuration">The duration to wait before triggering the transition in XML duration format.</param>
+    /// <param name="timer">The duration to wait before triggering the transition in XML duration format.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>A task representing the asynchronous job enqueue operation.</returns>
     /// <exception cref="ArgumentException">Thrown when the timer duration format is invalid.</exception>
@@ -133,7 +135,7 @@ public static class WorkflowTimeoutJobExtensions
         string domain,
         string version,
         string transitionKey,
-        string timerDuration,
+        TimerSchedule timer,
         CancellationToken cancellationToken = default)
     {
         var jobId = $"timer-transition-{flowName}-{instanceId}-{transitionKey}";
@@ -150,11 +152,7 @@ public static class WorkflowTimeoutJobExtensions
         return jobService.EnqueueAsync(
             jobName: BackgroundJobConsts.TransitionTimerJobName,
             jobId: jobId,
-            schedule: DaprJobSchedule.FromDateTime(
-                DateTime.UtcNow.Add(
-                    XmlConvert.ToTimeSpan(timerDuration)
-                )
-            ),
+            schedule: timer.ToDaprJobSchedule(),
             payload: payload,
             new Dictionary<string, string>()
             {
