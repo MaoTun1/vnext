@@ -39,7 +39,7 @@ public class TaskScriptContextModel
     /// <summary>
     /// Request headers
     /// </summary>
-    public Dictionary<string, string>? Headers { get; set; }
+    public Dictionary<string, string?>? Headers { get; set; }
 
     /// <summary>
     /// Route values

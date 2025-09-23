@@ -38,12 +38,6 @@ public interface IStateMachineExecutor
     /// <returns>
     /// A Task representing the transition execution operation. The task completes when the operation is finished.
     /// </returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when the context parameter is null.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when the specified state or transition cannot be found in the workflow.
-    /// </exception>
     /// <remarks>
     /// This method performs the following operations in order:
     /// <list type="number">
@@ -80,9 +74,6 @@ public interface IStateMachineExecutor
     /// <returns>
     /// A Task representing the timeout scheduling operation. The task completes when the operation is finished.
     /// </returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when the workflow or instance parameter is null.
-    /// </exception>
     /// <remarks>
     /// <para>
     /// This method only performs operations if a timeout is defined in the workflow. 
@@ -119,9 +110,6 @@ public interface IStateMachineExecutor
     /// A Task representing the scheduling operation. The task completes when all applicable 
     /// transitions have been scheduled for later execution.
     /// </returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when the workflow or instance parameter is null.
-    /// </exception>
     /// <remarks>
     /// <para>
     /// This method processes transitions that have timing-based execution requirements such as:
@@ -162,9 +150,6 @@ public interface IStateMachineExecutor
     /// A Task representing the automatic transition evaluation and execution operation. 
     /// The task completes when all eligible automatic transitions have been processed.
     /// </returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when the workflow or instance parameter is null.
-    /// </exception>
     /// <remarks>
     /// <para>
     /// This method processes automatic transitions that meet the following criteria:
@@ -190,61 +175,25 @@ public interface IStateMachineExecutor
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Asynchronously executes the start transition for a workflow instance.
-    /// This method handles only the state machine logic, expecting the instance to be already prepared.
+    /// Validates a transition by building the script context and getting the validated transition from the state machine service.
+    /// This method handles the common validation logic used across different transition scenarios.
     /// </summary>
-    /// <param name="workflow">The workflow definition containing the start transition</param>
-    /// <param name="instance">The prepared instance to start</param>
-    /// <param name="attributes">Initial data attributes for the instance</param>
-    /// <param name="headers">Request headers for the start transition</param>
-    /// <param name="routeValues">Route values for the start transition</param>
-    /// <param name="executionContext">The execution context (User or System)</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>A task representing the start transition execution</returns>
-    /// <remarks>
-    /// This method performs:
-    /// 1. Instance status validation and activation if needed
-    /// 2. Start transition execution
-    /// 3. Instance persistence
-    /// 4. Flow timeout scheduling
-    /// </remarks>
-    Task ExecuteInstanceStartAsync(
-        Definitions.Workflow workflow,
-        Instance instance,
-        JsonElement? attributes,
-        Dictionary<string, string>? headers,
-        Dictionary<string, object?>? routeValues,
-        WorkflowExecutionContext executionContext = WorkflowExecutionContext.User,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Asynchronously executes a manual transition for an existing workflow instance.
-    /// This method handles the complete transition lifecycle with proper state management.
-    /// </summary>
-    /// <param name="workflow">The workflow definition containing the transition</param>
-    /// <param name="instance">The instance to execute the transition for</param>
-    /// <param name="transitionKey">The key of the transition to execute</param>
-    /// <param name="data">Optional data to pass to the transition</param>
-    /// <param name="headers">Request headers for the transition</param>
-    /// <param name="routeValues">Route values for the transition</param>
-    /// <param name="executionContext">The execution context (User or System)</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>A task representing the transition execution</returns>
-    /// <remarks>
-    /// This method performs:
-    /// 1. Transition validation and preparation
-    /// 2. Data versioning and persistence
-    /// 3. Transition execution with full lifecycle
-    /// 4. Automatic transition checking
-    /// 5. Instance status management
-    /// </remarks>
-    Task ExecuteManualTransitionAsync(
+    /// <param name="workflow">The workflow definition containing the transition to validate.</param>
+    /// <param name="instance">The workflow instance for which the transition will be validated.</param>
+    /// <param name="transitionKey">The key of the transition to validate.</param>
+    /// <param name="data">Optional data to be passed with the transition.</param>
+    /// <param name="headers">Optional headers to be passed with the transition.</param>
+    /// <param name="routeValues">Optional route values to be passed with the transition.</param>
+    /// <param name="executionContext">The execution context for the transition.</param>
+    /// <param name="cancellationToken">The cancellation token used to cancel the operation.</param>
+    /// <returns>A tuple containing the validated transition and the script context builder for further use.</returns>
+    Task<(Transition validatedTransition, IScriptContextBuilder scriptContextBuilder)> ValidateTransitionAsync(
         Definitions.Workflow workflow,
         Instance instance,
         string transitionKey,
         JsonElement? data,
-        Dictionary<string, string>? headers,
-        Dictionary<string, object?>? routeValues,
-        WorkflowExecutionContext executionContext = WorkflowExecutionContext.User,
+        Dictionary<string, string?>? headers,
+        Dictionary<string, string?>? routeValues,
+        WorkflowExecutionContext executionContext,
         CancellationToken cancellationToken = default);
 }

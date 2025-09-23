@@ -1,6 +1,5 @@
 using System.Text.Json;
 using BBT.Aether.Guids;
-using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Instances.Remote;
@@ -26,29 +25,7 @@ public sealed class SubFlowService(
     IConfiguration configuration,
     IScriptEngine scriptEngine) : ISubFlowService
 {
-    /// <summary>
-    /// Handles the initiation of SubFlow and SubProcess execution.
-    /// SubFlow: Runs on the main flow, maintains state within the main instance.
-    /// SubProcess: Creates separate instances via remote calls (unchanged behavior).
-    /// </summary>
-    /// <param name="workflow">The main workflow.</param>
-    /// <param name="parentInstance">The main workflow instance that initiates the sub-flow.</param>
-    /// <param name="targetState">The target state containing SubFlow configuration.</param>
-    /// <param name="context">The script context containing execution data and headers.</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>A task representing the asynchronous sub-flow initiation operation.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when required parameters are null.</exception>
-    /// <exception cref="InvalidOperationException">Thrown when the SubFlow configuration is invalid.</exception>
-    /// <remarks>
-    /// <para>
-    /// SubFlow (Type: "S"): Runs on the main flow instance, preserves main flow state. 
-    /// Main flow wraps SubFlow, tracks which SubFlow is started, and routes transition requests to SubFlow.
-    /// </para>
-    /// <para>
-    /// SubProcess (Type: "P"): Creates a separate instance and runs in parallel without blocking the parent workflow. 
-    /// The parent workflow can continue immediately after starting the SubProcess.
-    /// </para>
-    /// </remarks>
+    /// <inheritdoc />
     public async Task HandleSubFlowAsync(
         Definitions.Workflow workflow,
         Instance parentInstance,
@@ -204,16 +181,7 @@ public sealed class SubFlowService(
             $"Failed to cast mapping instance to {mappingInterfaceType.Name} for SubFlow type '{subFlowConfig.Type.Code}'");
     }
 
-    /// <summary>
-    /// Checks if transition should be forwarded to SubFlow instance.
-    /// If SubFlow is active, forwards the transition to SubFlow instance via remote call.
-    /// Returns SubFlow response data if forwarded, null if should be processed locally.
-    /// </summary>
-    /// <param name="instanceId">The main instance ID</param>
-    /// <param name="transitionKey">The transition key to execute</param>
-    /// <param name="input">The transition input data</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests</param>
-    /// <returns>SubFlow transition response if forwarded, null if should be processed locally</returns>
+    /// <inheritdoc />
     public async Task<InstanceServiceResponse<TransitionOutput>?> TryForwardTransitionToSubFlowAsync(
         Guid instanceId,
         string transitionKey,
@@ -246,7 +214,7 @@ public sealed class SubFlowService(
 
             return subFlowResult; // Return SubFlow response
         }
-
+        // TODO: Remote Exception handling
         return null; // No SubFlow active, process locally
     }
 }

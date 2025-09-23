@@ -4,6 +4,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using BBT.Workflow.Instances;
 
+namespace BBT.Workflow.Instances;
 public class CreateInstanceDto
 {
     [Required]
@@ -17,5 +18,5 @@ public class CreateSubInstanceDto : CreateInstanceDto
 {
     public Guid? Id  { get; set; }
     public string? Callback { get; set; }
-    public IDictionary<string, object?> MetaData { get; set; }
+    public Dictionary<string, object?> MetaData { get; set; }
 }

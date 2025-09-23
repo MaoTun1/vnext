@@ -3,6 +3,7 @@ using BBT.Workflow.BackgroundJobs.Payloads;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Schemas;
 using BBT.Workflow.ExceptionHandling;
+using BBT.Workflow.Execution.Services;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.BackgroundJobs.Handlers;
@@ -14,7 +15,7 @@ namespace BBT.Workflow.BackgroundJobs.Handlers;
 public sealed class TransitionJobHandler(
     IJobStore jobStore,
     ICurrentSchema currentSchema,
-    IInstanceCommandAppService instanceCommandAppService,
+    IWorkflowExecutionService workflowExecutionService,
     ILogger<TransitionJobHandler> logger) : IJobHandler
 {
     public string JobName => BackgroundJobConsts.TransitionJobName;
@@ -67,7 +68,7 @@ public sealed class TransitionJobHandler(
                     };
 
                 // Use the background-specific method that handles pre-reserved instances
-                await instanceCommandAppService.ExecuteBackgroundTransitionAsync(
+                await workflowExecutionService.ExecuteTransitionAsync(
                     jobInfo.Payload.InstanceId,
                     jobInfo.Payload.TransitionKey,
                     transitionInput,

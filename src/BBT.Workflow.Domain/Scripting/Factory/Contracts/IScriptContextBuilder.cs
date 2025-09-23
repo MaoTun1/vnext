@@ -58,7 +58,7 @@ public interface IScriptContextBuilder
     /// <summary>
     /// Sets the request headers for the ScriptContext.
     /// </summary>
-    IScriptContextBuilder WithHeaders(Dictionary<string, string>? headers);
+    IScriptContextBuilder WithHeaders(Dictionary<string, string?>? headers);
     
     /// <summary>
     /// Sets the route values for the ScriptContext.

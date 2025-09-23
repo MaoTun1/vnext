@@ -63,6 +63,8 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// Current state key
     /// </summary>
     public string? CurrentState { get; private set; }
+    
+    public string GetCurrentState => string.IsNullOrWhiteSpace(CurrentState) ? string.Empty : CurrentState;
 
     /// <summary>
     /// Status

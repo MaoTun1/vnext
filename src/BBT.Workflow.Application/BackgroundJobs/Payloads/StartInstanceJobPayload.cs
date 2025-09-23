@@ -34,6 +34,11 @@ public sealed class StartInstanceJobPayload
     public string InstanceKey { get; set; } = default!;
     
     /// <summary>
+    /// Gets or sets the start transition key.
+    /// </summary>
+    public string TransitionKey { get; set; } = default!;
+    
+    /// <summary>
     /// Gets or sets the instance tags.
     /// </summary>
     public string[]? Tags { get; set; }
@@ -56,10 +61,10 @@ public sealed class StartInstanceJobPayload
     /// <summary>
     /// Gets or sets the request headers.
     /// </summary>
-    public Dictionary<string, string>? Headers { get; set; }
+    public Dictionary<string, string?> Headers { get; set; }
     
     /// <summary>
     /// Gets or sets the route values.
     /// </summary>
-    public Dictionary<string, string?>? RouteValues { get; set; }
+    public Dictionary<string, string?> RouteValues { get; set; }
 }

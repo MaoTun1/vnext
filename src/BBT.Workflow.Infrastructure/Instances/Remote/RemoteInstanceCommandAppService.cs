@@ -189,59 +189,7 @@ public sealed class RemoteInstanceCommandAppService(
         await HandleErrorResponse(response, cancellationToken);
         throw new InvalidOperationException("Request failed without throwing an exception");
     }
-
-    /// <summary>
-    /// Executes a auto transition on an existing workflow instance
-    /// PATCH {baseUrl}/api/v{version}/{domain}/workflows/{workflow}/instances/{instanceId}/transitions/{transitionKey}
-    /// </summary>
-    public async Task<InstanceServiceResponse<TransitionOutput>> AutoTransitionAsync(
-        Guid instanceId,
-        string transitionKey,
-        TransitionInput input,
-        CancellationToken cancellationToken = default)
-    {
-        var url =
-            $"api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances/{instanceId}/transitions/{transitionKey}/auto";
-
-        var queryParams = new List<string>();
-        if (!string.IsNullOrEmpty(input.Version))
-            queryParams.Add($"version={Uri.EscapeDataString(input.Version)}");
-        if (input.Sync)
-            queryParams.Add("sync=true");
-
-        if (queryParams.Count > 0)
-            url += "?" + string.Join("&", queryParams);
-
-        var content = input.Data.HasValue
-            ? new StringContent(input.Data.Value.GetRawText(), Encoding.UTF8, "application/json")
-            : new StringContent("null", Encoding.UTF8, "application/json");
-
-        var requestMessage = new HttpRequestMessage(HttpMethod.Patch, url)
-        {
-            Content = content
-        };
-
-        foreach (var header in input.Headers)
-        {
-            if (!IsRestrictedHeader(header.Key))
-            {
-                requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value);
-            }
-        }
-
-        var response = await httpClient.SendAsync(requestMessage, cancellationToken);
-
-        if (response.IsSuccessStatusCode)
-        {
-            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<TransitionOutput>(responseContent, JsonOptions);
-            return new InstanceServiceResponse<TransitionOutput>(result!);
-        }
-
-        await HandleErrorResponse(response, cancellationToken);
-        throw new InvalidOperationException("Request failed without throwing an exception");
-    }
-
+    
     /// <summary>
     /// Handles error responses by throwing appropriate exceptions.
     /// Checks for '_bbt_error_format=true' header to determine if the response contains
