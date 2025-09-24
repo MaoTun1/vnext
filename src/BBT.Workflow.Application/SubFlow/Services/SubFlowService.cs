@@ -1,6 +1,7 @@
 using System.Text.Json;
 using BBT.Aether.Guids;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Instances.Remote;
 using BBT.Workflow.Scripting;
@@ -23,7 +24,8 @@ public sealed class SubFlowService(
     IGuidGenerator guidGenerator,
     IRemoteInstanceCommandAppService remoteInstanceCommandAppService,
     IConfiguration configuration,
-    IScriptEngine scriptEngine) : ISubFlowService
+    IScriptEngine scriptEngine,
+    IInstanceRepository instanceRepository) : ISubFlowService
 {
     /// <inheritdoc />
     public async Task HandleSubFlowAsync(
@@ -57,7 +59,12 @@ public sealed class SubFlowService(
         ScriptContext context,
         CancellationToken cancellationToken = default)
     {
-        var subFlowConfig = targetState.SubFlow!;
+        var subFlowConfig = targetState.SubFlow;
+        if(subFlowConfig == null)
+        {
+            throw new ConfigInvalidException(parentInstance.Id);
+        }
+
         // Handle input mapping if mapping is configured
         ScriptResponse? inputMappingResult = null;
         if (subFlowConfig.Mapping != null)
@@ -87,7 +94,8 @@ public sealed class SubFlowService(
                 [DomainConsts.MetaDataKeys.Domain] = workflow.Domain,
                 [DomainConsts.MetaDataKeys.Flow] = workflow.Key,
                 [DomainConsts.MetaDataKeys.Version] = workflow.Version,
-                [DomainConsts.MetaDataKeys.State] = targetState.Key
+                [DomainConsts.MetaDataKeys.State] = targetState.Key,
+                [DomainConsts.MetaDataKeys.SubType] = subFlowConfig.Type.Code
             }
         };
 
@@ -107,21 +115,22 @@ public sealed class SubFlowService(
             }
         }
 
-        var sync = Convert.ToBoolean(parentInstance.MetaData[DomainConsts.MetaDataKeys.Sync]!.ToString());
-        if (subFlowConfig.Type.Equals(SubFlowType.SubProcess))
-        {
-            sync = false;
-        }
+        // TODO: will be removed
+        // var sync = Convert.ToBoolean(parentInstance.MetaData[DomainConsts.MetaDataKeys.Sync]!.ToString());
+        // if (subFlowConfig.Type.Equals(SubFlowType.SubProcess))
+        // {
+        //     sync = false;
+        // }
         var subFlowStartInput = new StartInstanceInput(
             subFlowConfig.Process.Domain,
             subFlowConfig.Process.Key,
             subFlowConfig.Process.Version,
-            sync
-            )
+            sync: true
+        )
         {
             Instance = createInstanceInput,
-            Headers = inputMappingResult?.Headers,
-            RouteValues = inputMappingResult?.RouteValues
+            Headers = inputMappingResult?.Headers ?? new Dictionary<string, string?>(),
+            RouteValues = inputMappingResult?.RouteValues ?? new Dictionary<string, string?>()
         };
 
         // Create correlation to track SubFlow/SubProcess instance
@@ -137,7 +146,9 @@ public sealed class SubFlowService(
             subFlowConfig.Process.Key,
             subFlowConfig.Process.Version);
 
-        await instanceCorrelationRepository.InsertAsync(correlation, true, cancellationToken);
+        parentInstance.AddCorrelation(correlation);
+        parentInstance.Busy();
+        await instanceRepository.UpdateAsync(parentInstance, true, cancellationToken);
 
         await remoteInstanceCommandAppService.StartSubAsync(subFlowStartInput, cancellationToken);
     }
@@ -214,6 +225,7 @@ public sealed class SubFlowService(
 
             return subFlowResult; // Return SubFlow response
         }
+
         // TODO: Remote Exception handling
         return null; // No SubFlow active, process locally
     }

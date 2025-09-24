@@ -103,7 +103,7 @@ public sealed class FlowTimeoutJobHandler(
                 return;
             }
 
-            if (instance.Status.Equals(InstanceStatus.Active) || instance.Status.Equals(InstanceStatus.Busy))
+            if (instance.IsActive || instance.IsBusy)
             {
                 // Record current status before timeout
                 var currentStatus = instance.Status.Code;

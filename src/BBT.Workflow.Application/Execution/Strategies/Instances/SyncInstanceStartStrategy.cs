@@ -32,7 +32,7 @@ public sealed class SyncInstanceStartStrategy(
 
         // Execute start transition via StateMachineExecutor
         await stateMachineExecutor.ExecuteTransitionAsync(scriptContext, cancellationToken);
-
+        
         // Add workflow information to response headers
         headerService.AddHeader(
             WorkflowInfo.Name,

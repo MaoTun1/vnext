@@ -36,7 +36,7 @@ public sealed class AsyncInstanceStartStrategy(
             
             // Set instance to busy for background processing
             context.Instance.Busy();
-            await instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
+            await instanceRepository.UpdateStatusAsync(context.Instance, cancellationToken);
 
             var jobId = $"start-instance-{context.Instance.Id}";
 

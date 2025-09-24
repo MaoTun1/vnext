@@ -1,14 +1,12 @@
 using System.Text.Json;
 using BBT.Aether.Application.Services;
 using BBT.Aether.Guids;
-using BBT.Workflow.BackgroundJobs;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Execution.StateMachine;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Schemas;
-using BBT.Workflow.States;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.SubFlow;
@@ -38,8 +36,8 @@ public sealed class SubFlowCompletionService(
             completedData.InstanceId, completedData.Domain);
 
         // Parse parent information from metadata
-        var parentInfo = ParseParentInfoFromMetaData(completedData.MetaData);
-        if (parentInfo == null)
+        var subFlowContractInfo = completedData.MetaData.ToSubFlowContractInfo();
+        if (subFlowContractInfo == null)
         {
             logger.LogWarning(
                 "No parent information found in metadata for completed SubFlow instance {InstanceId}. This may be a standalone flow.",
@@ -50,21 +48,21 @@ public sealed class SubFlowCompletionService(
         // Check if this domain is handled by this runtime instance
         try
         {
-            runtimeInfoProvider.Check(parentInfo.Domain);
+            runtimeInfoProvider.Check(subFlowContractInfo.Domain);
         }
         catch (Exception)
         {
             logger.LogInformation(
                 "SubFlow completion event for instance {InstanceId} belongs to domain {Domain} which is not handled by this runtime instance {RuntimeDomain}. Event will be ignored.",
-                completedData.InstanceId, parentInfo.Domain, runtimeInfoProvider.Domain);
+                completedData.InstanceId, subFlowContractInfo.Domain, runtimeInfoProvider.Domain);
             return; // Silently ignore - this is expected in multi-domain scenarios
         }
 
         logger.LogDebug(
             "SubFlow completion event belongs to parent instance {ParentInstanceId} in domain {Domain}, flow {Flow}",
-            parentInfo.Id, parentInfo.Domain, parentInfo.Flow);
+            subFlowContractInfo.Id, subFlowContractInfo.Domain, subFlowContractInfo.Flow);
 
-        using (currentSchema.Change(parentInfo.Flow))
+        using (currentSchema.Change(subFlowContractInfo.Flow))
         {
             // Find the correlation record for this completed SubFlow
             var correlation = await instanceCorrelationRepository
@@ -95,7 +93,7 @@ public sealed class SubFlowCompletionService(
             await instanceCorrelationRepository.UpdateAsync(correlation, true, cancellationToken);
 
             // Process parent workflow continuation within the parent's schema context
-            await ProcessParentWorkflowContinuationAsync(correlation, completedData, parentInfo, cancellationToken);
+            await ProcessParentWorkflowContinuationAsync(correlation, completedData, subFlowContractInfo, cancellationToken);
 
             logger.LogInformation(
                 "Successfully completed SubFlow processing for instance {InstanceId}",
@@ -109,16 +107,24 @@ public sealed class SubFlowCompletionService(
     /// </summary>
     /// <param name="correlation">The SubFlow correlation</param>
     /// <param name="completedData">The completed SubFlow data</param>
-    /// <param name="parentInfo">The parsed parent workflow information</param>
+    /// <param name="subFlowContractInfo">The parsed parent workflow information</param>
     /// <param name="cancellationToken">Cancellation token</param>
     private async Task ProcessParentWorkflowContinuationAsync(
         InstanceCorrelation correlation,
         FlowCompletedData completedData,
-        ParentInfo parentInfo,
+        SubFlowContractInfo subFlowContractInfo,
         CancellationToken cancellationToken)
     {
         // Get the parent instance
-        var parentInstance = await instanceRepository.GetActiveAsync(correlation.ParentInstanceId, cancellationToken);
+        var parentInstance = await instanceRepository.FindAsync(correlation.ParentInstanceId, true, cancellationToken);
+
+        if (parentInstance == null)
+        {
+            logger.LogWarning(
+                "Parent instance {ParentInstanceId} not found for correlation {CorrelationId}",
+                correlation.ParentInstanceId, correlation.Id);
+            return;
+        }
 
         logger.LogInformation(
             "Processing parent workflow continuation for instance {ParentInstanceId} in state {CurrentState}",
@@ -126,9 +132,9 @@ public sealed class SubFlowCompletionService(
 
         // Get parent workflow definition
         var parentWorkflow = await componentCacheStore.GetFlowAsync(
-            parentInfo.Domain,
-            parentInfo.Flow,
-            parentInfo.Version, // Use the specific version from parent info
+            subFlowContractInfo.Domain,
+            subFlowContractInfo.Flow,
+            subFlowContractInfo.Version, // Use the specific version from parent info
             cancellationToken);
 
         // Get the state where SubFlow was initiated
@@ -149,10 +155,8 @@ public sealed class SubFlowCompletionService(
                 parentInstance.Id);
 
             await ProcessSubFlowOutputMappingAsync(
-                parentWorkflow,
                 parentInstance,
                 parentState,
-                completedData,
                 await scriptContextBuilder.BuildAsync(cancellationToken),
                 cancellationToken);
         }
@@ -162,35 +166,44 @@ public sealed class SubFlowCompletionService(
             "Resuming automatic transitions for parent instance {ParentInstanceId} after SubFlow completion",
             parentInstance.Id);
         
-
         await ResumeAutomaticProcessesAsync(
             parentInstance, 
             parentWorkflow,
             await scriptContextBuilder.BuildAsync(cancellationToken),
             cancellationToken);
+
+        if(parentInstance.IsBusy)
+        {
+            parentInstance.Active();
+            await instanceRepository.UpdateStatusAsync(parentInstance, cancellationToken);
+        }
     }
 
     /// <summary>
     /// Processes SubFlow output mapping by executing the mapping script and merging results into parent instance data.
     /// </summary>
-    /// <param name="parentWorkflow">The parent workflow.</param>
     /// <param name="parentInstance">The parent workflow instance</param>
     /// <param name="parentState">The parent state containing SubFlow configuration</param>
-    /// <param name="completedData">The completed SubFlow data</param>
     /// <param name="scriptContext"></param>
     /// <param name="cancellationToken">Cancellation token</param>
     private async Task ProcessSubFlowOutputMappingAsync(
-        Definitions.Workflow parentWorkflow,
         Instance parentInstance,
         Definitions.State parentState,
-        FlowCompletedData completedData,
         ScriptContext scriptContext,
         CancellationToken cancellationToken)
     {
         try
         {
-            var subFlowConfig = parentState.SubFlow!;
-            var mappingCode = subFlowConfig.Mapping!.DecodedCode;
+            var subFlowConfig = parentState.SubFlow;
+            if(subFlowConfig == null)
+            {
+                logger.LogWarning(
+                    "SubFlow configuration not found for parent instance {ParentInstanceId}",
+                    parentInstance.Id);
+                return;
+            }
+            
+            var mappingCode = subFlowConfig.Mapping.DecodedCode;
 
             logger.LogDebug(
                 "Executing SubFlow output mapping for parent instance {ParentInstanceId}",
@@ -287,90 +300,5 @@ public sealed class SubFlowCompletionService(
 
             // Don't throw - SubFlow completion should still be marked as successful
         }
-    }
-
-    /// <summary>
-    /// Parses parent workflow information from the SubFlow instance metadata.
-    /// MetaData is expected to contain keys with "parent." prefix.
-    /// </summary>
-    /// <param name="metaData">The metadata dictionary from the completed SubFlow instance</param>
-    /// <returns>Parsed parent information or null if not found</returns>
-    private ParentInfo? ParseParentInfoFromMetaData(ObjectDictionary? metaData)
-    {
-        if (metaData == null || metaData.Count == 0)
-        {
-            return null;
-        }
-
-        var parentInfo = new ParentInfo();
-        var foundAnyParentData = false;
-
-        foreach (var kvp in metaData)
-        {
-            var key = kvp.Key;
-            var value = kvp.Value;
-            var stringValue = value?.ToString();
-
-            if (string.IsNullOrEmpty(stringValue))
-                continue;
-
-            switch (key)
-            {
-                case DomainConsts.MetaDataKeys.Id:
-                    if (Guid.TryParse(stringValue, out var parentId))
-                    {
-                        parentInfo.Id = parentId;
-                        foundAnyParentData = true;
-                    }
-                    break;
-                case DomainConsts.MetaDataKeys.Key:
-                    parentInfo.Key = stringValue;
-                    foundAnyParentData = true;
-                    break;
-                case DomainConsts.MetaDataKeys.Domain:
-                    parentInfo.Domain = stringValue;
-                    foundAnyParentData = true;
-                    break;
-                case DomainConsts.MetaDataKeys.Flow:
-                    parentInfo.Flow = stringValue;
-                    foundAnyParentData = true;
-                    break;
-                case DomainConsts.MetaDataKeys.Version:
-                    parentInfo.Version = stringValue;
-                    foundAnyParentData = true;
-                    break;
-                case DomainConsts.MetaDataKeys.State:
-                    parentInfo.State = stringValue;
-                    foundAnyParentData = true;
-                    break;
-                default:
-                    parentInfo.State = stringValue;
-                    foundAnyParentData = true;
-                    break;
-            }
-        }
-
-        if (!foundAnyParentData || string.IsNullOrEmpty(parentInfo.Domain) || string.IsNullOrEmpty(parentInfo.Flow))
-        {
-            logger.LogWarning(
-                "Incomplete parent information found in metadata. Domain: {Domain}, Flow: {Flow}",
-                parentInfo.Domain ?? "null", parentInfo.Flow ?? "null");
-            return null;
-        }
-
-        return parentInfo;
-    }
-
-    /// <summary>
-    /// Contains parsed parent workflow information from SubFlow metadata
-    /// </summary>
-    private class ParentInfo
-    {
-        public Guid Id { get; set; }
-        public string? Key { get; set; }
-        public string Domain { get; set; } = string.Empty;
-        public string Flow { get; set; } = string.Empty;
-        public string? Version { get; set; }
-        public string? State { get; set; }
     }
 }

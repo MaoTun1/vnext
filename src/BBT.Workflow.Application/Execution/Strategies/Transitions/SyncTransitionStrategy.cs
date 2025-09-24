@@ -53,7 +53,7 @@ public sealed class SyncTransitionStrategy(
         TransitionExecutionContext context,
         CancellationToken cancellationToken = default)
     {
-        await ExecuteWithBusyStatusAsync(context.Instance, context.Input.ExecutionContext, async () =>
+        var updatedInstance = await ExecuteWithBusyStatusAsync(context.Instance, context.Input.ExecutionContext, async () =>
         {
             var scriptContext = await context.ScriptContextBuilder.BuildAsync(cancellationToken);
 
@@ -63,22 +63,24 @@ public sealed class SyncTransitionStrategy(
             return context.Instance;
         }, cancellationToken);
 
-        return context.Instance;
+        // Return the updated instance to ensure caller gets the latest state
+        return updatedInstance;
     }
 
     /// <summary>
     /// Handles busy status transitions with proper cleanup.
+    /// Returns the updated instance with latest correlations.
     /// </summary>
-    private async Task ExecuteWithBusyStatusAsync<T>(Instance instance,
+    private async Task<Instance> ExecuteWithBusyStatusAsync<T>(Instance instance,
         ExecutionContext executionContext,
         Func<Task<T>> operation,
         CancellationToken cancellationToken = default)
     {
-        if (executionContext == ExecutionContext.User && instance.Status.Equals(InstanceStatus.Active))
+        if (executionContext == ExecutionContext.User && instance.IsActive)
         {
             // Set instance to busy
             instance.Busy();
-            await instanceRepository.UpdateAsync(instance, true, cancellationToken);
+            await instanceRepository.UpdateStatusAsync(instance, cancellationToken);
         }
 
         try
@@ -90,14 +92,13 @@ public sealed class SyncTransitionStrategy(
         {
             if (executionContext == ExecutionContext.User)
             {
-                // Always reset to active, even on failure
                 try
                 {
-                    if (!instance.Status.Equals(InstanceStatus.Completed))
-                    {
-                        instance.Active();
-                        await instanceRepository.UpdateAsync(instance, true, cancellationToken);
-                    }
+                    // Reload instance from database to get the latest state including correlations
+                    // that may have been updated during auto-transitions
+                    var currentInstance = await instanceRepository.GetAsync(instance.Id, true, cancellationToken);
+                    currentInstance.SetToActiveOrBusyBasedOnSubFlow();    
+                    await instanceRepository.UpdateStatusAsync(currentInstance, cancellationToken);
                 }
                 catch (Exception ex)
                 {
@@ -108,5 +109,8 @@ public sealed class SyncTransitionStrategy(
                 }
             }
         }
+
+        // Return the fresh instance from database to ensure caller gets the latest correlations
+        return await instanceRepository.GetAsync(instance.Id, true, cancellationToken);
     }
 }

@@ -157,7 +157,7 @@ public sealed class DaprTaskExecutor(
                 {
                     var dataInfo = kvp.Value;
 
-                    if (dataInfo != null && dataInfo.Data.IsNullOrEmpty())
+                    if (dataInfo != null && !dataInfo.Data.IsNullOrEmpty())
                     {
                         // Add the new data entry with the correct version
                         context.Instance.AddData(

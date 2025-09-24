@@ -18,8 +18,6 @@ using BBT.Workflow.Tasks.Persistence;
 using BBT.Workflow.Tasks.Persistence.Strategies;
 using TaskFactory = BBT.Workflow.Tasks.Factory.TaskFactory;
 using BBT.Workflow.Functions;
-using System.Net.Http;
-using BBT.Workflow.Execution.Invokers;
 using BBT.Workflow.Execution.Services;
 using BBT.Workflow.Execution.Strategies;
 
@@ -77,8 +75,8 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         // Register core execution service
         services.AddScoped<IWorkflowExecutionService, WorkflowExecutionService>();
         
-        // Register transition invoker
-        services.AddScoped<ITransitionInvoker, TransitionInvoker>();
+        // Register auto transition service
+        services.AddScoped<IAutoTransitionService, AutoTransitionService>();
         
         // Register strategy factory
         services.AddScoped<IExecutionStrategyFactory, ExecutionStrategyFactory>();

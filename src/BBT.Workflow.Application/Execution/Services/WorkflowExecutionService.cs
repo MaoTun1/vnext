@@ -66,8 +66,8 @@ public sealed class WorkflowExecutionService(
                 instance,
                 workflow.StartTransition.Key,
                 input.Instance.Attributes,
-                input.Headers?.ToDictionary(h => h.Key, h => (string?)h.Value),
-                input.RouteValues?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                input.Headers.ToDictionary(h => h.Key, h => h.Value),
+                input.RouteValues.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
                 ExecutionContext.User,
                 cancellationToken
             );

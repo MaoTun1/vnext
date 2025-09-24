@@ -45,4 +45,8 @@ public interface IInstanceRepository : IRepository<Instance, Guid>
         IQueryCollection? queryParams = null,
         IQueryable<Instance>? instance = null,
         CancellationToken cancellationToken = default);
+    
+    Task UpdateStatusAsync(
+        Instance instance, 
+        CancellationToken cancellationToken = default);
 }

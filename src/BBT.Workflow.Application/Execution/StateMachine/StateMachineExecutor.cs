@@ -2,8 +2,7 @@ using System.Text.Json;
 using BBT.Aether.Guids;
 using BBT.Workflow.BackgroundJobs;
 using BBT.Workflow.Definitions;
-using BBT.Workflow.ExceptionHandling;
-using BBT.Workflow.Execution.Invokers;
+using BBT.Workflow.Execution.Services;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
@@ -33,8 +32,9 @@ public sealed class StateMachineExecutor(
     IRuntimeInfoProvider runtimeInfoProvider,
     DaprClient daprClient,
     IConfiguration configuration,
-    ILogger<StateMachineExecutor> logger,
-    ITransitionInvoker transitionInvoker) : IStateMachineExecutor
+    IAutoTransitionService autoTransitionService,
+    ILogger<StateMachineExecutor> logger
+) : IStateMachineExecutor
 {
     /// <inheritdoc />
     public async Task ExecuteTransitionAsync(
@@ -234,82 +234,11 @@ public sealed class StateMachineExecutor(
         Instance instance,
         CancellationToken cancellationToken = default)
     {
-        var autoTransitions = stateMachineService.GetAutomaticTransitions(workflow, instance);
-        var transitions = autoTransitions as Transition[] ?? autoTransitions.ToArray();
-        if (!transitions.Any())
-        {
-            return;
-        }
-
-        var input = new TransitionInput(
-            workflow.Domain,
-            workflow.Key,
-            workflow.Version,
-            data: null,
-            true)
-        {
-            ExecutionContext = WorkflowExecutionContext.System
-        };
-
-        // 1) Local CTS: both external cancellation and internal cancellation
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var linkedToken = cts.Token;
-
-        // 2) Create all transition tasks
-        var tasks = transitions.Select(async t =>
-        {
-            try
-            {
-                await transitionInvoker.InvokeAsync(
-                    instance.Id,
-                    t.Key,
-                    input,
-                    linkedToken);
-
-                return (Success: true, Transition: t);
-            }
-            catch (OperationCanceledException) when (linkedToken.IsCancellationRequested)
-            {
-                // This task was cancelled
-                return (Success: false, Transition: t);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex,
-                    "AutoTransition failed. InstanceId={InstanceId}, Transition={TransitionKey}",
-                    instance.Id, t.Key);
-
-                return (Success: false, Transition: t);
-            }
-        }).ToList();
-
-        bool anySuccess = false;
-        
-        // 2) Wait for the first success with the loop
-        while (tasks.Count > 0)
-        {
-            var finished = await Task.WhenAny(tasks);
-            tasks.Remove(finished);
-
-            var result = await finished; // unwrap
-            if (result.Success)
-            {
-                anySuccess = true;
-                
-                logger.LogInformation(
-                    "AutoTransition succeeded. InstanceId={InstanceId}, Transition={TransitionKey}",
-                    instance.Id, result.Transition.Key);
-
-                await cts.CancelAsync();
-
-                break;
-            }
-        }
-        
-        if (!anySuccess)
-        {
-            throw new AutoTransitionFailedException(instance.Id, workflow.Key);
-        }
+        // Delegate auto transition handling to the dedicated service
+        await autoTransitionService.CheckAndExecuteAutomaticTransitionsAsync(
+            workflow,
+            instance,
+            cancellationToken);
     }
 
     private async Task InstanceStatusHandleAsync(
@@ -320,23 +249,10 @@ public sealed class StateMachineExecutor(
     {
         if (targetState.StateType == StateType.Finish)
         {
-            try
-            {
-                // Complete the instance
-                instance.Complete();
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Error occurred during instance completion for instance {InstanceId}", instance.Id);
-
-                // Fallback: complete the instance anyway
-                if (!instance.Status.Equals(InstanceStatus.Completed))
-                {
-                    instance.Fault();
-                }
-            }
-
-            if (workflow.IsSub && instance.IsCompleted)
+            // Complete the instance
+            instance.Complete();
+            await instanceRepository.UpdateStatusAsync(instance, cancellationToken);
+            if (instance is { IsSubFlow: true, IsCompleted: true })
             {
                 await PublishFlowCompletionEventAsync(instance, workflow, cancellationToken);
             }
