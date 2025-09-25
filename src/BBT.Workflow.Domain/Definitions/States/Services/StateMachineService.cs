@@ -63,7 +63,7 @@ public class StateMachineService(
         WorkflowExecutionContext executionContext = WorkflowExecutionContext.User,
         CancellationToken cancellationToken = default)
     {
-        var currentState = workflow.GetState(instance.CurrentState!);
+        var currentState = workflow.GetState(instance.GetCurrentState);
         
         var transition = workflow.FindTransition(transitionKey, currentState);
         if (transition == null)
@@ -126,7 +126,7 @@ public class StateMachineService(
     public List<string> AvailableTransitionKeys(Definitions.Workflow workflow, Instance instance)
     {
         var availableTransitionKeys = new List<string>();
-        var currentState = workflow.GetState(instance.CurrentState!);
+        var currentState = workflow.GetState(instance.GetCurrentState);
         availableTransitionKeys.AddRange(currentState.TransitionKeys());
         availableTransitionKeys.AddRange(workflow.AvailableSharedTransitionKeys(currentState.Key));
         return availableTransitionKeys;
@@ -148,7 +148,7 @@ public class StateMachineService(
     /// </remarks>
     public IEnumerable<Transition> GetAutomaticTransitions(Definitions.Workflow workflow, Instance instance)
     {
-        var currentState = workflow.GetState(instance.CurrentState!);
+        var currentState = workflow.GetState(instance.GetCurrentState);
         return currentState.GetAutoTransitions();
     }
     
@@ -168,7 +168,7 @@ public class StateMachineService(
     /// </remarks>
     public IEnumerable<Transition> GetScheduledTransitions(Definitions.Workflow workflow, Instance instance)
     {
-        var currentState = workflow.GetState(instance.CurrentState!);
+        var currentState = workflow.GetState(instance.GetCurrentState);
         return currentState.GetScheduledTransitions();
     }
 
@@ -190,7 +190,7 @@ public class StateMachineService(
     /// </remarks>
     public List<string> AvailableUserTransitionKeys(Definitions.Workflow workflow, Instance instance)
     {
-        var currentState = workflow.GetState(instance.CurrentState!);
+        var currentState = workflow.GetState(instance.GetCurrentState);
         
         // Get manual transitions from current state
         var manualTransitions = currentState.Transitions

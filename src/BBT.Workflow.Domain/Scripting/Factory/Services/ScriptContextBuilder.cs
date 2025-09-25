@@ -19,7 +19,7 @@ internal sealed class ScriptContextBuilder(
     private Instance? _instance;
     private Transition? _transition;
     private object? _body;
-    private Dictionary<string, string>? _headers;
+    private Dictionary<string, string?>? _headers;
     private Dictionary<string, object?>? _routeValues;
     private Dictionary<string, object?> _taskResponse = new();
     private Dictionary<string, object> _metadata = new();
@@ -107,7 +107,7 @@ internal sealed class ScriptContextBuilder(
         return this;
     }
 
-    public IScriptContextBuilder WithHeaders(Dictionary<string, string>? headers)
+    public IScriptContextBuilder WithHeaders(Dictionary<string, string?>? headers)
     {
         _headers = headers;
         return this;

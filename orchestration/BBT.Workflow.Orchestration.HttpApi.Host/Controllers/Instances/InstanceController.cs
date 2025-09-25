@@ -38,7 +38,7 @@ public sealed class InstanceController(
         var httpContext = httpContextAccessor.HttpContext;
         if (httpContext is not null)
         {
-            input.Headers = httpContext.Request.Headers.ToDictionary(s => s.Key.ToLower(), s => s.Value.ToString());
+            input.Headers = httpContext.Request.Headers.ToDictionary(s => s.Key.ToLower(), s => s.Value.FirstOrDefault()?.ToString());
             input.RouteValues = httpContext.Request.RouteValues.ToDictionary(s => s.Key, s => s.Value?.ToString());
         }
         
@@ -72,7 +72,7 @@ public sealed class InstanceController(
         var httpContext = httpContextAccessor.HttpContext;
         if (httpContext is not null)
         {
-            input.Headers = httpContext.Request.Headers.ToDictionary(s => s.Key.ToLower(), s => s.Value.ToString());
+            input.Headers = httpContext.Request.Headers.ToDictionary(s => s.Key.ToLower(), s => s.Value.FirstOrDefault()?.ToString());
             input.RouteValues = httpContext.Request.RouteValues.ToDictionary(s => s.Key, s => s.Value?.ToString());
         }
         
@@ -102,45 +102,7 @@ public sealed class InstanceController(
         var httpContext = httpContextAccessor.HttpContext;
         if (httpContext is not null)
         {
-            input.Headers = httpContext.Request.Headers.ToDictionary(s => s.Key.ToLower(), s => s.Value.ToString());
-            input.RouteValues = httpContext.Request.RouteValues.ToDictionary(s => s.Key, s => s.Value?.ToString());
-        }
-        
-        var response = await commandAppService.TransitionAsync(
-            instanceId,
-            transitionKey,
-            input,
-            cancellationToken);
-        return Ok(response.Data);
-    }
-    
-    [ApiExplorerSettings(IgnoreApi = true)]
-    [HttpPatch("{domain}/workflows/{workflow}/instances/{instanceId}/transitions/{transitionKey}/auto")]
-    public async Task<IActionResult> AutoTransitionAsync(
-        [FromRoute] string domain,
-        [FromRoute] string workflow,
-        [FromRoute] Guid instanceId,
-        [FromRoute] string transitionKey,
-        [FromBody] JsonElement? attributes,
-        [FromQuery] string? version = null,
-        [FromQuery] bool sync = false,
-        CancellationToken cancellationToken = default
-    )
-    {
-        if (version.IsNullOrEmpty())
-        {
-            var flowInfo = HttpContext.GetWorkflowInfo();
-            version = flowInfo?.Version;
-        }
-
-        var input = new TransitionInput(domain, workflow, version, attributes, sync)
-        {
-            ExecutionContext = ExecutionContext.System
-        };
-        var httpContext = httpContextAccessor.HttpContext;
-        if (httpContext is not null)
-        {
-            input.Headers = httpContext.Request.Headers.ToDictionary(s => s.Key.ToLower(), s => s.Value.ToString());
+            input.Headers = httpContext.Request.Headers.ToDictionary(s => s.Key.ToLower(), s => s.Value.FirstOrDefault()?.ToString());
             input.RouteValues = httpContext.Request.RouteValues.ToDictionary(s => s.Key, s => s.Value?.ToString());
         }
         

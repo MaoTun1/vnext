@@ -7,7 +7,7 @@ public class ObjectDictionary : Dictionary<string, object?>
     {
     }
 
-    public ObjectDictionary(IDictionary<string, object?> dictionary)
+    public ObjectDictionary(Dictionary<string, object?> dictionary)
         : base(dictionary)
     {
     }

@@ -1,7 +1,7 @@
 using System.Text.Json;
 using BBT.Aether.Guids;
-using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Instances.Remote;
 using BBT.Workflow.Scripting;
@@ -15,6 +15,7 @@ namespace BBT.Workflow.SubFlow;
 /// SubProcess: Creates separate instances via remote calls (unchanged behavior).
 /// </summary>
 /// <param name="instanceCorrelationRepository">Repository for managing instance correlations.</param>
+/// <param name="instanceRepository">Repository for managing instance.</param>
 /// <param name="guidGenerator">Service for generating unique identifiers.</param>
 /// <param name="remoteInstanceCommandAppService">Manages remote requests to trigger SubProcess only.</param>
 /// <param name="configuration">Configuration provider for accessing application settings.</param>
@@ -24,31 +25,10 @@ public sealed class SubFlowService(
     IGuidGenerator guidGenerator,
     IRemoteInstanceCommandAppService remoteInstanceCommandAppService,
     IConfiguration configuration,
-    IScriptEngine scriptEngine) : ISubFlowService
+    IScriptEngine scriptEngine,
+    IInstanceRepository instanceRepository) : ISubFlowService
 {
-    /// <summary>
-    /// Handles the initiation of SubFlow and SubProcess execution.
-    /// SubFlow: Runs on the main flow, maintains state within the main instance.
-    /// SubProcess: Creates separate instances via remote calls (unchanged behavior).
-    /// </summary>
-    /// <param name="workflow">The main workflow.</param>
-    /// <param name="parentInstance">The main workflow instance that initiates the sub-flow.</param>
-    /// <param name="targetState">The target state containing SubFlow configuration.</param>
-    /// <param name="context">The script context containing execution data and headers.</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>A task representing the asynchronous sub-flow initiation operation.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when required parameters are null.</exception>
-    /// <exception cref="InvalidOperationException">Thrown when the SubFlow configuration is invalid.</exception>
-    /// <remarks>
-    /// <para>
-    /// SubFlow (Type: "S"): Runs on the main flow instance, preserves main flow state. 
-    /// Main flow wraps SubFlow, tracks which SubFlow is started, and routes transition requests to SubFlow.
-    /// </para>
-    /// <para>
-    /// SubProcess (Type: "P"): Creates a separate instance and runs in parallel without blocking the parent workflow. 
-    /// The parent workflow can continue immediately after starting the SubProcess.
-    /// </para>
-    /// </remarks>
+    /// <inheritdoc />
     public async Task HandleSubFlowAsync(
         Definitions.Workflow workflow,
         Instance parentInstance,
@@ -80,7 +60,12 @@ public sealed class SubFlowService(
         ScriptContext context,
         CancellationToken cancellationToken = default)
     {
-        var subFlowConfig = targetState.SubFlow!;
+        var subFlowConfig = targetState.SubFlow;
+        if(subFlowConfig == null)
+        {
+            throw new ConfigInvalidException(parentInstance.Id);
+        }
+
         // Handle input mapping if mapping is configured
         ScriptResponse? inputMappingResult = null;
         if (subFlowConfig.Mapping != null)
@@ -110,7 +95,8 @@ public sealed class SubFlowService(
                 [DomainConsts.MetaDataKeys.Domain] = workflow.Domain,
                 [DomainConsts.MetaDataKeys.Flow] = workflow.Key,
                 [DomainConsts.MetaDataKeys.Version] = workflow.Version,
-                [DomainConsts.MetaDataKeys.State] = targetState.Key
+                [DomainConsts.MetaDataKeys.State] = targetState.Key,
+                [DomainConsts.MetaDataKeys.SubType] = subFlowConfig.Type.Code
             }
         };
 
@@ -122,7 +108,7 @@ public sealed class SubFlowService(
                 createInstanceInput.Key = inputMappingResult.Key;
             }
 
-            if (inputMappingResult.Tags != null && inputMappingResult.Tags.Length > 0)
+            if (inputMappingResult.Tags?.Length > 0)
             {
                 var existingTags = createInstanceInput.Tags?.ToList() ?? new List<string>();
                 existingTags.AddRange(inputMappingResult.Tags);
@@ -130,21 +116,22 @@ public sealed class SubFlowService(
             }
         }
 
-        var sync = Convert.ToBoolean(parentInstance.MetaData[DomainConsts.MetaDataKeys.Sync]!.ToString());
-        if (subFlowConfig.Type.Equals(SubFlowType.SubProcess))
-        {
-            sync = false;
-        }
+        // TODO: will be removed
+        // var sync = Convert.ToBoolean(parentInstance.MetaData[DomainConsts.MetaDataKeys.Sync]!.ToString());
+        // if (subFlowConfig.Type.Equals(SubFlowType.SubProcess))
+        // {
+        //     sync = false;
+        // }
         var subFlowStartInput = new StartInstanceInput(
             subFlowConfig.Process.Domain,
             subFlowConfig.Process.Key,
             subFlowConfig.Process.Version,
-            sync
-            )
+            sync: true
+        )
         {
             Instance = createInstanceInput,
-            Headers = inputMappingResult?.Headers,
-            RouteValues = inputMappingResult?.RouteValues
+            Headers = inputMappingResult?.Headers ?? new Dictionary<string, string?>(),
+            RouteValues = inputMappingResult?.RouteValues ?? new Dictionary<string, string?>()
         };
 
         // Create correlation to track SubFlow/SubProcess instance
@@ -160,7 +147,9 @@ public sealed class SubFlowService(
             subFlowConfig.Process.Key,
             subFlowConfig.Process.Version);
 
-        await instanceCorrelationRepository.InsertAsync(correlation, true, cancellationToken);
+        parentInstance.AddCorrelation(correlation);
+        parentInstance.Busy();
+        await instanceRepository.UpdateAsync(parentInstance, true, cancellationToken);
 
         await remoteInstanceCommandAppService.StartSubAsync(subFlowStartInput, cancellationToken);
     }
@@ -204,16 +193,7 @@ public sealed class SubFlowService(
             $"Failed to cast mapping instance to {mappingInterfaceType.Name} for SubFlow type '{subFlowConfig.Type.Code}'");
     }
 
-    /// <summary>
-    /// Checks if transition should be forwarded to SubFlow instance.
-    /// If SubFlow is active, forwards the transition to SubFlow instance via remote call.
-    /// Returns SubFlow response data if forwarded, null if should be processed locally.
-    /// </summary>
-    /// <param name="instanceId">The main instance ID</param>
-    /// <param name="transitionKey">The transition key to execute</param>
-    /// <param name="input">The transition input data</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests</param>
-    /// <returns>SubFlow transition response if forwarded, null if should be processed locally</returns>
+    /// <inheritdoc />
     public async Task<InstanceServiceResponse<TransitionOutput>?> TryForwardTransitionToSubFlowAsync(
         Guid instanceId,
         string transitionKey,
@@ -247,6 +227,7 @@ public sealed class SubFlowService(
             return subFlowResult; // Return SubFlow response
         }
 
+        // TODO: Remote Exception handling
         return null; // No SubFlow active, process locally
     }
 }
