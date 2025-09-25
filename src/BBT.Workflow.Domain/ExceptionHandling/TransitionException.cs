@@ -7,3 +7,7 @@ public class NotFoundTransitionException(string transitionKey): UserFriendlyExce
 public class TransitionRuleFailedException(string transitionKey, string reason) : UserFriendlyException(
     code: WorkflowErrorCodes.TransitionRuleFailed, 
     message: $"Transition \"{transitionKey}\" rule evaluation failed: {reason}");
+
+public class AutoTransitionFailedException(Guid instanceId, string workflow) : UserFriendlyException(
+    code: WorkflowErrorCodes.AutoTransitionFailed,
+    message: $"No automatic transition succeeded for InstanceId={instanceId} in Workflow={workflow}");

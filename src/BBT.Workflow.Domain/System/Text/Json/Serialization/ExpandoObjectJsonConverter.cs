@@ -4,10 +4,10 @@ namespace System.Text.Json.Serialization;
 
 public class ExpandoObjectJsonConverter : JsonConverter<ExpandoObject>
 {
-    public override ExpandoObject Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override ExpandoObject Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions? options)
     {
         var expandoObject = new ExpandoObject();
-        var dictionary = expandoObject as IDictionary<string, object>;
+        var dictionary = expandoObject as IDictionary<string, object?>;
 
         if (reader.TokenType != JsonTokenType.StartObject)
             throw new JsonException();
@@ -44,9 +44,9 @@ public class ExpandoObjectJsonConverter : JsonConverter<ExpandoObject>
         };
     }
 
-    private object[] ReadArray(ref Utf8JsonReader reader)
+    private object?[] ReadArray(ref Utf8JsonReader reader)
     {
-        var list = new List<object>();
+        var list = new List<object?>();
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
             list.Add(ReadValue(ref reader));

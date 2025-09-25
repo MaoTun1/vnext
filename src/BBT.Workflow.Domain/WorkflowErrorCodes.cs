@@ -12,4 +12,6 @@ public static class WorkflowErrorCodes
     public const string SubFlowBlocked = "Workflow:100008";
     public const string TransitionLocked = "Workflow:100009";
     public const string UnauthorizedTransition = "Workflow:100010";
+    public const string AutoTransitionFailed = "Workflow:100011";
+    public const string ConfigInvalid = "Workflow:100012";
 }

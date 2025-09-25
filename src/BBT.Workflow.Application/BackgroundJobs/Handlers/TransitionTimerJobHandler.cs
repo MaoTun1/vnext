@@ -1,5 +1,6 @@
 using System.Text.Json;
 using BBT.Workflow.ExceptionHandling;
+using BBT.Workflow.Execution.Services;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Schemas;
 using WorkflowExecutionContext = BBT.Workflow.Shared.ExecutionContext;
@@ -9,7 +10,7 @@ namespace BBT.Workflow.BackgroundJobs.Handlers;
 
 public sealed class TransitionTimerJobHandler(
     IJobStore jobStore,
-    IInstanceCommandAppService instanceAppService,
+    IWorkflowExecutionService workflowExecutionService,
     ICurrentSchema currentSchema,
     ILogger<TransitionTimerJobHandler> logger) : IJobHandler
 {
@@ -56,7 +57,7 @@ public sealed class TransitionTimerJobHandler(
                     ExecutionContext = WorkflowExecutionContext.System // System context for scheduled transitions
                 };
 
-                await instanceAppService.ExecuteBackgroundTransitionAsync(
+                await workflowExecutionService.ExecuteTransitionAsync(
                     jobInfo.Payload.InstanceId,
                     jobInfo.Payload.TransitionKey,
                     input,

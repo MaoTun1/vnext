@@ -42,7 +42,7 @@ public sealed class TransitionJobPayload
     /// <summary>
     /// Gets or sets the request headers.
     /// </summary>
-    public Dictionary<string, string> Headers { get; set; } = new();
+    public Dictionary<string, string?> Headers { get; set; } = new();
     
     /// <summary>
     /// Gets or sets the route values.

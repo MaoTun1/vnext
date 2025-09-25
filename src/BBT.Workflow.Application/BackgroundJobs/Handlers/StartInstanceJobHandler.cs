@@ -1,8 +1,10 @@
 using System.Text.Json;
 using BBT.Workflow.BackgroundJobs.Payloads;
+using BBT.Workflow.Execution.Services;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Schemas;
 using Microsoft.Extensions.Logging;
+using ExecutionContext = BBT.Workflow.Shared.ExecutionContext;
 
 namespace BBT.Workflow.BackgroundJobs.Handlers;
 
@@ -13,7 +15,7 @@ namespace BBT.Workflow.BackgroundJobs.Handlers;
 public sealed class StartInstanceJobHandler(
     IJobStore jobStore,
     ICurrentSchema currentSchema,
-    IInstanceCommandAppService instanceCommandAppService,
+    IWorkflowExecutionService workflowExecutionService,
     ILogger<StartInstanceJobHandler> logger) : IJobHandler
 {
     public string JobName => BackgroundJobConsts.StartInstanceJobName;
@@ -35,7 +37,7 @@ public sealed class StartInstanceJobHandler(
             logger.LogWarning("StartInstanceJobHandler: Job Flow Name is empty for JobId {JobId}", jobData.JobId);
             return;
         }
-        
+
         using (currentSchema.Change(flowName))
         {
             var jobInfo = await jobStore.GetAsync<StartInstanceJobPayload>(jobData.JobId, cancellationToken);
@@ -53,29 +55,26 @@ public sealed class StartInstanceJobHandler(
             {
                 // For async processing, instance should already be pre-created and in Busy status
                 // We need to use the StateMachineExecutor directly to handle the pre-created instance properly
-                
+
                 // Reconstruct the original StartInstanceInput with Sync=true
-                var startInput = new StartInstanceInput(
-                    jobInfo.Payload.Domain,
-                    jobInfo.Payload.Workflow,
-                    jobInfo.Payload.Version,
-                    sync: true) // Force sync=true to avoid infinite loop
-                {
-                    Instance = new CreateInstanceInput
+                var transitionInput = new TransitionInput(
+                        jobInfo.Payload.Domain,
+                        jobInfo.Payload.Workflow,
+                        jobInfo.Payload.Version,
+                        jobInfo.Payload.Attributes,
+                        sync: true) // Force sync=true to avoid infinite loop
                     {
-                        Id = jobInfo.Payload.InstanceId,
-                        Key = jobInfo.Payload.InstanceKey,
-                        Tags = jobInfo.Payload.Tags,
-                        Attributes = jobInfo.Payload.Attributes,
-                        Callback = jobInfo.Payload.Callback,
-                        MetaData = new ObjectDictionary(jobInfo.Payload.MetaData)
-                    },
-                    Headers = jobInfo.Payload.Headers,
-                    RouteValues = jobInfo.Payload.RouteValues
-                };
+                        Headers = jobInfo.Payload.Headers,
+                        RouteValues = jobInfo.Payload.RouteValues,
+                        ExecutionContext = ExecutionContext.User
+                    };
 
                 // Use the background-specific method that handles pre-created instances
-                var result = await instanceCommandAppService.ExecuteBackgroundStartAsync(startInput, cancellationToken);
+                var result = await workflowExecutionService.ExecuteTransitionAsync(
+                    jobInfo.Payload.InstanceId!.Value,
+                    jobInfo.Payload.TransitionKey,
+                    transitionInput,
+                    cancellationToken);
 
                 logger.LogInformation(
                     "StartInstanceJobHandler: Successfully started instance {InstanceId} for workflow {Workflow}",
@@ -83,10 +82,12 @@ public sealed class StartInstanceJobHandler(
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, 
-                    "StartInstanceJobHandler: Failed to start instance for JobId {JobId}", 
+                logger.LogError(ex,
+                    "StartInstanceJobHandler: Failed to start instance for JobId {JobId}",
                     jobData.JobId);
-                throw;
+
+                // TODO: An error occurred while starting the instance. How should the system react?
+                // TODO: Error details and retry feature should be added to JobInfo
             }
         }
     }

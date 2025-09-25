@@ -2,9 +2,8 @@ using System.Text.Json;
 using BBT.Aether.Guids;
 using BBT.Workflow.BackgroundJobs;
 using BBT.Workflow.Definitions;
-using BBT.Workflow.ExceptionHandling;
+using BBT.Workflow.Execution.Services;
 using BBT.Workflow.Instances;
-using BBT.Workflow.Instances.Remote;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
@@ -33,19 +32,20 @@ public sealed class StateMachineExecutor(
     IRuntimeInfoProvider runtimeInfoProvider,
     DaprClient daprClient,
     IConfiguration configuration,
-    ILogger<StateMachineExecutor> logger,
-    IRemoteInstanceCommandAppService remoteInstanceCommandAppService) : IStateMachineExecutor
+    IAutoTransitionService autoTransitionService,
+    ILogger<StateMachineExecutor> logger
+) : IStateMachineExecutor
 {
     /// <inheritdoc />
     public async Task ExecuteTransitionAsync(
         ScriptContext context,
         CancellationToken cancellationToken = default)
     {
-        var instanceTransition = new InstanceTransition(
+        var instanceTransition = InstanceTransition.Create(
             guidGenerator.Create(),
             context.Instance.Id,
             context.Transition.Key,
-            context.Instance.CurrentState!,
+            context.Instance.GetCurrentState,
             new JsonData(JsonSerializer.Serialize(context.Body ?? new Dictionary<string, object>())),
             new JsonData(JsonSerializer.Serialize(context.Headers ?? new Dictionary<string, string>())
             )
@@ -56,7 +56,7 @@ public sealed class StateMachineExecutor(
         // Record state transition metric
         workflowMetrics.RecordStateTransition(
             context.Workflow.Key,
-            context.Instance.CurrentState!,
+            context.Instance.GetCurrentState,
             context.Transition.Target
         );
 
@@ -70,10 +70,10 @@ public sealed class StateMachineExecutor(
         );
 
         //2. Current state OnExits
-        if (context.Workflow.GetState(context.Instance.CurrentState!).OnExits.Any())
+        if (context.Workflow.GetState(context.Instance.GetCurrentState).OnExits.Any())
         {
             await taskExecutionService.ExecuteAsync(
-                context.Workflow.GetState(context.Instance.CurrentState!).OnExits,
+                context.Workflow.GetState(context.Instance.GetCurrentState).OnExits,
                 instanceTransition,
                 TaskTrigger.OnExit,
                 context,
@@ -87,14 +87,14 @@ public sealed class StateMachineExecutor(
         // Record state entry metric
         workflowMetrics.RecordStateEntry(
             context.Workflow.Key,
-            context.Instance.CurrentState!
+            context.Instance.GetCurrentState
         );
 
         //4. Target State OnEntries
-        if (context.Workflow.GetState(context.Instance.CurrentState!).OnEntries.Any())
+        if (context.Workflow.GetState(context.Instance.GetCurrentState).OnEntries.Any())
         {
             await taskExecutionService.ExecuteAsync(
-                context.Workflow.GetState(context.Instance.CurrentState!).OnEntries,
+                context.Workflow.GetState(context.Instance.GetCurrentState).OnEntries,
                 instanceTransition,
                 TaskTrigger.OnEntry,
                 context,
@@ -102,11 +102,11 @@ public sealed class StateMachineExecutor(
             );
         }
 
-        var targetState = context.Workflow.GetState(context.Instance.CurrentState!);
-        
+        var targetState = context.Workflow.GetState(context.Instance.GetCurrentState);
+
         // State and data changes are reflected.
         await instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
-        
+
         if (targetState.StateType != StateType.Finish)
         {
             //WARNING!: If a state has a subflow, the auto transition process must continue when the subflow is completed. The main flow is already preserving the state.
@@ -114,7 +114,7 @@ public sealed class StateMachineExecutor(
             if (targetState.StateType == StateType.SubFlow)
             {
                 await HandleSubFlowAsync(context.Workflow, context.Instance, targetState, context, cancellationToken);
-                
+
                 if (targetState.SubFlow != null && targetState.SubFlow.Type.Equals(SubFlowType.SubProcess))
                 {
                     // Check for automatic transitions after state change 
@@ -122,7 +122,7 @@ public sealed class StateMachineExecutor(
                         context.Workflow,
                         context.Instance,
                         cancellationToken);
-                
+
                     // Check for delay transition and execution
                     await ScheduleTransitionsForLaterExecutionAsync(
                         context.Workflow,
@@ -138,7 +138,7 @@ public sealed class StateMachineExecutor(
                     context.Workflow,
                     context.Instance,
                     cancellationToken);
-                
+
                 // Check for delay transition and execution
                 await ScheduleTransitionsForLaterExecutionAsync(
                     context.Workflow,
@@ -150,7 +150,7 @@ public sealed class StateMachineExecutor(
 
         await InstanceStatusHandleAsync(context.Instance, targetState, context.Workflow, cancellationToken);
 
-        instanceTransition.Completed(context.Instance.CurrentState!);
+        instanceTransition.Completed(context.Instance.GetCurrentState);
 
         // Record state duration metric if duration is available
         if (instanceTransition.Duration.HasValue)
@@ -184,16 +184,6 @@ public sealed class StateMachineExecutor(
         }
     }
 
-    /// <summary>
-    /// Handles SubFlow and SubProcess execution based on the workflow type configuration.
-    /// This method delegates to the SubFlowService for proper correlation and execution management.
-    /// </summary>
-    /// <param name="workflow">The current workflow.</param>
-    /// <param name="instance">The parent workflow instance.</param>
-    /// <param name="targetState">The target state containing SubFlow configuration.</param>
-    /// <param name="context">The script context containing execution data.</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>A task representing the asynchronous SubFlow handling operation.</returns>
     private async Task HandleSubFlowAsync(
         Definitions.Workflow workflow,
         Instance instance,
@@ -203,7 +193,8 @@ public sealed class StateMachineExecutor(
     {
         await subFlowService.HandleSubFlowAsync(workflow, instance, targetState, context, cancellationToken);
     }
-    
+
+    /// <inheritdoc />
     public async Task ScheduleTransitionsForLaterExecutionAsync(
         Definitions.Workflow workflow,
         Instance instance,
@@ -214,26 +205,26 @@ public sealed class StateMachineExecutor(
         var transitions = autoTransitions as Transition[] ?? autoTransitions.ToArray();
         if (transitions.Any())
         {
-            foreach (var transition in transitions)
-            {
-                if(transition.Timer == null)
-                    continue;
-                
-                var timerSchedule = await timerExecutionService.ExecuteRuleAsync(
-                    transition.Timer,
-                    context,
-                    cancellationToken);
+            var tasks = transitions
+                .Where(t => t.Timer != null)
+                .Select(async transition =>
+                {
+                    var timerSchedule = await timerExecutionService.ExecuteRuleAsync(
+#pragma warning disable CS8604 // Possible null reference argument.
+                        transition.Timer, context, cancellationToken);
+#pragma warning restore CS8604 // Possible null reference argument.
 
-               await backgroundJobService.EnqueueTransitionTimerAsync(
-                    instance.Id,
-                    workflow.Key,
-                    workflow.Domain,
-                    workflow.Version,
-                    transition.Key,
-                    timerSchedule,
-                    cancellationToken);
+                    await backgroundJobService.EnqueueTransitionTimerAsync(
+                        instance.Id,
+                        workflow.Key,
+                        workflow.Domain,
+                        workflow.Version,
+                        transition.Key,
+                        timerSchedule,
+                        cancellationToken);
+                });
 
-            }
+            await Task.WhenAll(tasks);
         }
     }
 
@@ -243,41 +234,13 @@ public sealed class StateMachineExecutor(
         Instance instance,
         CancellationToken cancellationToken = default)
     {
-        var autoTransitions = stateMachineService.GetAutomaticTransitions(workflow, instance);
-        var transitions = autoTransitions as Transition[] ?? autoTransitions.ToArray();
-        if (!transitions.Any())
-        {
-            return;
-        }
-
-        foreach (var transition in transitions)
-        {
-            try
-            {
-                await remoteInstanceCommandAppService.AutoTransitionAsync(
-                    instance.Id,
-                    transition.Key,
-                    new TransitionInput(
-                        workflow.Domain,
-                        workflow.Key,
-                        workflow.Version,
-                        null,
-                        true
-                    )
-                    {
-                        ExecutionContext = WorkflowExecutionContext.System
-                    },
-                    cancellationToken
-                );
-                break;
-            }
-            catch (RemoteServiceException e)
-            {
-                logger.LogWarning("AutoTransitionJobHandler: {Reason} for AutoKey {JobId}", transition.Key, e.Message);
-            }
-        }
+        // Delegate auto transition handling to the dedicated service
+        await autoTransitionService.CheckAndExecuteAutomaticTransitionsAsync(
+            workflow,
+            instance,
+            cancellationToken);
     }
-    
+
     private async Task InstanceStatusHandleAsync(
         Instance instance,
         State targetState,
@@ -286,36 +249,16 @@ public sealed class StateMachineExecutor(
     {
         if (targetState.StateType == StateType.Finish)
         {
-            try
-            {
-                // Complete the instance
-                instance.Complete();
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Error occurred during instance completion for instance {InstanceId}", instance.Id);
-
-                // Fallback: complete the instance anyway
-                if (!instance.Status.Equals(InstanceStatus.Completed))
-                {
-                    instance.Fault();
-                }
-            }
-
-            if (workflow.IsSub && instance.IsCompleted)
+            // Complete the instance
+            instance.Complete();
+            await instanceRepository.UpdateStatusAsync(instance, cancellationToken);
+            if (instance is { IsSubItem: true, IsCompleted: true })
             {
                 await PublishFlowCompletionEventAsync(instance, workflow, cancellationToken);
             }
         }
     }
 
-    /// <summary>
-    /// Publishes a flow completion event via Dapr pub/sub when an instance completes.
-    /// This event can be consumed by parent workflows to handle SubFlow completion.
-    /// </summary>
-    /// <param name="instance">The completed workflow instance</param>
-    /// <param name="workflow">The workflow definition</param>
-    /// <param name="cancellationToken">Cancellation token</param>
     private async Task PublishFlowCompletionEventAsync(
         Instance instance,
         Definitions.Workflow workflow,
@@ -334,11 +277,11 @@ public sealed class StateMachineExecutor(
             var flowCompletedData = new FlowCompletedData
             {
                 InstanceId = instance.Id,
-                Domain = workflow.Domain, 
+                Domain = workflow.Domain,
                 Workflow = workflow.Key,
                 Version = workflow.Version,
-                CompletedState = instance.CurrentState!,
-                InstanceData = latestData?.Data.JsonElement,
+                CompletedState = instance.GetCurrentState,
+                InstanceData = instance.IsSubFlow ? latestData?.Data.JsonElement : null,
                 MetaData = instance.MetaData,
                 CompletedAt = instance.CompletedAt ?? DateTime.UtcNow,
                 Duration = instance.Duration
@@ -356,7 +299,7 @@ public sealed class StateMachineExecutor(
                 instance.Id);
 
             // Record the event publication in metrics
-            workflowMetrics.RecordDaprPubsubMessagePublished(configuration["DAPR_PUBSUB_STORE_NAME"], 
+            workflowMetrics.RecordDaprPubsubMessagePublished(configuration["DAPR_PUBSUB_STORE_NAME"],
                 string.Format(DomainConsts.FlowCompleted, configuration["ASPNETCORE_ENVIRONMENT"]?.ToLower()),
                 "success");
         }
@@ -367,99 +310,35 @@ public sealed class StateMachineExecutor(
                 instance.Id);
 
             // Record the failure in metrics
-            workflowMetrics.RecordDaprPubsubMessagePublished(configuration["DAPR_PUBSUB_STORE_NAME"], 
+            workflowMetrics.RecordDaprPubsubMessagePublished(configuration["DAPR_PUBSUB_STORE_NAME"],
                 string.Format(DomainConsts.FlowCompleted, configuration["ASPNETCORE_ENVIRONMENT"]?.ToLower()),
                 "failed");
         }
     }
 
-    /// <inheritdoc />
-    public async Task ExecuteInstanceStartAsync(
-        Definitions.Workflow workflow,
-        Instance instance,
-        JsonElement? attributes,
-        Dictionary<string, string>? headers,
-        Dictionary<string, object?>? routeValues,
-        WorkflowExecutionContext executionContext = WorkflowExecutionContext.User,
-        CancellationToken cancellationToken = default)
+    public async Task<(Transition validatedTransition, IScriptContextBuilder scriptContextBuilder)>
+        ValidateTransitionAsync(
+            Definitions.Workflow workflow,
+            Instance instance,
+            string transitionKey,
+            JsonElement? data,
+            Dictionary<string, string?>? headers,
+            Dictionary<string, string?>? routeValues,
+            WorkflowExecutionContext executionContext,
+            CancellationToken cancellationToken = default)
     {
-        logger.LogDebug(
-            "Executing start transition for instance {InstanceId} in workflow {WorkflowKey}",
-            instance.Id, workflow.Key);
-
-        // Ensure instance is in proper state for processing
-        if (instance.Status.Equals(InstanceStatus.Busy))
-        {
-            instance.Active();
-            logger.LogDebug("Activated pre-created instance {InstanceId} for processing", 
-                instance.Id);
-        }
-
-        // Execute start transition
-        await ExecuteStartTransitionAsync(
-            workflow, 
-            instance, 
-            attributes, 
-            headers, 
-            routeValues, 
-            executionContext, 
-            cancellationToken);
-
-        // Save instance after transition
-        await instanceRepository.UpdateAsync(instance, true, cancellationToken);
-
-        // Schedule flow timeout if configured
-        await FlowTimeoutAsync(workflow, instance, cancellationToken);
-
-        logger.LogDebug(
-            "Successfully executed start transition for instance {InstanceId}. Current state: {CurrentState}",
-            instance.Id, instance.CurrentState);
-    }
-
-    /// <inheritdoc />
-    public async Task ExecuteManualTransitionAsync(
-        Definitions.Workflow workflow,
-        Instance instance,
-        string transitionKey,
-        JsonElement? data,
-        Dictionary<string, string>? headers,
-        Dictionary<string, object?>? routeValues,
-        WorkflowExecutionContext executionContext = WorkflowExecutionContext.User,
-        CancellationToken cancellationToken = default)
-    {
-        logger.LogDebug(
-            "Executing manual transition {TransitionKey} for instance {InstanceId}",
-            transitionKey, instance.Id);
-
-        // Ensure instance is in proper state for processing
-        if (instance.Status.Equals(InstanceStatus.Busy))
-        {
-            instance.Active();
-            logger.LogDebug("Activated pre-reserved instance {InstanceId} for transition processing", 
-                instance.Id);
-        }
-
-        // Build script context for the manual transition
         var scriptContextBuilder = scriptContextFactory.NewBuilder()
             .WithWorkflow(workflow)
             .WithInstance(instance)
             .WithRuntime(runtimeInfoProvider)
             .WithBody(data)
             .WithHeaders(headers)
-            .WithRouteValues(routeValues);
-
-        // Get the transition from workflow and build initial context
-        var workflowTransition = workflow.FindTransition(transitionKey, workflow.GetState(instance.CurrentState!));
-        if (workflowTransition == null)
-        {
-            throw new InvalidStateException(transitionKey, instance.CurrentState);
-        }
+            .WithRouteValues(routeValues)
+            .WithTransition(transitionKey);
 
         var scriptContext = await scriptContextBuilder
-            .WithTransition(workflowTransition)
             .BuildAsync(cancellationToken);
 
-        // Validate and get the final transition with all rules applied
         var validatedTransition = await stateMachineService.GetTransitionAsync(
             workflow,
             instance,
@@ -470,96 +349,9 @@ public sealed class StateMachineExecutor(
             cancellationToken
         );
 
-        // Add data to instance if provided
-        if (data.HasValue)
-        {
-            var jsonData = new JsonData(data.Value);
-            instance.AddData(
-                guidGenerator.Create(),
-                jsonData,
-                validatedTransition.VersionStrategy
-            );
-            // Note: Instance update will be handled by ExecuteTransitionAsync
-        }
+        scriptContextBuilder
+            .WithTransition(validatedTransition);
 
-        // Execute the transition with updated context
-        scriptContext = await scriptContextBuilder
-            .WithTransition(validatedTransition)
-            .BuildAsync(cancellationToken);
-
-        await ExecuteTransitionAsync(scriptContext, cancellationToken);
-
-        logger.LogDebug(
-            "Successfully executed manual transition {TransitionKey} for instance {InstanceId}. New state: {NewState}",
-            transitionKey, instance.Id, instance.CurrentState);
-    }
-
-    /// <summary>
-    /// Executes the start transition for a newly created workflow instance.
-    /// This is a specialized method for handling the initial workflow transition.
-    /// </summary>
-    /// <param name="workflow">The workflow definition</param>
-    /// <param name="instance">The instance to start</param>
-    /// <param name="attributes">Initial attributes data</param>
-    /// <param name="headers">Request headers</param>
-    /// <param name="routeValues">Route values</param>
-    /// <param name="executionContext">Execution context</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    private async Task ExecuteStartTransitionAsync(
-        Definitions.Workflow workflow,
-        Instance instance,
-        JsonElement? attributes,
-        Dictionary<string, string>? headers,
-        Dictionary<string, object?>? routeValues,
-        WorkflowExecutionContext executionContext,
-        CancellationToken cancellationToken = default)
-    {
-        logger.LogDebug(
-            "Executing start transition for instance {InstanceId}", instance.Id);
-
-        var scriptContextBuilder = scriptContextFactory.NewBuilder()
-            .WithWorkflow(workflow)
-            .WithInstance(instance)
-            .WithRuntime(runtimeInfoProvider)
-            .WithBody(attributes)
-            .WithHeaders(headers)
-            .WithRouteValues(routeValues);
-
-        var scriptContext = await scriptContextBuilder
-            .WithTransition(workflow.StartTransition)
-            .BuildAsync(cancellationToken);
-
-        // Validate the start transition
-        var validatedTransition = await stateMachineService.GetTransitionAsync(
-            workflow,
-            instance,
-            workflow.StartTransition.Key,
-            scriptContext,
-            attributes,
-            executionContext,
-            cancellationToken
-        );
-
-        // Add initial data if provided
-        if (attributes.HasValue)
-        {
-            var jsonData = new JsonData(attributes.Value);
-            instance.AddData(
-                guidGenerator.Create(),
-                jsonData,
-                validatedTransition.VersionStrategy
-            );
-        }
-
-        // Execute the start transition
-        scriptContext = await scriptContextBuilder
-            .WithTransition(validatedTransition)
-            .BuildAsync(cancellationToken);
-
-        await ExecuteTransitionAsync(scriptContext, cancellationToken);
-
-        logger.LogDebug(
-            "Successfully executed start transition for instance {InstanceId}. Current state: {CurrentState}",
-            instance.Id, instance.CurrentState);
+        return (validatedTransition, scriptContextBuilder);
     }
 }

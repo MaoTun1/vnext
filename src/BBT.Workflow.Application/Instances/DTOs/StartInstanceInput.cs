@@ -16,8 +16,8 @@ public sealed class StartInstanceInput(
     public string? Version { get; set; } = version;
     public bool Sync { get; set; } = sync;
     public CreateInstanceInput Instance { get; set; }
-    public Dictionary<string, string>? Headers { get; set; } = new();
-    public Dictionary<string, string?>? RouteValues { get; set; } = new();
+    public Dictionary<string, string?> Headers { get; set; } = new();
+    public Dictionary<string, string?> RouteValues { get; set; } = new();
 }
 
 public sealed class CreateInstanceInput

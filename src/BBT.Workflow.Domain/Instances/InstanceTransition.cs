@@ -8,7 +8,7 @@ public sealed class InstanceTransition : Entity<Guid>
     {
     }
 
-    public InstanceTransition(
+    internal InstanceTransition(
         Guid id,
         Guid instanceId,
         string transitionId,
@@ -50,5 +50,16 @@ public sealed class InstanceTransition : Entity<Guid>
         ToState = toState;
         FinishedAt = DateTime.UtcNow;
         Duration = FinishedAt - StartedAt;
+    }
+
+    public static InstanceTransition Create(
+        Guid id,
+        Guid instanceId,
+        string transitionId,
+        string fromState,
+        JsonData body,
+        JsonData header)
+    {
+        return new InstanceTransition(id, instanceId, transitionId, fromState, body, header);
     }
 }

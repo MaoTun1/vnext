@@ -18,7 +18,8 @@ using BBT.Workflow.Tasks.Persistence;
 using BBT.Workflow.Tasks.Persistence.Strategies;
 using TaskFactory = BBT.Workflow.Tasks.Factory.TaskFactory;
 using BBT.Workflow.Functions;
-using System.Net.Http;
+using BBT.Workflow.Execution.Services;
+using BBT.Workflow.Execution.Strategies;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -70,7 +71,23 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
          services.AddScoped<IFunctionAppService, FunctionAppService>();
         services.AddScoped<ITaskCommandAppService, TaskCommandAppService>();
         services.AddScoped<IScriptContextFactory, ScriptContextFactory>();
-        // services.AddScoped<IInstanceAppService, InstanceAppService>(); // For backward compatibility
+        
+        // Register core execution service
+        services.AddScoped<IWorkflowExecutionService, WorkflowExecutionService>();
+        
+        // Register auto transition service
+        services.AddScoped<IAutoTransitionService, AutoTransitionService>();
+        
+        // Register strategy factory
+        services.AddScoped<IExecutionStrategyFactory, ExecutionStrategyFactory>();
+        
+        // Register instance start strategies
+        services.AddScoped<IInstanceStartStrategy, SyncInstanceStartStrategy>();
+        services.AddScoped<IInstanceStartStrategy, AsyncInstanceStartStrategy>();
+        
+        // Register transition strategies
+        services.AddScoped<ITransitionStrategy, SyncTransitionStrategy>();
+        services.AddScoped<ITransitionStrategy, AsyncTransitionStrategy>();
 
         services.AddScoped<IRuntimeService, RuntimeService>();
         // Register the original ComponentCacheStore as a concrete service

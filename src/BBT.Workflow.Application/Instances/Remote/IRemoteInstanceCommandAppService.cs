@@ -18,10 +18,4 @@ public interface IRemoteInstanceCommandAppService
         string transitionKey,
         TransitionInput input,
         CancellationToken cancellationToken = default);
-    
-    Task<InstanceServiceResponse<TransitionOutput>> AutoTransitionAsync(
-        Guid instanceId,
-        string transitionKey,
-        TransitionInput input,
-        CancellationToken cancellationToken = default);
 } 

@@ -64,6 +64,8 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// </summary>
     public string? CurrentState { get; private set; }
 
+    public string GetCurrentState => string.IsNullOrWhiteSpace(CurrentState) ? string.Empty : CurrentState;
+
     /// <summary>
     /// Status
     /// </summary>
@@ -74,13 +76,17 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// </summary>
     public DateTime? CompletedAt { get; private set; }
 
-    public bool IsCompleted => 
-        Status.Equals(InstanceStatus.Completed) 
-        || Status.Equals(InstanceStatus.Faulted) 
+    public bool IsCompleted =>
+        Status.Equals(InstanceStatus.Completed)
+        || Status.Equals(InstanceStatus.Faulted)
         || Status.Equals(InstanceStatus.Passive);
 
+    public bool IsBusy => Status.Equals(InstanceStatus.Busy);
+    public bool IsActive => Status.Equals(InstanceStatus.Active);
+    public bool IsSubFlow => this.ToFlowType().Equals(WorkflowType.SubFlow);
+    public bool IsSubItem => this.ToFlowType().Equals(WorkflowType.SubFlow) || this.ToFlowType().Equals(WorkflowType.SubProcess);
+    public bool IsActiveSubFlow => _childCorrelations.Any(p => p.IsCompleted && p.SubFlowType.Equals(SubFlowType.SubFlow));
     public TimeSpan? Duration { get; private set; }
-
     public List<string> Tags { get; private set; }
 
     /// <summary>
@@ -95,7 +101,8 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
 
     public bool IsTransient { get; private set; }
 
-    public ObjectDictionary MetaData  { get; set; }
+    public ObjectDictionary MetaData { get; set; }
+
     public void SetMetaData(ObjectDictionary data)
     {
         MetaData = data;
@@ -118,7 +125,8 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         {
             lock (_dataListLock)
             {
-                return _dataList.OrderByDescending(x => x, InstanceDataVersionComparer.Instance).FirstOrDefault()?.Attributes;
+                return _dataList.OrderByDescending(x => x, InstanceDataVersionComparer.Instance).FirstOrDefault()
+                    ?.Attributes;
             }
         }
     }
@@ -173,6 +181,20 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         Status = InstanceStatus.Active;
     }
 
+    public void SetToActiveOrBusyBasedOnSubFlow()
+    {
+        if (IsCompleted) 
+            return;
+            
+        if (IsActiveSubFlow)
+        {
+            Busy();
+            return;
+        }
+        
+        Active();
+    }
+
     public void AddCorrelation(InstanceCorrelation correlation)
     {
         _childCorrelations.Add(correlation);
@@ -197,7 +219,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     {
         SetState(transition.Target);
     }
-    
+
     public void ChangeState(WorkflowTimeout timeout)
     {
         SetState(timeout.Target);
@@ -218,7 +240,8 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         }
     }
 
-    public bool CanExecuteTransition(Transition transition, State state, StateTransitionPolicy policy, WorkflowExecutionContext executionContext = WorkflowExecutionContext.User)
+    public bool CanExecuteTransition(Transition transition, State state, StateTransitionPolicy policy,
+        WorkflowExecutionContext executionContext = WorkflowExecutionContext.User)
     {
         policy.Validate(state, transition, executionContext);
         return true;
@@ -230,7 +253,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
             id,
             Id,
             version,
-            inputData,true
+            inputData, true
         );
         _dataList.Add(newData);
         return newData;
@@ -241,27 +264,19 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         lock (_dataListLock)
         {
             var lastData = _dataList.LastOrDefault();
-            InstanceData newData;
-
-            if (lastData is null)
-            {
-                newData = new InstanceData(
+            InstanceData newData = lastData is null
+                ? new InstanceData(
                     id,
                     Id,
                     WorkflowConstants.DefaultVersion,
                     inputData,
                     true
-                );
-            }
-            else
-            {
-                newData = lastData.NewVersion(
+                )
+                : lastData.NewVersion(
                     id,
                     inputData,
                     versionStrategy ?? VersionStrategy.IncreaseMinor
                 );
-            }
-
             _dataList.Add(newData);
             return newData;
         }
@@ -283,7 +298,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
             if (match.Success)
             {
                 var prefix = $"{match.Groups[1].Value}.{match.Groups[2].Value}.";
-                
+
                 var matched = _dataList
                     .Where(d => d.Version.StartsWith(prefix))
                     .OrderByDescending(d => d, InstanceDataVersionComparer.Instance)
