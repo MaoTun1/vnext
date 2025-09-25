@@ -2,12 +2,14 @@ using System.Text.Json;
 using BBT.Aether.Application.Services;
 using BBT.Aether.Guids;
 using BBT.Workflow.Caching;
+using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Execution.StateMachine;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Schemas;
 using Microsoft.Extensions.Logging;
+using BBT.Workflow.ExceptionHandling;
 
 namespace BBT.Workflow.SubFlow;
 
@@ -50,7 +52,7 @@ public sealed class SubFlowCompletionService(
         {
             runtimeInfoProvider.Check(subFlowContractInfo.Domain);
         }
-        catch (Exception)
+        catch (NotFoundDomainException)
         {
             logger.LogInformation(
                 "SubFlow completion event for instance {InstanceId} belongs to domain {Domain} which is not handled by this runtime instance {RuntimeDomain}. Event will be ignored.",
@@ -92,6 +94,14 @@ public sealed class SubFlowCompletionService(
             correlation.Complete();
             await instanceCorrelationRepository.UpdateAsync(correlation, true, cancellationToken);
 
+            if(correlation.SubFlowType.Equals(SubFlowType.SubProcess))
+            {
+                logger.LogInformation(
+                    "SubProcess {SubFlowName} for instance {InstanceId} has completed",
+                    correlation.SubFlowName, completedData.InstanceId);
+                return;
+            }
+            
             // Process parent workflow continuation within the parent's schema context
             await ProcessParentWorkflowContinuationAsync(correlation, completedData, subFlowContractInfo, cancellationToken);
 
@@ -172,7 +182,9 @@ public sealed class SubFlowCompletionService(
             await scriptContextBuilder.BuildAsync(cancellationToken),
             cancellationToken);
 
-        if(parentInstance.IsBusy)
+        // Get fresh instance because auto transition runs in separate scope
+        parentInstance = await instanceRepository.GetActiveAsync(parentInstance.Id, cancellationToken);
+        if(parentInstance is { IsBusy: true, IsActiveSubFlow: false })
         {
             parentInstance.Active();
             await instanceRepository.UpdateStatusAsync(parentInstance, cancellationToken);
@@ -217,17 +229,9 @@ public sealed class SubFlowCompletionService(
             ScriptResponse? outputMappingResult = null;
 
             // Execute OutputHandler for SubFlow (SubProcess doesn't have OutputHandler)
-            if (subFlowConfig.Type.Code == "S" && mappingInstance is ISubFlowMapping subFlowMapping)
+            if (subFlowConfig.Type.Equals(SubFlowType.SubFlow) && mappingInstance is ISubFlowMapping subFlowMapping)
             {
                 outputMappingResult = await subFlowMapping.OutputHandler(scriptContext);
-            }
-            else if (subFlowConfig.Type.Code == "P")
-            {
-                logger.LogInformation(
-                    "SubProcess type 'P' does not support output mapping - skipping output processing for parent instance {ParentInstanceId}",
-                    parentInstance.Id);
-                // SubProcess instances don't have output handling - they run independently
-                return;
             }
 
             if (outputMappingResult?.Data != null)

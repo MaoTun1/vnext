@@ -84,6 +84,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     public bool IsBusy => Status.Equals(InstanceStatus.Busy);
     public bool IsActive => Status.Equals(InstanceStatus.Active);
     public bool IsSubFlow => this.ToFlowType().Equals(WorkflowType.SubFlow);
+    public bool IsSubItem => this.ToFlowType().Equals(WorkflowType.SubFlow) || this.ToFlowType().Equals(WorkflowType.SubProcess);
     public bool IsActiveSubFlow => _childCorrelations.Any(p => p.IsCompleted && p.SubFlowType.Equals(SubFlowType.SubFlow));
     public TimeSpan? Duration { get; private set; }
     public List<string> Tags { get; private set; }
@@ -185,12 +186,13 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         if (IsCompleted) 
             return;
             
-        Active();
-        
         if (IsActiveSubFlow)
         {
             Busy();
+            return;
         }
+        
+        Active();
     }
 
     public void AddCorrelation(InstanceCorrelation correlation)
@@ -262,27 +264,19 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         lock (_dataListLock)
         {
             var lastData = _dataList.LastOrDefault();
-            InstanceData newData;
-
-            if (lastData is null)
-            {
-                newData = new InstanceData(
+            InstanceData newData = lastData is null
+                ? new InstanceData(
                     id,
                     Id,
                     WorkflowConstants.DefaultVersion,
                     inputData,
                     true
-                );
-            }
-            else
-            {
-                newData = lastData.NewVersion(
+                )
+                : lastData.NewVersion(
                     id,
                     inputData,
                     versionStrategy ?? VersionStrategy.IncreaseMinor
                 );
-            }
-
             _dataList.Add(newData);
             return newData;
         }

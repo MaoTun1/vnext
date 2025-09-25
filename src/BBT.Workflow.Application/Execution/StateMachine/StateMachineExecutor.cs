@@ -252,7 +252,7 @@ public sealed class StateMachineExecutor(
             // Complete the instance
             instance.Complete();
             await instanceRepository.UpdateStatusAsync(instance, cancellationToken);
-            if (instance is { IsSubFlow: true, IsCompleted: true })
+            if (instance is { IsSubItem: true, IsCompleted: true })
             {
                 await PublishFlowCompletionEventAsync(instance, workflow, cancellationToken);
             }
@@ -281,7 +281,7 @@ public sealed class StateMachineExecutor(
                 Workflow = workflow.Key,
                 Version = workflow.Version,
                 CompletedState = instance.GetCurrentState,
-                InstanceData = latestData?.Data.JsonElement,
+                InstanceData = instance.IsSubFlow ? latestData?.Data.JsonElement : null,
                 MetaData = instance.MetaData,
                 CompletedAt = instance.CompletedAt ?? DateTime.UtcNow,
                 Duration = instance.Duration

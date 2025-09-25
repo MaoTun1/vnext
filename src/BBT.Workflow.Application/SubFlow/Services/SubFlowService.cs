@@ -15,6 +15,7 @@ namespace BBT.Workflow.SubFlow;
 /// SubProcess: Creates separate instances via remote calls (unchanged behavior).
 /// </summary>
 /// <param name="instanceCorrelationRepository">Repository for managing instance correlations.</param>
+/// <param name="instanceRepository">Repository for managing instance.</param>
 /// <param name="guidGenerator">Service for generating unique identifiers.</param>
 /// <param name="remoteInstanceCommandAppService">Manages remote requests to trigger SubProcess only.</param>
 /// <param name="configuration">Configuration provider for accessing application settings.</param>
@@ -107,7 +108,7 @@ public sealed class SubFlowService(
                 createInstanceInput.Key = inputMappingResult.Key;
             }
 
-            if (inputMappingResult.Tags != null && inputMappingResult.Tags.Length > 0)
+            if (inputMappingResult.Tags?.Length > 0)
             {
                 var existingTags = createInstanceInput.Tags?.ToList() ?? new List<string>();
                 existingTags.AddRange(inputMappingResult.Tags);

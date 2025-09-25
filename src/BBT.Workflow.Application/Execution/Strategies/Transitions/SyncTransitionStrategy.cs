@@ -83,32 +83,8 @@ public sealed class SyncTransitionStrategy(
             await instanceRepository.UpdateStatusAsync(instance, cancellationToken);
         }
 
-        try
-        {
-            // Execute the operation
-            await operation();
-        }
-        finally
-        {
-            if (executionContext == ExecutionContext.User)
-            {
-                try
-                {
-                    // Reload instance from database to get the latest state including correlations
-                    // that may have been updated during auto-transitions
-                    var currentInstance = await instanceRepository.GetAsync(instance.Id, true, cancellationToken);
-                    currentInstance.SetToActiveOrBusyBasedOnSubFlow();    
-                    await instanceRepository.UpdateStatusAsync(currentInstance, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    // Log but don't throw - we don't want to mask the original exception
-                    logger.LogWarning(ex,
-                        "Failed to reset instance {InstanceId} status to Active after transition processing",
-                        instance.Id);
-                }
-            }
-        }
+        // Execute the operation
+        await operation();
 
         // Return the fresh instance from database to ensure caller gets the latest correlations
         return await instanceRepository.GetAsync(instance.Id, true, cancellationToken);

@@ -65,7 +65,7 @@ public sealed class AutoTransitionService(
                 using var scope = serviceProvider.CreateScope();
                 var workflowExecutionService = scope.ServiceProvider.GetRequiredService<IWorkflowExecutionService>();
                 
-                var result = await workflowExecutionService.ExecuteTransitionAsync(
+                await workflowExecutionService.ExecuteTransitionAsync(
                     instance.Id,
                     transition.Key,
                     input,

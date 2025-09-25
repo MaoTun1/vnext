@@ -61,7 +61,7 @@ public sealed class WorkflowExecutionService(
                 cancellationToken);
 
             // Validate transition and build script context
-            (var transition, var scriptContextBuilder) = await stateMachineExecutor.ValidateTransitionAsync(
+            var (transition, scriptContextBuilder) = await stateMachineExecutor.ValidateTransitionAsync(
                 workflow,
                 instance,
                 workflow.StartTransition.Key,
@@ -148,7 +148,7 @@ public sealed class WorkflowExecutionService(
                 var instance = await instanceRepository.GetActiveAsync(instanceId, cancellationToken);
 
                 // Validate transition and build script context
-                (var transition, var scriptContextBuilder) = await stateMachineExecutor.ValidateTransitionAsync(
+                var (transition, scriptContextBuilder) = await stateMachineExecutor.ValidateTransitionAsync(
                     workflow,
                     instance,
                     transitionKey,
