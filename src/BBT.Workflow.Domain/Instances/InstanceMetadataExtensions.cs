@@ -38,11 +38,13 @@ public static class InstanceMetadataExtensions
         };
     }
 
-    public static WorkflowType ToFlowType(this Instance instance)
+    public static WorkflowType? ToFlowType(this Instance instance)
     {
         var md = instance.MetaData;
-        return WorkflowType.FromCode(GetString(md, DomainConsts.MetaDataKeys.SubType) ??
-                                     throw new InvalidOperationException());
+        var type = GetString(md, DomainConsts.MetaDataKeys.SubType);
+        return !string.IsNullOrEmpty(type) 
+            ? WorkflowType.FromCode(type)
+            : null;
     }
     
     private static string? GetString(ObjectDictionary md, string key)
