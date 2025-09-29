@@ -83,8 +83,8 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
 
     public bool IsBusy => Status.Equals(InstanceStatus.Busy);
     public bool IsActive => Status.Equals(InstanceStatus.Active);
-    public bool IsSubFlow => this.ToFlowType().Equals(WorkflowType.SubFlow);
-    public bool IsSubItem => this.ToFlowType().Equals(WorkflowType.SubFlow) || this.ToFlowType().Equals(WorkflowType.SubProcess);
+    public bool IsSubFlow => this.ToFlowType()?.Equals(WorkflowType.SubFlow) ?? false;
+    public bool IsSubItem => (this.ToFlowType()?.Equals(WorkflowType.SubFlow) ?? false) || (this.ToFlowType()?.Equals(WorkflowType.SubProcess) ?? false);
     public bool IsActiveSubFlow => _childCorrelations.Any(p => p.IsCompleted && p.SubFlowType.Equals(SubFlowType.SubFlow));
     public TimeSpan? Duration { get; private set; }
     public List<string> Tags { get; private set; }
