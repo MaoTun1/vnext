@@ -246,6 +246,184 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
     }
 
     [Fact]
+    public void AddData_ShouldNotCreateNewVersion_WhenDataIsSame()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        var dataId1 = Guid.NewGuid();
+        var dataId2 = Guid.NewGuid();
+        var sameData = JsonData.CreateFrom("{\"key\":\"value\"}");
+        
+        // Act
+        var result1 = instance.AddData(dataId1, sameData);
+        var result2 = instance.AddData(dataId2, sameData);
+        
+        // Assert
+        Assert.Single(instance.DataList);
+        Assert.Equal(result1.Id, result2.Id); // Same instance returned
+        Assert.Equal(result1.Version, result2.Version);
+        Assert.Equal(result1.DataHash, result2.DataHash);
+    }
+
+    [Fact]
+    public void AddData_ShouldCreateNewVersion_WhenDataIsDifferent()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        var dataId1 = Guid.NewGuid();
+        var dataId2 = Guid.NewGuid();
+        var data1 = JsonData.CreateFrom("{\"key\":\"value1\"}");
+        var data2 = JsonData.CreateFrom("{\"key\":\"value2\"}");
+        
+        // Act
+        var result1 = instance.AddData(dataId1, data1);
+        var result2 = instance.AddData(dataId2, data2);
+        
+        // Assert
+        Assert.Equal(2, instance.DataList.Count);
+        Assert.NotEqual(result1.Id, result2.Id);
+        Assert.NotEqual(result1.Version, result2.Version);
+        Assert.NotEqual(result1.DataHash, result2.DataHash);
+        Assert.False(result1.IsLatest);
+        Assert.True(result2.IsLatest);
+    }
+
+    [Fact]
+    public void AddDataWithVersion_ShouldNotCreateNewVersion_WhenDataIsSame()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        var dataId1 = Guid.NewGuid();
+        var dataId2 = Guid.NewGuid();
+        var sameData = JsonData.CreateFrom("{\"key\":\"value\"}");
+        
+        // Act
+        var result1 = instance.AddDataWithVersion(dataId1, sameData, "1.0.0");
+        var result2 = instance.AddDataWithVersion(dataId2, sameData, "2.0.0");
+        
+        // Assert
+        Assert.Single(instance.DataList);
+        Assert.Equal(result1.Id, result2.Id); // Same instance returned
+        Assert.Equal("1.0.0", result2.Version); // Original version maintained
+        Assert.Equal(result1.DataHash, result2.DataHash);
+    }
+
+    [Fact]
+    public void AddDataWithVersion_ShouldCreateNewVersion_WhenDataIsDifferent()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        var dataId1 = Guid.NewGuid();
+        var dataId2 = Guid.NewGuid();
+        var data1 = JsonData.CreateFrom("{\"key\":\"value1\"}");
+        var data2 = JsonData.CreateFrom("{\"key\":\"value2\"}");
+        
+        // Act
+        var result1 = instance.AddDataWithVersion(dataId1, data1, "1.0.0");
+        var result2 = instance.AddDataWithVersion(dataId2, data2, "2.0.0");
+        
+        // Assert
+        Assert.Equal(2, instance.DataList.Count);
+        Assert.NotEqual(result1.Id, result2.Id);
+        Assert.Equal("1.0.0", result1.Version);
+        Assert.Equal("2.0.0", result2.Version);
+        Assert.NotEqual(result1.DataHash, result2.DataHash);
+        Assert.False(result1.IsLatest);
+        Assert.True(result2.IsLatest);
+    }
+
+    [Fact]
+    public void InstanceData_HasSameData_ShouldReturnTrue_WhenDataIsIdentical()
+    {
+        // Arrange
+        var data1 = JsonData.CreateFrom("{\"key\":\"value\"}");
+        var data2 = JsonData.CreateFrom("{\"key\":\"value\"}");
+        var instance = InstanceFactory.CreateDefault();
+        var instanceData = instance.AddDataWithVersion(Guid.NewGuid(), data1, "1.0.0");
+        
+        // Act
+        var result = instanceData.HasSameData(data2);
+        
+        // Assert
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void InstanceData_HasSameData_ShouldReturnFalse_WhenDataIsDifferent()
+    {
+        // Arrange
+        var data1 = JsonData.CreateFrom("{\"key\":\"value1\"}");
+        var data2 = JsonData.CreateFrom("{\"key\":\"value2\"}");
+        var instance = InstanceFactory.CreateDefault();
+        var instanceData = instance.AddDataWithVersion(Guid.NewGuid(), data1, "1.0.0");
+        
+        // Act
+        var result = instanceData.HasSameData(data2);
+        
+        // Assert
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void InstanceData_HasSameData_ShouldReturnTrue_WithDifferentJsonFormatting()
+    {
+        // Arrange - Same semantic content but different formatting
+        var data1 = JsonData.CreateFrom("{\"key\":\"value\",\"number\":123}");
+        var data2 = JsonData.CreateFrom("{ \"number\": 123, \"key\": \"value\" }"); // Different order & spacing
+        var instance = InstanceFactory.CreateDefault();
+        var instanceData = instance.AddDataWithVersion(Guid.NewGuid(), data1, "1.0.0");
+        
+        // Act
+        var result = instanceData.HasSameData(data2);
+        
+        // Assert
+        Assert.True(result); // Should be true because semantic content is same
+    }
+
+    [Fact]
+    public void AddData_ShouldNotCreateNewVersion_WithDifferentJsonFormatting()
+    {
+        // Arrange - Same semantic content but different formatting
+        var instance = InstanceFactory.CreateDefault();
+        var dataId1 = Guid.NewGuid();
+        var dataId2 = Guid.NewGuid();
+        var data1 = JsonData.CreateFrom("{\"key\":\"value\",\"items\":[1,2,3]}");
+        var data2 = JsonData.CreateFrom("{ \"items\": [1, 2, 3], \"key\": \"value\" }"); // Different formatting
+        
+        // Act
+        var result1 = instance.AddData(dataId1, data1);
+        var result2 = instance.AddData(dataId2, data2);
+        
+        // Assert
+        Assert.Single(instance.DataList);
+        Assert.Equal(result1.Id, result2.Id); // Same instance returned
+        Assert.Equal(result1.DataHash, result2.DataHash); // Same hash
+    }
+
+    [Fact]
+    public void JsonData_NormalizedJson_ShouldReturnConsistentFormat()
+    {
+        // Arrange - Same semantic content but different formatting
+        var json1 = JsonData.CreateFrom("{\"key\":\"value\",\"items\":[1,2,3]}");
+        var json2 = JsonData.CreateFrom("{ \"items\": [1, 2, 3], \"key\": \"value\" }");
+        var json3 = JsonData.CreateFrom("{\n  \"key\": \"value\",\n  \"items\": [\n    1,\n    2,\n    3\n  ]\n}");
+        
+        // Act
+        var normalized1 = json1.NormalizedJson;
+        var normalized2 = json2.NormalizedJson;
+        var normalized3 = json3.NormalizedJson;
+        
+        // Assert
+        Assert.Equal(normalized1, normalized2);
+        Assert.Equal(normalized2, normalized3);
+        Assert.Equal(normalized1, normalized3);
+        
+        // Verify it's deterministic (property order should be consistent)
+        Assert.Contains("\"items\"", normalized1);
+        Assert.Contains("\"key\"", normalized1);
+    }
+
+    [Fact]
     public void LatestData_ShouldReturnCorrectResult_DuringConcurrentAccess()
     {
         // Arrange

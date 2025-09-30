@@ -10,7 +10,7 @@ public static class InstanceMetadataExtensions
         if (instance is null)
             throw new ArgumentNullException(nameof(instance));
 
-        var md = instance.MetaData ?? new ObjectDictionary();
+        var md = instance.MetaData;
 
         return new SubFlowContractInfo
         {
@@ -20,7 +20,7 @@ public static class InstanceMetadataExtensions
             Flow    = GetString(md, DomainConsts.MetaDataKeys.Flow) ?? string.Empty,
             Version = GetString(md, DomainConsts.MetaDataKeys.Version),
             State   = GetString(md, DomainConsts.MetaDataKeys.State),
-            SubType = GetString(md, DomainConsts.MetaDataKeys.SubType) ?? string.Empty
+            SubType = GetString(md, DomainConsts.MetaDataKeys.FlowType) ?? string.Empty
         };
     }
     
@@ -34,14 +34,14 @@ public static class InstanceMetadataExtensions
             Flow    = GetString(metaData, DomainConsts.MetaDataKeys.Flow) ?? string.Empty,
             Version = GetString(metaData, DomainConsts.MetaDataKeys.Version),
             State   = GetString(metaData, DomainConsts.MetaDataKeys.State),
-            SubType = GetString(metaData, DomainConsts.MetaDataKeys.SubType) ?? string.Empty
+            SubType = GetString(metaData, DomainConsts.MetaDataKeys.FlowType) ?? string.Empty
         };
     }
 
     public static WorkflowType? ToFlowType(this Instance instance)
     {
         var md = instance.MetaData;
-        var type = GetString(md, DomainConsts.MetaDataKeys.SubType);
+        var type = GetString(md, DomainConsts.MetaDataKeys.FlowType);
         return !string.IsNullOrEmpty(type) 
             ? WorkflowType.FromCode(type)
             : null;
@@ -75,7 +75,7 @@ public static class InstanceMetadataExtensions
 
     public static T? GetValue<T>(this Instance instance, string key)
     {
-        if (instance?.MetaData == null)
+        if (instance.MetaData == null)
             return default;
 
         if (instance.MetaData.TryGetValue(key, out var value) && value is T typed)

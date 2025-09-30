@@ -29,6 +29,23 @@ public class JsonData : ValueObject
 
     public string Json { get; private set; } = "{}";
     
+    private string? _normalizedJson;
+    
+    /// <summary>
+    /// Gets the normalized JSON string for consistent hashing and comparison
+    /// </summary>
+    public string NormalizedJson
+    {
+        get
+        {
+            if (_normalizedJson == null)
+            {
+                _normalizedJson = NormalizeJson(Json);
+            }
+            return _normalizedJson;
+        }
+    }
+    
     public JsonElement JsonElement =>
         JsonSerializer.Deserialize<JsonElement>(Json, JsonSerializerConstants.JsonOptions)!;
 
@@ -74,6 +91,72 @@ public class JsonData : ValueObject
     protected override IEnumerable<object> GetAtomicValues()
     {
         yield return Json;
+    }
+
+    /// <summary>
+    /// Normalizes JSON string to ensure consistent hashing regardless of formatting
+    /// </summary>
+    /// <param name="json">The JSON string to normalize</param>
+    /// <returns>Normalized JSON string</returns>
+    private static string NormalizeJson(string json)
+    {
+        try
+        {
+            // Parse JSON to remove formatting differences
+            var jsonElement = JsonSerializer.Deserialize<JsonElement>(json);
+            
+            // Normalize the JSON element by sorting properties recursively
+            var normalizedElement = NormalizeJsonElement(jsonElement);
+            
+            // Re-serialize with consistent options for deterministic output
+            var options = new JsonSerializerOptions
+            {
+                WriteIndented = false,
+                PropertyNamingPolicy = null, // Keep original property names
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            };
+            
+            return JsonSerializer.Serialize(normalizedElement, options);
+        }
+        catch
+        {
+            // If JSON parsing fails, return original string
+            return json;
+        }
+    }
+
+    /// <summary>
+    /// Recursively normalizes a JsonElement by sorting object properties
+    /// </summary>
+    /// <param name="element">The JsonElement to normalize</param>
+    /// <returns>Normalized JsonElement</returns>
+    private static JsonElement NormalizeJsonElement(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                // Sort properties by name for consistent ordering
+                var sortedProperties = element.EnumerateObject()
+                    .OrderBy(prop => prop.Name, StringComparer.Ordinal)
+                    .ToDictionary(
+                        prop => prop.Name,
+                        prop => NormalizeJsonElement(prop.Value) // Recursive normalization
+                    );
+                
+                return JsonSerializer.SerializeToElement(sortedProperties);
+                
+            case JsonValueKind.Array:
+                // Normalize each array element
+                var normalizedArray = element.EnumerateArray()
+                    .Select(NormalizeJsonElement)
+                    .ToArray();
+                
+                return JsonSerializer.SerializeToElement(normalizedArray);
+                
+            default:
+                // For primitive values, return as-is
+                return element;
+        }
     }
 
     public static JsonData CreateFrom(string json)

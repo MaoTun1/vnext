@@ -148,7 +148,8 @@ public sealed class StateMachineExecutor(
             }
         }
 
-        await InstanceStatusHandleAsync(context.Instance, targetState, context.Workflow, cancellationToken);
+        await InstanceStatusHandleAsync(context.Instance, targetState, context.Transition, context.Workflow,
+            cancellationToken);
 
         instanceTransition.Completed(context.Instance.GetCurrentState);
 
@@ -162,7 +163,7 @@ public sealed class StateMachineExecutor(
             );
         }
 
-        await instanceTransitionRepository.UpdateAsync(instanceTransition, true, cancellationToken);
+        await instanceTransitionRepository.UpdateCompletedAsync(instanceTransition, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -244,18 +245,25 @@ public sealed class StateMachineExecutor(
     private async Task InstanceStatusHandleAsync(
         Instance instance,
         State targetState,
+        Transition transition,
         Definitions.Workflow workflow,
         CancellationToken cancellationToken = default)
     {
+        instance = await instanceRepository.GetActiveAsync(instance.Id, cancellationToken);
         if (targetState.StateType == StateType.Finish)
         {
             // Complete the instance
             instance.Complete();
             await instanceRepository.UpdateStatusAsync(instance, cancellationToken);
-            if (instance is { IsSubItem: true, IsCompleted: true })
+            if (instance.ShouldPublishCompletionEvent())
             {
                 await PublishFlowCompletionEventAsync(instance, workflow, cancellationToken);
             }
+        }
+        else
+        {
+            instance.SetStatusBasedOnState();
+            await instanceRepository.UpdateStatusAsync(instance, cancellationToken);
         }
     }
 

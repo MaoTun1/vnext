@@ -184,9 +184,8 @@ public sealed class SubFlowCompletionService(
 
         // Get fresh instance because auto transition runs in separate scope
         parentInstance = await instanceRepository.GetActiveAsync(parentInstance.Id, cancellationToken);
-        if(parentInstance is { IsBusy: true, IsActiveSubFlow: false })
+        if(parentInstance.TryActivateIfBusyWithoutSubFlow())
         {
-            parentInstance.Active();
             await instanceRepository.UpdateStatusAsync(parentInstance, cancellationToken);
         }
     }

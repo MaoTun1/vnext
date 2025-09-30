@@ -96,7 +96,7 @@ public sealed class SubFlowService(
                 [DomainConsts.MetaDataKeys.Flow] = workflow.Key,
                 [DomainConsts.MetaDataKeys.Version] = workflow.Version,
                 [DomainConsts.MetaDataKeys.State] = targetState.Key,
-                [DomainConsts.MetaDataKeys.SubType] = subFlowConfig.Type.Code
+                [DomainConsts.MetaDataKeys.FlowType] = subFlowConfig.Type.Code
             }
         };
 

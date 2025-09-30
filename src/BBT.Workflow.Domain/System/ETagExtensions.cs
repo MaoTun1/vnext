@@ -14,6 +14,6 @@ public static class ETagExtensions
     /// <returns>True if the ETags match, false otherwise</returns>
     public static bool MatchesIfNoneMatch(this string currentETag, string ifNoneMatch)
     {
-        return currentETag == ifNoneMatch;
+        return currentETag.Equals(ifNoneMatch, StringComparison.OrdinalIgnoreCase);
     }
 } 

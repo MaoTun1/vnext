@@ -89,7 +89,7 @@ internal sealed class ScriptContextBuilder(
 
     public IScriptContextBuilder WithTransition(string? transitionKey)
     {
-        _transitionKey = transitionKey ?? throw new ArgumentNullException(nameof(transitionKey));
+        _transitionKey = transitionKey;
         _transition = null; // Clear direct transition if set
         return this;
     }
@@ -223,7 +223,7 @@ internal sealed class ScriptContextBuilder(
         if (_transition != null)
             return _transition;
 
-        if (_transitionKey != null)
+        if (!string.IsNullOrEmpty(_transitionKey))
         {
             var transition = workflow.FindTransitionInContext(_transitionKey);
             if (transition == null)

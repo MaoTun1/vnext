@@ -218,6 +218,7 @@ public sealed class WorkflowExecutionService(
         // Set metadata
         metadata.TryAdd(DomainConsts.MetaDataKeys.Sync, isSync.ToString().ToLower());
         metadata.TryAdd(DomainConsts.MetaDataKeys.Callback, callback ?? string.Empty);
+        metadata.TryAdd(DomainConsts.MetaDataKeys.FlowType, workflow.Type.Code);
         instance.SetMetaData(metadata);
 
         // Initialize instance state and tags (always for new instances)
