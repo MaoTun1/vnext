@@ -83,9 +83,14 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
 
     public bool IsBusy => Status.Equals(InstanceStatus.Busy);
     public bool IsActive => Status.Equals(InstanceStatus.Active);
-    public bool IsSubFlow => this.ToFlowType()?.Equals(WorkflowType.SubFlow) ?? false;
-    public bool IsSubItem => (this.ToFlowType()?.Equals(WorkflowType.SubFlow) ?? false) || (this.ToFlowType()?.Equals(WorkflowType.SubProcess) ?? false);
-    public bool HasActiveSubFlow => _childCorrelations.Any(p => !p.IsCompleted && p.SubFlowType.Equals(SubFlowType.SubFlow));
+    public bool IsSubFlow => this.ToFlowType() == WorkflowType.SubFlow;
+
+    public bool IsSubItem => this.ToFlowType() == WorkflowType.SubFlow ||
+                             this.ToFlowType() == WorkflowType.SubProcess;
+
+    public bool HasActiveSubFlow =>
+        _childCorrelations.Any(p => !p.IsCompleted && p.SubFlowType.Equals(SubFlowType.SubFlow));
+
     public TimeSpan? Duration { get; private set; }
     public List<string> Tags { get; private set; }
 
@@ -169,6 +174,9 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// </summary>
     public void Busy()
     {
+        if(IsCompleted)
+            return;
+        
         Status = InstanceStatus.Busy;
     }
 
@@ -178,6 +186,9 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// </summary>
     public void Active()
     {
+        if(IsCompleted)
+            return;
+        
         Status = InstanceStatus.Active;
     }
 
@@ -185,22 +196,26 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// Sets the instance status based on its completion and active subflow state.
     /// This encapsulates the business logic for determining whether an instance should be Active or Busy.
     /// </summary>
-    public void SetStatusBasedOnState()
+    public bool TrySetStatusBasedOnState()
     {
-        if (IsCompleted) 
-            return;
+        if (IsCompleted)
+        {
+            return false;
+        }
 
         if (HasActiveSubFlow)
         {
             Busy();
+            return true;
         }
-        else
+
+        if (IsBusy)
         {
-            if (IsBusy)
-            {
-                Active();    
-            }
+            Active();
+            return true;
         }
+
+        return false;
     }
 
     /// <summary>
@@ -214,7 +229,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
             Active();
             return true;
         }
-        
+
         return false;
     }
 
@@ -284,20 +299,20 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         lock (_dataListLock)
         {
             var latestData = _dataList.OrderByDescending(x => x, InstanceDataVersionComparer.Instance).FirstOrDefault();
-            
+
             // If we have existing data, check if the new data is different
-            if (latestData != null && latestData.HasSameData(inputData))
+            if (latestData?.HasSameData(inputData) == true)
             {
                 // Data hasn't changed, return the existing latest data
                 return latestData;
             }
-            
+
             // Mark previous latest as not latest
             if (latestData != null)
             {
                 latestData.MarkAsNotLatest();
             }
-            
+
             var newData = new InstanceData(
                 id,
                 Id,
@@ -314,14 +329,14 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         lock (_dataListLock)
         {
             var lastData = _dataList.LastOrDefault();
-            
+
             // If we have existing data, check if the new data is different
-            if (lastData != null && lastData.HasSameData(inputData))
+            if (lastData?.HasSameData(inputData) == true)
             {
                 // Data hasn't changed, return the existing data
                 return lastData;
             }
-            
+
             InstanceData newData = lastData is null
                 ? new InstanceData(
                     id,

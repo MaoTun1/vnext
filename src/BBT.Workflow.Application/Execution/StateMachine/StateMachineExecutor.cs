@@ -33,6 +33,7 @@ public sealed class StateMachineExecutor(
     DaprClient daprClient,
     IConfiguration configuration,
     IAutoTransitionService autoTransitionService,
+    IInstanceRefreshStrategy instanceRefreshStrategy,
     ILogger<StateMachineExecutor> logger
 ) : IStateMachineExecutor
 {
@@ -123,12 +124,21 @@ public sealed class StateMachineExecutor(
                         context.Instance,
                         cancellationToken);
 
-                    // Check for delay transition and execution
-                    await ScheduleTransitionsForLaterExecutionAsync(
-                        context.Workflow,
-                        context.Instance,
-                        context,
+                    // Refresh instance only if needed after auto transitions
+                    var refreshedInstance = await instanceRefreshStrategy.RefreshIfNeededAsync(
+                        context.Instance, 
+                        afterAutoTransition: true, 
                         cancellationToken);
+
+                    if (refreshedInstance is { IsCompleted: false })
+                    {
+                        // Check for delay transition and execution
+                        await ScheduleTransitionsForLaterExecutionAsync(
+                            context.Workflow,
+                            refreshedInstance,
+                            context,
+                            cancellationToken);
+                    }
                 }
             }
             else
@@ -138,13 +148,23 @@ public sealed class StateMachineExecutor(
                     context.Workflow,
                     context.Instance,
                     cancellationToken);
-
-                // Check for delay transition and execution
-                await ScheduleTransitionsForLaterExecutionAsync(
-                    context.Workflow,
-                    context.Instance,
-                    context,
+                
+                // Refresh instance only if needed after auto transitions
+                var refreshedInstance = await instanceRefreshStrategy.RefreshIfNeededAsync(
+                    context.Instance, 
+                    afterAutoTransition: true, 
                     cancellationToken);
+
+                if (refreshedInstance is { IsCompleted: false })
+                {
+                    // Check for delay transition and execution
+                    await ScheduleTransitionsForLaterExecutionAsync(
+                        context.Workflow,
+                        refreshedInstance,
+                        context,
+                        cancellationToken);
+                }
+                
             }
         }
 
@@ -242,14 +262,15 @@ public sealed class StateMachineExecutor(
             cancellationToken);
     }
 
-    private async Task InstanceStatusHandleAsync(
+    public async Task InstanceStatusHandleAsync(
         Instance instance,
         State targetState,
         Transition transition,
         Definitions.Workflow workflow,
         CancellationToken cancellationToken = default)
     {
-        instance = await instanceRepository.GetActiveAsync(instance.Id, cancellationToken);
+        // Refresh instance to get latest status before processing
+        instance = await instanceRefreshStrategy.GetLatestInstanceAsync(instance.Id, cancellationToken) ?? instance;
         if (targetState.StateType == StateType.Finish)
         {
             // Complete the instance
@@ -262,8 +283,10 @@ public sealed class StateMachineExecutor(
         }
         else
         {
-            instance.SetStatusBasedOnState();
-            await instanceRepository.UpdateStatusAsync(instance, cancellationToken);
+            if (transition.TriggerType == TriggerType.Manual && instance.TrySetStatusBasedOnState())
+            {
+                await instanceRepository.UpdateStatusAsync(instance, cancellationToken);
+            }
         }
     }
 

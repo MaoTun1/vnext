@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using BBT.Workflow.Runtime;
 using Microsoft.Extensions.Logging;
 using ExecutionContext = BBT.Workflow.Shared.ExecutionContext;
+#pragma warning disable CS8603 // Possible null reference return.
 
 namespace BBT.Workflow.Execution.Strategies;
 
@@ -99,7 +100,6 @@ public sealed class SyncTransitionStrategy(
         await operation();
 
         // Return the fresh instance from database to ensure caller gets the latest correlations
-        return instance;
-        //await instanceRepository.GetAsync(instance.Id, true, cancellationToken);
+        return await instanceRepository.FindByIdAsReadOnlyAsync(instance.Id, cancellationToken);
     }
 }

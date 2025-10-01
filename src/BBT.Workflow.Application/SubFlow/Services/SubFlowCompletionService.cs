@@ -10,6 +10,7 @@ using BBT.Workflow.Scripting;
 using BBT.Workflow.Schemas;
 using Microsoft.Extensions.Logging;
 using BBT.Workflow.ExceptionHandling;
+using BBT.Workflow.Execution.Services;
 
 namespace BBT.Workflow.SubFlow;
 
@@ -25,7 +26,8 @@ public sealed class SubFlowCompletionService(
     IRuntimeInfoProvider runtimeInfoProvider,
     IGuidGenerator guidGenerator,
     ILogger<SubFlowCompletionService> logger,
-    IStateMachineExecutor stateMachineExecutor)
+    IStateMachineExecutor stateMachineExecutor,
+    IInstanceRefreshStrategy instanceRefreshStrategy)
     : ApplicationService(serviceProvider), ISubFlowCompletionService
 {
     /// <inheritdoc />
@@ -181,7 +183,7 @@ public sealed class SubFlowCompletionService(
             parentWorkflow,
             await scriptContextBuilder.BuildAsync(cancellationToken),
             cancellationToken);
-
+        
         // Get fresh instance because auto transition runs in separate scope
         parentInstance = await instanceRepository.GetActiveAsync(parentInstance.Id, cancellationToken);
         if(parentInstance.TryActivateIfBusyWithoutSubFlow())
@@ -199,7 +201,7 @@ public sealed class SubFlowCompletionService(
     /// <param name="cancellationToken">Cancellation token</param>
     private async Task ProcessSubFlowOutputMappingAsync(
         Instance parentInstance,
-        Definitions.State parentState,
+        State parentState,
         ScriptContext scriptContext,
         CancellationToken cancellationToken)
     {
@@ -285,12 +287,21 @@ public sealed class SubFlowCompletionService(
             await stateMachineExecutor.CheckAndExecuteAutomaticTransitionsAsync(parentWorkflow, parentInstance,
                 cancellationToken);
             
-            await stateMachineExecutor.ScheduleTransitionsForLaterExecutionAsync(
-                parentWorkflow, 
-                parentInstance,
-                scriptContext,
+            // Refresh instance only if needed after auto transitions
+            var refreshedInstance = await instanceRefreshStrategy.RefreshIfNeededAsync(
+                parentInstance, 
+                afterAutoTransition: true, 
                 cancellationToken);
-            
+
+            if (refreshedInstance is { IsCompleted: false })
+            {
+                await stateMachineExecutor.ScheduleTransitionsForLaterExecutionAsync(
+                    parentWorkflow,
+                    refreshedInstance,
+                    scriptContext,
+                    cancellationToken);
+            }
+
             logger.LogInformation(
                 "Successfully resumed automatic processes for parent instance {ParentInstanceId}",
                 parentInstance.Id);

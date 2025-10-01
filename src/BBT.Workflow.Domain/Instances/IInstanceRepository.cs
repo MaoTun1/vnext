@@ -11,6 +11,9 @@ public interface IInstanceRepository : IRepository<Instance, Guid>
     Task<Instance?> FindByKeyAsReadOnlyAsync(string key,
         CancellationToken cancellationToken = default);
 
+    Task<Instance?> FindByIdAsReadOnlyAsync(Guid id,
+        CancellationToken cancellationToken = default);
+
     Task<Instance> GetActiveAsync(Guid id, CancellationToken cancellationToken = default);
     Task<List<InstanceAndDataModel>> GetActiveDataListAsync(CancellationToken cancellationToken = default);
 

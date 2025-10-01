@@ -1,6 +1,5 @@
 using BBT.Workflow.Definitions;
 using BBT.Workflow.ExceptionHandling;
-using BBT.Workflow.Execution.StateMachine;
 using BBT.Workflow.Instances;
 using BBT.Workflow.States;
 using Microsoft.Extensions.DependencyInjection;
@@ -64,7 +63,7 @@ public sealed class AutoTransitionService(
                 // This avoids circular dependency since we're not injecting it in constructor
                 using var scope = serviceProvider.CreateScope();
                 var workflowExecutionService = scope.ServiceProvider.GetRequiredService<IWorkflowExecutionService>();
-                
+
                 await workflowExecutionService.ExecuteTransitionAsync(
                     instance.Id,
                     transition.Key,
@@ -73,7 +72,7 @@ public sealed class AutoTransitionService(
 
                 // If we reach here, the transition was successful
                 anySuccess = true;
-                
+
                 logger.LogInformation(
                     "AutoTransition succeeded. InstanceId={InstanceId}, Transition={TransitionKey}",
                     instance.Id, transition.Key);
@@ -86,14 +85,16 @@ public sealed class AutoTransitionService(
                 // Operation was cancelled, re-throw to propagate cancellation
                 throw;
             }
+            catch (TransitionRuleFailedException)
+            {
+                // Continue to next transition
+            }
             catch (Exception ex)
             {
                 logger.LogWarning(ex,
                     "AutoTransition failed. InstanceId={InstanceId}, Transition={TransitionKey}. Trying next transition.",
                     instance.Id, transition.Key);
-
-                // Continue to next transition
-                continue;
+                throw;
             }
         }
 
