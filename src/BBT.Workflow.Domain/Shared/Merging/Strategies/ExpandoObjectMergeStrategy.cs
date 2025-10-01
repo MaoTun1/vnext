@@ -36,16 +36,10 @@ public class ExpandoObjectMergeStrategy : IMergeStrategy
 
         foreach (var kvp in sourceDict)
         {
-            if (targetDict.TryGetValue(kvp.Key, out var existingValue))
-            {
-                // Key exists - merge values recursively
-                targetDict[kvp.Key] = ObjectMerger.MergeValues(existingValue, kvp.Value);
-            }
-            else
-            {
-                // Add new property
-                targetDict[kvp.Key] = kvp.Value;
-            }
+            targetDict[kvp.Key] =
+                targetDict.TryGetValue(kvp.Key, out var existingValue)
+                    ? ObjectMerger.MergeValues(existingValue, kvp.Value)
+                    : kvp.Value;
         }
 
         return target;

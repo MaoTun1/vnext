@@ -133,9 +133,9 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
         if (!match.Success)
             return currentVersion;
 
-        var major = int.Parse(match.Groups[1].Value);
-        var minor = int.Parse(match.Groups[2].Value);
-        var patch = int.Parse(match.Groups[3].Value);
+        int.TryParse(match.Groups[1].Value, out var major);
+        int.TryParse(match.Groups[2].Value, out var minor);
+        int.TryParse(match.Groups[3].Value, out var patch);
 
         return versionStrategy.Code switch
         {

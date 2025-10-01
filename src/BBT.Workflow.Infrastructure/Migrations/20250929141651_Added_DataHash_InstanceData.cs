@@ -1,8 +1,6 @@
 ﻿using BBT.Workflow.Data;
 using Microsoft.EntityFrameworkCore.Migrations;
 
-#nullable disable
-
 namespace BBT.Workflow.Migrations
 {
     /// <inheritdoc />
