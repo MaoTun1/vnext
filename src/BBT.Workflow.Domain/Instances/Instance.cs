@@ -83,9 +83,14 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
 
     public bool IsBusy => Status.Equals(InstanceStatus.Busy);
     public bool IsActive => Status.Equals(InstanceStatus.Active);
-    public bool IsSubFlow => this.ToFlowType().Equals(WorkflowType.SubFlow);
-    public bool IsSubItem => this.ToFlowType().Equals(WorkflowType.SubFlow) || this.ToFlowType().Equals(WorkflowType.SubProcess);
-    public bool IsActiveSubFlow => _childCorrelations.Any(p => p.IsCompleted && p.SubFlowType.Equals(SubFlowType.SubFlow));
+    public bool IsSubFlow => this.ToFlowType() == WorkflowType.SubFlow;
+
+    public bool IsSubItem => this.ToFlowType() == WorkflowType.SubFlow ||
+                             this.ToFlowType() == WorkflowType.SubProcess;
+
+    public bool HasActiveSubFlow =>
+        _childCorrelations.Any(p => !p.IsCompleted && p.SubFlowType.Equals(SubFlowType.SubFlow));
+
     public TimeSpan? Duration { get; private set; }
     public List<string> Tags { get; private set; }
 
@@ -169,6 +174,9 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// </summary>
     public void Busy()
     {
+        if(IsCompleted)
+            return;
+        
         Status = InstanceStatus.Busy;
     }
 
@@ -178,21 +186,60 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// </summary>
     public void Active()
     {
+        if(IsCompleted)
+            return;
+        
         Status = InstanceStatus.Active;
     }
 
-    public void SetToActiveOrBusyBasedOnSubFlow()
+    /// <summary>
+    /// Sets the instance status based on its completion and active subflow state.
+    /// This encapsulates the business logic for determining whether an instance should be Active or Busy.
+    /// </summary>
+    public bool TrySetStatusBasedOnState()
     {
-        if (IsCompleted) 
-            return;
-            
-        if (IsActiveSubFlow)
+        if (IsCompleted)
+        {
+            return false;
+        }
+
+        if (HasActiveSubFlow)
         {
             Busy();
-            return;
+            return true;
         }
-        
-        Active();
+
+        if (IsBusy)
+        {
+            Active();
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Sets the parent instance status to Active if it's currently Busy but has no active subflows.
+    /// This is typically used when a subflow completes and the parent should return to Active state.
+    /// </summary>
+    public bool TryActivateIfBusyWithoutSubFlow()
+    {
+        if (IsBusy && !HasActiveSubFlow)
+        {
+            Active();
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Determines whether this instance should publish a completion event.
+    /// This is typically true for SubItems (SubFlow or SubProcess) that have completed.
+    /// </summary>
+    public bool ShouldPublishCompletionEvent()
+    {
+        return IsSubItem && IsCompleted;
     }
 
     public void AddCorrelation(InstanceCorrelation correlation)
@@ -249,14 +296,32 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
 
     public InstanceData AddDataWithVersion(Guid id, JsonData inputData, string version)
     {
-        var newData = new InstanceData(
-            id,
-            Id,
-            version,
-            inputData, true
-        );
-        _dataList.Add(newData);
-        return newData;
+        lock (_dataListLock)
+        {
+            var latestData = _dataList.OrderByDescending(x => x, InstanceDataVersionComparer.Instance).FirstOrDefault();
+
+            // If we have existing data, check if the new data is different
+            if (latestData?.HasSameData(inputData) == true)
+            {
+                // Data hasn't changed, return the existing latest data
+                return latestData;
+            }
+
+            // Mark previous latest as not latest
+            if (latestData != null)
+            {
+                latestData.MarkAsNotLatest();
+            }
+
+            var newData = new InstanceData(
+                id,
+                Id,
+                version,
+                inputData, true
+            );
+            _dataList.Add(newData);
+            return newData;
+        }
     }
 
     public InstanceData AddData(Guid id, JsonData inputData, VersionStrategy? versionStrategy = null)
@@ -264,6 +329,14 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         lock (_dataListLock)
         {
             var lastData = _dataList.LastOrDefault();
+
+            // If we have existing data, check if the new data is different
+            if (lastData?.HasSameData(inputData) == true)
+            {
+                // Data hasn't changed, return the existing data
+                return lastData;
+            }
+
             InstanceData newData = lastData is null
                 ? new InstanceData(
                     id,
@@ -293,7 +366,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
             if (exactMatch != null)
                 return exactMatch;
 
-            // Partial versiyon: 1.0 → tüm 1.0.x versiyonları içinde en büyük olanı bul
+            // Partial version: 1.0 → find the highest version among all 1.0.x versions
             var match = Regex.Match(version, @"^(\d+)\.(\d+)$");
             if (match.Success)
             {

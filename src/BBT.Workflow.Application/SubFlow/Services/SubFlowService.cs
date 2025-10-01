@@ -96,7 +96,7 @@ public sealed class SubFlowService(
                 [DomainConsts.MetaDataKeys.Flow] = workflow.Key,
                 [DomainConsts.MetaDataKeys.Version] = workflow.Version,
                 [DomainConsts.MetaDataKeys.State] = targetState.Key,
-                [DomainConsts.MetaDataKeys.SubType] = subFlowConfig.Type.Code
+                [DomainConsts.MetaDataKeys.FlowType] = subFlowConfig.Type.Code
             }
         };
 
@@ -108,20 +108,14 @@ public sealed class SubFlowService(
                 createInstanceInput.Key = inputMappingResult.Key;
             }
 
-            if (inputMappingResult.Tags?.Length > 0)
+            if (!inputMappingResult.Tags.IsNullOrEmpty())
             {
                 var existingTags = createInstanceInput.Tags?.ToList() ?? new List<string>();
                 existingTags.AddRange(inputMappingResult.Tags);
                 createInstanceInput.Tags = existingTags.ToArray();
             }
         }
-
-        // TODO: will be removed
-        // var sync = Convert.ToBoolean(parentInstance.MetaData[DomainConsts.MetaDataKeys.Sync]!.ToString());
-        // if (subFlowConfig.Type.Equals(SubFlowType.SubProcess))
-        // {
-        //     sync = false;
-        // }
+        
         var subFlowStartInput = new StartInstanceInput(
             subFlowConfig.Process.Domain,
             subFlowConfig.Process.Key,
@@ -148,9 +142,13 @@ public sealed class SubFlowService(
             subFlowConfig.Process.Version);
 
         parentInstance.AddCorrelation(correlation);
-        parentInstance.Busy();
-        await instanceRepository.UpdateAsync(parentInstance, true, cancellationToken);
 
+        if (subFlowConfig.Type.Equals(SubFlowType.SubFlow))
+        {
+            parentInstance.Busy();
+            await instanceRepository.UpdateAsync(parentInstance, true, cancellationToken);
+        }
+       
         await remoteInstanceCommandAppService.StartSubAsync(subFlowStartInput, cancellationToken);
     }
 

@@ -48,6 +48,70 @@ public sealed class UtilityController(
         return Ok(response.Data);
     }
     
+    
+    [ApiExplorerSettings(IgnoreApi = true)]
+    [HttpGet("{domain}/workflows/{workflow}/instances/{instance}/transitions/sysGetView")]
+    public async Task<IActionResult> GetAvailableSysGetViewAsync(
+        [FromRoute] string domain,
+        [FromRoute] string workflow,
+        [FromRoute] string instance,
+        [FromQuery] string? version,
+        CancellationToken cancellationToken = default)
+    {
+        var input = new GetAvailableSysGetViewInput
+        {
+            Domain = domain,
+            Workflow = workflow,
+            Instance = instance,
+            Version = version
+        };
+
+        var response = await queryAppService.GetAvailableSysGetViewAsync(input, cancellationToken);
+        return Ok(response.Data);
+    }
+    
+    [ApiExplorerSettings(IgnoreApi = true)]
+    [HttpGet("{domain}/workflows/{workflow}/instances/{instance}/transitions/items")]
+    public async Task<IActionResult> GetTransitionItemsAsync(
+        [FromRoute] string domain,
+        [FromRoute] string workflow,
+        [FromRoute] string instance,
+        [FromQuery] string? version,
+        CancellationToken cancellationToken = default)
+    {
+        var input = new GetTransitionItemsInput
+        {
+            Domain = domain,
+            Workflow = workflow,
+            Instance = instance,
+            Version = version
+        };
+
+        var response = await queryAppService.GetTransitionItemsAsync(input, cancellationToken);
+        return Ok(response.Data);
+    }
+    
+    [ApiExplorerSettings(IgnoreApi = true)]
+    [HttpGet("{domain}/workflows/{workflow}/instances/{instance}/correlations/active")]
+    public async Task<IActionResult> GetActiveCorrelationsAsync(
+        [FromRoute] string domain,
+        [FromRoute] string workflow,
+        [FromRoute] string instance,
+        [FromQuery] string? version,
+        CancellationToken cancellationToken = default)
+    {
+        var input = new GetActiveCorrelationsInput
+        {
+            Domain = domain,
+            Workflow = workflow,
+            Instance = instance,
+            Version = version
+        };
+
+        var response = await queryAppService.GetActiveCorrelationsAsync(input, cancellationToken);
+        return Ok(response.Data);
+    }
+    
     /// <summary>
     /// Handles flow completion events from subflows.
     /// This endpoint receives notifications when a subflow completes and triggers

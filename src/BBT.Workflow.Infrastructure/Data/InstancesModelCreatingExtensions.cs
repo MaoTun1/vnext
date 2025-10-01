@@ -100,6 +100,11 @@ public static class InstancesModelCreatingExtensions
             b.Property(p => p.ETag)
                 .IsRequired()
                 .HasMaxLength(WorkflowConstants.MaxETagLength);
+            
+            b.Property(p => p.DataHash)
+                .IsRequired()
+                .HasDefaultValue("99914b932bd37a50b983c5e7c90ae93b") // Default Value: {}
+                .HasMaxLength(WorkflowConstants.MaxDataHashLength);
 
             b.OwnsOne(p => p.Data, d =>
             {

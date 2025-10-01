@@ -12,6 +12,7 @@ public class WorkflowConstants
     public const int MaxFlowLength = 100;
     public const int MaxDurationLength = 100;
     public const int MaxETagLength = 26;
+    public const int MaxDataHashLength = 40;
     public const int MaxTimerResetLength = 26;
 }
 

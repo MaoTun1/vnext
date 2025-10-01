@@ -95,4 +95,26 @@ public sealed class GetInstanceHistoryInput : IHasDomain
     /// Extensions requested for data enrichment
     /// </summary>
     public string[]? Extension { get; set; }
+}
+
+/// <summary>
+/// Input for retrieving instance data (attributes only)
+/// </summary>
+public sealed class GetInstanceDataInput : IHasDomain
+{
+    [Required]
+    [StringLength(WorkflowConstants.MaxDomainLength)]
+    public string Domain { get; set; } = string.Empty;
+
+    [Required]
+    [StringLength(WorkflowConstants.MaxFlowLength)]
+    public string Workflow { get; set; } = string.Empty;
+
+    [Required]
+    public string Instance { get; set; } = string.Empty;
+
+    /// <summary>
+    /// ETag value for conditional requests (If-None-Match header)
+    /// </summary>
+    public string? IfNoneMatch { get; set; }
 } 

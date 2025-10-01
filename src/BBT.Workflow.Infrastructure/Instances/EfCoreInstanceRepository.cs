@@ -8,7 +8,6 @@ using BBT.Workflow.Runtime;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using System.Text.Json;
 
 namespace BBT.Workflow.Instances;
 
@@ -129,16 +128,14 @@ public sealed class EfCoreInstanceRepository(
         string key,
         CancellationToken cancellationToken = default)
     {
-        return await (await GetDbSetAsync())
-            .Include(i => i.DataList)
+        return await (await WithDetailsAsync())
             .FirstOrDefaultAsync(
                 p => p.Key == key, cancellationToken);
     }
 
     public async Task<Instance?> FindByKeyAsReadOnlyAsync(string key, CancellationToken cancellationToken = default)
     {
-        return await (await GetDbSetAsync())
-            .Include(i => i.DataList)
+        return await (await WithDetailsAsync())
             .AsNoTracking()
             .FirstOrDefaultAsync(
                 p => p.Key == key, cancellationToken);
@@ -148,12 +145,18 @@ public sealed class EfCoreInstanceRepository(
         Guid id,
         CancellationToken cancellationToken = default)
     {
-        return await (await GetDbSetAsync())
-            .Include(i => i.DataList)
+        return await (await WithDetailsAsync())
             .FirstOrDefaultAsync(
                 p => p.Id == id, cancellationToken);
     }
 
+    public async Task<Instance?> FindByIdAsReadOnlyAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        return await (await WithDetailsAsync())
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                p => p.Id == id, cancellationToken);
+    }
 
     public async Task<InstanceAndDataModel?> FindActiveDataAsync(string key, string version,
         CancellationToken cancellationToken = default)
@@ -278,7 +281,7 @@ public sealed class EfCoreInstanceRepository(
         return query;
     }
 
-    public async Task<Definitions.PaginationResult<Instance>> GetPagedResultsAsync(
+    public async Task<PaginationResult<Instance>> GetPagedResultsAsync(
         int page,
         int pageSize,
         string route,
@@ -286,7 +289,7 @@ public sealed class EfCoreInstanceRepository(
         IQueryable<Instance>? instance = null,
         CancellationToken cancellationToken = default)
     {
-        var query = instance ?? (await base.GetQueryableAsync()).Include(i => i.DataList);
+        var query = instance ?? (await GetQueryableAsync()).Include(i => i.DataList);
         return query.Paginate(page, pageSize, route, configuration, queryParams);
     }
 
@@ -295,10 +298,15 @@ public sealed class EfCoreInstanceRepository(
         var context = await GetDbContextAsync();
         await context.Instances
             .Where(p => p.Id == instance.Id)
-            .ExecuteUpdateAsync(sp =>
-                    sp.SetProperty(p => p.Status, instance.Status),
-                cancellationToken
-            );
+            .ExecuteUpdateAsync(s => s
+                    .SetProperty(p => p.Status, instance.Status)
+                    .SetProperty(p => p.CompletedAt, instance.IsCompleted 
+                        ? instance.CompletedAt 
+                        : null)
+                    .SetProperty(p => p.Duration, instance.IsCompleted 
+                        ? instance.Duration 
+                        : null),
+                cancellationToken);
     }
 
     public async Task<Instance> GetActiveAsync(Guid id, CancellationToken cancellationToken = default)

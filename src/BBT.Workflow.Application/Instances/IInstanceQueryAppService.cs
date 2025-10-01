@@ -31,4 +31,40 @@ public interface IInstanceQueryAppService : IApplicationService
     Task<InstanceServiceResponse<GetAvailableTransitionOutput>> GetAvailableTransitionsAsync(
         GetAvailableTransitionInput input,
         CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Retrieves only the instance data (attributes) with optional ETag support
+    /// </summary>
+    Task<InstanceServiceResult<GetInstanceDataOutput>> GetInstanceDataAsync(
+        GetInstanceDataInput input,
+        CancellationToken cancellationToken = default);
+    
+    
+    /// <summary>
+    /// Retrieves available transitions with system view information including href links
+    /// </summary>
+    Task<InstanceServiceResponse<GetAvailableSysGetViewOutput>> GetAvailableSysGetViewAsync(
+        GetAvailableSysGetViewInput input,
+        CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Retrieves transition items for an instance
+    /// </summary>
+    Task<InstanceServiceResponse<GetTransitionItemsOutput>> GetTransitionItemsAsync(
+        GetTransitionItemsInput input,
+        CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Retrieves active correlations for an instance
+    /// </summary>
+    Task<InstanceServiceResponse<GetActiveCorrelationsOutput>> GetActiveCorrelationsAsync(
+        GetActiveCorrelationsInput input,
+        CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Retrieves the view for an instance based on current state and available transitions
+    /// </summary>
+    Task<InstanceServiceResponse<GetViewOutput>> GetViewAsync(
+        GetViewInput input,
+        CancellationToken cancellationToken = default);
 } 

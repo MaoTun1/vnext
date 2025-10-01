@@ -1,9 +1,11 @@
+using System.Collections;
 using System.Dynamic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
+using BBT.Workflow.Shared.Merging;
 
 namespace BBT.Workflow.Scripting;
 
@@ -59,9 +61,9 @@ public sealed class ScriptResponse
     /// Tags can be used for workflow analytics, debugging, conditional processing, or organizational purposes.
     /// </summary>
     /// <value>Array of string tags. Initialize as empty array if no tags are needed.</value>
-    public string[] Tags { get; set; }
+    public string[] Tags { get; set; } = Array.Empty<string>();
 }
-
+    
 /// <summary>
 /// Standardized task execution response that provides consistent structure for all task types.
 /// This model includes execution status, data, metadata, and error information.
@@ -358,14 +360,7 @@ public sealed class ScriptContext
             return;
         }
 
-        if (Body == null)
-        {
-            Body = newExpando;
-        }
-        else
-        {
-            Body = MergeExpandoObjects(Body, newExpando);
-        }
+        Body = Body == null ? newExpando : MergeExpandoObjects(Body, newExpando);
     }
 
     /// <summary>
@@ -382,143 +377,14 @@ public sealed class ScriptContext
 
         foreach (var kvp in sourceDict)
         {
-            if (targetDict.ContainsKey(kvp.Key))
-            {
-                var mergedValue = MergeValues(targetDict[kvp.Key], kvp.Value);
-                targetDict[kvp.Key] = mergedValue;
-            }
-            else
-            {
-                // Add new property
-                targetDict[kvp.Key] = kvp.Value;
-            }
+            targetDict[kvp.Key] = targetDict.TryGetValue(kvp.Key, out var existingValue)
+            ? ObjectMerger.MergeValues(existingValue, kvp.Value)
+            : kvp.Value;
         }
 
         return target;
     }
-
-    /// <summary>
-    /// Recursively merges two values of any type, handling ExpandoObjects, JsonElements, arrays, and other complex types.
-    /// </summary>
-    /// <param name="targetValue">The target value to merge into.</param>
-    /// <param name="sourceValue">The source value to merge from.</param>
-    /// <returns>The merged value.</returns>
-    private static object? MergeValues(object? targetValue, object? sourceValue)
-    {
-        // If source is null, keep target
-        if (sourceValue == null)
-        {
-            return targetValue;
-        }
-
-        // If target is null, use source
-        if (targetValue == null)
-        {
-            return sourceValue;
-        }
-
-        // Both are ExpandoObjects - merge recursively
-        if (targetValue is ExpandoObject targetExpando && sourceValue is ExpandoObject sourceExpando)
-        {
-            return MergeExpandoObjects(targetExpando, sourceExpando);
-        }
-
-        // Handle JsonElement objects by converting them to ExpandoObjects first
-        if (targetValue is JsonElement targetJsonElement && sourceValue is JsonElement sourceJsonElement)
-        {
-            if (targetJsonElement.ValueKind == JsonValueKind.Object &&
-                sourceJsonElement.ValueKind == JsonValueKind.Object)
-            {
-                var targetExpandoFromJson =
-                    JsonSerializer.Deserialize<ExpandoObject>(targetJsonElement.GetRawText(), JsonScriptBodyOptions);
-                var sourceExpandoFromJson =
-                    JsonSerializer.Deserialize<ExpandoObject>(sourceJsonElement.GetRawText(), JsonScriptBodyOptions);
-
-                if (targetExpandoFromJson != null && sourceExpandoFromJson != null)
-                {
-                    return MergeExpandoObjects(targetExpandoFromJson, sourceExpandoFromJson);
-                }
-            }
-        }
-
-        // Handle mixed JsonElement and ExpandoObject
-        if (targetValue is JsonElement targetJson && sourceValue is ExpandoObject sourceExp)
-        {
-            if (targetJson.ValueKind == JsonValueKind.Object)
-            {
-                var targetExpandoFromJson =
-                    JsonSerializer.Deserialize<ExpandoObject>(targetJson.GetRawText(), JsonScriptBodyOptions);
-                if (targetExpandoFromJson != null)
-                {
-                    return MergeExpandoObjects(targetExpandoFromJson, sourceExp);
-                }
-            }
-        }
-
-        if (targetValue is ExpandoObject targetExp && sourceValue is JsonElement sourceJson)
-        {
-            if (sourceJson.ValueKind == JsonValueKind.Object)
-            {
-                var sourceExpandoFromJson =
-                    JsonSerializer.Deserialize<ExpandoObject>(sourceJson.GetRawText(), JsonScriptBodyOptions);
-                if (sourceExpandoFromJson != null)
-                {
-                    return MergeExpandoObjects(targetExp, sourceExpandoFromJson);
-                }
-            }
-        }
-
-        // Handle arrays - concatenate or merge based on content
-        if (targetValue is JsonElement targetArray && sourceValue is JsonElement sourceArray)
-        {
-            if (targetArray.ValueKind == JsonValueKind.Array && sourceArray.ValueKind == JsonValueKind.Array)
-            {
-                var targetList = targetArray.EnumerateArray().ToList();
-                var sourceList = sourceArray.EnumerateArray().ToList();
-
-                // For arrays, we append source items to target
-                var mergedArray = new List<JsonElement>();
-                mergedArray.AddRange(targetList);
-                mergedArray.AddRange(sourceList);
-
-                // Convert back to JsonElement
-                var mergedJson = JsonSerializer.Serialize(mergedArray.Select(e => e.GetRawText()).ToArray());
-                return JsonSerializer.Deserialize<JsonElement>(mergedJson);
-            }
-        }
-
-        // Handle Dictionary<string, object> types that might come from different serialization contexts
-        if (targetValue is IDictionary<string, object?> targetDict &&
-            sourceValue is IDictionary<string, object?> sourceDict)
-        {
-            var result = new ExpandoObject() as IDictionary<string, object?>;
-
-            // Add all target properties
-            foreach (var kvp in targetDict)
-            {
-                result[kvp.Key] = kvp.Value;
-            }
-
-            // Merge source properties
-            foreach (var kvp in sourceDict)
-            {
-                if (result.ContainsKey(kvp.Key))
-                {
-                    result[kvp.Key] = MergeValues(result[kvp.Key], kvp.Value);
-                }
-                else
-                {
-                    result[kvp.Key] = kvp.Value;
-                }
-            }
-
-            return (ExpandoObject)result;
-        }
-
-        // For all other types, source takes precedence
-        return sourceValue;
-    }
-
+    
     private ScriptContext()
     {
     }

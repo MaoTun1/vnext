@@ -15,13 +15,13 @@ public class StateTransitionPolicy(IRuleEngine<State> ruleEngine)
         {
             rules.Add(new FromStateRule(transition));
         }
-
+        
         if (transition.AvailableIn.Any())
         {
             rules.Add(new AvailableInRule(transition));
         }
 
-        rules.Add(new ManualTriggerRule(transition));
+        rules.Add(new ManualTriggerRule(transition, executionContext));
         
         rules.Add(new TransitionAuthorizationRule(transition, executionContext));
 
