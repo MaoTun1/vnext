@@ -378,25 +378,12 @@ public sealed class ScriptContext
         foreach (var kvp in sourceDict)
         {
             targetDict[kvp.Key] = targetDict.TryGetValue(kvp.Key, out var existingValue)
-            ? MergeValues(existingValue, kvp.Value)
+            ? ObjectMerger.MergeValues(existingValue, kvp.Value)
             : kvp.Value;
         }
 
         return target;
     }
-
-    /// <summary>
-    /// Recursively merges two values of any type, handling ExpandoObjects, JsonElements, arrays, and other complex types.
-    /// Uses the unified merge strategy system for consistent merging behavior.
-    /// </summary>
-    /// <param name="targetValue">The target value to merge into.</param>
-    /// <param name="sourceValue">The source value to merge from.</param>
-    /// <returns>The merged value.</returns>
-    private static object? MergeValues(object? targetValue, object? sourceValue)
-    {
-        return ObjectMerger.MergeValues(targetValue, sourceValue);
-    }
-
     
     private ScriptContext()
     {
