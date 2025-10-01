@@ -85,8 +85,11 @@ public sealed class AutoTransitionService(
                 // Operation was cancelled, re-throw to propagate cancellation
                 throw;
             }
-            catch (TransitionRuleFailedException)
+            catch (TransitionRuleFailedException ex)
             {
+                logger.LogWarning(ex,
+                    "AutoTransition transition rule failed. InstanceId={InstanceId}, Transition={TransitionKey}. Continuing to next transition.",
+                    instance.Id, transition.Key);
                 // Continue to next transition
             }
             catch (Exception ex)

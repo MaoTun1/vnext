@@ -46,14 +46,9 @@ public class CollectionMergeStrategy : IMergeStrategy
             // Merge source properties
             foreach (var kvp in sourceDict)
             {
-                if (result.ContainsKey(kvp.Key))
-                {
-                    result[kvp.Key] = ObjectMerger.MergeValues(result[kvp.Key], kvp.Value);
-                }
-                else
-                {
-                    result[kvp.Key] = kvp.Value;
-                }
+                result[kvp.Key] = result.TryGetValue(kvp.Key, out var value)
+                    ? ObjectMerger.MergeValues(value, kvp.Value)
+                    : kvp.Value;
             }
 
             return (ExpandoObject)result;
@@ -64,7 +59,7 @@ public class CollectionMergeStrategy : IMergeStrategy
         {
             var targetList = target.Cast<object>().ToList();
             var sourceList = source.Cast<object>().ToList();
-            
+
             return PerformFullDeepMerge(targetList, sourceList);
         }
         catch
@@ -109,5 +104,4 @@ public class CollectionMergeStrategy : IMergeStrategy
 
         return mergedItems;
     }
-
 }
