@@ -38,12 +38,14 @@ public sealed class Transition : IHasKey
         TriggerType triggerType,
         VersionStrategy versionStrategy,
         List<LanguageLabel> labels,
-        List<OnExecuteTask> onExecutionTasks
+        List<OnExecuteTask> onExecutionTasks,
+         Reference view
     ) : this(key, from, target, triggerType)
     {
         VersionStrategy = versionStrategy;
         this.labels = labels ?? [];
         this.onExecutionTasks = onExecutionTasks ?? [];
+        this.view = view;
     }
 
     /// <summary>
@@ -80,6 +82,8 @@ public sealed class Transition : IHasKey
 
     [JsonInclude] [JsonPropertyName("onExecutionTasks")]
     private List<OnExecuteTask> onExecutionTasks = new();
+        [JsonInclude] [JsonPropertyName("view")]
+    public Reference? view  { get; private set; }
 
     /// <summary>
     /// Language
@@ -90,7 +94,8 @@ public sealed class Transition : IHasKey
     /// <summary>
     /// Transition View
     /// </summary>
-    public IReference? View { get; private set; }
+     [JsonIgnore]
+    public Reference? View { get; private set; }
 
     /// <summary>
     /// On Execution Tasks
@@ -137,7 +142,7 @@ public sealed class Transition : IHasKey
 
     public void SetView(IReference reference)
     {
-        View = reference;
+        View = reference.ToReference();
     }
 
     public void AddOnExecutionTask(OnExecuteTask task)

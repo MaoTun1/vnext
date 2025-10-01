@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using BBT.Aether.Application;
 using BBT.Aether.Application.Services;
 using BBT.Aether.Domain.Entities;
@@ -15,7 +16,8 @@ namespace BBT.Workflow.Functions;
 public sealed class FunctionAppService(IServiceProvider serviceProvider,
     ICurrentSchema currentSchema,
     IRuntimeInfoProvider runtimeInfoProvider,
-     IInstanceRepository instanceRepository,
+    IInstanceRepository instanceRepository,
+      IScriptContextFactory scriptContextFactory,
     IComponentCacheStore componentCacheStore, ITaskOrchestrationService taskExecutionService) : ApplicationService(serviceProvider), IFunctionAppService
 {
     public async Task<Dictionary<string, dynamic?>> GetFunctionByFunctionKey(
@@ -43,7 +45,9 @@ public sealed class FunctionAppService(IServiceProvider serviceProvider,
         using (currentSchema.Change(flow))
         {
 
-            Instance? instance = await instanceRepository.FindByKeyAsync(instanceKey, cancellationToken);
+            Instance? instance = Guid.TryParse(instanceKey, out var instanceId)
+            ? await instanceRepository.FindAsync(instanceId, true, cancellationToken)
+            : await instanceRepository.FindByKeyAsync(instanceKey, cancellationToken);
             return await BuildFunctionResponse(instance, key, flow, domain, cancellationToken);
         }
     }
@@ -54,7 +58,7 @@ public sealed class FunctionAppService(IServiceProvider serviceProvider,
         runtimeInfoProvider.Check(domain);
         using (currentSchema.Change(RuntimeSysSchemaInfo.Functions))
         {
-            return await instanceRepository.GetActiveDataListAsync( cancellationToken);
+            return await instanceRepository.GetActiveDataListAsync(cancellationToken);
         }
 
     }
@@ -62,6 +66,7 @@ public sealed class FunctionAppService(IServiceProvider serviceProvider,
        string flow,
        string domain, CancellationToken cancellationToken = default)
     {
+        Dictionary<string, object> response = new Dictionary<string, object>();
         using (currentSchema.Change(flow))
         {
             Function? function = await componentCacheStore.GetFunctionAsync(
@@ -70,20 +75,50 @@ public sealed class FunctionAppService(IServiceProvider serviceProvider,
                        cancellationToken);
             var workflow = await componentCacheStore.GetFlowAsync(domain, flow, null, cancellationToken);
 
-            var scriptContext = new ScriptContext.Builder()
-                        .SetWorkflow(workflow)
-                        .SetInstance(instance!)
-                        .SetRuntime(runtimeInfoProvider)
-                        .Build();
+            // var scriptContext = new ScriptContext.Builder()
+            //             .SetWorkflow(workflow)
+            //             .SetInstance(instance!)
+            //             .SetRuntime(runtimeInfoProvider)
+            //             .Build();
+            var scriptContext = await scriptContextFactory.NewBuilder()
+.WithWorkflow(workflow)
+.WithInstance(instance)
+.WithRuntime(runtimeInfoProvider)
+.WithBody(instance?.LatestData?.Data ?? new JsonData("{}"))
+.BuildAsync(cancellationToken);
             await taskExecutionService.ExecuteAsync(
                     function.GetExecuteTasks(),
                     null,
                     TaskTrigger.Extension,
                     scriptContext,
                     cancellationToken);
-            return scriptContext.TaskResponse;
+            var variableKeyExtension = function.Key.ToVariableName();
+            var variableKeyTask = function.Task.Task.Key.ToVariableName();
+            if (scriptContext.TaskResponse.TryGetValue(variableKeyTask, out var value))
+            {
+                // Try to extract Data from ScriptResponse if available
+                try
+                {
+                    // Try to extract data property from JsonElement
+                    if (value is JsonElement jsonElement && jsonElement.TryGetProperty("data", out var dataProperty))
+                    {
+                        response[variableKeyExtension] = dataProperty;
+                    }
+                    else
+                    {
+                        response[variableKeyExtension] = value!;
+                    }
+                }
+                catch
+                {
+                    // If extraction fails, use the original value
+                    response[variableKeyExtension] = value!;
+                }
+
+            }
+            return response;
         }
     }
-    
+
 
 }

@@ -1,6 +1,12 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Definitions;
+using BBT.Workflow.Runtime;
+using BBT.Workflow.Schemas;
+using BBT.Workflow.States;
+using BBT.Workflow.Caching;
+using BBT.Aether.Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using ExecutionContext = BBT.Workflow.Shared.ExecutionContext;
@@ -41,11 +47,11 @@ public sealed class InstanceController(
             input.Headers = httpContext.Request.Headers.ToDictionary(s => s.Key.ToLower(), s => s.Value.FirstOrDefault()?.ToString());
             input.RouteValues = httpContext.Request.RouteValues.ToDictionary(s => s.Key, s => s.Value?.ToString());
         }
-        
+
         var response = await commandAppService.StartAsync(input, cancellationToken);
         return Ok(response.Data);
     }
-    
+
     [ApiExplorerSettings(IgnoreApi = true)]
     [HttpPost("{domain}/workflows/{workflow}/sub/instances/start")]
     public async Task<IActionResult> StartSubAsync(
@@ -75,7 +81,7 @@ public sealed class InstanceController(
             input.Headers = httpContext.Request.Headers.ToDictionary(s => s.Key.ToLower(), s => s.Value.FirstOrDefault()?.ToString());
             input.RouteValues = httpContext.Request.RouteValues.ToDictionary(s => s.Key, s => s.Value?.ToString());
         }
-        
+
         var response = await commandAppService.StartAsync(input, cancellationToken);
         return Ok(response.Data);
     }
@@ -105,7 +111,7 @@ public sealed class InstanceController(
             input.Headers = httpContext.Request.Headers.ToDictionary(s => s.Key.ToLower(), s => s.Value.FirstOrDefault()?.ToString());
             input.RouteValues = httpContext.Request.RouteValues.ToDictionary(s => s.Key, s => s.Value?.ToString());
         }
-        
+
         var response = await commandAppService.TransitionAsync(
             instanceId,
             transitionKey,
@@ -113,7 +119,7 @@ public sealed class InstanceController(
             cancellationToken);
         return Ok(response.Data);
     }
-
+    
     [HttpGet("{domain}/workflows/{workflow}/instances/{instance}")]
     public async Task<IActionResult> GetInstanceAsync(
         [FromHeader(Name = "If-None-Match")] string? ifNoneMatch,
@@ -148,8 +154,8 @@ public sealed class InstanceController(
         [FromRoute] string workflow,
         [FromQuery] string[]? filter = null,
         [FromQuery] string[]? extension = null,
-        [FromQuery] [Range(1, 1000)] int page = 1,
-        [FromQuery] [Range(1, 100)] int pageSize = 10,
+        [FromQuery][Range(1, 1000)] int page = 1,
+        [FromQuery][Range(1, 100)] int pageSize = 10,
         [FromQuery] string? sort = null,
         CancellationToken cancellationToken = default)
     {
@@ -162,7 +168,7 @@ public sealed class InstanceController(
             Page = page,
             PageSize = pageSize,
             PageUrl = $"{domain}/workflows/{workflow}/instances",
-            
+
             Filter = filter,
             Sort = sort
         };
@@ -190,4 +196,52 @@ public sealed class InstanceController(
         var response = await queryAppService.GetInstanceHistoryAsync(input, cancellationToken);
         return Ok(response.Data);
     }
+    [ApiExplorerSettings(IgnoreApi = true)]
+      [HttpGet("{domain}/workflows/{workflow}/instances/{instance}/data")]
+    public async Task<IActionResult> GetInstanceDataAsync(
+        [FromHeader(Name = "If-None-Match")] string? ifNoneMatch,
+        [FromRoute] string domain,
+        [FromRoute] string workflow,
+        [FromRoute] string instance,
+        CancellationToken cancellationToken = default)
+    {
+        var input = new GetInstanceDataInput
+        {
+            Domain = domain,
+            Workflow = workflow,
+            Instance = instance,
+            IfNoneMatch = ifNoneMatch
+        };
+ 
+        var result = await queryAppService.GetInstanceDataAsync(input, cancellationToken);
+ 
+        if (result.IsNotModified)
+        {
+            return StatusCode(StatusCodes.Status304NotModified);
+        }
+ 
+        return Ok(result.Data);
+    }
+    [ApiExplorerSettings(IgnoreApi = true)]
+    [HttpGet("{domain}/workflows/{workflow}/instances/{instance}/view")]
+    public async Task<IActionResult> GetViewAsync(
+        [FromRoute] string domain,
+        [FromRoute] string workflow,
+        [FromRoute] string instance,
+        [FromQuery] string? version,
+        CancellationToken cancellationToken = default)
+    {
+        var input = new GetViewInput
+        {
+            Domain = domain,
+            Workflow = workflow,
+            Instance = instance,
+            Version = version
+        };
+
+        var response = await queryAppService.GetViewAsync(input, cancellationToken);
+        return Ok(response.Data);
+    }
+
+
 } 

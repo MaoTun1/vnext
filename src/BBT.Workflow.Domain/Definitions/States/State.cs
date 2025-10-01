@@ -18,7 +18,7 @@ public sealed class State : IHasKey
     {
         SetKey(key);
         StateType = stateType;
-
+    
         labels = [];
         onEntries = [];
         onExits = [];
@@ -31,13 +31,15 @@ public sealed class State : IHasKey
         VersionStrategy versionStrategy,
         List<LanguageLabel>? labels,
         List<OnExecuteTask>? onEntries,
-        List<OnExecuteTask>? onExits)
+        List<OnExecuteTask>? onExits,
+         Reference view)
         : this(key, stateType)
     {
         VersionStrategy = versionStrategy;
         this.labels = labels ?? [];
         this.onEntries = onEntries ?? [];
         this.onExits = onExits ?? [];
+        this.view = view;
     }
 
     /// <summary>
@@ -69,6 +71,8 @@ public sealed class State : IHasKey
 
     [JsonInclude] [JsonPropertyName("subFlow")]
     public SubFlow? SubFlow { get; private set; }
+    [JsonInclude] [JsonPropertyName("view")]
+    public Reference? view  { get; private set; }
 
     /// <summary>
     /// Languages
@@ -80,7 +84,7 @@ public sealed class State : IHasKey
     /// State view
     /// </summary>
     [JsonIgnore]
-    public Reference? View { get; private set; }
+    public Reference? View => view?.ToReference();
 
     /// <summary>
     /// Transitions
@@ -131,7 +135,7 @@ public sealed class State : IHasKey
 
     public void SetView(IReference view)
     {
-        View = view.ToReference();
+        view = view.ToReference();
     }
     
     public void SetSubFlow(string type, IReference reference, ScriptCode mapping)
