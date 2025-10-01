@@ -10,6 +10,7 @@ using BBT.Workflow.States;
 using Microsoft.AspNetCore.Http;
 using BBT.Workflow.Instances.Remote;
 using Microsoft.Extensions.Logging;
+using BBT.Workflow.Tasks.Extensions;
 
 namespace BBT.Workflow.Instances;
 
@@ -331,6 +332,9 @@ public sealed class InstanceQueryAppService(
     {
         var flow = await componentCacheStore.GetFlowAsync(domain, workflow, null, cancellationToken);
 
+        // Build the data URL
+        // var dataUrl = BuildDataUrl(domain, workflow, instance);
+
         var response = new GetInstanceOutput
         {
             Id = instance.Id,
@@ -338,7 +342,7 @@ public sealed class InstanceQueryAppService(
             FlowVersion = instanceData?.Version ?? string.Empty,
             Etag = instanceData?.ETag ?? string.Empty,
             Domain = domain,
-            Attributes = instanceData?.Data.JsonElement,
+            // DataUrl = dataUrl,
             Key = instance.Key!,
             Tags = instance.Tags,
         };
@@ -348,8 +352,11 @@ public sealed class InstanceQueryAppService(
             .WithWorkflow(flow)
             .WithInstance(instance)
             .WithRuntime(runtimeInfoProvider)
+            .WithTransition(string.Empty)
             .WithBody(instanceData?.Data ?? new JsonData("{}"))
             .BuildAsync(cancellationToken);
+        
+            
 
         response.Extensions = await instanceExtensionService.ProcessExtensionsAsync(
             extensionRequested,
@@ -359,5 +366,292 @@ public sealed class InstanceQueryAppService(
             cancellationToken);
 
         return response;
+    }
+
+    private string BuildDataUrl(string domain, string workflow, Instance instance)
+    {
+        var httpContext = httpContextAccessor.HttpContext;
+        if (httpContext == null)
+        {
+            return $"/api/v1/{domain}/workflows/{workflow}/instances/{instance.Id}/data";
+        }
+
+        var request = httpContext.Request;
+        var baseUrl = $"{request.Scheme}://{request.Host}";
+        return $"{baseUrl}/api/v1/{domain}/workflows/{workflow}/instances/{instance.Id}/data";
+    }
+
+    public async Task<InstanceServiceResult<GetInstanceDataOutput>> GetInstanceDataAsync(
+        GetInstanceDataInput input,
+        CancellationToken cancellationToken = default)
+    {
+        runtimeInfoProvider.Check(input.Domain);
+        using (currentSchema.Change(input.Workflow))
+        {
+            var instance = await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken);
+            if (instance == null)
+            {
+                throw new EntityNotFoundException(typeof(Instance), input.Instance);
+            }
+
+            // Check ETag for conditional requests
+            if (!string.IsNullOrEmpty(input.IfNoneMatch) &&
+                instance.LatestData != null &&
+                instance.LatestData.ETag.MatchesIfNoneMatch(input.IfNoneMatch))
+            {
+                return InstanceServiceResult<GetInstanceDataOutput>.NotModified();
+            }
+
+            var result = new GetInstanceDataOutput
+            {
+                Attributes = instance.LatestData?.Data.JsonElement,
+                Etag = instance.LatestData?.ETag ?? string.Empty
+            };
+
+            return InstanceServiceResult<GetInstanceDataOutput>.Success(result);
+        }
+    }
+
+
+    public async Task<InstanceServiceResponse<GetAvailableSysGetViewOutput>> GetAvailableSysGetViewAsync(
+        GetAvailableSysGetViewInput input,
+        CancellationToken cancellationToken = default)
+    {
+        runtimeInfoProvider.Check(input.Domain);
+        using (currentSchema.Change(input.Workflow))
+        {
+            var instance = await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken);
+            if (instance == null)
+            {
+                throw new EntityNotFoundException(typeof(Instance), input.Instance);
+            }
+
+            // Get workflow for available transitions
+            var currentWorkflow = await componentCacheStore.GetFlowAsync(
+                input.Domain, 
+                input.Workflow, 
+                input.Version, 
+                cancellationToken);
+
+            // Build instance transition information using shared logic
+            var transitionInfo = await BuildInstanceTransitionInfoAsync(instance, cancellationToken);
+
+            // Check if there are any active SubFlow correlations
+            var activeSubFlowCorrelation = transitionInfo.ActiveCorrelations
+                .Where(c => c.SubFlowType == SubFlowType.SubFlow && !c.IsCompleted)
+                .OrderByDescending(c => c.CorrelationId) // Get the latest active SubFlow
+                .FirstOrDefault();
+
+            (List<string> availableTransitions, string? currentState, InstanceStatus? status) = activeSubFlowCorrelation != null
+                ? await GetSubFlowTransitionsAsync(activeSubFlowCorrelation, instance, currentWorkflow, cancellationToken)
+                : GetMainFlowTransitions(instance, currentWorkflow, transitionInfo);
+
+            // Build transition items with href links
+            var transitionItems = availableTransitions.Select(transitionKey => new TransitionItem
+            {
+                Name = transitionKey,
+                Href = $"/{input.Domain}/workflows/{input.Workflow}/instances/{instance.Id}/transitions/{transitionKey}"
+            }).ToList();
+
+            // Build data href
+            var dataHref = new DataHref
+            {
+                Href = $"/{input.Domain}/workflows/{input.Workflow}/instances/{instance.Id}/data"
+            };
+
+            // Build view href
+            var viewHref = new ViewHref
+            {
+                Href = $"/{input.Domain}/workflows/{input.Workflow}/instances/{instance.Id}/view",
+                LoadData = true
+            };
+
+            // Build active correlations with href links
+            var activeCorrelationHrefs = transitionInfo.ActiveCorrelations.Select(correlation => new ActiveCorrelationHref
+            {
+                CorrelationId = correlation.CorrelationId,
+                ParentState = correlation.ParentState,
+                SubFlowInstanceId = correlation.SubFlowInstanceId,
+                SubFlowType = correlation.SubFlowType,
+                SubFlowDomain = correlation.SubFlowDomain,
+                SubFlowName = correlation.SubFlowName,
+                SubFlowVersion = correlation.SubFlowVersion,
+                IsCompleted = correlation.IsCompleted,
+                Href = $"/{correlation.SubFlowDomain}/workflows/{correlation.SubFlowName}/instances/{correlation.SubFlowInstanceId}/data"
+            }).ToList();
+
+            var result = new GetAvailableSysGetViewOutput
+            {
+                Items = transitionItems,
+                Status = status,
+                CurrentState = currentState,
+                Data = dataHref,
+                View = viewHref,
+                ActiveCorrelations = activeCorrelationHrefs
+            };
+
+            return new InstanceServiceResponse<GetAvailableSysGetViewOutput>(result);
+        }
+    }
+
+    public async Task<InstanceServiceResponse<GetTransitionItemsOutput>> GetTransitionItemsAsync(
+        GetTransitionItemsInput input,
+        CancellationToken cancellationToken = default)
+    {
+        runtimeInfoProvider.Check(input.Domain);
+        using (currentSchema.Change(input.Workflow))
+        {
+            var instance = await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken);
+            if (instance == null)
+            {
+                throw new EntityNotFoundException(typeof(Instance), input.Instance);
+            }
+
+            // Get workflow for available transitions
+            var currentWorkflow = await componentCacheStore.GetFlowAsync(
+                input.Domain, 
+                input.Workflow, 
+                input.Version, 
+                cancellationToken);
+
+            // Build instance transition information using shared logic
+            var transitionInfo = await BuildInstanceTransitionInfoAsync(instance, cancellationToken);
+
+            // Check if there are any active SubFlow correlations
+            var activeSubFlowCorrelation = transitionInfo.ActiveCorrelations
+                .Where(c => c.SubFlowType == SubFlowType.SubFlow && !c.IsCompleted)
+                .OrderByDescending(c => c.CorrelationId) // Get the latest active SubFlow
+                .FirstOrDefault();
+
+            (List<string> availableTransitions, string? currentState, InstanceStatus? status) = activeSubFlowCorrelation != null
+                ? await GetSubFlowTransitionsAsync(activeSubFlowCorrelation, instance, currentWorkflow, cancellationToken)
+                : GetMainFlowTransitions(instance, currentWorkflow, transitionInfo);
+
+            // Build transition items with href links
+            var transitionItems = availableTransitions.Select(transitionKey => new TransitionItem
+            {
+                Name = transitionKey,
+                Href = $"/{input.Domain}/workflows/{input.Workflow}/instances/{instance.Id}/transitions/{transitionKey}"
+            }).ToList();
+
+            var result = new GetTransitionItemsOutput
+            {
+                Items = transitionItems,
+                Status = status,
+                CurrentState = currentState
+            };
+
+            return new InstanceServiceResponse<GetTransitionItemsOutput>(result);
+        }
+    }
+
+    public async Task<InstanceServiceResponse<GetActiveCorrelationsOutput>> GetActiveCorrelationsAsync(
+        GetActiveCorrelationsInput input,
+        CancellationToken cancellationToken = default)
+    {
+        runtimeInfoProvider.Check(input.Domain);
+        using (currentSchema.Change(input.Workflow))
+        {
+            var instance = await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken);
+            if (instance == null)
+            {
+                throw new EntityNotFoundException(typeof(Instance), input.Instance);
+            }
+
+            // Build instance transition information using shared logic
+            var transitionInfo = await BuildInstanceTransitionInfoAsync(instance, cancellationToken);
+
+            // Build active correlations with href links
+            var activeCorrelationHrefs = transitionInfo.ActiveCorrelations.Select(correlation => new ActiveCorrelationHref
+            {
+                CorrelationId = correlation.CorrelationId,
+                ParentState = correlation.ParentState,
+                SubFlowInstanceId = correlation.SubFlowInstanceId,
+                SubFlowType = correlation.SubFlowType,
+                SubFlowDomain = correlation.SubFlowDomain,
+                SubFlowName = correlation.SubFlowName,
+                SubFlowVersion = correlation.SubFlowVersion,
+                IsCompleted = correlation.IsCompleted,
+                Href = $"/{correlation.SubFlowDomain}/workflows/{correlation.SubFlowName}/instances/{correlation.SubFlowInstanceId}/data"
+            }).ToList();
+
+            var result = new GetActiveCorrelationsOutput
+            {
+                ActiveCorrelations = activeCorrelationHrefs,
+                Status = transitionInfo.Status,
+                CurrentState = transitionInfo.CurrentState
+            };
+
+            return new InstanceServiceResponse<GetActiveCorrelationsOutput>(result);
+        }
+    }
+
+    public async Task<InstanceServiceResponse<GetViewOutput>> GetViewAsync(
+        GetViewInput input,
+        CancellationToken cancellationToken = default)
+    {
+        runtimeInfoProvider.Check(input.Domain);
+        using (currentSchema.Change(input.Workflow))
+        {
+            // Get the instance
+            var instance = await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken);
+            if (instance == null)
+            {
+                throw new EntityNotFoundException(typeof(Instance), input.Instance);
+            }
+
+            // Get workflow for available transitions
+            var currentWorkflow = await componentCacheStore.GetFlowAsync(
+                input.Domain, 
+                input.Workflow, 
+                input.Version, 
+                cancellationToken);
+
+            // Get available transitions
+            var availableTransitions = new List<string>();
+            if (instance.Status.Equals(InstanceStatus.Active))
+            {
+                availableTransitions = stateMachineService.AvailableUserTransitionKeys(currentWorkflow, instance);
+            }
+
+            View? view = null;
+
+            // If there's exactly one transition, get its view
+            if (availableTransitions.Count == 1 && !string.IsNullOrEmpty(instance.CurrentState))
+            {
+                var currentState = currentWorkflow.GetState(instance.CurrentState);
+                var transition = currentState.FindTransition(availableTransitions[0]);
+                if (transition?.View != null)
+                {
+                    view = await componentCacheStore.GetViewAsync(
+                        transition.View.Domain,
+                        transition.View.Key,
+                        transition.View.Version,
+                        cancellationToken);
+                }
+            }
+            // If there are multiple transitions or no transitions, get the state view
+            else if (!string.IsNullOrEmpty(instance.CurrentState))
+            {
+                var currentState = currentWorkflow.GetState(instance.CurrentState);
+                if (currentState.View != null)
+                {
+                    view = await componentCacheStore.GetViewAsync(
+                        currentState.View.Domain,
+                        currentState.View.Key,
+                        currentState.View.Version,
+                        cancellationToken);
+                }
+            }
+
+            var result = new GetViewOutput
+            {
+                Content = view?.JsonContent?.RootElement,
+                Type = view?.Type.ToString(),
+                Target = view?.Target.ToString()
+            };
+
+            return new InstanceServiceResponse<GetViewOutput>(result);
+        }
     }
 }

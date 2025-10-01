@@ -4,6 +4,7 @@ using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
 using System.Extensions;
 using System.Text;
+using System.Text.Json;
 using BBT.Workflow.Tasks;
 using BBT.Workflow.Schemas;
 
@@ -156,27 +157,35 @@ public sealed class InstanceExtensionService(
         HashSet<string> executedExtensionKeys,
         CancellationToken cancellationToken)
     {
-        var tasks = coreExtensions
-            .Where(ext => ext.Task != null && ext.ShouldExecute(null, currentScope))
-            .Select(ext => ext.Task);
-
-        if (!tasks.Any()) return;
-
-        await taskExecutionService.ExecuteAsync(
-            tasks,
-            null,
-            TaskTrigger.Extension,
-            scriptContext,
-            cancellationToken);
-
-        // Merge task responses into extension dictionary using extension keys
-        foreach (var extension in coreExtensions)
+        foreach (Extension extension in coreExtensions)
         {
-            var variableKey = extension.Key.ToVariableName();
-            if (scriptContext.TaskResponse.TryGetValue(variableKey, out var value))
+            if (extension.Task != null && extension.ShouldExecute(null, currentScope))
             {
-                responseExtension[variableKey] = value!;
-                executedExtensionKeys.Add(extension.Key); // Track executed extension
+                await taskExecutionService.ExecuteAsync(
+         new List<OnExecuteTask>() { extension.Task },
+         null,
+         TaskTrigger.Extension,
+         scriptContext,
+         cancellationToken);
+                var variableKeyExtension = extension.Key.ToVariableName();
+                var variableKeyTask = extension.Task.Task.Key.ToVariableName();
+                if (scriptContext.TaskResponse.TryGetValue(variableKeyTask, out var value))
+                {
+                    // Try to extract Data from ScriptResponse if available
+                    try
+                    {
+                        // Try to extract data property from JsonElement
+                         responseExtension[variableKeyExtension] = value is JsonElement jsonElement && jsonElement.TryGetProperty("data", out var dataProperty) 
+                        ? dataProperty 
+                        : value!;
+                    }
+                    catch
+                    {
+                        // If extraction fails, use the original value
+                        responseExtension[variableKeyExtension] = value!;
+                    }
+                    executedExtensionKeys.Add(extension.Key); // Track executed extension
+                }
             }
         }
     }
@@ -235,10 +244,23 @@ public sealed class InstanceExtensionService(
         // Merge task responses into extension dictionary using variable naming format
         foreach (var extension in extensions)
         {
-            var variableKey = extension.Key.ToVariableName();
-            if (scriptContext.TaskResponse.TryGetValue(variableKey, out var value))
+            var variableKeyExtension = extension.Key.ToVariableName();
+            var variableKeyTask = extension.Task.Task.Key.ToVariableName();
+            if (scriptContext.TaskResponse.TryGetValue(variableKeyTask, out var value))
             {
-                responseExtension[variableKey] = value!;
+                // Try to extract Data from ScriptResponse if available
+                try
+                {
+                    // Try to extract data property from JsonElement
+                    responseExtension[variableKeyExtension] = value is JsonElement jsonElement && jsonElement.TryGetProperty("data", out var dataProperty) 
+                        ? dataProperty 
+                        : value!;
+                }
+                catch
+                {
+                    // If extraction fails, use the original value
+                    responseExtension[variableKeyExtension] = value!;
+                }
                 executedExtensionKeys.Add(extension.Key); // Track executed extension
             }
         }

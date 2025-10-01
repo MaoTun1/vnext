@@ -72,7 +72,25 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
     /// </summary>
     public JsonDocument? JsonContent
     {
-        get => Type == ViewType.Json && !string.IsNullOrEmpty(Content) ? JsonDocument.Parse(Content) : null;
+        get
+        {
+            if (Type != ViewType.Json)
+            {
+                string jsonWrapped = JsonSerializer.Serialize(Content);
+                return JsonDocument.Parse(jsonWrapped);
+            }
+                
+            // Try to parse as JSON only when type is Json
+            try
+            {
+                return JsonDocument.Parse(Content);
+            }
+            catch (JsonException)
+            {
+                // If content is not valid JSON, return null
+                return null;
+            }
+        }
         set => Content = value?.RootElement.ToString() ?? string.Empty;
     }
 
