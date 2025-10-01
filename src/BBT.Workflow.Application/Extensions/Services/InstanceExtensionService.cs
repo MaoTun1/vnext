@@ -175,14 +175,9 @@ public sealed class InstanceExtensionService(
                     try
                     {
                         // Try to extract data property from JsonElement
-                        if (value is JsonElement jsonElement && jsonElement.TryGetProperty("data", out var dataProperty))
-                        {
-                            responseExtension[variableKeyExtension] = dataProperty;
-                        }
-                        else
-                        {
-                            responseExtension[variableKeyExtension] = value!;
-                        }
+                         responseExtension[variableKeyExtension] = value is JsonElement jsonElement && jsonElement.TryGetProperty("data", out var dataProperty) 
+                        ? dataProperty 
+                        : value!;
                     }
                     catch
                     {
@@ -257,14 +252,9 @@ public sealed class InstanceExtensionService(
                 try
                 {
                     // Try to extract data property from JsonElement
-                    if (value is JsonElement jsonElement && jsonElement.TryGetProperty("data", out var dataProperty))
-                    {
-                        responseExtension[variableKeyExtension] = dataProperty;
-                    }
-                    else
-                    {
-                        responseExtension[variableKeyExtension] = value!;
-                    }
+                    responseExtension[variableKeyExtension] = value is JsonElement jsonElement && jsonElement.TryGetProperty("data", out var dataProperty) 
+                        ? dataProperty 
+                        : value!;
                 }
                 catch
                 {

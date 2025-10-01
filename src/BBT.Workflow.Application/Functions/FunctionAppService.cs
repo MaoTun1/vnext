@@ -92,7 +92,7 @@ public sealed class FunctionAppService(IServiceProvider serviceProvider,
                     TaskTrigger.Extension,
                     scriptContext,
                     cancellationToken);
-            var variableKeyExtension = function.Key.ToVariableName();
+            var variableKeyFunction = function.Key.ToVariableName();
             var variableKeyTask = function.Task.Task.Key.ToVariableName();
             if (scriptContext.TaskResponse.TryGetValue(variableKeyTask, out var value))
             {
@@ -100,19 +100,14 @@ public sealed class FunctionAppService(IServiceProvider serviceProvider,
                 try
                 {
                     // Try to extract data property from JsonElement
-                    if (value is JsonElement jsonElement && jsonElement.TryGetProperty("data", out var dataProperty))
-                    {
-                        response[variableKeyExtension] = dataProperty;
-                    }
-                    else
-                    {
-                        response[variableKeyExtension] = value!;
-                    }
+                    response[variableKeyFunction] = value is JsonElement jsonElement && jsonElement.TryGetProperty("data", out var dataProperty) 
+                        ? dataProperty 
+                        : value!;
                 }
                 catch
                 {
                     // If extraction fails, use the original value
-                    response[variableKeyExtension] = value!;
+                    response[variableKeyFunction] = value!;
                 }
 
             }
