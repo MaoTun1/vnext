@@ -78,6 +78,9 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         // Register auto transition service
         services.AddScoped<IAutoTransitionService, AutoTransitionService>();
         
+        // Register instance refresh strategy
+        services.AddScoped<IInstanceRefreshStrategy, InstanceRefreshStrategy>();
+        
         // Register strategy factory
         services.AddScoped<IExecutionStrategyFactory, ExecutionStrategyFactory>();
         

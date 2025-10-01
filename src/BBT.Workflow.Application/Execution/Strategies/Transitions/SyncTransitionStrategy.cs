@@ -1,3 +1,4 @@
+using BBT.Aether.Guids;
 using BBT.Workflow.Execution.StateMachine;
 using BBT.Workflow.Headers;
 using BBT.Workflow.Instances;
@@ -5,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using BBT.Workflow.Runtime;
 using Microsoft.Extensions.Logging;
 using ExecutionContext = BBT.Workflow.Shared.ExecutionContext;
+#pragma warning disable CS8603 // Possible null reference return.
 
 namespace BBT.Workflow.Execution.Strategies;
 
@@ -17,6 +19,7 @@ public sealed class SyncTransitionStrategy(
     IInstanceRepository instanceRepository,
     IHeaderService headerService,
     IRuntimeInfoProvider runtimeInfoProvider,
+    IGuidGenerator guidGenerator,
     ILogger<SyncTransitionStrategy> logger) : ITransitionStrategy
 {
     /// <inheritdoc />
@@ -53,15 +56,25 @@ public sealed class SyncTransitionStrategy(
         TransitionExecutionContext context,
         CancellationToken cancellationToken = default)
     {
-        var updatedInstance = await ExecuteWithBusyStatusAsync(context.Instance, context.Input.ExecutionContext, async () =>
-        {
-            var scriptContext = await context.ScriptContextBuilder.BuildAsync(cancellationToken);
+        var updatedInstance = await ExecuteWithBusyStatusAsync(context.Instance, context.Input.ExecutionContext,
+            async () =>
+            {
+                if (context.Input.Data.HasValue)
+                {
+                    context.Instance.AddData(
+                        guidGenerator.Create(),
+                        new JsonData(context.Input.Data),
+                        context.Transition.VersionStrategy
+                    );
+                }
 
-            // Delegate to StateMachineExecutor for actual transition execution
-            await stateMachineExecutor.ExecuteTransitionAsync(scriptContext, cancellationToken);
+                var scriptContext = await context.ScriptContextBuilder.BuildAsync(cancellationToken);
 
-            return context.Instance;
-        }, cancellationToken);
+                // Delegate to StateMachineExecutor for actual transition execution
+                await stateMachineExecutor.ExecuteTransitionAsync(scriptContext, cancellationToken);
+
+                return context.Instance;
+            }, cancellationToken);
 
         // Return the updated instance to ensure caller gets the latest state
         return updatedInstance;
@@ -87,6 +100,6 @@ public sealed class SyncTransitionStrategy(
         await operation();
 
         // Return the fresh instance from database to ensure caller gets the latest correlations
-        return await instanceRepository.GetAsync(instance.Id, true, cancellationToken);
+        return await instanceRepository.FindByIdAsReadOnlyAsync(instance.Id, cancellationToken);
     }
 }

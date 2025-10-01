@@ -2,6 +2,7 @@ using BBT.Aether.Domain.EntityFrameworkCore;
 using BBT.Aether.Domain.Services;
 using BBT.Workflow.Data;
 using BBT.Workflow.DataSink;
+using Microsoft.EntityFrameworkCore;
 
 namespace BBT.Workflow.Instances;
 
@@ -53,5 +54,18 @@ public class EfCoreInstanceTransitionRepository(
         }
         
         return result;
+    }
+
+    public async Task UpdateCompletedAsync(InstanceTransition transition, CancellationToken cancellationToken)
+    {
+        var context = await GetDbContextAsync();
+        await context.InstanceTransitions
+            .Where(p => p.Id == transition.Id)
+            .ExecuteUpdateAsync(sp => sp
+                    .SetProperty(p => p.ToState, transition.ToState)
+                    .SetProperty(p => p.FinishedAt, transition.FinishedAt)
+                    .SetProperty(p => p.Duration, transition.Duration),
+                cancellationToken
+            );
     }
 }

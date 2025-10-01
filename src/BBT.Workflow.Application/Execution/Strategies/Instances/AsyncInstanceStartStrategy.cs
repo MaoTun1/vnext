@@ -34,7 +34,6 @@ public sealed class AsyncInstanceStartStrategy(
             // Schedule flow timeout if configured
             await stateMachineExecutor.FlowTimeoutAsync(context.Workflow, context.Instance, cancellationToken);
             
-            // Set instance to busy for background processing
             context.Instance.Busy();
             await instanceRepository.UpdateStatusAsync(context.Instance, cancellationToken);
 

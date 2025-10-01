@@ -1,4 +1,7 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using BBT.Aether;
 using BBT.Aether.Domain.Entities;
@@ -24,6 +27,7 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
         InstanceId = instanceId;
         SetVersion(version);
         Data = data;
+        DataHash = ComputeDataHash(data);
         EnteredAt = DateTime.UtcNow;
         ETag = Ulid.NewUlid().ToString();
         IsLatest = isLatest;
@@ -47,6 +51,11 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
     /// ETag
     /// </summary>
     public string ETag { get; private set; }
+    
+    /// <summary>
+    /// SHA1 hash of the data payload for change detection
+    /// </summary>
+    public string DataHash { get; private set; }
     
     /// <summary>
     /// <see cref="JsonData"/>
@@ -83,15 +92,50 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
         );
     }
 
+    /// <summary>
+    /// Computes SHA1 hash of the JSON data for change detection
+    /// </summary>
+    /// <param name="data">The JSON data to hash</param>
+    /// <returns>SHA1 hash as hex string</returns>
+    private static string ComputeDataHash(JsonData data)
+    {
+        using var sha1 = SHA1.Create();
+        
+        // Use normalized JSON from JsonData for consistent hashing
+        var jsonBytes = Encoding.UTF8.GetBytes(data.NormalizedJson);
+        var hashBytes = sha1.ComputeHash(jsonBytes);
+        return Convert.ToHexString(hashBytes).ToLowerInvariant();
+    }
+
+
+    /// <summary>
+    /// Checks if the provided JSON data has the same content as this instance's data
+    /// </summary>
+    /// <param name="jsonData">The JSON data to compare</param>
+    /// <returns>True if the data is the same, false otherwise</returns>
+    public bool HasSameData(JsonData jsonData)
+    {
+        var otherHash = ComputeDataHash(jsonData);
+        return DataHash.Equals(otherHash, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Marks this instance data as not the latest version
+    /// </summary>
+    internal void MarkAsNotLatest()
+    {
+        IsLatest = false;
+    }
+
     private string IncrementVersion(string currentVersion, VersionStrategy versionStrategy)
     {
         var match = Regex.Match(currentVersion, @"^(\d+)\.(\d+)\.(\d+)");
         if (!match.Success)
             return currentVersion;
 
-        var major = int.Parse(match.Groups[1].Value);
-        var minor = int.Parse(match.Groups[2].Value);
-        var patch = int.Parse(match.Groups[3].Value);
+        int.TryParse(match.Groups[1].Value, out var major);
+        int.TryParse(match.Groups[2].Value, out var minor);
+        int.TryParse(match.Groups[3].Value, out var patch);
 
         return versionStrategy.Code switch
         {

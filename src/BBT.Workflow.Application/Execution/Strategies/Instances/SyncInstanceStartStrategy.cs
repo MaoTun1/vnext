@@ -4,6 +4,7 @@ using BBT.Workflow.Instances;
 using Microsoft.AspNetCore.Http;
 using BBT.Workflow.Runtime;
 using Microsoft.Extensions.Logging;
+#pragma warning disable CS8602 // Dereference of a possibly null reference.
 
 namespace BBT.Workflow.Execution.Strategies;
 
@@ -15,6 +16,7 @@ public sealed class SyncInstanceStartStrategy(
     IStateMachineExecutor stateMachineExecutor,
     IHeaderService headerService,
     IRuntimeInfoProvider runtimeInfoProvider,
+    IInstanceRepository instanceRepository,
     ILogger<SyncInstanceStartStrategy> logger) : IInstanceStartStrategy
 {
     /// <inheritdoc />
@@ -39,11 +41,13 @@ public sealed class SyncInstanceStartStrategy(
             WorkflowInfo.Generate(runtimeInfoProvider.Domain, context.Workflow.Key, context.Workflow.Version, context.Instance.Id)
         );
 
+        var refreshedInstance =  await instanceRepository.FindByIdAsReadOnlyAsync(context.Instance.Id, cancellationToken);
+        
         // Build and return response
         return new InstanceServiceResponse<StartInstanceOutput>(new StartInstanceOutput
         {
-            Id = context.Instance.Id,
-            Status = context.Instance.Status
+            Id = refreshedInstance.Id,
+            Status = refreshedInstance.Status
         });
     }
 }
