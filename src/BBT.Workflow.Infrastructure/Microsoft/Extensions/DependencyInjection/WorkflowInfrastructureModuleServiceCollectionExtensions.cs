@@ -2,8 +2,10 @@ using BBT.Workflow.BackgroundJobs;
 using BBT.Workflow.Data;
 using BBT.Workflow.Infrastructure.DataSink;
 using BBT.Workflow.Infrastructure.HostedServices;
+using BBT.Workflow.Infrastructure.Notifications;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Monitoring;
+using BBT.Workflow.Notifications;
 using BBT.Workflow.Remote.Extensions;
 using BBT.Workflow.Schemas;
 using Microsoft.EntityFrameworkCore;
@@ -59,6 +61,9 @@ public static class WorkflowInfrastructureModuleServiceCollectionExtensions
         services.AddDataSinkServices();
         services.AddClickHouseDataSinks();
         services.RegisterDataSinks();
+        
+        // SignalR Notification Service
+        services.AddHttpClient<ISignalRNotificationService, SignalRNotificationService>();
         
         return services;
     }
