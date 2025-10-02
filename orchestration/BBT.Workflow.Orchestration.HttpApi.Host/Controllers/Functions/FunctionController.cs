@@ -5,6 +5,7 @@ using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+
 namespace BBT.Workflow.Controllers.Instances;
 
 [ApiController]
@@ -16,36 +17,39 @@ public sealed class FunctionController(
 {
     [HttpPatch("{domain}/functions")]
     public async Task<IActionResult> GetDomainFunctions(
-       [FromRoute] string domain,
-       [FromQuery] bool? async = false,
-       CancellationToken cancellationToken = default)
+        [FromRoute] string domain,
+        [FromQuery] bool? async = false,
+        CancellationToken cancellationToken = default)
     {
-        var response = await functionAppService.GetDomainFunctions (domain, cancellationToken);
+        var response = await functionAppService.GetDomainFunctions(domain, cancellationToken);
         return Ok(response);
     }
+
     [HttpGet("{domain}/functions/{function}")]
     public async Task<IActionResult> GetFunctionByKey(
-       [FromRoute] string domain,
-       [FromRoute] string function,
-
-       [FromQuery] bool? async = false,
-       CancellationToken cancellationToken = default)
+        [FromRoute] string domain,
+        [FromRoute] string function,
+        [FromQuery] bool? async = false,
+        CancellationToken cancellationToken = default)
     {
-        var response = await functionAppService.GetFunctionByFunctionKey(function, RuntimeSysSchemaInfo.Functions, domain, cancellationToken);
+        var response = await functionAppService.GetFunctionByFunctionKey(function, RuntimeSysSchemaInfo.Functions,
+            domain, cancellationToken);
         return Ok(response);
     }
-    [HttpGet("{domain}/workflow/{workflow}/functions/{function}")]
+
+    [HttpGet("{domain}/workflows/{workflow}/functions/{function}")]
     public async Task<IActionResult> GetFunctionByKey(
-       [FromRoute] string domain,
-       [FromRoute] string function,
-       [FromRoute] string workflow,
-       [FromQuery] bool? async = false,
-       CancellationToken cancellationToken = default)
+        [FromRoute] string domain,
+        [FromRoute] string function,
+        [FromRoute] string workflow,
+        [FromQuery] bool? async = false,
+        CancellationToken cancellationToken = default)
     {
         var response = await functionAppService.GetFunctionByFunctionKey(function, workflow, domain, cancellationToken);
         return Ok(response);
     }
-      [HttpGet("{domain}/workflow/{workflow}/instances/{instance}/functions/{function}")]
+
+    [HttpGet("{domain}/workflows/{workflow}/instances/{instance}/functions/{function}")]
     public async Task<IActionResult> GetFunctionWithInstance(
         [FromRoute] string domain,
         [FromRoute] string function,
@@ -54,7 +58,8 @@ public sealed class FunctionController(
         [FromQuery] bool? async = false,
         CancellationToken cancellationToken = default)
     {
-        var response = await functionAppService.GetFunctionByInstance(function,workflow,domain,instance, cancellationToken);
+        var response =
+            await functionAppService.GetFunctionByInstance(function, workflow, domain, instance, cancellationToken);
         return Ok(response);
     }
 }

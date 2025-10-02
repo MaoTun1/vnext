@@ -269,7 +269,7 @@ services:
       MB_ENCRYPTION_SECRET_KEY: "vnext-metabase-secret-key-change-this-in-production"
       JAVA_OPTS: "-Xmx2g"
     ports:
-      - "3001:3000"
+      - "3002:3000"
     volumes:
       - metabase:/metabase.db
       - ../../metabase-dashboards:/metabase-dashboards:ro
