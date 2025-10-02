@@ -120,14 +120,11 @@ public sealed class SignalRNotificationService(
             {
                 foreach (var header in headers)
                 {
-                    if (!string.IsNullOrEmpty(header.Key) && !string.IsNullOrEmpty(header.Value))
+                    if (!string.IsNullOrEmpty(header.Key) && !string.IsNullOrEmpty(header.Value)&&!header.Key.Equals("content-type", StringComparison.OrdinalIgnoreCase) &&
+                            !header.Key.Equals("content-length", StringComparison.OrdinalIgnoreCase))
                     {
                         // Skip content-type and other content headers as they are set by StringContent
-                        if (!header.Key.Equals("content-type", StringComparison.OrdinalIgnoreCase) &&
-                            !header.Key.Equals("content-length", StringComparison.OrdinalIgnoreCase))
-                        {
-                            request.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                        }
+                        request.Headers.TryAddWithoutValidation(header.Key, header.Value);
                     }
                 }
             }
