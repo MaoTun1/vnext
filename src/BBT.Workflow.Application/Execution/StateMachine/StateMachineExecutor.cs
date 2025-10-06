@@ -111,66 +111,37 @@ public sealed class StateMachineExecutor(
        
         if (targetState.StateType != StateType.Finish)
         {
-            //WARNING!: If a state has a subflow, the auto transition process must continue when the subflow is completed. The main flow is already preserving the state.
-            //5. Handle SubFlow/SubProcess if target state is SubFlow type
-            if (targetState.StateType == StateType.SubFlow)
+            await HandleSubFlowAsync(context.Workflow, context.Instance, targetState, context, cancellationToken);
+
+            if (targetState.SubFlow != null && targetState.SubFlow.Type.Equals(SubFlowType.SubProcess))
             {
-                await HandleSubFlowAsync(context.Workflow, context.Instance, targetState, context, cancellationToken);
-
-                if (targetState.SubFlow != null && targetState.SubFlow.Type.Equals(SubFlowType.SubProcess))
-                {
-                    // Check for automatic transitions after state change 
-                    await CheckAndExecuteAutomaticTransitionsAsync(
-                        context.Workflow,
-                        context.Instance,
-                        cancellationToken);
-
-                    // Refresh instance only if needed after auto transitions
-                    var refreshedInstance = await instanceRefreshStrategy.RefreshIfNeededAsync(
-                        context.Instance, 
-                        afterAutoTransition: true, 
-                        cancellationToken);
-
-                    if (refreshedInstance is { IsCompleted: false })
-                    {
-                        // Check for delay transition and execution
-                        await ScheduleTransitionsForLaterExecutionAsync(
-                            context.Workflow,
-                            refreshedInstance,
-                            context,
-                            cancellationToken);
-                    }
-                }
-            }
-            else
-            {
-                // Check for automatic transitions after state change 
-                await CheckAndExecuteAutomaticTransitionsAsync(
+                // Execute automatic and scheduled transitions in one call to reduce DB queries
+                await autoTransitionService.ExecuteAutomaticAndScheduledTransitionsAsync(
                     context.Workflow,
                     context.Instance,
+                    context,
                     cancellationToken);
-                
-                // Refresh instance only if needed after auto transitions
-                var refreshedInstance = await instanceRefreshStrategy.RefreshIfNeededAsync(
-                    context.Instance, 
-                    afterAutoTransition: true, 
-                    cancellationToken);
-
-                if (refreshedInstance is { IsCompleted: false })
-                {
-                    // Check for delay transition and execution
-                    await ScheduleTransitionsForLaterExecutionAsync(
-                        context.Workflow,
-                        refreshedInstance,
-                        context,
-                        cancellationToken);
-                }
-                
             }
         }
+        else
+        {
+            // Execute automatic and scheduled transitions in one call to reduce DB queries
+            var autoTransitionResult = await autoTransitionService.ExecuteAutomaticAndScheduledTransitionsAsync(
+                context.Workflow,
+                context.Instance,
+                context,
+                cancellationToken);
+                
+            // Use the final instance state for status handling
+            var finalInstance = autoTransitionResult.RefreshedInstance ?? context.Instance;
 
-        await InstanceStatusHandleAsync(context.Instance, targetState, context.Transition, context.Workflow, context,
-            cancellationToken);
+            if (finalInstance is { IsCompleted: false })
+            {
+                await InstanceStatusHandleAsync(finalInstance, targetState, context.Transition, context.Workflow,
+                    context,
+                    cancellationToken);
+            }
+        }
 
         instanceTransition.Completed(context.Instance.GetCurrentState);
 
@@ -270,8 +241,6 @@ public sealed class StateMachineExecutor(
         ScriptContext context,
         CancellationToken cancellationToken = default)
     {
-        // Refresh instance to get latest status before processing
-        instance = await instanceRefreshStrategy.GetLatestInstanceAsync(instance.Id, cancellationToken) ?? instance;
         if (targetState.StateType == StateType.Finish)
         {
             // Complete the instance

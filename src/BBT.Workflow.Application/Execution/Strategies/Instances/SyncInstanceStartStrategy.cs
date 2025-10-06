@@ -1,9 +1,11 @@
+using BBT.Workflow.Execution.Services;
 using BBT.Workflow.Execution.StateMachine;
 using BBT.Workflow.Headers;
 using BBT.Workflow.Instances;
 using Microsoft.AspNetCore.Http;
 using BBT.Workflow.Runtime;
 using Microsoft.Extensions.Logging;
+
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
 
 namespace BBT.Workflow.Execution.Strategies;
@@ -16,7 +18,7 @@ public sealed class SyncInstanceStartStrategy(
     IStateMachineExecutor stateMachineExecutor,
     IHeaderService headerService,
     IRuntimeInfoProvider runtimeInfoProvider,
-    IInstanceRepository instanceRepository,
+    IInstanceRefreshStrategy instanceRefreshStrategy,
     ILogger<SyncInstanceStartStrategy> logger) : IInstanceStartStrategy
 {
     /// <inheritdoc />
@@ -34,15 +36,17 @@ public sealed class SyncInstanceStartStrategy(
 
         // Execute start transition via StateMachineExecutor
         await stateMachineExecutor.ExecuteTransitionAsync(scriptContext, cancellationToken);
-        
+
         // Add workflow information to response headers
         headerService.AddHeader(
             WorkflowInfo.Name,
-            WorkflowInfo.Generate(runtimeInfoProvider.Domain, context.Workflow.Key, context.Workflow.Version, context.Instance.Id)
+            WorkflowInfo.Generate(runtimeInfoProvider.Domain, context.Workflow.Key, context.Workflow.Version,
+                context.Instance.Id)
         );
 
-        var refreshedInstance =  await instanceRepository.FindByIdAsReadOnlyAsync(context.Instance.Id, cancellationToken);
-        
+        var refreshedInstance =
+            await instanceRefreshStrategy.GetLatestInstanceAsync(context.Instance.Id, cancellationToken);
+
         // Build and return response
         return new InstanceServiceResponse<StartInstanceOutput>(new StartInstanceOutput
         {

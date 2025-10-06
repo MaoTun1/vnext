@@ -11,6 +11,7 @@ using BBT.Workflow.Schemas;
 using Microsoft.Extensions.Logging;
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Execution.Services;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace BBT.Workflow.SubFlow;
 
@@ -25,9 +26,7 @@ public sealed class SubFlowCompletionService(
     IScriptContextFactory scriptContextFactory,
     IRuntimeInfoProvider runtimeInfoProvider,
     IGuidGenerator guidGenerator,
-    ILogger<SubFlowCompletionService> logger,
-    IStateMachineExecutor stateMachineExecutor,
-    IInstanceRefreshStrategy instanceRefreshStrategy)
+    ILogger<SubFlowCompletionService> logger)
     : ApplicationService(serviceProvider), ISubFlowCompletionService
 {
     /// <inheritdoc />
@@ -183,13 +182,6 @@ public sealed class SubFlowCompletionService(
             parentWorkflow,
             await scriptContextBuilder.BuildAsync(cancellationToken),
             cancellationToken);
-        
-        // Get fresh instance because auto transition runs in separate scope
-        parentInstance = await instanceRepository.GetActiveAsync(parentInstance.Id, cancellationToken);
-        if(parentInstance.TryActivateIfBusyWithoutSubFlow())
-        {
-            await instanceRepository.UpdateStatusAsync(parentInstance, cancellationToken);
-        }
     }
 
     /// <summary>
@@ -284,22 +276,26 @@ public sealed class SubFlowCompletionService(
                 "Resuming automatic processes for parent instance {ParentInstanceId} in state {CurrentState}",
                 parentInstance.Id, parentInstance.CurrentState);
             
-            await stateMachineExecutor.CheckAndExecuteAutomaticTransitionsAsync(parentWorkflow, parentInstance,
-                cancellationToken);
+            // Use the new unified method to execute both auto and scheduled transitions
+            // This reduces database queries and code duplication
+            using var scope = serviceProvider.CreateScope();
+            var autoTransitionService = scope.ServiceProvider.GetRequiredService<IAutoTransitionService>();
             
-            // Refresh instance only if needed after auto transitions
-            var refreshedInstance = await instanceRefreshStrategy.RefreshIfNeededAsync(
-                parentInstance, 
-                afterAutoTransition: true, 
+            var autoTransitionResult = await autoTransitionService.ExecuteAutomaticAndScheduledTransitionsAsync(
+                parentWorkflow,
+                parentInstance,
+                scriptContext,
                 cancellationToken);
-
-            if (refreshedInstance is { IsCompleted: false })
+                
+            // Use the refreshed instance from the auto transition result
+            var finalInstance = autoTransitionResult.RefreshedInstance ?? parentInstance;
+                
+            if (finalInstance is { IsCompleted: false })
             {
-                await stateMachineExecutor.ScheduleTransitionsForLaterExecutionAsync(
-                    parentWorkflow,
-                    refreshedInstance,
-                    scriptContext,
-                    cancellationToken);
+                if(finalInstance.TryActivateIfBusyWithoutSubFlow())
+                {
+                    await instanceRepository.UpdateStatusAsync(finalInstance, cancellationToken);
+                }
             }
 
             logger.LogInformation(
