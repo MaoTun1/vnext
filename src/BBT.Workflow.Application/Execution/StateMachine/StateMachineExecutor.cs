@@ -14,7 +14,6 @@ using BBT.Workflow.Tasks;
 using Dapr.Client;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using BBT.Workflow.Notifications;
 
 namespace BBT.Workflow.Execution.StateMachine;
 
@@ -35,7 +34,6 @@ public sealed class StateMachineExecutor(
     IConfiguration configuration,
     IAutoTransitionService autoTransitionService,
     IInstanceRefreshStrategy instanceRefreshStrategy,
-    ISignalRNotificationService signalRNotificationService,
     ILogger<StateMachineExecutor> logger
 ) : IStateMachineExecutor
 {
@@ -109,8 +107,6 @@ public sealed class StateMachineExecutor(
 
         // State and data changes are reflected.
         await instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
-        // Send SignalR notification for workflow completion
-
         
        
         if (targetState.StateType != StateType.Finish)
@@ -189,16 +185,6 @@ public sealed class StateMachineExecutor(
         }
 
         await instanceTransitionRepository.UpdateCompletedAsync(instanceTransition, cancellationToken);
-    }
-    private async Task SendNotification(Guid instanceId, string key, Dictionary<string, string?>? headers,
-        CancellationToken cancellationToken = default)
-    {
-         await signalRNotificationService.SendWorkflowCompletedNotificationAsync(
-            instanceId,
-            runtimeInfoProvider.Domain,
-            key,
-            headers,
-            cancellationToken);
     }
     /// <inheritdoc />
     public async Task FlowTimeoutAsync(
@@ -295,14 +281,12 @@ public sealed class StateMachineExecutor(
             {
                 await PublishFlowCompletionEventAsync(instance, workflow, cancellationToken);
             }
-            await SendNotification(instance.Id, workflow.Key, context.Headers, cancellationToken);
         }
         else
         {
             if (transition.TriggerType == TriggerType.Manual && instance.TrySetStatusBasedOnState())
             {
                 await instanceRepository.UpdateStatusAsync(instance, cancellationToken);
-                await SendNotification(instance.Id, workflow.Key, context.Headers, cancellationToken);
             }
         }
     }
