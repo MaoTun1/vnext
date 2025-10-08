@@ -84,7 +84,7 @@ public sealed class State : IHasKey
     /// State view
     /// </summary>
     [JsonIgnore]
-    public Reference? View => view?.ToReference();
+    public Reference? View => View?.ToReference();
 
     /// <summary>
     /// Transitions
@@ -153,20 +153,11 @@ public sealed class State : IHasKey
         return Transitions.FirstOrDefault(t => t.Key == key);
     }
 
-    public IEnumerable<Transition> GetAutoTransitions()
-    {
-        return Transitions.Where(p => p.TriggerType == TriggerType.Automatic);
-    }
+    public IEnumerable<Transition> AutoTransitions => Transitions.Where(p => p.TriggerType == TriggerType.Automatic);
     
-    public IEnumerable<Transition> GetScheduledTransitions()
-    {
-        return Transitions.Where(p => p.TriggerType == TriggerType.Scheduled);
-    }
+    public IEnumerable<Transition> ScheduledTransitions => Transitions.Where(p => p.TriggerType == TriggerType.Scheduled);
 
-    public List<string> TransitionKeys()
-    {
-        return Transitions.Select(t => t.Key).ToList();
-    }
+    public IReadOnlyList<string> TransitionKeys() => Transitions.Select(t => t.Key).ToList();
 
     public static State Create(
         string key,

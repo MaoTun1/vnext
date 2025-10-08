@@ -510,4 +510,110 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
             Assert.True(result.Version.StartsWith("1.0."));
         }
     }
+
+    [Fact]
+    public void SetSystemMetadata_ShouldSetRequiredSystemKeys()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        const bool isSync = true;
+        const string callback = "https://callback.example.com";
+        const string flowType = "MainFlow";
+
+        // Act
+        instance.SetInfoMetadata(isSync, callback, flowType);
+
+        // Assert
+        Assert.Equal("true", instance.MetaData[DomainConsts.MetaDataKeys.Sync]);
+        Assert.Equal(callback, instance.MetaData[DomainConsts.MetaDataKeys.Callback]);
+        Assert.Equal(flowType, instance.MetaData[DomainConsts.MetaDataKeys.FlowType]);
+    }
+
+    [Fact]
+    public void SetSystemMetadata_ShouldHandleNullCallback()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        const bool isSync = false;
+        const string? callback = null;
+        const string flowType = "SubFlow";
+
+        // Act
+        instance.SetInfoMetadata(isSync, callback, flowType);
+
+        // Assert
+        Assert.Equal("false", instance.MetaData[DomainConsts.MetaDataKeys.Sync]);
+        Assert.Equal(string.Empty, instance.MetaData[DomainConsts.MetaDataKeys.Callback]);
+        Assert.Equal(flowType, instance.MetaData[DomainConsts.MetaDataKeys.FlowType]);
+    }
+
+    [Fact]
+    public void SetSystemMetadata_ShouldMergeWithUserMetadata()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        var userMetadata = new ObjectDictionary
+        {
+            ["custom.key1"] = "value1",
+            ["custom.key2"] = "value2"
+        };
+        const bool isSync = true;
+        const string callback = "https://callback.example.com";
+        const string flowType = "MainFlow";
+
+        // Act
+        instance.SetInfoMetadata(isSync, callback, flowType, userMetadata);
+
+        // Assert
+        // System metadata should be set
+        Assert.Equal("true", instance.MetaData[DomainConsts.MetaDataKeys.Sync]);
+        Assert.Equal(callback, instance.MetaData[DomainConsts.MetaDataKeys.Callback]);
+        Assert.Equal(flowType, instance.MetaData[DomainConsts.MetaDataKeys.FlowType]);
+        
+        // User metadata should be preserved
+        Assert.Equal("value1", instance.MetaData["custom.key1"]);
+        Assert.Equal("value2", instance.MetaData["custom.key2"]);
+    }
+
+    [Fact]
+    public void SetSystemMetadata_ShouldNotOverrideExistingUserKeys()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        var userMetadata = new ObjectDictionary
+        {
+            [DomainConsts.MetaDataKeys.Sync] = "user-sync-value", // User tries to set system key
+            ["custom.key"] = "custom-value"
+        };
+        const bool isSync = true;
+        const string callback = "https://callback.example.com";
+        const string flowType = "MainFlow";
+
+        // Act
+        instance.SetInfoMetadata(isSync, callback, flowType, userMetadata);
+
+        // Assert
+        // System should not override user-provided system keys due to TryAdd behavior
+        Assert.Equal("user-sync-value", instance.MetaData[DomainConsts.MetaDataKeys.Sync]);
+        Assert.Equal(callback, instance.MetaData[DomainConsts.MetaDataKeys.Callback]);
+        Assert.Equal(flowType, instance.MetaData[DomainConsts.MetaDataKeys.FlowType]);
+        Assert.Equal("custom-value", instance.MetaData["custom.key"]);
+    }
+
+    [Theory]
+    [InlineData(true, "true")]
+    [InlineData(false, "false")]
+    public void SetSystemMetadata_ShouldFormatSyncValueCorrectly(bool isSync, string expectedValue)
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        const string callback = "https://callback.example.com";
+        const string flowType = "MainFlow";
+
+        // Act
+        instance.SetInfoMetadata(isSync, callback, flowType);
+
+        // Assert
+        Assert.Equal(expectedValue, instance.MetaData[DomainConsts.MetaDataKeys.Sync]);
+    }
 }

@@ -36,6 +36,7 @@ public class WorkflowExceptionToErrorInfoConverter(IServiceProvider serviceProvi
             InvalidStateException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
             NotFoundTransitionException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
             TransitionRuleFailedException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
+            AutoTransitionFailedException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
             _ => errorInfo
         };
     }

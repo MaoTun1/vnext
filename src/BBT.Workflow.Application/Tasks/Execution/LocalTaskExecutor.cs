@@ -1,6 +1,5 @@
 using System.Text;
 using System.Text.Json;
-using System.Diagnostics;
 using BBT.Aether.Guids;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Scripting;
@@ -32,7 +31,7 @@ public sealed class LocalTaskExecutor(
     /// This is the core implementation extracted from TaskExecutionService.ExecuteSingleTaskAsync.
     /// </summary>
     /// <param name="onExecuteTask">The task configuration to execute.</param>
-    /// <param name="instanceTransition">The instance transition context. Can be null for extension tasks.</param>
+    /// <param name="instanceTransitionId">The instance transition context. Can be null for extension tasks.</param>
     /// <param name="taskTrigger">The trigger type that initiated the task execution.</param>
     /// <param name="context">The script execution context for task execution.</param>
     /// <param name="cancellationToken">Cancellation token for async operation control.</param>
@@ -47,7 +46,7 @@ public sealed class LocalTaskExecutor(
     /// </remarks>
     public async Task ExecuteTaskAsync(
         OnExecuteTask onExecuteTask,
-        InstanceTransition? instanceTransition,
+        Guid? instanceTransitionId,
         TaskTrigger taskTrigger,
         ScriptContext context,
         CancellationToken cancellationToken = default)
@@ -58,7 +57,7 @@ public sealed class LocalTaskExecutor(
         var taskExecutor = taskExecutorFactory.GetExecutor(task.GetTaskType());
         var instanceTask = new InstanceTask(
             guidGenerator.Create(),
-            instanceTransition?.Id ?? guidGenerator.Create(),
+            instanceTransitionId ?? guidGenerator.Create(),
             task.Key
         );
 
@@ -123,14 +122,14 @@ public sealed class LocalTaskExecutor(
     /// need to be synchronized back to the orchestration service.
     /// </summary>
     /// <param name="onExecuteTask">The task configuration to execute.</param>
-    /// <param name="instanceTransition">The instance transition context. Can be null for extension tasks.</param>
+    /// <param name="instanceTransitionId">The instance transition context. Can be null for extension tasks.</param>
     /// <param name="taskTrigger">The trigger type that initiated the task execution.</param>
     /// <param name="context">The script execution context for task execution.</param>
     /// <param name="cancellationToken">Cancellation token for async operation control.</param>
     /// <returns>Context updates that occurred during task execution.</returns>
     public async Task<TaskContextUpdateOutput> ExecuteTaskWithContextUpdateAsync(
         OnExecuteTask onExecuteTask,
-        InstanceTransition? instanceTransition,
+        Guid? instanceTransitionId,
         TaskTrigger taskTrigger,
         ScriptContext context,
         CancellationToken cancellationToken = default)
@@ -140,7 +139,7 @@ public sealed class LocalTaskExecutor(
         var initialInstanceDataCount = context.Instance.DataList.Count;
 
         // Execute the task (this already includes metrics recording)
-        await ExecuteTaskAsync(onExecuteTask, instanceTransition, taskTrigger, context, cancellationToken);
+        await ExecuteTaskAsync(onExecuteTask, instanceTransitionId, taskTrigger, context, cancellationToken);
 
         // Capture context changes
         var contextUpdate = new TaskContextUpdateOutput

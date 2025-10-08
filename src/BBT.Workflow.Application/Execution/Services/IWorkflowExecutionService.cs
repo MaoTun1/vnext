@@ -3,32 +3,17 @@ using BBT.Workflow.Instances;
 namespace BBT.Workflow.Execution.Services;
 
 /// <summary>
-/// Service interface for orchestrating workflow execution operations.
-/// Implements Command Pattern to encapsulate execution requests.
+/// Service interface for orchestrating workflow execution operations using the new pipeline architecture.
 /// </summary>
 public interface IWorkflowExecutionService
 {
     /// <summary>
-    /// Executes a workflow instance start operation using the appropriate execution strategy.
+    /// Executes a workflow transition using the new pipeline architecture.
     /// </summary>
-    /// <param name="input">The start instance input.</param>
-    /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>The start instance response.</returns>
-    Task<InstanceServiceResponse<StartInstanceOutput>> ExecuteStartAsync(
-        StartInstanceInput input,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Executes a workflow transition operation using the appropriate execution strategy.
-    /// </summary>
-    /// <param name="instanceId">The instance identifier.</param>
-    /// <param name="transitionKey">The transition key.</param>
-    /// <param name="input">The transition input.</param>
-    /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>The transition response.</returns>
+    /// <param name="context">The workflow execution input containing all necessary data.</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
+    /// <returns>A service response containing the transition result.</returns>
     Task<InstanceServiceResponse<TransitionOutput>> ExecuteTransitionAsync(
-        Guid instanceId,
-        string transitionKey,
-        TransitionInput input,
+        WorkflowExecutionContext context,
         CancellationToken cancellationToken = default);
 }

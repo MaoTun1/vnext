@@ -137,6 +137,7 @@ public sealed class EfCoreInstanceRepository(
     {
         return await (await WithDetailsAsync())
             .AsNoTracking()
+            .AsSplitQuery()
             .FirstOrDefaultAsync(
                 p => p.Key == key, cancellationToken);
     }
@@ -154,6 +155,7 @@ public sealed class EfCoreInstanceRepository(
     {
         return await (await WithDetailsAsync())
             .AsNoTracking()
+            .AsSplitQuery()
             .FirstOrDefaultAsync(
                 p => p.Id == id, cancellationToken);
     }
@@ -289,7 +291,9 @@ public sealed class EfCoreInstanceRepository(
         IQueryable<Instance>? instance = null,
         CancellationToken cancellationToken = default)
     {
-        var query = instance ?? (await GetQueryableAsync()).Include(i => i.DataList);
+        var query = instance ?? (await GetQueryableAsync())
+            .Include(i => i.DataList)
+            .AsSplitQuery();
         return query.Paginate(page, pageSize, route, configuration, queryParams);
     }
 

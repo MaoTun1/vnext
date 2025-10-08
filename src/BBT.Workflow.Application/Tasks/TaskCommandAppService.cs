@@ -37,15 +37,6 @@ public sealed class TaskCommandAppService(
                 new ScriptCode(input.OnExecuteTask.Mapping.Location, input.OnExecuteTask.Mapping.Code)
             );
 
-            InstanceTransition? instanceTransition = null;
-
-            if (input.InstanceTransitionId.HasValue)
-            {
-                instanceTransition =
-                    await instanceTransitionRepository.FindAsync(input.InstanceTransitionId.Value, true,
-                        cancellationToken);
-            }
-
             // Use the ScriptContextFactory to create the context with all necessary mappings
             var scriptContext = await scriptContextFactory.CreateFromTaskRequestAsync(
                 input,
@@ -57,7 +48,7 @@ public sealed class TaskCommandAppService(
             {
                 return await localExecutor.ExecuteTaskWithContextUpdateAsync(
                     onExecuteTask,
-                    instanceTransition,
+                    input.InstanceTransitionId,
                     input.TaskTrigger,
                     scriptContext,
                     cancellationToken);

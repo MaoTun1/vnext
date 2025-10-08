@@ -1,6 +1,6 @@
 using BBT.Aether;
 using BBT.Workflow.Definitions;
-using WorkflowExecutionContext = BBT.Workflow.Shared.ExecutionContext;
+using BBT.Workflow.Shared;
 
 namespace BBT.Workflow.ExceptionHandling;
 
@@ -10,11 +10,11 @@ namespace BBT.Workflow.ExceptionHandling;
 public class UnauthorizedTransitionException(
     string transitionKey,
     TriggerType triggerType,
-    WorkflowExecutionContext executionContext)
+    ExecutionActor executionActor)
     : UserFriendlyException(WorkflowErrorCodes.UnauthorizedTransition,
-        $"Transition '{transitionKey}' with trigger type '{triggerType}' cannot be executed by '{executionContext}' context")
+        $"Transition '{transitionKey}' with trigger type '{triggerType}' cannot be executed by '{executionActor}' context")
 {
     public string TransitionKey { get; } = transitionKey;
     public TriggerType TriggerType { get; } = triggerType;
-    public WorkflowExecutionContext ExecutionContext { get; } = executionContext;
+    public ExecutionActor ExecutionActor { get; } = executionActor;
 }

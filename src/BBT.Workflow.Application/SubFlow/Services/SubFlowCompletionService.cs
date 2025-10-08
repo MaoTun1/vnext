@@ -4,7 +4,6 @@ using BBT.Aether.Guids;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
-using BBT.Workflow.Execution.StateMachine;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Schemas;
@@ -278,25 +277,25 @@ public sealed class SubFlowCompletionService(
             
             // Use the new unified method to execute both auto and scheduled transitions
             // This reduces database queries and code duplication
-            using var scope = serviceProvider.CreateScope();
-            var autoTransitionService = scope.ServiceProvider.GetRequiredService<IAutoTransitionService>();
-            
-            var autoTransitionResult = await autoTransitionService.ExecuteAutomaticAndScheduledTransitionsAsync(
-                parentWorkflow,
-                parentInstance,
-                scriptContext,
-                cancellationToken);
-                
-            // Use the refreshed instance from the auto transition result
-            var finalInstance = autoTransitionResult.RefreshedInstance ?? parentInstance;
-                
-            if (finalInstance is { IsCompleted: false })
-            {
-                if(finalInstance.TryActivateIfBusyWithoutSubFlow())
-                {
-                    await instanceRepository.UpdateStatusAsync(finalInstance, cancellationToken);
-                }
-            }
+            // using var scope = serviceProvider.CreateScope();
+            // var autoTransitionService = scope.ServiceProvider.GetRequiredService<IAutoTransitionService>();
+            //
+            // var autoTransitionResult = await autoTransitionService.ExecuteAutomaticAndScheduledTransitionsAsync(
+            //     parentWorkflow,
+            //     parentInstance,
+            //     scriptContext,
+            //     cancellationToken);
+            //     
+            // // Use the refreshed instance from the auto transition result
+            // var finalInstance = autoTransitionResult.RefreshedInstance ?? parentInstance;
+            //     
+            // if (finalInstance is { IsCompleted: false })
+            // {
+            //     if(finalInstance.TryActivateIfBusyWithoutSubFlow())
+            //     {
+            //         await instanceRepository.UpdateStatusAsync(finalInstance, cancellationToken);
+            //     }
+            // }
 
             logger.LogInformation(
                 "Successfully resumed automatic processes for parent instance {ParentInstanceId}",

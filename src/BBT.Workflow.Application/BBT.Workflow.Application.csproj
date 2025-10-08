@@ -13,4 +13,9 @@
     <PackageReference Include="Dapr.Jobs" Version="$(DaprPackageVersion)" />
     <ProjectReference Include="..\BBT.Workflow.Domain\BBT.Workflow.Domain.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="BackgroundJobs\Handlers\StartInstanceJobHandler.cs" />
+    <Compile Remove="BackgroundJobs\Handlers\TransitionJobHandler.cs" />
+    <Compile Remove="BackgroundJobs\Handlers\TransitionTimerJobHandler.cs" />
+  </ItemGroup>
 </Project>

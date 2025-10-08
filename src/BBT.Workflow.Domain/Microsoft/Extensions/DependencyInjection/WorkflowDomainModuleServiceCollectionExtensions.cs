@@ -6,7 +6,6 @@ using BBT.Workflow.Rules;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
 using BBT.Workflow.Scripting;
-using BBT.Workflow.States;
 using BBT.Workflow.Validation;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -42,7 +41,6 @@ public static class WorkflowDomainModuleServiceCollectionExtensions
         services.AddScoped<ICurrentSchema, CurrentSchema>();
         services.AddScoped<IRuleEngine<State>, RuleEngine<State>>();
         services.AddScoped<StateTransitionPolicy>();
-        services.AddScoped<IStateMachineService, StateMachineService>();
         services.AddScoped<IScriptContextFactory, ScriptContextFactory>();
         services.AddSingleton<IJsonSchemaValidator, JsonSchemaValidator>();
         

@@ -18,7 +18,7 @@ public interface ITaskOrchestrator
     /// Orchestrates the execution of a workflow task.
     /// </summary>
     /// <param name="onExecuteTask">The task configuration to orchestrate.</param>
-    /// <param name="instanceTransition">The instance transition context. Can be null for extension tasks.</param>
+    /// <param name="instanceTransitionId">The instance transition context. Can be null for extension tasks.</param>
     /// <param name="taskTrigger">The trigger type that initiated the task execution.</param>
     /// <param name="context">The script execution context for task execution.</param>
     /// <param name="cancellationToken">Cancellation token for async operation control.</param>
@@ -26,7 +26,7 @@ public interface ITaskOrchestrator
     /// <exception cref="ArgumentNullException">Thrown when required parameters are null.</exception>
     Task ExecuteTaskAsync(
         OnExecuteTask onExecuteTask,
-        InstanceTransition? instanceTransition,
+        Guid? instanceTransitionId,
         TaskTrigger taskTrigger,
         ScriptContext context,
         CancellationToken cancellationToken = default);

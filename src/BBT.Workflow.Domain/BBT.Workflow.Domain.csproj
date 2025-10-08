@@ -18,4 +18,7 @@
   <ItemGroup>
     <Compile Remove="Definitions\Validators\ValidationResult.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Definitions\States\Services\" />
+  </ItemGroup>
 </Project>

@@ -1,7 +1,6 @@
 using System.Xml;
 using BBT.Workflow.Definitions.Timer;
 using Dapr.Jobs.Models;
-using ExecutionContext = BBT.Workflow.Shared.ExecutionContext;
 
 namespace BBT.Workflow.BackgroundJobs;
 

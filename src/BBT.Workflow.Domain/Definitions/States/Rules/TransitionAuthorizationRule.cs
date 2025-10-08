@@ -1,13 +1,13 @@
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Rules;
-using WorkflowExecutionContext = BBT.Workflow.Shared.ExecutionContext;
+using BBT.Workflow.Shared;
 
 namespace BBT.Workflow.Definitions.Rules;
 
 /// <summary>
 /// Validates that the transition can be executed by the specified execution context
 /// </summary>
-public class TransitionAuthorizationRule(Transition transition, WorkflowExecutionContext executionContext)
+public class TransitionAuthorizationRule(Transition transition, ExecutionActor executionActor)
     : BaseRule<State>
 {
     public override bool IsApplicable(State context)
@@ -16,7 +16,7 @@ public class TransitionAuthorizationRule(Transition transition, WorkflowExecutio
             ||
             transition.TriggerType == TriggerType.Scheduled)
         {
-            return executionContext != WorkflowExecutionContext.System;
+            return executionActor != ExecutionActor.System;
         }
         
         return false;
@@ -27,6 +27,6 @@ public class TransitionAuthorizationRule(Transition transition, WorkflowExecutio
         throw new UnauthorizedTransitionException(
             transition.Key,
             transition.TriggerType,
-            executionContext);
+            executionActor);
     }
 }

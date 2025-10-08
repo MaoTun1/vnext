@@ -4,7 +4,7 @@ using BBT.Aether.Auditing;
 using BBT.Aether.Domain.Entities;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances.Policies;
-using WorkflowExecutionContext = BBT.Workflow.Shared.ExecutionContext;
+using BBT.Workflow.Shared;
 
 namespace BBT.Workflow.Instances;
 
@@ -111,6 +111,26 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     public void SetMetaData(ObjectDictionary data)
     {
         MetaData = data;
+    }
+
+    /// <summary>
+    /// Sets system-generated metadata for the instance.
+    /// This method encapsulates the business logic for setting system metadata keys.
+    /// </summary>
+    /// <param name="isSync">Whether the instance is synchronous</param>
+    /// <param name="callback">Callback URL for the instance</param>
+    /// <param name="flowType">The workflow type code</param>
+    /// <param name="userMetadata">Optional user-provided metadata to merge</param>
+    public void SetInfoMetadata(bool isSync, string? callback, string flowType, ObjectDictionary? userMetadata = null)
+    {
+        var metadata = userMetadata ?? new ObjectDictionary();
+        
+        // Set system metadata - these are always set by the system
+        metadata.TryAdd(DomainConsts.MetaDataKeys.Sync, isSync.ToString().ToLower());
+        metadata.TryAdd(DomainConsts.MetaDataKeys.Callback, callback ?? string.Empty);
+        metadata.TryAdd(DomainConsts.MetaDataKeys.FlowType, flowType);
+        
+        SetMetaData(metadata);
     }
 
     private readonly List<InstanceData> _dataList = new();
@@ -288,9 +308,9 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     }
 
     public bool CanExecuteTransition(Transition transition, State state, StateTransitionPolicy policy,
-        WorkflowExecutionContext executionContext = WorkflowExecutionContext.User)
+        ExecutionActor executionActor = ExecutionActor.User)
     {
-        policy.Validate(state, transition, executionContext);
+        policy.Validate(state, transition, executionActor);
         return true;
     }
 

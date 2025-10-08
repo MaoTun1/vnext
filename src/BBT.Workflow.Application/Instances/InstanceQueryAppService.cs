@@ -6,7 +6,6 @@ using BBT.Workflow.Schemas;
 using BBT.Workflow.Scripting;
 using BBT.Aether.Domain.Entities;
 using BBT.Workflow.Extentions;
-using BBT.Workflow.States;
 using Microsoft.AspNetCore.Http;
 using BBT.Workflow.Instances.Remote;
 using Microsoft.Extensions.Logging;
@@ -22,7 +21,6 @@ public sealed class InstanceQueryAppService(
     IInstanceRepository instanceRepository,
     IInstanceCorrelationRepository instanceCorrelationRepository,
     IInstanceExtensionService instanceExtensionService,
-    IStateMachineService stateMachineService,
     IScriptContextFactory scriptContextFactory,
     IHttpContextAccessor httpContextAccessor,
     IRemoteInstanceQueryAppService remoteInstanceQueryAppService,
@@ -270,7 +268,7 @@ public sealed class InstanceQueryAppService(
         
         if (instance.Status.Equals(InstanceStatus.Active))
         {
-            availableTransitions = stateMachineService.AvailableUserTransitionKeys(currentWorkflow, instance);
+            availableTransitions = currentWorkflow.GetAvailableUserTransitionKeys(currentWorkflow.GetState(instance.GetCurrentState));
         }
 
         var currentState = transitionInfo?.CurrentState ?? instance.CurrentState;
@@ -611,7 +609,7 @@ public sealed class InstanceQueryAppService(
             var availableTransitions = new List<string>();
             if (instance.Status.Equals(InstanceStatus.Active))
             {
-                availableTransitions = stateMachineService.AvailableUserTransitionKeys(currentWorkflow, instance);
+                availableTransitions = currentWorkflow.GetAvailableUserTransitionKeys(currentWorkflow.GetState(instance.GetCurrentState));
             }
 
             View? view = null;

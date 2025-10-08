@@ -111,13 +111,55 @@ public sealed class StandardTaskResponse
     public string? TaskType { get; set; }
 }
 
-public sealed class ScriptContext
+public sealed class ScriptContext: IDisposable
 {
     public static readonly JsonSerializerOptions JsonScriptBodyOptions = new()
     {
         Converters = { new ExpandoObjectJsonConverter() },
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
+    
+    private bool _disposed = false;
+    
+    /// <summary>
+    /// Releases all resources used by the ScriptContext.
+    /// This helps reduce memory pressure and GC overhead in high-throughput scenarios.
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        try
+        {
+            // Clear large collections to help GC
+            TaskResponse?.Clear();
+            MetaData?.Clear();
+            Definitions?.Clear();
+
+            // Clear dynamic objects that might hold references
+            Body = null;
+            Headers = null;
+            RouteValues = null;
+        }
+        catch (Exception)
+        {
+            // Suppress exceptions during disposal to prevent issues in finally blocks
+        }
+        finally
+        {
+            _disposed = true;
+        }
+    }
+
+    /// <summary>
+    /// Throws ObjectDisposedException if the context has been disposed.
+    /// </summary>
+    private void ThrowIfDisposed()
+    {
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(ScriptContext));
+    }
 
     /// <summary>
     /// Contains the request payload data from workflow transitions or task execution responses,
@@ -327,6 +369,7 @@ public sealed class ScriptContext
     /// <param name="body">The new body content.</param>
     public void SetBody(object? body)
     {
+        ThrowIfDisposed();
         MergeToBody(body, JsonSerializerConstants.JsonOptions);
     }
 
@@ -336,6 +379,7 @@ public sealed class ScriptContext
     /// <param name="response">The standardized task response.</param>
     public void SetStandardResponse(StandardTaskResponse response)
     {
+        ThrowIfDisposed();
         MergeToBody(response, JsonScriptBodyOptions);
     }
 

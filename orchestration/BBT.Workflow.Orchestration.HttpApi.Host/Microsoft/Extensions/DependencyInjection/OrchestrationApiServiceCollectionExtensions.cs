@@ -41,9 +41,9 @@ public static class OrchestrationApiServiceCollectionExtensions
         
         // Job Handlers
         services.AddScoped<IJobHandler, FlowTimeoutJobHandler>();
-        services.AddScoped<IJobHandler, TransitionTimerJobHandler>();
-        services.AddScoped<IJobHandler, StartInstanceJobHandler>();
-        services.AddScoped<IJobHandler, TransitionJobHandler>();
+        // services.AddScoped<IJobHandler, TransitionTimerJobHandler>();
+        // services.AddScoped<IJobHandler, StartInstanceJobHandler>();
+        // services.AddScoped<IJobHandler, TransitionJobHandler>();
         
         // Add any Orchestration-specific hosted services
         services.AddHostedService<CacheInitializationHostedService>();

@@ -31,7 +31,6 @@ internal sealed class ScriptContextBuilder(
     private string? _workflowVersion;
     private IReference? _workflowReference;
     private Guid? _instanceId;
-    private bool _includeNavigations = true;
     private bool _noTracking = false;
     private string? _transitionKey;
 
@@ -71,10 +70,9 @@ internal sealed class ScriptContextBuilder(
         return this;
     }
 
-    public IScriptContextBuilder WithInstance(Guid instanceId, bool includeNavigations = true, bool noTracking = false)
+    public IScriptContextBuilder WithInstance(Guid instanceId, bool noTracking = false)
     {
         _instanceId = instanceId;
-        _includeNavigations = includeNavigations;
         _noTracking = noTracking;
         _instance = null; // Clear direct instance if set
         return this;
@@ -191,25 +189,11 @@ internal sealed class ScriptContextBuilder(
 
         if (_instanceId.HasValue)
         {
-            Instance? instance = null;
-            if (_noTracking)
-            {
-                var query = (await instanceRepository.GetQueryableAsync());
-                if (_includeNavigations)
-                {
-                    query = query.Include(i => i.DataList);
-                }
-
-                instance = await query
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(p => p.Id == _instanceId.Value, cancellationToken);
-            }
-            else
-            {
-                instance = await instanceRepository.FindAsync(_instanceId.Value, _includeNavigations,
+            var instance = _noTracking
+                ? await instanceRepository.FindByIdAsReadOnlyAsync(_instanceId.Value, cancellationToken)
+                : await instanceRepository.FindAsync(_instanceId.Value, true,
                     cancellationToken);
-            }
-
+            
             if (instance == null)
                 throw new InvalidOperationException($"Instance with ID {_instanceId.Value} not found.");
             return instance;

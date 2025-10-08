@@ -274,7 +274,7 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
                ?? (StartTransition.Key == key ? StartTransition : null);
     }
 
-    public Transition? FindTransition(string key, State currentState)
+    public Transition? ResolveTransition(string key, State currentState)
     {
         return currentState.FindTransition(key) ?? FindTransition(key);
     }
@@ -285,13 +285,34 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
                ?? States.SelectMany(s => s.Transitions).FirstOrDefault(p => p.Key == key);
     }
 
-    public List<string> AvailableSharedTransitionKeys(string state)
+    public List<string> GetSharedTransitionKeys(string state)
     {
         return SharedTransitions.Where(s => s.Key == state).Select(s => s.Key).ToList();
+    }
+
+    public List<string> GetAvailableUserTransitionKeys(State currentState)
+    {
+        // Get manual transitions from current state
+        var manualTransitions = currentState.Transitions
+            .Where(t => t.TriggerType == TriggerType.Manual || t.TriggerType == TriggerType.Event)
+            .Select(t => t.Key)
+            .ToList();
+        
+        // Get manual shared transitions
+        var manualSharedTransitions = SharedTransitions
+            .Where(t => t.AvailableIn.Contains(currentState.Key) && 
+                        (t.TriggerType == TriggerType.Manual || t.TriggerType == TriggerType.Event))
+            .Select(t => t.Key)
+            .ToList();
+        
+        manualTransitions.AddRange(manualSharedTransitions);
+        return manualTransitions;
     }
 
     public static Workflow Create()
     {
         return new Workflow();
     }
+
+    
 }
