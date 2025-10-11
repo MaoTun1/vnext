@@ -1,4 +1,5 @@
 using BBT.Workflow.Definitions;
+using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Execution.Validation;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks;
@@ -11,7 +12,7 @@ namespace BBT.Workflow.Execution.Handlers;
 /// Validates conditions before allowing transition execution.
 /// </summary>
 public sealed class AutomaticTransitionHandler(
-    ITaskOrchestrationService taskOrchestrationService,
+    ITaskConditionService taskConditionService,
     IScriptContextFactory scriptContextFactory,
     ITransitionValidationService validationService,
     ILogger<AutomaticTransitionHandler> logger) : TransitionHandlerBase(logger, validationService)
@@ -20,7 +21,8 @@ public sealed class AutomaticTransitionHandler(
     public override bool CanHandle(TriggerType triggerType) => triggerType == TriggerType.Automatic;
 
     /// <inheritdoc />
-    protected override async Task PreValidateAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    protected override async Task PreValidateAsync(TransitionExecutionContext context,
+        CancellationToken cancellationToken)
     {
         Logger.LogDebug("Validating automatic transition {TransitionKey} for instance {InstanceId}",
             context.TransitionKey, context.InstanceId);
@@ -52,24 +54,28 @@ public sealed class AutomaticTransitionHandler(
         try
         {
             // Get or build script context
-            var scriptContext = context.GetOrBuildScriptContext(() => 
+            var scriptContext = context.GetOrBuildScriptContext(() =>
                 CreateScriptContext(context));
 
             // Evaluate the condition
-            var conditionMet = await taskOrchestrationService.ExecuteConditionAsync(
+            var conditionMet = await taskConditionService.ExecuteConditionAsync(
                 context.Transition.Rule,
                 scriptContext,
                 cancellationToken);
 
             if (!conditionMet)
             {
-                throw new InvalidOperationException(
-                    $"Condition not met for automatic transition {context.TransitionKey}. " +
-                    "This may indicate a race condition or state change between evaluation and execution.");
+                Logger.LogDebug("Condition evaluation failed for automatic transition {TransitionKey} on instance {InstanceId}",
+                    context.TransitionKey, context.InstanceId);
+                throw new TransitionRuleFailedException(context.TransitionKey, "Transition rule evaluation failed");
             }
 
             Logger.LogTrace("Condition re-validation successful for automatic transition {TransitionKey}",
                 context.TransitionKey);
+        }
+        catch (TransitionRuleFailedException)
+        {
+            throw;
         }
         catch (Exception ex) when (!(ex is InvalidOperationException))
         {
@@ -104,7 +110,8 @@ public sealed class AutomaticTransitionHandler(
     }
 
     /// <inheritdoc />
-    protected override async Task PostProcessAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    protected override async Task PostProcessAsync(TransitionExecutionContext context,
+        CancellationToken cancellationToken)
     {
         Logger.LogDebug("Post-processing automatic transition {TransitionKey} for instance {InstanceId}",
             context.TransitionKey, context.InstanceId);
@@ -124,7 +131,8 @@ public sealed class AutomaticTransitionHandler(
     /// <summary>
     /// Updates execution metrics for automatic transitions.
     /// </summary>
-    private async Task UpdateExecutionMetricsAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    private async Task UpdateExecutionMetricsAsync(TransitionExecutionContext context,
+        CancellationToken cancellationToken)
     {
         // TODO: Record metrics specific to automatic transitions
         // - Chain depth distribution
@@ -156,7 +164,7 @@ public sealed class AutomaticTransitionHandler(
             .WithInstance(context.Instance)
             .WithTransition(context.Transition)
             .WithBody(context.Data)
-            .WithHeaders(context.Headers.ToDictionary(kvp => kvp.Key, kvp => (string?)kvp.Value))
+            .WithHeaders(context.Headers.ToDictionary(kvp => kvp.Key, kvp => kvp.Value))
             .BuildAsync(CancellationToken.None)
             .GetAwaiter()
             .GetResult();

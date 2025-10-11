@@ -9,7 +9,7 @@ namespace BBT.Workflow.SubFlow;
 /// This interface defines the contract for handling execution and correlation management
 /// between parent workflow and SubFlow definitions. Both SubFlow and SubProcess now create separate instances.
 /// </summary>
-public interface ISubFlowService
+public interface ISubflowStarter
 {
     /// <summary>
     /// Handles the initiation of SubFlow execution.
@@ -18,6 +18,8 @@ public interface ISubFlowService
     /// <param name="workflow">The main workflow.</param>
     /// <param name="parentInstance">The main workflow instance that initiates the sub-flow.</param>
     /// <param name="targetState">The target state containing SubFlow configuration.</param>
+    /// <param name="transition">The current transition.</param>
+    /// <param name="correlation"></param>
     /// <param name="context">The script context containing execution data and headers.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>A task representing the asynchronous sub-flow initiation operation.</returns>
@@ -33,26 +35,12 @@ public interface ISubFlowService
     /// The parent workflow can continue immediately after starting the SubProcess.
     /// </para>
     /// </remarks>
-    Task HandleSubFlowAsync(
+    Task StartAsync(
         Definitions.Workflow workflow,
         Instance parentInstance,
         State targetState,
+        Transition transition,
+        InstanceCorrelation correlation,
         ScriptContext context,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Checks if transition should be forwarded to SubFlow instance.
-    /// If SubFlow is active, forwards the transition to SubFlow instance via remote call.
-    /// Returns SubFlow response data if forwarded, null if should be processed locally.
-    /// </summary>
-    /// <param name="instanceId">The main instance ID</param>
-    /// <param name="transitionKey">The transition key to execute</param>
-    /// <param name="input">The transition input data</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests</param>
-    /// <returns>SubFlow transition response if forwarded, null if should be processed locally</returns>
-    Task<InstanceServiceResponse<TransitionOutput>?> TryForwardTransitionToSubFlowAsync(
-        Guid instanceId,
-        string transitionKey,
-        TransitionInput input,
         CancellationToken cancellationToken = default);
 }

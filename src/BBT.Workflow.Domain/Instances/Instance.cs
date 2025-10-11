@@ -174,6 +174,40 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// </summary>
     public IReadOnlyCollection<InstanceCorrelation> ChildCorrelations => _childCorrelations.AsReadOnly();
 
+    public InstanceCorrelation? Subflow =>
+        ChildCorrelations.FirstOrDefault(p => !p.IsCompleted && p.SubFlowType.Equals(SubFlowType.SubFlow));
+    
+    public Instance CreateSnapshot()
+    {
+        var snapshot = new Instance
+        {
+            Id = Id,
+            IsTransient = IsTransient,
+            CreatedAt = CreatedAt,
+            ModifiedAt = ModifiedAt,
+            Flow = Flow,
+            Key = Key,
+            Status = Status,
+            CompletedAt = CompletedAt,
+            CurrentState = CurrentState,
+            Duration = Duration,
+            Tags = [..Tags],
+            MetaData = new ObjectDictionary(MetaData)
+        };
+
+        foreach (var data in _dataList)
+        {
+            snapshot._dataList.Add(data.CreateSnapshot());
+        }
+
+        foreach (var correlation in _childCorrelations)
+        {
+            snapshot._childCorrelations.Add(correlation.CreateSnapshot());
+        }
+
+        return snapshot;
+    }
+
     public void Complete()
     {
         Status = InstanceStatus.Completed;
@@ -213,47 +247,6 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     }
 
     /// <summary>
-    /// Sets the instance status based on its completion and active subflow state.
-    /// This encapsulates the business logic for determining whether an instance should be Active or Busy.
-    /// </summary>
-    public bool TrySetStatusBasedOnState()
-    {
-        if (IsCompleted)
-        {
-            return false;
-        }
-
-        if (HasActiveSubFlow)
-        {
-            Busy();
-            return true;
-        }
-
-        if (IsBusy)
-        {
-            Active();
-            return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Sets the parent instance status to Active if it's currently Busy but has no active subflows.
-    /// This is typically used when a subflow completes and the parent should return to Active state.
-    /// </summary>
-    public bool TryActivateIfBusyWithoutSubFlow()
-    {
-        if (IsBusy && !HasActiveSubFlow)
-        {
-            Active();
-            return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>
     /// Determines whether this instance should publish a completion event.
     /// This is typically true for SubItems (SubFlow or SubProcess) that have completed.
     /// </summary>
@@ -265,6 +258,10 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     public void AddCorrelation(InstanceCorrelation correlation)
     {
         _childCorrelations.Add(correlation);
+        if (correlation.SubFlowType.Equals(SubFlowType.SubFlow))
+        {
+            Busy();
+        }
     }
 
     public void SetKey(string key)

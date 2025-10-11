@@ -7,6 +7,11 @@ namespace BBT.Workflow.Execution.Pipeline;
 public static class LifecycleOrder
 {
     /// <summary>
+    /// Subflow
+    /// </summary>
+    public const int Preflight = 5;
+    
+    /// <summary>
     /// Order for creating the transition record in the database.
     /// This should be the first step to track the transition attempt.
     /// </summary>
@@ -37,10 +42,12 @@ public static class LifecycleOrder
     public const int OnEntry = 50;
     
     /// <summary>
-    /// Order for handling SubFlow operations or finishing the workflow.
-    /// Manages workflow completion or sub-process initiation.
+    /// Order for handling SubFlow operations.
+    /// Manages sub-process initiation when state type is SubFlow.
     /// </summary>
-    public const int FinishOrSubflow = 60;
+    public const int SubFlow = 60;
+
+    public const int ClearBusyOnResumeStep = Schedule - 1;
     
     /// <summary>
     /// Order for scheduling future transitions.
@@ -55,8 +62,18 @@ public static class LifecycleOrder
     public const int Auto = 80;
     
     /// <summary>
+    /// Order for handling workflow finishing.
+    /// Manages workflow completion when state type is Finish.
+    /// This should run after all other pipeline steps.
+    /// </summary>
+    public const int Finish = 90;
+    
+    /// <summary>
     /// Order for finalizing the transition.
     /// Updates transition record and performs cleanup operations.
     /// </summary>
-    public const int Finalize = 90;
+    public const int Finalize = 100;
+    
+    public const int AfterEpilogueRefresh = Finalize + 1;
+    
 }

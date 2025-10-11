@@ -1,4 +1,4 @@
-using BBT.Workflow.BackgroundJobs;
+using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Execution.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -12,14 +12,13 @@ namespace BBT.Workflow.Execution.ReEntry;
 /// </summary>
 public sealed class DefaultReentryDispatcher(
     IServiceScopeFactory serviceScopeFactory,
-    IBackgroundJobService backgroundJobService,
     IOptions<ReentryOptions> options,
     ILogger<DefaultReentryDispatcher> logger) : IReentryDispatcher
 {
     private readonly ReentryOptions _options = options.Value;
 
     /// <inheritdoc />
-    public async Task DispatchAutoAsync(ReentryCommand command, CancellationToken cancellationToken)
+    public async Task<ReentryOutcome> DispatchAutoAsync(ReentryCommand command, CancellationToken cancellationToken)
     {
         var nextCommand = command with { ChainDepth = command.ChainDepth + 1 };
 
@@ -29,38 +28,25 @@ public sealed class DefaultReentryDispatcher(
             logger.LogWarning(
                 "Maximum auto transition hops ({MaxHops}) exceeded for instance {InstanceId}, chain {ExecutionChainId}",
                 _options.MaxAutoHops, command.InstanceId, command.ExecutionChainId);
-            return;
+            return new ReentryOutcome(false, false, null, null, null);
         }
 
-        logger.LogDebug(
-            "Dispatching automatic transition {TransitionKey} for instance {InstanceId} (depth: {ChainDepth})",
-            command.TransitionKey, command.InstanceId, nextCommand.ChainDepth);
-
-        // Decide execution strategy
-        if (command.PreferInline && _options.AllowInlineAuto)
+        if (!nextCommand.PreferInline || !_options.AllowInlineAuto)
         {
-            await InvokeInNewScopeAsync(nextCommand, cancellationToken);
+            // The transition can be advanced as a background job.
+            return new ReentryOutcome(InlineExecuted: false, Succeeded: false, NewState: null, NextTransitionKey: null,
+                ResumeFromOrder: null);
         }
-        else
-        {
-            await EnqueueTransitionJobAsync("auto-transition", nextCommand, cancellationToken);
-        }
-    }
-
-    /// <inheritdoc />
-    public async Task DispatchScheduledAsync(ReentryCommand command, CancellationToken cancellationToken)
-    {
-        logger.LogDebug("Dispatching scheduled transition {TransitionKey} for instance {InstanceId}",
-            command.TransitionKey, command.InstanceId);
-
-        // Scheduled transitions are always enqueued
-        await EnqueueTransitionJobAsync("scheduled-transition", command, cancellationToken);
+        
+        var succeeded = await InvokeInNewScopeAsync(nextCommand, cancellationToken);
+        
+        return new ReentryOutcome(InlineExecuted: true, Succeeded: succeeded, NewState: null, NextTransitionKey: null, ResumeFromOrder: null);
     }
 
     /// <summary>
     /// Invokes a transition in a new dependency injection scope.
     /// </summary>
-    private async Task InvokeInNewScopeAsync(ReentryCommand command, CancellationToken cancellationToken)
+    private async Task<bool> InvokeInNewScopeAsync(ReentryCommand command, CancellationToken cancellationToken)
     {
         logger.LogTrace("Executing inline re-entry for transition {TransitionKey} on instance {InstanceId}",
             command.TransitionKey, command.InstanceId);
@@ -75,12 +61,21 @@ public sealed class DefaultReentryDispatcher(
 
             logger.LogTrace("Completed inline re-entry for transition {TransitionKey} on instance {InstanceId}",
                 command.TransitionKey, command.InstanceId);
+            return true; // Success
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             logger.LogDebug("Inline re-entry cancelled for transition {TransitionKey} on instance {InstanceId}",
                 command.TransitionKey, command.InstanceId);
             throw;
+        }
+        catch (TransitionRuleFailedException ex)
+        {
+            logger.LogWarning(ex,
+                "Inline re-entry transition rule failed for transition {TransitionKey} on instance {InstanceId}: {Message}",
+                command.TransitionKey, command.InstanceId, ex.Message);
+            // Don't rethrow for rule failures as they are expected business logic
+            return false; // Rule failed, not successful
         }
         catch (Exception ex)
         {
@@ -89,63 +84,5 @@ public sealed class DefaultReentryDispatcher(
                 command.TransitionKey, command.InstanceId);
             throw;
         }
-    }
-
-    /// <summary>
-    /// Enqueues a transition as a background job.
-    /// </summary>
-    private async Task EnqueueTransitionJobAsync(string jobType, ReentryCommand command,
-        CancellationToken cancellationToken)
-    {
-        logger.LogTrace("Enqueuing {JobType} job for transition {TransitionKey} on instance {InstanceId}",
-            jobType, command.TransitionKey, command.InstanceId);
-
-        try
-        {
-            // Convert to background job payload
-            var payload = CreateTransitionJobPayload(command);
-
-            // Enqueue the job
-            // await backgroundJobService.EnqueueTransitionAsync(
-            //     command.InstanceId,
-            //     command.TransitionKey,
-            //     command.Domain,
-            //     command.WorkflowKey,
-            //     null, // version will be resolved from instance
-            //     payload.Data,
-            //     payload.Headers,
-            //     payload.RouteValues,
-            //     payload.ExecutionContext,
-            //     cancellationToken);
-
-            logger.LogTrace("Enqueued {JobType} job for transition {TransitionKey} on instance {InstanceId}",
-                jobType, command.TransitionKey, command.InstanceId);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex,
-                "Failed to enqueue {JobType} job for transition {TransitionKey} on instance {InstanceId}",
-                jobType, command.TransitionKey, command.InstanceId);
-            throw;
-        }
-    }
-
-    /// <summary>
-    /// Creates a background job payload from a re-entry command.
-    /// </summary>
-    private static BackgroundJobs.Payloads.TransitionJobPayload CreateTransitionJobPayload(ReentryCommand command)
-    {
-        return new BackgroundJobs.Payloads.TransitionJobPayload
-        {
-            InstanceId = command.InstanceId,
-            TransitionKey = command.TransitionKey,
-            Domain = command.Domain,
-            Workflow = command.WorkflowKey,
-            Version = null, // Will be resolved from instance
-            Data = null, // Re-entry transitions typically don't carry data
-            Headers = command.Headers?.ToDictionary(kvp => kvp.Key, kvp => (string?)kvp.Value) ?? new(),
-            RouteValues = new Dictionary<string, string?>(),
-            ExecutionActor = Shared.ExecutionActor.System // Re-entry is always system-initiated
-        };
     }
 }

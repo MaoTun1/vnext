@@ -1,5 +1,4 @@
 using System.Text.Json;
-using BBT.Workflow.Application.Execution.Services;
 using BBT.Workflow.BackgroundJobs.Payloads;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Schemas;
@@ -64,16 +63,15 @@ public sealed class TransitionJobHandler(
                         sync: true) // Force sync=true to avoid infinite loop
                     {
                         Headers = jobInfo.Payload.Headers,
-                        RouteValues = jobInfo.Payload.RouteValues,
-                        ExecutionContext = jobInfo.Payload.ExecutionContext
+                        RouteValues = jobInfo.Payload.RouteValues
                     };
 
+                var context =
+                    transitionInput.ToExecutionContext(jobInfo.Payload.InstanceId, jobInfo.Payload.TransitionKey);
+                context.Actor = jobInfo.Payload.ExecutionActor;
+                
                 // Use the background-specific method that handles pre-reserved instances
-                await workflowExecutionService.ExecuteTransitionAsync(
-                    jobInfo.Payload.InstanceId,
-                    jobInfo.Payload.TransitionKey,
-                    transitionInput,
-                    cancellationToken);
+                await workflowExecutionService.ExecuteTransitionAsync(context, cancellationToken);
 
                 logger.LogInformation(
                     "TransitionJobHandler: Successfully executed transition {TransitionKey} for instance {InstanceId}",

@@ -13,14 +13,5 @@ public interface IReentryDispatcher
     /// <param name="command">The re-entry command containing execution details.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    Task DispatchAutoAsync(ReentryCommand command, CancellationToken cancellationToken);
-    
-    /// <summary>
-    /// Dispatches a scheduled transition for execution.
-    /// Always enqueues as a background job for later execution.
-    /// </summary>
-    /// <param name="command">The re-entry command containing execution details.</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>A task representing the asynchronous operation.</returns>
-    Task DispatchScheduledAsync(ReentryCommand command, CancellationToken cancellationToken);
+    Task<ReentryOutcome> DispatchAutoAsync(ReentryCommand command, CancellationToken cancellationToken);
 }

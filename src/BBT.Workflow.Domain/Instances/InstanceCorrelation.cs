@@ -13,7 +13,7 @@ public sealed class InstanceCorrelation : Entity<Guid>
     {
     }
 
-    public InstanceCorrelation(
+    private InstanceCorrelation(
         Guid id,
         Guid instanceId,
         string parentState,
@@ -32,6 +32,19 @@ public sealed class InstanceCorrelation : Entity<Guid>
         SubFlowDomain = Check.NotNullOrEmpty(subFlowDomain, nameof(subFlowDomain), WorkflowConstants.MaxDomainLength);
         SubFlowName = Check.NotNullOrEmpty(subFlowName, nameof(subFlowName), WorkflowConstants.MaxKeyLength);
         SubFlowVersion = Check.Length(subFlowVersion, nameof(subFlowVersion), WorkflowConstants.MaxVersionLength);
+    }
+
+    public static InstanceCorrelation Create(
+        Guid id,
+        Guid instanceId,
+        string parentState,
+        Guid subFlowInstanceId,
+        string subFlowType,
+        string subFlowDomain,
+        string subFlowName,
+        string? subFlowVersion)
+    {
+        return new InstanceCorrelation(id, instanceId, parentState, subFlowInstanceId, subFlowType, subFlowDomain, subFlowName, subFlowVersion);
     }
 
     /// <summary>
@@ -80,9 +93,28 @@ public sealed class InstanceCorrelation : Entity<Guid>
     /// </summary>
     public DateTime? CompletedAt { get; private set; }
 
-    public void Complete()
+    public void Completed()
     {
         IsCompleted = true;
         CompletedAt = DateTime.UtcNow;
+    }
+
+    internal InstanceCorrelation CreateSnapshot()
+    {
+        var snapshot = new InstanceCorrelation
+        {
+            Id = Id,
+            ParentInstanceId = ParentInstanceId,
+            ParentState = ParentState,
+            SubFlowInstanceId = SubFlowInstanceId,
+            SubFlowDomain = SubFlowDomain,
+            SubFlowName = SubFlowName,
+            SubFlowVersion = SubFlowVersion,
+            SubFlowType = SubFlowType,
+            IsCompleted = IsCompleted,
+            CompletedAt = CompletedAt
+        };
+
+        return snapshot;
     }
 }

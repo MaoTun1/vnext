@@ -15,7 +15,5 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="BackgroundJobs\Handlers\StartInstanceJobHandler.cs" />
-    <Compile Remove="BackgroundJobs\Handlers\TransitionJobHandler.cs" />
-    <Compile Remove="BackgroundJobs\Handlers\TransitionTimerJobHandler.cs" />
   </ItemGroup>
 </Project>

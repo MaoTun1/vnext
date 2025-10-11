@@ -1,3 +1,4 @@
+using System.Text.Json;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Scripting;
@@ -67,7 +68,7 @@ public sealed class TransitionExecutionContext
     public string ConcurrencyToken { get; set; } = default!;
     
     /// <summary>Gets or sets the instance data payload.</summary>
-    public object? Data { get; set; }
+    public JsonElement? Data { get; set; }
 
     // Execution flags
     /// <summary>Gets or sets whether to skip immediate execution (for scheduled transitions).</summary>
@@ -91,6 +92,14 @@ public sealed class TransitionExecutionContext
     
     /// <summary>Gets a temporary storage bag for pipeline steps to share data.</summary>
     public IDictionary<string, object?> Items { get; } = new Dictionary<string, object?>();
+    
+    public IDictionary<string, object?> Cache { get; } = new Dictionary<string, object?>();
+    public void ClearCacheForFinalize() => Cache.Clear();
+    
+    // Typed instructions
+    public PipelineDirectives Directives { get; } = new();
+
+    public ClientResponse? ClientResponse { get; set; }
 
     /// <summary>
     /// Gets or builds a ScriptContext using the provided factory function.
@@ -100,11 +109,11 @@ public sealed class TransitionExecutionContext
     /// <returns>The cached or newly created ScriptContext.</returns>
     public ScriptContext GetOrBuildScriptContext(Func<ScriptContext> factory)
     {
-        if (Items.TryGetValue("ScriptContext", out var cached) && cached is ScriptContext scriptContext)
+        if (Cache.TryGetValue("ScriptContext", out var cached) && cached is ScriptContext scriptContext)
             return scriptContext;
         
         var created = factory();
-        Items["ScriptContext"] = created;
+        Cache["ScriptContext"] = created;
         return created;
     }
 
@@ -122,5 +131,43 @@ public sealed class TransitionExecutionContext
         var created = await factory();
         Items["ScriptContext"] = created;
         return created;
+    }
+
+    /// <summary>
+    /// Applies changes made within the provided <see cref="ScriptContext"/> back to the live transition context.
+    /// </summary>
+    /// <param name="scriptContext">The script context containing potential instance updates.</param>
+    public void ApplyScriptContextChanges(ScriptContext scriptContext)
+    {
+        ArgumentNullException.ThrowIfNull(scriptContext);
+
+        var scriptInstance = scriptContext.Instance;
+        if (scriptInstance == null || Instance == null)
+        {
+            return;
+        }
+
+        var applied = false;
+        var existingIds = new HashSet<Guid>(Instance.DataList.Select(data => data.Id));
+
+        foreach (var data in scriptInstance.DataList)
+        {
+            if (!existingIds.Add(data.Id))
+            {
+                continue;
+            }
+
+            Instance.AddDataWithVersion(
+                data.Id,
+                new JsonData(data.Data.Json),
+                data.Version);
+
+            applied = true;
+        }
+
+        if (applied)
+        {
+            Data = Instance.Data;
+        }
     }
 }

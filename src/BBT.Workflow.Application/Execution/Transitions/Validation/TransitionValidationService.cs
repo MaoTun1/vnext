@@ -86,16 +86,7 @@ public class TransitionValidationService(
 
         var schema = await componentCacheStore.GetSchemaAsync(context.Transition.Schema, cancellationToken);
         
-        // Convert context.Data to JsonElement if needed
-        JsonElement? dataElement = context.Data switch
-        {
-            JsonElement element => element,
-            string jsonString => JsonSerializer.Deserialize<JsonElement>(jsonString),
-            null => null,
-            _ => JsonSerializer.SerializeToElement(context.Data)
-        };
-
-        schemaValidator.Validate(schema.Schema, dataElement);
+        schemaValidator.Validate(schema.Schema, context.Data);
 
         logger.LogTrace("Transition schema validation passed for {TransitionKey}", context.TransitionKey);
     }

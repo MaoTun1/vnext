@@ -6,7 +6,7 @@ namespace BBT.Workflow.SubFlow;
 /// Data payload for flow completion event.
 /// Contains all necessary information about the completed flow instance and its data.
 /// </summary>
-public record FlowCompletedData
+public record FlowCompletedDataEto
 {
     /// <summary>
     /// The ID of the completed flow instance

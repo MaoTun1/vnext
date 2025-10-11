@@ -13,18 +13,19 @@ namespace BBT.Workflow.Execution.Pipeline.Steps;
 public sealed class RunOnEntryTasksStep(
     ITaskOrchestrationService taskOrchestrationService,
     IScriptContextFactory scriptContextFactory,
+    IInstanceRepository instanceRepository,
     ILogger<RunOnEntryTasksStep> logger) : ITransitionStep
 {
     /// <inheritdoc />
     public int Order => LifecycleOrder.OnEntry;
 
     /// <inheritdoc />
-    public async Task ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    public async Task<StepOutcome> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
         if (context.Target?.OnEntries == null || !context.Target.OnEntries.Any())
         {
             logger.LogTrace("No OnEntry tasks for state {StateName}", context.Target?.Key ?? "Unknown");
-            return;
+            return StepOutcome.Continue();
         }
 
         logger.LogDebug("Executing OnEntry tasks for state {StateName} on instance {InstanceId}",
@@ -47,7 +48,11 @@ public sealed class RunOnEntryTasksStep(
             scriptContext,
             cancellationToken);
 
+        context.ApplyScriptContextChanges(scriptContext);
+
+        await instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
         logger.LogDebug("Completed OnEntry tasks for state {StateName}", context.Target.Key);
+        return StepOutcome.Continue();
     }
 
     /// <summary>

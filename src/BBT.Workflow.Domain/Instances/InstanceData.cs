@@ -1,7 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using BBT.Aether;
 using BBT.Aether.Domain.Entities;
@@ -105,6 +104,23 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
         var jsonBytes = Encoding.UTF8.GetBytes(data.NormalizedJson);
         var hashBytes = sha1.ComputeHash(jsonBytes);
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
+    }
+
+    internal InstanceData CreateSnapshot()
+    {
+        var snapshot = new InstanceData
+        {
+            Id = Id,
+            InstanceId = InstanceId,
+            Version = Version,
+            IsLatest = IsLatest,
+            ETag = ETag,
+            DataHash = DataHash,
+            Data = new JsonData(Data.Json),
+            EnteredAt = EnteredAt
+        };
+
+        return snapshot;
     }
 
 

@@ -16,6 +16,7 @@ public sealed class WorkflowExecutionService(
     IExecutionStrategyFactory execFactory,
     ICurrentSchema currentSchema,
     IDistributedLockService distributedLockService,
+    IInstanceRepository instanceRepository,
     ILogger<WorkflowExecutionService> logger) : IWorkflowExecutionService
 {
     /// <summary>
@@ -44,14 +45,29 @@ public sealed class WorkflowExecutionService(
                     async () =>
                     {
                         var mode = execFactory.Get(context.Mode);
-                        var executionContext = await mode.ExecuteAsync(context, cancellationToken);
-
-                        // Create response from execution context
-                        return new InstanceServiceResponse<TransitionOutput>(new TransitionOutput
+                        var transitionExecutionContext = await mode.ExecuteAsync(context, cancellationToken);
+                        TransitionOutput? response = null;
+                        if (transitionExecutionContext.ClientResponse is not null)
                         {
-                            Id = context.InstanceId,
-                            Status = executionContext?.Instance?.Status ?? InstanceStatus.Active
-                        });
+                            response = new TransitionOutput
+                            {
+                                Id = transitionExecutionContext.InstanceId,
+                                Status = transitionExecutionContext.ClientResponse.Status
+                            };
+                        }
+                        else
+                        {
+                            var freshInstance =
+                                await instanceRepository.FindByIdAsReadOnlyAsync(context.InstanceId, cancellationToken);
+
+                            response = new TransitionOutput
+                            {
+                                Id = context.InstanceId,
+                                Status = freshInstance!.Status
+                            };
+                        }
+
+                        return new InstanceServiceResponse<TransitionOutput>(response);
                     },
                     cancellationToken,
                     logger);

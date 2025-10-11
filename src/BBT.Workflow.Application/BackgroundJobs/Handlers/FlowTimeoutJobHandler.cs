@@ -1,5 +1,5 @@
 using System.Text.Json;
-using BBT.Workflow.BackgroundJobs;
+using BBT.Workflow.BackgroundJobs.Payloads;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Monitoring;

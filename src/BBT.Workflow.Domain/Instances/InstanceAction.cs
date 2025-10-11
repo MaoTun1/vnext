@@ -14,7 +14,7 @@ public sealed class InstanceAction : Entity<Guid>
         Guid id,
         Guid taskId,
         string status,
-        JsonData detail)
+        JsonData? detail)
         : base(id)
     {
         TaskId = taskId;

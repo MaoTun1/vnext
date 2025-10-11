@@ -19,7 +19,7 @@ public sealed class ChangeStateStep(
     public int Order => LifecycleOrder.ChangeState;
 
     /// <inheritdoc />
-    public async Task ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    public async Task<StepOutcome> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
         logger.LogDebug("Changing state from {FromState} to {ToState} for instance {InstanceId}",
             context.Instance.GetCurrentState, context.Transition.Target, context.InstanceId);
@@ -44,5 +44,7 @@ public sealed class ChangeStateStep(
 
         logger.LogDebug("State changed to {NewState} for instance {InstanceId}",
             context.Instance.GetCurrentState, context.InstanceId);
+        
+        return StepOutcome.Continue();
     }
 }

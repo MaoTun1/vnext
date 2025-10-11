@@ -18,18 +18,21 @@ public sealed class CreateTransitionRecordStep(
     public int Order => LifecycleOrder.CreateTransition;
 
     /// <inheritdoc />
-    public async Task ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    public async Task<StepOutcome> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
         logger.LogDebug("Creating transition record for {TransitionKey} on instance {InstanceId}",
             context.TransitionKey, context.InstanceId);
 
+        var transitionKey = context.Items.TryGetValue("NextTransitionKey", out var v) && v is string next && !string.IsNullOrEmpty(next)
+            ? next : context.TransitionKey;
+        
         // Create the transition record
         var instanceTransition = InstanceTransition.Create(
             guidGenerator.Create(),
             context.InstanceId,
-            context.TransitionKey,
+            transitionKey,
             context.Instance.GetCurrentState,
-            new JsonData(JsonSerializer.Serialize(context.Data ?? new Dictionary<string, object>())),
+            new JsonData(context.Data),
             new JsonData(JsonSerializer.Serialize(context.Headers))
         );
 
@@ -38,8 +41,11 @@ public sealed class CreateTransitionRecordStep(
 
         // Store in context for other steps to use
         context.Items["TransitionRecordId"] = instanceTransition.Id;
+        context.Items.Remove("NextTransitionKey");
 
         logger.LogDebug("Created transition record {TransitionId} for {TransitionKey}",
             instanceTransition.Id, context.TransitionKey);
+        
+        return StepOutcome.Continue();
     }
 }

@@ -14,7 +14,7 @@ namespace BBT.Workflow.Orchestration.Controllers.Utilities;
 public sealed class UtilityController(
     IInstanceQueryAppService queryAppService,
     IAdminAppService adminAppService,
-    ISubFlowCompletionService subFlowCompletionService,
+    ISubflowCompletionService subflowCompletionService,
     ILogger<UtilityController> logger) : ControllerBase
 {
     [ApiExplorerSettings(IgnoreApi = true)]
@@ -117,26 +117,26 @@ public sealed class UtilityController(
     /// This endpoint receives notifications when a subflow completes and triggers
     /// the parent workflow to continue with output mapping and automatic transitions.
     /// </summary>
-    /// <param name="completedData">The completed flow data containing instance information and final data</param>
+    /// <param name="completedDataEto">The completed flow data containing instance information and final data</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Status indicating the completion handling result</returns>
     [ApiExplorerSettings(IgnoreApi = true)]
     [HttpPost("utilities/flow/completed")]
     public async Task<IActionResult> HandleFlowCompletedAsync(
-        [FromBody] FlowCompletedData completedData,
+        [FromBody] FlowCompletedDataEto completedDataEto,
         CancellationToken cancellationToken = default)
     {
         try
         {
             logger.LogInformation(
                 "Received flow completion event for instance {InstanceId} in domain {Domain}, workflow {WorkflowName}",
-                completedData.InstanceId, completedData.Domain, completedData.Workflow);
+                completedDataEto.InstanceId, completedDataEto.Domain, completedDataEto.Workflow);
 
-            await subFlowCompletionService.HandleSubFlowCompletionAsync(completedData, cancellationToken);
+            await subflowCompletionService.HandleSubFlowCompletionAsync(completedDataEto, cancellationToken);
             
             logger.LogInformation(
                 "Successfully processed flow completion for instance {InstanceId}",
-                completedData.InstanceId);
+                completedDataEto.InstanceId);
 
             return Ok(new { result = "ok", message = "Flow completion processed successfully" });
         }
@@ -144,7 +144,7 @@ public sealed class UtilityController(
         {
             logger.LogError(ex,
                 "Failed to process flow completion for instance {InstanceId} in domain {Domain}",
-                completedData.InstanceId, completedData.Domain);
+                completedDataEto.InstanceId, completedDataEto.Domain);
                 
             return StatusCode(500, new { error = "Failed to process flow completion", message = ex.Message });
         }

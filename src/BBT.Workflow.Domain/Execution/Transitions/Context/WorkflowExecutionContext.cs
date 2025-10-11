@@ -1,5 +1,6 @@
 using System.Text.Json;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Execution.Pipeline;
 using BBT.Workflow.Execution.ReEntry;
 using BBT.Workflow.Shared;
 
@@ -79,33 +80,10 @@ public sealed class WorkflowExecutionContext
         Execution = new ExecutionInfo
         {
             ExecutionChainId = command.ExecutionChainId ?? Guid.NewGuid().ToString("N"),
-            ChainDepth = command.ChainDepth
+            ChainDepth = command.ChainDepth,
+            ResumeFrom = null
         },
         IsReentry = true,
         Actor = command.Actor
     };
-}
-
-/// <summary>
-/// Execution mode enumeration.
-/// </summary>
-public enum ExecMode
-{
-    /// <summary>Synchronous execution.</summary>
-    Sync = 0,
-    
-    /// <summary>Asynchronous execution via background jobs.</summary>
-    Async = 1
-}
-
-/// <summary>
-/// Execution information for tracking re-entry scenarios.
-/// </summary>
-public sealed class ExecutionInfo
-{
-    /// <summary>Gets or sets the execution chain identifier.</summary>
-    public string ExecutionChainId { get; set; } = default!;
-    
-    /// <summary>Gets or sets the depth in the execution chain.</summary>
-    public int ChainDepth { get; set; }
 }

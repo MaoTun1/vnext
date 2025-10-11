@@ -84,7 +84,7 @@ public sealed class State : IHasKey
     /// State view
     /// </summary>
     [JsonIgnore]
-    public Reference? View => View?.ToReference();
+    public Reference? View => view?.ToReference();
 
     /// <summary>
     /// Transitions
@@ -133,9 +133,9 @@ public sealed class State : IHasKey
         onExits.Add(task);
     }
 
-    public void SetView(IReference view)
+    public void SetView(IReference viewRef)
     {
-        view = view.ToReference();
+        view = viewRef.ToReference();
     }
     
     public void SetSubFlow(string type, IReference reference, ScriptCode mapping)

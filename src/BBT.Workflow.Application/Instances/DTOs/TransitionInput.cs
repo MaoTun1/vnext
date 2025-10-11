@@ -1,7 +1,6 @@
 using System.Text.Json;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Execution;
-using BBT.Workflow.Shared;
 
 namespace BBT.Workflow.Instances;
 
@@ -39,8 +38,8 @@ public sealed class TransitionInput(
             Mode = Sync ? ExecMode.Sync : ExecMode.Async,
             CorrelationId = Guid.NewGuid().ToString("N"),
             RequestedAt = DateTimeOffset.UtcNow,
-            Headers = Headers.ToDictionary(kvp => kvp.Key, kvp => kvp.Value ?? string.Empty),
-            RouteValues = RouteValues.ToDictionary(kvp => kvp.Key, kvp => kvp.Value ?? string.Empty),
+            Headers = Headers.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+            RouteValues = RouteValues.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
             Data = Data,
             IsReentry = false // Manual transitions are never re-entry
         };

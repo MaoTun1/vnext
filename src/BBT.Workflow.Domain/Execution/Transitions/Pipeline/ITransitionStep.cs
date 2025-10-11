@@ -1,4 +1,3 @@
-
 namespace BBT.Workflow.Execution.Pipeline;
 
 /// <summary>
@@ -12,12 +11,12 @@ public interface ITransitionStep
     /// Steps are executed in ascending order of their Order value.
     /// </summary>
     int Order { get; }
-    
+
     /// <summary>
     /// Executes this step of the transition pipeline.
     /// </summary>
     /// <param name="context">The transition execution context containing all necessary data.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    Task ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken);
+    Task<StepOutcome> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken);
 }

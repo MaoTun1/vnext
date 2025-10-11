@@ -77,6 +77,17 @@ public sealed class TransitionContextFactory(
             Headers = new Dictionary<string, string>(input.Headers)
         };
 
+        // 7. Configure pipeline directives based on execution info
+        if (input.Execution?.ResumeFrom.HasValue == true)
+        {
+            executionContext.Directives.RequestResumeFrom(input.Execution.ResumeFrom.Value);
+        }
+        
+        if (input.Execution?.IsSubFlowResume == true)
+        {
+            executionContext.Directives.MarkAsSubFlowResume();
+        }
+
         logger.LogDebug("Created transition context for {WorkflowKey}.{TransitionKey} on instance {InstanceId}",
             workflow.Key, transition.Key, instance.Id);
 
@@ -92,7 +103,11 @@ public sealed class TransitionContextFactory(
         string transitionKey,
         TriggerType triggerType)
     {
-        var transition = workflow.ResolveTransition(transitionKey, currentState);
+        var transition = workflow.ResolveTransition(transitionKey, currentState) ?? workflow.FindTransitionInContext(transitionKey);
+        if (transition == null)
+        {
+            throw new InvalidOperationException($"Cannot resolve transition {transitionKey} from workflow {workflow.Key}.");
+        }
         
         // Validate that the trigger type is appropriate for this transition
         ValidateTriggerType(transition, triggerType);

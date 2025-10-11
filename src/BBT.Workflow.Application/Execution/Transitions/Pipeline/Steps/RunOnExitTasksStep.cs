@@ -13,18 +13,19 @@ namespace BBT.Workflow.Execution.Pipeline.Steps;
 public sealed class RunOnExitTasksStep(
     ITaskOrchestrationService taskOrchestrationService,
     IScriptContextFactory scriptContextFactory,
+    IInstanceRepository instanceRepository,
     ILogger<RunOnExitTasksStep> logger) : ITransitionStep
 {
     /// <inheritdoc />
     public int Order => LifecycleOrder.OnExit;
 
     /// <inheritdoc />
-    public async Task ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    public async Task<StepOutcome> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
         if (!context.Current.OnExits.Any())
         {
             logger.LogTrace("No OnExit tasks for state {StateName}", context.Current.Key);
-            return;
+            return StepOutcome.Continue();
         }
 
         logger.LogDebug("Executing OnExit tasks for state {StateName} on instance {InstanceId}",
@@ -47,7 +48,12 @@ public sealed class RunOnExitTasksStep(
             scriptContext,
             cancellationToken);
 
+        context.ApplyScriptContextChanges(scriptContext);
+        
+        await instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
+
         logger.LogDebug("Completed OnExit tasks for state {StateName}", context.Current.Key);
+        return StepOutcome.Continue();
     }
 
     /// <summary>

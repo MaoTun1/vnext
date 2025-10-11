@@ -80,7 +80,7 @@ internal sealed class ScriptContextBuilder(
 
     public IScriptContextBuilder WithInstance(Instance instance)
     {
-        _instance = instance;
+        _instance = instance.CreateSnapshot();
         _instanceId = null; // Clear async retrieval property
         return this;
     }
@@ -196,7 +196,9 @@ internal sealed class ScriptContextBuilder(
             
             if (instance == null)
                 throw new InvalidOperationException($"Instance with ID {_instanceId.Value} not found.");
-            return instance;
+            
+            _instance = instance.CreateSnapshot();
+            return _instance;
         }
 
         throw new InvalidOperationException("Instance must be set either directly or through instance ID.");

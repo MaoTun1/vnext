@@ -18,15 +18,16 @@ public sealed class FinalizeTransitionStep(
     public int Order => LifecycleOrder.Finalize;
 
     /// <inheritdoc />
-    public async Task ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    public async Task<StepOutcome> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
         logger.LogDebug("Finalizing transition {TransitionKey} for instance {InstanceId}",
             context.TransitionKey, context.InstanceId);
 
         // Get the transition record from context
-        if (context.Items.TryGetValue("TransitionRecord", out var record) && 
-            record is InstanceTransition instanceTransition)
+        if (context.Items.TryGetValue("TransitionRecordId", out var record) && 
+            record is Guid recordId)
         {
+            var instanceTransition = await instanceTransitionRepository.GetAsync(recordId, true, cancellationToken);
             // Mark the transition as completed
             instanceTransition.Completed(context.Instance.GetCurrentState);
 
@@ -54,6 +55,8 @@ public sealed class FinalizeTransitionStep(
 
         logger.LogDebug("Finalized transition {TransitionKey} for instance {InstanceId}",
             context.TransitionKey, context.InstanceId);
+        
+        return StepOutcome.Continue();
     }
 
     /// <summary>
@@ -62,15 +65,14 @@ public sealed class FinalizeTransitionStep(
     private async Task PerformCleanupAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
         // Dispose ScriptContext if it exists
-        if (context.Items.TryGetValue("ScriptContext", out var scriptContextObj) && 
+        if (context.Cache.TryGetValue("ScriptContext", out var scriptContextObj) && 
             scriptContextObj is ScriptContext scriptContext)
         {
             scriptContext.Dispose();
         }
         
-        // Clear temporary items from context
-        context.Items.Clear();
-
+        context.ClearCacheForFinalize();
+        
         // Any other cleanup operations can be added here
         await Task.CompletedTask;
     }
