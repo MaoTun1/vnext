@@ -19,6 +19,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Net;
+using BBT.Workflow.Events.Distributed;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -125,6 +126,11 @@ public static class WorkflowApiBaseServiceCollectionExtensions
             options.ReplaceService<IModelCacheKeyFactory, DynamicSchemaModelCacheKeyFactory>();
             options.ReplaceService<IMigrationsAssembly, DbSchemaAwareMigrationAssembly>();
         });
+        
+        services.Configure<DaprEventPublisherOptions>(
+            configuration.GetSection(DaprEventPublisherOptions.SectionName));
+        
+        services.AddDistributedDomainEventPublisher<DaprDistributedDomainEventPublisher>();
         
         services.AddSingleton<IDataSeedService, WorkflowDataSeedService>();
     }

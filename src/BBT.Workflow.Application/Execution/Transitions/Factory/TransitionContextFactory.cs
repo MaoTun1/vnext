@@ -49,7 +49,7 @@ public sealed class TransitionContextFactory(
             Domain = input.Domain,
             InstanceId = instance.Id,
             WorkflowKey = workflow.Key,
-            TransitionKey = transition.Key,
+            TransitionKey = transition?.Key ?? input.TransitionKey,
             Trigger = input.TriggerType,
             Actor = input.Actor,
             CorrelationId = input.CorrelationId ?? Guid.NewGuid().ToString("N"),
@@ -89,7 +89,7 @@ public sealed class TransitionContextFactory(
         }
 
         logger.LogDebug("Created transition context for {WorkflowKey}.{TransitionKey} on instance {InstanceId}",
-            workflow.Key, transition.Key, instance.Id);
+            workflow.Key, input.TransitionKey, instance.Id);
 
         return executionContext;
     }
@@ -97,17 +97,13 @@ public sealed class TransitionContextFactory(
     /// <summary>
     /// Resolves and validates the transition for the given trigger type.
     /// </summary>
-    private static Transition ResolveTransition(
+    private static Transition? ResolveTransition(
         Definitions.Workflow workflow,
         State currentState,
         string transitionKey,
         TriggerType triggerType)
     {
         var transition = workflow.ResolveTransition(transitionKey, currentState) ?? workflow.FindTransitionInContext(transitionKey);
-        if (transition == null)
-        {
-            throw new InvalidOperationException($"Cannot resolve transition {transitionKey} from workflow {workflow.Key}.");
-        }
         
         // Validate that the trigger type is appropriate for this transition
         ValidateTriggerType(transition, triggerType);
@@ -118,7 +114,7 @@ public sealed class TransitionContextFactory(
     /// <summary>
     /// Validates that the trigger type is appropriate for the transition.
     /// </summary>
-    private static void ValidateTriggerType(Transition transition, TriggerType triggerType)
+    private static void ValidateTriggerType(Transition? transition, TriggerType triggerType)
     {
         // For now, we allow all trigger types for all transitions
         // This can be extended with specific validation rules if needed

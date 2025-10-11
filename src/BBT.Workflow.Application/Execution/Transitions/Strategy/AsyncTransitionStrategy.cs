@@ -42,7 +42,7 @@ public sealed class AsyncTransitionStrategy(
             var metadata = new Dictionary<string, string>
             {
                 ["domain"] = context.Domain,
-                ["workflow"] = context.WorkflowKey,
+                ["flowName"] = context.WorkflowKey,
                 ["instanceId"] = context.InstanceId.ToString()
             };
 

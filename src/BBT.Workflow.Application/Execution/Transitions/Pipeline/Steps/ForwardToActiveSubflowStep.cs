@@ -1,3 +1,4 @@
+using System.Text.Json;
 using BBT.Workflow.Instances;
 using BBT.Workflow.SubFlow;
 
@@ -23,7 +24,7 @@ public class ForwardToActiveSubflowStep(
                 context.Instance.Subflow!.SubFlowDomain,
                 context.Instance.Subflow!.SubFlowName,
                 context.Instance.Subflow!.SubFlowVersion,
-                context.Data,
+                context.DataElement,
                 true // sync = true
                 )
             {

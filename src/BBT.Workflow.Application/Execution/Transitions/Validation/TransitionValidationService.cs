@@ -60,9 +60,11 @@ public class TransitionValidationService(
         CancellationToken cancellationToken)
     {
         logger.LogTrace("Validating transition policy for {TransitionKey}", context.TransitionKey);
-        
-        // Use the existing policy validation logic from StateMachineService
-        context.Instance.CanExecuteTransition(context.Transition, context.Current, stateTransitionPolicy, executionActor);
+        if (!context.Instance.HasActiveSubFlow)
+        {
+            // Use the existing policy validation logic from StateMachineService
+            context.Instance.CanExecuteTransition(context.Transition!, context.Current, stateTransitionPolicy, executionActor);
+        }
         
         await Task.CompletedTask; // Keep async signature for future enhancements
         
@@ -76,7 +78,7 @@ public class TransitionValidationService(
         TransitionExecutionContext context,
         CancellationToken cancellationToken)
     {
-        if (context.Transition.Schema == null)
+        if (context.Transition?.Schema == null)
         {
             logger.LogTrace("No schema to validate for transition {TransitionKey}", context.TransitionKey);
             return;
@@ -86,7 +88,7 @@ public class TransitionValidationService(
 
         var schema = await componentCacheStore.GetSchemaAsync(context.Transition.Schema, cancellationToken);
         
-        schemaValidator.Validate(schema.Schema, context.Data);
+        schemaValidator.Validate(schema.Schema, context.DataElement);
 
         logger.LogTrace("Transition schema validation passed for {TransitionKey}", context.TransitionKey);
     }

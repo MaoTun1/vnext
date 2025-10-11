@@ -27,6 +27,11 @@ public class JsonData : ValueObject
     {
         Json = json is null ? EmptyJson : JsonSerializer.Serialize(json, JsonSerializerConstants.JsonOptions);
     }
+    
+    public JsonData(object? json)
+    {
+        Json = json is null ? EmptyJson : JsonSerializer.Serialize(json, JsonSerializerConstants.JsonOptions);
+    }
 
     public string Json { get; private set; } = "{}";
     

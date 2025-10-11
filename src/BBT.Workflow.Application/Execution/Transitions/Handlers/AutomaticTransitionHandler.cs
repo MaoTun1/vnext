@@ -42,7 +42,7 @@ public sealed class AutomaticTransitionHandler(
     /// </summary>
     private async Task ValidateConditionAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
-        if (context.Transition.Rule == null)
+        if (context.Transition?.Rule == null)
         {
             Logger.LogTrace("No condition defined for automatic transition {TransitionKey}, allowing execution",
                 context.TransitionKey);
@@ -162,7 +162,7 @@ public sealed class AutomaticTransitionHandler(
         return scriptContextFactory.NewBuilder()
             .WithWorkflow(context.Workflow)
             .WithInstance(context.Instance)
-            .WithTransition(context.Transition)
+            .WithTransition(context.Transition!)
             .WithBody(context.Data)
             .WithHeaders(context.Headers.ToDictionary(kvp => kvp.Key, kvp => kvp.Value))
             .BuildAsync(CancellationToken.None)
