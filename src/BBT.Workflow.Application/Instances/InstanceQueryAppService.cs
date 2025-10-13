@@ -702,8 +702,8 @@ public sealed class InstanceQueryAppService(
             var dataHref = new DataHref
             {
                 Href = input.Extension != null && input.Extension.Length > 0
-                    ? $"/{input.Domain}/workflows/{input.Workflow}/instances/{instance.Id}/fuctions/data?extensions={string.Join(",", input.Extension)}"
-                    : $"/{input.Domain}/workflows/{input.Workflow}/instances/{instance.Id}/fuctions/data"
+                    ? $"/{input.Domain}/workflows/{input.Workflow}/instances/{instance.Id}/functions/data?extensions={string.Join(",", input.Extension)}"
+                    : $"/{input.Domain}/workflows/{input.Workflow}/instances/{instance.Id}/functions/data"
             };
 
             // Build view href
