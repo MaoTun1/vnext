@@ -14,8 +14,8 @@ public sealed class GetInstanceOutput
     public string? FlowVersion { get; set; } = string.Empty;
     public string? Etag { get; set; } = string.Empty;
     public List<string>? Tags { get; set; } = [];
+    public JsonElement? Attributes { get; set; }
     public Dictionary<string, object>? Extensions { get; set; }
-    
 }
 
 /// <summary>
@@ -33,4 +33,5 @@ public sealed class GetInstanceDataOutput
 {
     public JsonElement? Attributes { get; set; }
     public string? Etag { get; set; } = string.Empty;
+    public Dictionary<string, object>? Extensions { get; set; }
 } 
