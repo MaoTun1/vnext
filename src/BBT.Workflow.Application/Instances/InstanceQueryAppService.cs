@@ -1,3 +1,4 @@
+using System.Text.Json;
 using BBT.Aether.Application.Services;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
@@ -345,25 +346,27 @@ public sealed class InstanceQueryAppService(
             // DataUrl = dataUrl,
             Key = instance.Key!,
             Tags = instance.Tags,
+            Attributes = instanceData?.Data.JsonElement
         };
 
         // Process extensions for data enrichment
-        var scriptContext = await scriptContextFactory.NewBuilder()
-            .WithWorkflow(flow)
-            .WithInstance(instance)
-            .WithRuntime(runtimeInfoProvider)
-            .WithTransition(string.Empty)
-            .WithBody(instanceData?.Data ?? new JsonData("{}"))
-            .BuildAsync(cancellationToken);
-        
-            
+        if (extensionRequested != null && extensionRequested.Length > 0)
+        {
+            var scriptContext = await scriptContextFactory.NewBuilder()
+                .WithWorkflow(flow)
+                .WithInstance(instance)
+                .WithRuntime(runtimeInfoProvider)
+                .WithTransition(string.Empty)
+                .WithBody(instanceData?.Data ?? new JsonData("{}"))
+                .BuildAsync(cancellationToken);
 
-        response.Extensions = await instanceExtensionService.ProcessExtensionsAsync(
-            extensionRequested,
-            scriptContext,
-            flow,
-            currentScope,
-            cancellationToken);
+            response.Extensions = await instanceExtensionService.ProcessExtensionsAsync(
+                extensionRequested,
+                scriptContext,
+                flow,
+                currentScope,
+                cancellationToken);
+        }
 
         return response;
     }
@@ -621,12 +624,12 @@ public sealed class InstanceQueryAppService(
             {
                 var currentState = currentWorkflow.GetState(instance.CurrentState);
                 var transition = currentState.FindTransition(availableTransitions[0]);
-                if (transition?.View != null)
+                if (transition?.view != null)
                 {
                     view = await componentCacheStore.GetViewAsync(
-                        transition.View.Domain,
-                        transition.View.Key,
-                        transition.View.Version,
+                        transition.view.Domain,
+                        transition.view.Key,
+                        transition.view.Version,
                         cancellationToken);
                 }
             }
@@ -654,4 +657,89 @@ public sealed class InstanceQueryAppService(
             return new InstanceServiceResponse<GetViewOutput>(result);
         }
     }
+
+    public async Task<InstanceServiceResponse<GetInstanceStateOutput>> GetInstanceStateAsync(
+        GetInstanceStateInput input,
+        CancellationToken cancellationToken = default)
+    {
+        runtimeInfoProvider.Check(input.Domain);
+        using (currentSchema.Change(input.Workflow))
+        {
+            var instance = await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken);
+            if (instance == null)
+            {
+                throw new EntityNotFoundException(typeof(Instance), input.Instance);
+            }
+
+            // Get workflow for available transitions
+            var currentWorkflow = await componentCacheStore.GetFlowAsync(
+                input.Domain, 
+                input.Workflow, 
+                input.Version, 
+                cancellationToken);
+
+            // Build instance transition information using shared logic
+            var transitionInfo = await BuildInstanceTransitionInfoAsync(instance, cancellationToken);
+
+            // Check if there are any active SubFlow correlations
+            var activeSubFlowCorrelation = transitionInfo.ActiveCorrelations
+                .Where(c => c.SubFlowType == SubFlowType.SubFlow && !c.IsCompleted)
+                .OrderByDescending(c => c.CorrelationId) // Get the latest active SubFlow
+                .FirstOrDefault();
+
+            (List<string> availableTransitions, string? currentState, InstanceStatus? status) = activeSubFlowCorrelation != null
+                ? await GetSubFlowTransitionsAsync(activeSubFlowCorrelation, instance, currentWorkflow, cancellationToken)
+                : GetMainFlowTransitions(instance, currentWorkflow, transitionInfo);
+
+            // Build transition items with href links
+            var transitionItems = availableTransitions.Select(transitionKey => new TransitionItem
+            {
+                Name = transitionKey,
+                Href = $"/{input.Domain}/workflows/{input.Workflow}/instances/{instance.Id}/transitions/{transitionKey}"
+            }).ToList();
+
+            // Build data href with extensions
+            var dataHref = new DataHref
+            {
+                Href = input.Extension != null && input.Extension.Length > 0
+                    ? $"/{input.Domain}/workflows/{input.Workflow}/instances/{instance.Id}/fuctions/data?extensions={string.Join(",", input.Extension)}"
+                    : $"/{input.Domain}/workflows/{input.Workflow}/instances/{instance.Id}/fuctions/data"
+            };
+
+            // Build view href
+            var viewHref = new ViewHref
+            {
+                Href = $"/{input.Domain}/workflows/{input.Workflow}/instances/{instance.Id}/functions/view",
+                LoadData = true
+            };
+
+            // Build active correlations with href links
+            var activeCorrelationHrefs = transitionInfo.ActiveCorrelations.Select(correlation => new ActiveCorrelationHref
+            {
+                CorrelationId = correlation.CorrelationId,
+                ParentState = correlation.ParentState,
+                SubFlowInstanceId = correlation.SubFlowInstanceId,
+                SubFlowType = correlation.SubFlowType,
+                SubFlowDomain = correlation.SubFlowDomain,
+                SubFlowName = correlation.SubFlowName,
+                SubFlowVersion = correlation.SubFlowVersion,
+                IsCompleted = correlation.IsCompleted,
+                Href = $"/{correlation.SubFlowDomain}/workflows/{correlation.SubFlowName}/instances/{correlation.SubFlowInstanceId}/functions/data"
+            }).ToList();
+
+            var result = new GetInstanceStateOutput
+            {
+                Data = dataHref,
+                View = viewHref,
+                State = currentState ?? string.Empty,
+                Status = status,
+                ActiveCorrelations = activeCorrelationHrefs,
+                Transitions = transitionItems,
+                ETag = instance.LatestData?.ETag ?? string.Empty
+            };
+
+            return new InstanceServiceResponse<GetInstanceStateOutput>(result);
+        }
+    }
+
 }

@@ -13,7 +13,8 @@ namespace BBT.Workflow.Controllers.Instances;
 [Route("api/v{version:apiVersion}")]
 [ServiceFilter(typeof(ResponseHeaderFilter))]
 public sealed class FunctionController(
-    IFunctionAppService functionAppService) : ControllerBase
+    IFunctionAppService functionAppService,
+    IInstanceQueryAppService queryAppService) : ControllerBase
 {
     [HttpPatch("{domain}/functions")]
     public async Task<IActionResult> GetDomainFunctions(
@@ -55,11 +56,27 @@ public sealed class FunctionController(
         [FromRoute] string function,
         [FromRoute] string workflow,
         [FromRoute] string instance,
-        [FromQuery] bool? async = false,
+        [FromQuery] string? version = null,
+        [FromQuery] string[]? extension = null,
         CancellationToken cancellationToken = default)
     {
-        var response =
-            await functionAppService.GetFunctionByInstance(function, workflow, domain, instance, cancellationToken);
-        return Ok(response);
+        switch (function.ToLowerInvariant())
+        {
+            case Definitions.Functions.FunctionTypeConst.Longpooling:
+                var inputLongpooling = new GetInstanceStateInput
+                {
+                    Domain = domain,
+                    Workflow = workflow,
+                    Instance = instance,
+                    Version = version,
+                    Extension = extension
+                };
+                var response = await queryAppService.GetInstanceStateAsync(inputLongpooling, cancellationToken);
+                return Ok(response.Data);
+            default:
+                return Ok(
+        await functionAppService.GetFunctionByInstance(function, workflow, domain, instance, cancellationToken));
+        }
+
     }
 }

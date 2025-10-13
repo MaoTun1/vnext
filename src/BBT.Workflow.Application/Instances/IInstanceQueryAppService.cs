@@ -67,4 +67,11 @@ public interface IInstanceQueryAppService : IApplicationService
     Task<InstanceServiceResponse<GetViewOutput>> GetViewAsync(
         GetViewInput input,
         CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Retrieves the complete state information for an instance including data href, view, state, status, correlations, transitions and ETag
+    /// </summary>
+    Task<InstanceServiceResponse<GetInstanceStateOutput>> GetInstanceStateAsync(
+        GetInstanceStateInput input,
+        CancellationToken cancellationToken = default);
 } 
