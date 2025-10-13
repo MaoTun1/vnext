@@ -30,6 +30,12 @@ public sealed class InstanceQueryAppService(
     ILogger<InstanceQueryAppService> logger)
     : ApplicationService(serviceProvider), IInstanceQueryAppService
 {
+    // Static URL templates for GetInstanceStateAsync
+    private static readonly string TransitionUrlTemplate = "/{0}/workflows/{1}/instances/{2}/transitions/{3}";
+    private static readonly string DataUrlTemplate = "/{0}/workflows/{1}/instances/{2}/functions/data";
+    private static readonly string DataUrlWithExtensionsTemplate = "/{0}/workflows/{1}/instances/{2}/functions/data?extensions={3}";
+    private static readonly string ViewUrlTemplate = "/{0}/workflows/{1}/instances/{2}/functions/view";
+    private static readonly string SubFlowDataUrlTemplate = "/{0}/workflows/{1}/instances/{2}/functions/data";
     public async Task<InstanceServiceResult<GetInstanceOutput>> GetInstanceAsync(
         GetInstanceInput input,
         CancellationToken cancellationToken = default)
@@ -695,21 +701,21 @@ public sealed class InstanceQueryAppService(
             var transitionItems = availableTransitions.Select(transitionKey => new TransitionItem
             {
                 Name = transitionKey,
-                Href = $"/{input.Domain}/workflows/{input.Workflow}/instances/{instance.Id}/transitions/{transitionKey}"
+                Href = string.Format(TransitionUrlTemplate, input.Domain, input.Workflow, instance.Id, transitionKey)
             }).ToList();
 
             // Build data href with extensions
             var dataHref = new DataHref
             {
                 Href = input.Extension != null && input.Extension.Length > 0
-                    ? $"/{input.Domain}/workflows/{input.Workflow}/instances/{instance.Id}/functions/data?extensions={string.Join(",", input.Extension)}"
-                    : $"/{input.Domain}/workflows/{input.Workflow}/instances/{instance.Id}/functions/data"
+                    ? string.Format(DataUrlWithExtensionsTemplate, input.Domain, input.Workflow, instance.Id, string.Join(",", input.Extension))
+                    : string.Format(DataUrlTemplate, input.Domain, input.Workflow, instance.Id)
             };
 
             // Build view href
             var viewHref = new ViewHref
             {
-                Href = $"/{input.Domain}/workflows/{input.Workflow}/instances/{instance.Id}/functions/view",
+                Href = string.Format(ViewUrlTemplate, input.Domain, input.Workflow, instance.Id),
                 LoadData = true
             };
 
@@ -724,7 +730,7 @@ public sealed class InstanceQueryAppService(
                 SubFlowName = correlation.SubFlowName,
                 SubFlowVersion = correlation.SubFlowVersion,
                 IsCompleted = correlation.IsCompleted,
-                Href = $"/{correlation.SubFlowDomain}/workflows/{correlation.SubFlowName}/instances/{correlation.SubFlowInstanceId}/functions/data"
+                Href = string.Format(SubFlowDataUrlTemplate, correlation.SubFlowDomain, correlation.SubFlowName, correlation.SubFlowInstanceId)
             }).ToList();
 
             var result = new GetInstanceStateOutput
