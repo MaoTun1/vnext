@@ -68,8 +68,8 @@ public sealed class FunctionController(
                     Domain = domain,
                     Workflow = workflow,
                     Instance = instance,
-                    Version = parameters.version,
-                    Extension = parameters.extension
+                    Version = parameters.Version,
+                    Extension = parameters.Extension
                 };
                 var response = await queryAppService.GetInstanceStateAsync(inputLongpooling, cancellationToken);
                 return Ok(response.Data);
@@ -79,9 +79,9 @@ public sealed class FunctionController(
                     Domain = domain,
                     Workflow = workflow,
                     Instance = instance,
-                    Version = parameters.version
+                    Version = parameters.Version
                 };
-                var responseView = await queryAppService.GetPlatformSpecificViewAsync(inputView, parameters.platform, cancellationToken);
+                var responseView = await queryAppService.GetPlatformSpecificViewAsync(inputView, parameters.Platform, cancellationToken);
 
                 // Return only the content as requested, without Type and Target
                 return Ok(responseView.Data.Content);
