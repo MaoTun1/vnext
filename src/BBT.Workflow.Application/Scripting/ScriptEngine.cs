@@ -6,6 +6,8 @@ using Microsoft.CodeAnalysis.Scripting;
 using Dapr.Client;
 using System.Diagnostics;
 using BBT.Workflow.Definitions.Timer;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Scripting;
 
@@ -16,7 +18,13 @@ namespace BBT.Workflow.Scripting;
 /// </summary>
 /// <param name="daprClient">The Dapr client for distributed computing operations</param>
 /// <param name="workflowMetrics">The workflow metrics service for recording script engine metrics</param>
-public sealed class ScriptEngine(DaprClient daprClient, IWorkflowMetrics workflowMetrics) : IScriptEngine
+/// <param name="logger">The logger for script logging</param>
+/// <param name="configuration">The configuration for script configuration access</param>
+public sealed class ScriptEngine(
+    DaprClient daprClient, 
+    IWorkflowMetrics workflowMetrics,
+    ILogger<ScriptEngine> logger,
+    IConfiguration configuration) : IScriptEngine
 {
     /// <summary>
     /// The underlying C# evaluator responsible for script compilation and execution
@@ -24,9 +32,9 @@ public sealed class ScriptEngine(DaprClient daprClient, IWorkflowMetrics workflo
     private readonly IEvaluator _evaluator = new CSharpEvaluator();
     
     /// <summary>
-    /// Global functions available to all scripts, providing access to Dapr services
+    /// Global functions available to all scripts, providing access to Dapr services, logging, and configuration
     /// </summary>
-    private readonly GlobalScriptFunctions _globalFunctions = new(daprClient);
+    private readonly GlobalScriptFunctions _globalFunctions = new(daprClient, logger, configuration);
 
     /// <summary>
     /// Lazily-initialized default metadata references used for script compilation.

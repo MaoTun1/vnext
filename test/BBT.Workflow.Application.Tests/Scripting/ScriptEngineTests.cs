@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting.Functions;
 using Microsoft.CodeAnalysis;
@@ -37,7 +38,12 @@ public class ScriptEngineTests : ApplicationTestBase<ApplicationEntryPoint>
             .ReturnsAsync(new Dictionary<string, string> { { "test_key", "mock_secret_value" } });
 
         services.AddSingleton(mockDaprClient.Object);
-        ScriptHelper.SetDaprClient(mockDaprClient.Object);
+        ScriptHelper.SetDaprClient(mockDaprClient.Object); 
+        
+        // Mock IWorkflowMetrics
+        var mockWorkflowMetrics = new Mock<IWorkflowMetrics>();
+        services.AddSingleton(mockWorkflowMetrics.Object);
+        
         base.AddApplication(services);
     }
 

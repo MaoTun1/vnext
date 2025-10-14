@@ -5,6 +5,8 @@ using System.Dynamic;
 using System.Linq;
 using System.Threading.Tasks;
 using Dapr.Client;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Scripting.Functions;
 
@@ -14,6 +16,8 @@ namespace BBT.Workflow.Scripting.Functions;
 public static class ScriptHelper
 {
     private static DaprClient? _daprClient;
+    private static ILogger? _logger;
+    private static IConfiguration? _configuration;
 
     /// <summary>
     /// Sets the Dapr client instance (should be called during application startup)
@@ -22,6 +26,24 @@ public static class ScriptHelper
     public static void SetDaprClient(DaprClient daprClient)
     {
         _daprClient = daprClient ?? throw new ArgumentNullException(nameof(daprClient));
+    }
+
+    /// <summary>
+    /// Sets the logger instance (should be called during application startup)
+    /// </summary>
+    /// <param name="logger">The logger instance</param>
+    public static void SetLogger(ILogger logger)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Sets the configuration instance (should be called during application startup)
+    /// </summary>
+    /// <param name="configuration">The configuration instance</param>
+    public static void SetConfiguration(IConfiguration configuration)
+    {
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
     }
 
     /// <summary>
@@ -174,4 +196,224 @@ public static class ScriptHelper
 
         return null;
     }
+
+    #region Logging Functions
+
+    /// <summary>
+    /// Logs a trace message
+    /// </summary>
+    /// <param name="message">The message to log</param>
+    public static void LogTrace(string message)
+    {
+        if (_logger == null)
+            throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
+
+        if (string.IsNullOrWhiteSpace(message))
+            return;
+
+        _logger.LogTrace("{Message}", message);
+    }
+
+    /// <summary>
+    /// Logs a debug message
+    /// </summary>
+    /// <param name="message">The message to log</param>
+    public static void LogDebug(string message)
+    {
+        if (_logger == null)
+            throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
+
+        if (string.IsNullOrWhiteSpace(message))
+            return;
+
+        _logger.LogDebug("{Message}", message);
+    }
+
+    /// <summary>
+    /// Logs an informational message
+    /// </summary>
+    /// <param name="message">The message to log</param>
+    public static void LogInformation(string message)
+    {
+        if (_logger == null)
+            throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
+
+        if (string.IsNullOrWhiteSpace(message))
+            return;
+
+        _logger.LogInformation("{Message}", message);
+    }
+
+    /// <summary>
+    /// Logs a warning message
+    /// </summary>
+    /// <param name="message">The message to log</param>
+    public static void LogWarning(string message)
+    {
+        if (_logger == null)
+            throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
+
+        if (string.IsNullOrWhiteSpace(message))
+            return;
+
+        _logger.LogWarning("{Message}", message);
+    }
+
+    /// <summary>
+    /// Logs an error message
+    /// </summary>
+    /// <param name="message">The message to log</param>
+    public static void LogError(string message)
+    {
+        if (_logger == null)
+            throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
+
+        if (string.IsNullOrWhiteSpace(message))
+            return;
+
+        _logger.LogError("{Message}", message);
+    }
+
+    /// <summary>
+    /// Logs a critical message
+    /// </summary>
+    /// <param name="message">The message to log</param>
+    public static void LogCritical(string message)
+    {
+        if (_logger == null)
+            throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
+
+        if (string.IsNullOrWhiteSpace(message))
+            return;
+
+        _logger.LogCritical("{Message}", message);
+    }
+
+    #endregion
+
+    #region Configuration Functions
+
+    /// <summary>
+    /// Gets a configuration value by key
+    /// </summary>
+    /// <param name="key">The configuration key (supports nested keys with ':' separator)</param>
+    /// <returns>The configuration value or null if not found</returns>
+    public static string? GetConfigValue(string key)
+    {
+        if (_configuration == null)
+            throw new InvalidOperationException("Configuration is not initialized. Call SetConfiguration first.");
+
+        if (string.IsNullOrWhiteSpace(key))
+            throw new ArgumentException("Configuration key cannot be null or empty", nameof(key));
+
+        return _configuration[key];
+    }
+
+    /// <summary>
+    /// Gets a configuration value by key with a default value
+    /// </summary>
+    /// <param name="key">The configuration key (supports nested keys with ':' separator)</param>
+    /// <param name="defaultValue">The default value to return if key is not found</param>
+    /// <returns>The configuration value or default value if not found</returns>
+    public static string GetConfigValue(string key, string defaultValue)
+    {
+        if (_configuration == null)
+            throw new InvalidOperationException("Configuration is not initialized. Call SetConfiguration first.");
+
+        if (string.IsNullOrWhiteSpace(key))
+            throw new ArgumentException("Configuration key cannot be null or empty", nameof(key));
+
+        return _configuration[key] ?? defaultValue;
+    }
+
+    /// <summary>
+    /// Gets a configuration value as a specific type
+    /// </summary>
+    /// <typeparam name="T">The type to convert the value to</typeparam>
+    /// <param name="key">The configuration key (supports nested keys with ':' separator)</param>
+    /// <returns>The configuration value converted to type T</returns>
+    public static T? GetConfigValue<T>(string key)
+    {
+        if (_configuration == null)
+            throw new InvalidOperationException("Configuration is not initialized. Call SetConfiguration first.");
+
+        if (string.IsNullOrWhiteSpace(key))
+            throw new ArgumentException("Configuration key cannot be null or empty", nameof(key));
+
+        var value = _configuration[key];
+        if (value == null)
+            return default;
+
+        try
+        {
+            return (T)Convert.ChangeType(value, typeof(T));
+        }
+        catch
+        {
+            return default;
+        }
+    }
+
+    /// <summary>
+    /// Gets a configuration value as a specific type with a default value
+    /// </summary>
+    /// <typeparam name="T">The type to convert the value to</typeparam>
+    /// <param name="key">The configuration key (supports nested keys with ':' separator)</param>
+    /// <param name="defaultValue">The default value to return if key is not found</param>
+    /// <returns>The configuration value converted to type T or default value if not found</returns>
+    public static T GetConfigValue<T>(string key, T defaultValue)
+    {
+        if (_configuration == null)
+            throw new InvalidOperationException("Configuration is not initialized. Call SetConfiguration first.");
+
+        if (string.IsNullOrWhiteSpace(key))
+            throw new ArgumentException("Configuration key cannot be null or empty", nameof(key));
+
+        var value = _configuration[key];
+        if (value == null)
+            return defaultValue;
+
+        try
+        {
+            return (T)Convert.ChangeType(value, typeof(T));
+        }
+        catch
+        {
+            return defaultValue;
+        }
+    }
+
+    /// <summary>
+    /// Gets a connection string by name
+    /// </summary>
+    /// <param name="name">The connection string name</param>
+    /// <returns>The connection string or null if not found</returns>
+    public static string? GetConnectionString(string name)
+    {
+        if (_configuration == null)
+            throw new InvalidOperationException("Configuration is not initialized. Call SetConfiguration first.");
+
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Connection string name cannot be null or empty", nameof(name));
+
+        return _configuration.GetConnectionString(name);
+    }
+
+    /// <summary>
+    /// Checks if a configuration key exists
+    /// </summary>
+    /// <param name="key">The configuration key to check</param>
+    /// <returns>True if the key exists, false otherwise</returns>
+    public static bool ConfigExists(string key)
+    {
+        if (_configuration == null)
+            throw new InvalidOperationException("Configuration is not initialized. Call SetConfiguration first.");
+
+        if (string.IsNullOrWhiteSpace(key))
+            return false;
+
+        return _configuration[key] != null;
+    }
+
+    #endregion
 }
