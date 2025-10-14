@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using BBT.Workflow.Functions;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Instances.DTOs;
 using BBT.Workflow.Runtime;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -56,8 +57,7 @@ public sealed class FunctionController(
         [FromRoute] string function,
         [FromRoute] string workflow,
         [FromRoute] string instance,
-        [FromQuery] string? version = null,
-        [FromQuery] string[]? extension = null,
+ [AsParameters] FunctionQueryParemeters parameters,
         CancellationToken cancellationToken = default)
     {
         switch (function.ToLowerInvariant())
@@ -68,11 +68,23 @@ public sealed class FunctionController(
                     Domain = domain,
                     Workflow = workflow,
                     Instance = instance,
-                    Version = version,
-                    Extension = extension
+                    Version = parameters.version,
+                    Extension = parameters.extension
                 };
                 var response = await queryAppService.GetInstanceStateAsync(inputLongpooling, cancellationToken);
                 return Ok(response.Data);
+            case Definitions.Functions.FunctionTypeConst.View:
+                var inputView = new GetViewInput
+                {
+                    Domain = domain,
+                    Workflow = workflow,
+                    Instance = instance,
+                    Version = parameters.version
+                };
+                var responseView = await queryAppService.GetPlatformSpecificViewAsync(inputView, parameters.platform, cancellationToken);
+
+                // Return only the content as requested, without Type and Target
+                return Ok(responseView.Data.Content);
             default:
                 return Ok(
         await functionAppService.GetFunctionByInstance(function, workflow, domain, instance, cancellationToken));
