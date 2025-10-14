@@ -37,6 +37,7 @@ public static class WorkflowApiBaseApplicationBuilderExtensions
         app.UseHttpsRedirection();
         app.UseRuntime();
         app.UseCorrelationId();
+        app.UseTraceContext(); // Add OpenTelemetry trace context to response headers
         app.UseSecurityHeaders();
         app.UseCurrentUser();
         app.UseStaticFiles();

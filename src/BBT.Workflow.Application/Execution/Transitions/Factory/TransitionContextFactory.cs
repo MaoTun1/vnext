@@ -37,7 +37,7 @@ public sealed class TransitionContextFactory(
 
         // 4. Resolve current state and transition
         var currentState = workflow.GetState(instance.GetCurrentState);
-        var transition = ResolveTransition(workflow, currentState, input.TransitionKey, input.TriggerType);
+        var transition = ResolveTransition(workflow, currentState, input.TransitionKey);
 
         // 5. Initialize telemetry context
         var (traceId, spanId) = InitializeTelemetry();
@@ -74,7 +74,7 @@ public sealed class TransitionContextFactory(
             // Telemetry
             TraceId = traceId,
             SpanId = spanId,
-            Headers = new Dictionary<string, string>(input.Headers)
+            Headers = new Dictionary<string, string?>(input.Headers)
         };
 
         // 7. Configure pipeline directives based on execution info
@@ -100,29 +100,9 @@ public sealed class TransitionContextFactory(
     private static Transition? ResolveTransition(
         Definitions.Workflow workflow,
         State currentState,
-        string transitionKey,
-        TriggerType triggerType)
+        string transitionKey)
     {
-        var transition = workflow.ResolveTransition(transitionKey, currentState) ?? workflow.FindTransitionInContext(transitionKey);
-        
-        // Validate that the trigger type is appropriate for this transition
-        ValidateTriggerType(transition, triggerType);
-        
-        return transition;
-    }
-
-    /// <summary>
-    /// Validates that the trigger type is appropriate for the transition.
-    /// </summary>
-    private static void ValidateTriggerType(Transition? transition, TriggerType triggerType)
-    {
-        // For now, we allow all trigger types for all transitions
-        // This can be extended with specific validation rules if needed
-        // For example, some transitions might only be allowed for manual triggers
-        
-        // Example validation (commented out):
-        // if (transition.IsSystemOnly && triggerType == TriggerType.Manual)
-        //     throw new InvalidOperationException($"Transition {transition.Key} can only be triggered by system");
+        return workflow.ResolveTransition(transitionKey, currentState) ?? workflow.FindTransitionInContext(transitionKey);
     }
 
     /// <summary>

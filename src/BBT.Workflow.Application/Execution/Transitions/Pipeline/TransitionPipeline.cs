@@ -1,5 +1,7 @@
 using BBT.Workflow.Execution.Planner;
+using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace BBT.Workflow.Execution.Pipeline;
 
@@ -18,6 +20,7 @@ public sealed class TransitionPipeline
     /// </summary>
     /// <param name="steps">The collection of pipeline steps to execute.</param>
     /// <param name="logger">Logger for pipeline execution tracking.</param>
+    /// <param name="planner"></param>
     public TransitionPipeline(IEnumerable<ITransitionStep> steps, ILogger<TransitionPipeline> logger, IPipelinePlanner planner)
     {
         _steps = steps.OrderBy(s => s.Order).ToList();
@@ -33,8 +36,12 @@ public sealed class TransitionPipeline
     /// <returns>A task representing the asynchronous operation.</returns>
     public async Task RunAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
-        _logger.LogDebug("Starting transition pipeline for {WorkflowKey}.{TransitionKey} on instance {InstanceId}",
-            context.WorkflowKey, context.TransitionKey, context.InstanceId);
+        // Note: ForTransition scope is already created at Strategy level
+        _logger.TransitionStarted(
+            TelemetryConstants.Prefixes.Execution,
+            context.TransitionKey,
+            context.InstanceId,
+            context.WorkflowKey);
 
         var plan = _planner.Build(context, _steps);
         var i = 0;
@@ -44,72 +51,60 @@ public sealed class TransitionPipeline
             if (context.SkipImmediateExecution) break;
 
             var step = plan[i];
-            var outcome = await step.ExecuteAsync(context, cancellationToken);
-
-            // Apply if step changed directives
-            outcome.MutateDirectives?.Invoke(context.Directives);
-
-            // 1) Stop?
-            if (outcome.StopPipeline) break;
-
-            // 2) SkipTo? (e.g. start over from CreateTransition after inline auto)
-            if (outcome.SkipToOrder is int skipTo)
+            var stepName = step.GetType().Name;
+            var stepOrder = step.Order;
+            var sw = Stopwatch.StartNew();
+            
+            try
             {
-                // Create a plan from scratch based on a new beginning
-                context.Directives.RequestResumeFrom(skipTo);
-                plan = _planner.Build(context, _steps);
-                i = 0;
-                continue;
-            }
+                _logger.PipelineStepStarted(TelemetryConstants.Prefixes.Execution, stepOrder, stepName, context.InstanceId);
+                
+                var outcome = await step.ExecuteAsync(context, cancellationToken);
+                
+                sw.Stop();
+                _logger.PipelineStepCompleted(TelemetryConstants.Prefixes.Execution, stepOrder, stepName, context.InstanceId, sw.ElapsedMilliseconds);
 
-            // 3) If the directive changes (e.g., epilogue becomes RUN→SKIP, subflow starts),
-            // update the plan immediately.
-            if (NeedsReplan(step, plan, context.Directives))
+                // Apply if step changed directives
+                outcome.MutateDirectives?.Invoke(context.Directives);
+
+                // 1) Stop?
+                if (outcome.StopPipeline) break;
+
+                // 2) SkipTo? (e.g. start over from CreateTransition after inline auto)
+                if (outcome.SkipToOrder is { } skipTo)
+                {
+                    // Create a plan from scratch based on a new beginning
+                    context.Directives.RequestResumeFrom(skipTo);
+                    plan = _planner.Build(context, _steps);
+                    i = 0;
+                    continue;
+                }
+
+                // 3) If the directive changes (e.g., epilogue becomes RUN→SKIP, subflow starts),
+                // update the plan immediately.
+                if (NeedsReplan(plan, context.Directives))
+                {
+                    context.Directives.RequestResumeFrom(step.Order + 1);
+                    plan = _planner.Build(context, _steps);
+                    i = 0;
+                    continue;
+                }
+
+                i++; // go to next step
+            }
+            catch (Exception ex)
             {
-                context.Directives.RequestResumeFrom(step.Order + 1);
-                plan = _planner.Build(context, _steps);
-                i = 0;
-                continue;
+                sw.Stop();
+                _logger.PipelineStepFailed(ex, TelemetryConstants.Prefixes.Execution, stepOrder, stepName, context.InstanceId);
+                throw;
             }
-
-            i++; // go to next step
         }
-
-        // foreach (var step in _steps)
-        // {
-        //     // Check if we should skip immediate execution (for scheduled transitions)
-        //     if (context.SkipImmediateExecution)
-        //     {
-        //         _logger.LogDebug("Skipping immediate execution for scheduled transition {TransitionKey}",
-        //             context.TransitionKey);
-        //         break;
-        //     }
-        //     
-        //     if (startOrder != int.MinValue && step.Order < startOrder) continue;
-        //
-        //     try
-        //     {
-        //         _logger.LogTrace("Executing pipeline step {StepType} (order: {Order}) for transition {TransitionKey}",
-        //             step.GetType().Name, step.Order, context.TransitionKey);
-        //
-        //         await step.ExecuteAsync(context, cancellationToken);
-        //         context.Items.Remove("ResumeFrom");
-        //         _logger.LogTrace("Completed pipeline step {StepType} for transition {TransitionKey}",
-        //             step.GetType().Name, context.TransitionKey);
-        //     }
-        //     catch (Exception ex)
-        //     {
-        //         _logger.LogError(ex, "Pipeline step {StepType} failed for transition {TransitionKey} on instance {InstanceId}",
-        //             step.GetType().Name, context.TransitionKey, context.InstanceId);
-        //         throw;
-        //     }
-        // }
 
         _logger.LogDebug("Completed transition pipeline for {WorkflowKey}.{TransitionKey} on instance {InstanceId}",
             context.WorkflowKey, context.TransitionKey, context.InstanceId);
     }
     
-    private static bool NeedsReplan(ITransitionStep current, IReadOnlyList<ITransitionStep> currentPlan, PipelineDirectives d)
+    private static bool NeedsReplan(IReadOnlyList<ITransitionStep> currentPlan, PipelineDirectives d)
     {
         // A simple heuristic: replan if terminal is reached or epilogue mode is switched to SKIP.
         if (d.TerminalReached) return true;

@@ -5,6 +5,7 @@ using BBT.Workflow.Instances;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
+using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.BackgroundJobs.Handlers;
@@ -68,7 +69,10 @@ public sealed class FlowTimeoutJobHandler(
             logger.LogWarning("FlowTimeoutJobHandler: Failed to deserialize job payload.");
             return;
         }
-
+        
+        // Create structured logging scope for the entire job execution
+        using var scope = logger.ForJob(JobName, jobData?.JobId);
+        
         logger.LogInformation("FlowTimeoutJobHandler: {JobName} - {JobId}", JobName, jobData?.JobId);
 
         var flowName = jobData?.GetFlowName();

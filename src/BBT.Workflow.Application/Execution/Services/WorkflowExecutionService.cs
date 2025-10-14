@@ -4,7 +4,9 @@ using BBT.Workflow.Execution.Strategies;
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Schemas;
+using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace BBT.Workflow.Execution.Services;
 
@@ -29,12 +31,11 @@ public sealed class WorkflowExecutionService(
         WorkflowExecutionContext context,
         CancellationToken cancellationToken = default)
     {
-        logger.LogDebug(
-            "Starting transition execution for {TransitionKey} on instance {InstanceId} with trigger {TriggerType}",
-            context.TransitionKey, context.InstanceId, context.TriggerType);
-
+        var sw = Stopwatch.StartNew();
+        
         using (currentSchema.Change(context.WorkflowKey))
         {
+            // Get workflow info for structured logging (we'll get this after schema change)
             var resourceId = $"instance-{context.InstanceId}";
 
             try
@@ -46,6 +47,16 @@ public sealed class WorkflowExecutionService(
                     {
                         var mode = execFactory.Get(context.Mode);
                         var transitionExecutionContext = await mode.ExecuteAsync(context, cancellationToken);
+                        
+                        sw.Stop();
+                        
+                        // Log completion with structured data
+                        logger.TransitionCompleted(
+                            TelemetryConstants.Prefixes.Application,
+                            context.TransitionKey,
+                            context.InstanceId,
+                            sw.ElapsedMilliseconds);
+                        
                         TransitionOutput? response = null;
                         if (transitionExecutionContext.ClientResponse is not null)
                         {
@@ -75,6 +86,12 @@ public sealed class WorkflowExecutionService(
             catch (DistributedLockAcquisitionException)
             {
                 throw new TransitionLockedException(context.InstanceId, context.TransitionKey);
+            }
+            catch (Exception ex)
+            {
+                sw.Stop();
+                logger.TransitionFailed(ex, TelemetryConstants.Prefixes.Application, context.TransitionKey, context.InstanceId);
+                throw;
             }
         }
     }

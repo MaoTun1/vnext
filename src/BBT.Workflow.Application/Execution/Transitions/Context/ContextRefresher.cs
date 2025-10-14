@@ -14,11 +14,5 @@ public sealed class ContextRefresher(
         context.Data = fresh.Data;
         context.Current = context.Workflow.GetState(fresh.GetCurrentState);
         context.Target = null;
-        
-        // Cache clear
-        // context.Items.Remove("ScriptContext");
-        // context.Items.Remove("ResumeFrom");
-        // context.Items.Remove("NextTransitionKey");
-        // context.Items.Remove("InlineAutoQueue");
     }
 }

@@ -2,7 +2,9 @@ using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks;
+using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace BBT.Workflow.Execution.Pipeline.Steps;
 
@@ -28,8 +30,9 @@ public sealed class RunOnExecuteTasksStep(
             return StepOutcome.Continue();
         }
 
-        logger.LogDebug("Executing OnExecute tasks for transition {TransitionKey} on instance {InstanceId}",
-            context.TransitionKey, context.InstanceId);
+        var sw = Stopwatch.StartNew();
+        logger.LogDebug("Executing {TaskCount} OnExecute tasks for transition {TransitionKey} on instance {InstanceId}",
+            context.Transition.OnExecutionTasks.Count, context.TransitionKey, context.InstanceId);
 
         // Get or build script context
         var scriptContext = context.GetOrBuildScriptContext(() => 
@@ -40,20 +43,33 @@ public sealed class RunOnExecuteTasksStep(
             ? record as Guid? 
             : null;
 
-        // Execute the tasks
-        await taskOrchestrationService.ExecuteAsync(
-            context.Transition.OnExecutionTasks,
-            instanceTransitionId,
-            TaskTrigger.OnExecute,
-            scriptContext,
-            cancellationToken);
+        try
+        {
+            // Execute the tasks
+            await taskOrchestrationService.ExecuteAsync(
+                context.Transition.OnExecutionTasks,
+                instanceTransitionId,
+                TaskTrigger.OnExecute,
+                scriptContext,
+                cancellationToken);
 
-        context.ApplyScriptContextChanges(scriptContext);
-        
-        await instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
+            context.ApplyScriptContextChanges(scriptContext);
+            
+            await instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
 
-        logger.LogDebug("Completed OnExecute tasks for transition {TransitionKey}", context.TransitionKey);
-        return StepOutcome.Continue();
+            sw.Stop();
+            logger.LogDebug("Completed {TaskCount} OnExecute tasks for transition {TransitionKey} in {ElapsedMs}ms",
+                context.Transition.OnExecutionTasks.Count, context.TransitionKey, sw.ElapsedMilliseconds);
+            
+            return StepOutcome.Continue();
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            logger.LogError(ex, "OnExecute tasks failed for transition {TransitionKey} after {ElapsedMs}ms",
+                context.TransitionKey, sw.ElapsedMilliseconds);
+            throw;
+        }
     }
 
     /// <summary>

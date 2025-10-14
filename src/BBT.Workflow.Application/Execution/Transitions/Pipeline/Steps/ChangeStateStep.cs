@@ -2,6 +2,7 @@ using BBT.Workflow.Execution;
 using BBT.Workflow.Execution.Pipeline;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Monitoring;
+using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Execution.Pipeline.Steps;
@@ -21,14 +22,17 @@ public sealed class ChangeStateStep(
     /// <inheritdoc />
     public async Task<StepOutcome> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
+        var fromState = context.Instance.GetCurrentState;
+        var toState = context.Transition.Target;
+        
         logger.LogDebug("Changing state from {FromState} to {ToState} for instance {InstanceId}",
-            context.Instance.GetCurrentState, context.Transition.Target, context.InstanceId);
+            fromState, toState, context.InstanceId);
 
         // Record state transition metric
         workflowMetrics.RecordStateTransition(
             context.Workflow.Key,
-            context.Instance.GetCurrentState,
-            context.Transition.Target);
+            fromState,
+            toState);
 
         // Perform the state change
         context.Instance.ChangeState(context.Transition);
@@ -42,8 +46,12 @@ public sealed class ChangeStateStep(
             context.Workflow.Key,
             context.Instance.GetCurrentState);
 
-        logger.LogDebug("State changed to {NewState} for instance {InstanceId}",
-            context.Instance.GetCurrentState, context.InstanceId);
+        // Log state change with structured logging
+        logger.StateChanged(
+            TelemetryConstants.Prefixes.Execution,
+            fromState,
+            toState,
+            context.InstanceId);
         
         return StepOutcome.Continue();
     }

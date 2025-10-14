@@ -27,7 +27,7 @@ public static class OrchestrationApiServiceCollectionExtensions
             
         // Add health checks separately to avoid ambiguity
         services.AddAppHealthChecks();
-
+        
         // Add Orchestration-specific configurations
         ConfigureOrchestrationSpecificServices(services);
         

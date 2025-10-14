@@ -3,8 +3,10 @@ using BBT.Aether.Guids;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Execution.Services;
 using BBT.Workflow.ExceptionHandling;
+using BBT.Workflow.Headers;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Instances;
@@ -18,6 +20,7 @@ public sealed class InstanceCommandAppService(
     ISchemaManager schemaManager,
     IInstanceRepository instanceRepository,
     IGuidGenerator guidGenerator,
+    IHeaderService headerService,
     ILogger<InstanceCommandAppService> logger)
     : ApplicationService(serviceProvider), IInstanceCommandAppService
 {
@@ -70,6 +73,11 @@ public sealed class InstanceCommandAppService(
             // Execute start transition using WorkflowExecutionService
             var transitionResult = await workflowExecutionService.ExecuteTransitionAsync(context, cancellationToken);
 
+            headerService.AddHeader(
+                WorkflowInfo.Name,
+                WorkflowInfo.Generate(runtimeInfoProvider.Domain, workflow.Key, workflow.Version, instance.Id)
+            );
+            
             // Create and return StartInstanceOutput response
             return new InstanceServiceResponse<StartInstanceOutput>(new StartInstanceOutput
             {
@@ -92,7 +100,14 @@ public sealed class InstanceCommandAppService(
         // Convert TransitionInput to WorkflowExecutionContext
         var context = input.ToExecutionContext(instanceId, transitionKey);
         
-        return await workflowExecutionService.ExecuteTransitionAsync(context, cancellationToken);
+        var output =  await workflowExecutionService.ExecuteTransitionAsync(context, cancellationToken);
+        
+        headerService.AddHeader(
+            WorkflowInfo.Name,
+            WorkflowInfo.Generate(runtimeInfoProvider.Domain, context.WorkflowKey, context.WorkflowVersion ?? "latest", output.Data.Id)
+        );
+        
+        return output;
     }
 
 

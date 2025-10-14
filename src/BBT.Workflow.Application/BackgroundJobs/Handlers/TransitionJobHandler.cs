@@ -4,6 +4,7 @@ using BBT.Workflow.Instances;
 using BBT.Workflow.Schemas;
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Execution.Services;
+using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.BackgroundJobs.Handlers;
@@ -29,6 +30,9 @@ public sealed class TransitionJobHandler(
             return;
         }
 
+        // Create structured logging scope for the entire job execution
+        using var scope = logger.ForJob(JobName, jobData.JobId);
+        
         logger.LogInformation("TransitionJobHandler: Processing job {JobName} - {JobId}", JobName, jobData.JobId);
 
         var flowName = jobData.GetFlowName();

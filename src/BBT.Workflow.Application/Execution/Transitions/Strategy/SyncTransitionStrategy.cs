@@ -1,7 +1,9 @@
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Execution.Handlers;
 using BBT.Workflow.Execution.Pipeline;
+using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace BBT.Workflow.Execution.Strategies;
 
@@ -18,29 +20,61 @@ public sealed class SyncTransitionStrategy(
     /// <inheritdoc />
     public async Task<TransitionExecutionContext> ExecuteAsync(WorkflowExecutionContext context, CancellationToken cancellationToken)
     {
-        logger.LogDebug("Executing transition synchronously");
+        var sw = Stopwatch.StartNew();
+        
+        logger.StrategyExecutionStarted(
+            TelemetryConstants.Prefixes.Execution,
+            nameof(SyncTransitionStrategy),
+            context.TransitionKey,
+            context.InstanceId);
 
+        // 1. Resolve handler and create execution context
         var handler = handlerFactory.Get(context.TriggerType);
         var ctx = await ctxFactory.CreateAsync(context, cancellationToken); // rehydrate
+        
+        logger.ContextCreated(
+            TelemetryConstants.Prefixes.Execution,
+            context.TransitionKey,
+            handler.GetType().Name);
+
+        // 2. Create structured logging scope for entire transition execution
+        using var scope = logger.ForTransition(
+            ctx.Workflow.Domain,
+            ctx.Workflow.Key,
+            ctx.Workflow.Version?.ToString(),
+            ctx.InstanceId,
+            ctx.TransitionKey);
 
         try
         {
+            // 3. Execute handler lifecycle: PreHandle -> Pipeline -> PostHandle
             await handler.PreHandleAsync(ctx, cancellationToken);
             await pipeline.RunAsync(ctx, cancellationToken);
             await handler.PostHandleAsync(ctx, cancellationToken);
-            logger.LogDebug("Synchronous transition execution completed successfully");
+            
+            sw.Stop();
+            logger.StrategyExecutionCompleted(
+                TelemetryConstants.Prefixes.Execution,
+                nameof(SyncTransitionStrategy),
+                context.TransitionKey,
+                sw.ElapsedMilliseconds);
+            
             return ctx;
         }
         catch (TransitionRuleFailedException ex)
         {
-            logger.LogWarning(ex,
-                "Transition rule failed for {TriggerType} transition {TransitionKey} on instance {InstanceId}: {Message}",
-                context.TriggerType, context.TransitionKey, context.InstanceId, ex.Message);
+            sw.Stop();
+            logger.TransitionRuleFailed(
+                TelemetryConstants.Prefixes.Execution,
+                context.TransitionKey,
+                context.InstanceId,
+                ex.Message);
             throw; // Rethrow the exception so DefaultReentryDispatcher can catch it
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Synchronous transition execution failed");
+            sw.Stop();
+            logger.TransitionFailed(ex, TelemetryConstants.Prefixes.Execution, context.TransitionKey, context.InstanceId);
             throw;
         }
     }

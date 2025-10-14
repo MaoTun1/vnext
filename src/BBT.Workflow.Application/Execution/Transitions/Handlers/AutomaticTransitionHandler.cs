@@ -32,7 +32,7 @@ public sealed class AutomaticTransitionHandler(
         await ValidateConditionAsync(context, cancellationToken);
 
         // Additional validations for automatic transitions
-        await ValidateSystemStateAsync(context, cancellationToken);
+        await ValidateSystemStateAsync(context);
 
         Logger.LogDebug("Automatic transition validation completed for {TransitionKey}", context.TransitionKey);
     }
@@ -89,14 +89,8 @@ public sealed class AutomaticTransitionHandler(
     /// <summary>
     /// Validates the system state for automatic transition execution.
     /// </summary>
-    private async Task ValidateSystemStateAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    private async Task ValidateSystemStateAsync(TransitionExecutionContext context)
     {
-        // TODO: Implement system state validations:
-        // 1. Check if the instance is in a valid state for automatic transitions
-        // 2. Validate that no conflicting operations are in progress
-        // 3. Check system resource availability
-        // 4. Validate execution chain depth limits
-
         // Basic validation: ensure we're not exceeding chain depth limits
         // (This is also checked in the dispatcher, but we double-check here)
         const int maxChainDepth = 50; // This should come from configuration
@@ -116,14 +110,8 @@ public sealed class AutomaticTransitionHandler(
         Logger.LogDebug("Post-processing automatic transition {TransitionKey} for instance {InstanceId}",
             context.TransitionKey, context.InstanceId);
 
-        // TODO: Implement automatic transition post-processing:
-        // 1. Update execution metrics
-        // 2. Log execution chain information
-        // 3. Check for potential infinite loops
-        // 4. Update system monitoring data
-
         await UpdateExecutionMetricsAsync(context, cancellationToken);
-        await LogExecutionChainAsync(context, cancellationToken);
+        await LogExecutionChainAsync(context);
 
         Logger.LogDebug("Automatic transition post-processing completed for {TransitionKey}", context.TransitionKey);
     }
@@ -134,17 +122,13 @@ public sealed class AutomaticTransitionHandler(
     private async Task UpdateExecutionMetricsAsync(TransitionExecutionContext context,
         CancellationToken cancellationToken)
     {
-        // TODO: Record metrics specific to automatic transitions
-        // - Chain depth distribution
-        // - Condition evaluation performance
-        // - Automatic transition frequency
         await Task.CompletedTask;
     }
 
     /// <summary>
     /// Logs execution chain information for debugging and monitoring.
     /// </summary>
-    private async Task LogExecutionChainAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    private async Task LogExecutionChainAsync(TransitionExecutionContext context)
     {
         Logger.LogInformation(
             "Automatic transition executed: {TransitionKey} on instance {InstanceId}, " +

@@ -1,8 +1,8 @@
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Execution.Validation;
-using BBT.Workflow.Scripting;
-using BBT.Workflow.Shared;
+using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace BBT.Workflow.Execution.Handlers;
 
@@ -33,45 +33,75 @@ public abstract class TransitionHandlerBase : ITransitionHandler
     /// <inheritdoc />
     public async Task PreHandleAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
-        Logger.LogDebug("Pre-handling {TriggerType} transition {TransitionKey} for instance {InstanceId}",
-            context.Trigger, context.TransitionKey, context.InstanceId);
+        var sw = Stopwatch.StartNew();
+        var handlerName = GetType().Name;
+        
+        Logger.HandlerPreHandleStarted(
+            TelemetryConstants.Prefixes.Execution,
+            handlerName,
+            context.Trigger.ToString(),
+            context.TransitionKey);
 
         try
         {
             await PreValidateAsync(context, cancellationToken);
             await PreProcessAsync(context, cancellationToken);
+            
+            sw.Stop();
+            Logger.HandlerPreHandleCompleted(
+                TelemetryConstants.Prefixes.Execution,
+                handlerName,
+                context.Trigger.ToString(),
+                sw.ElapsedMilliseconds);
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Pre-handling failed for {TriggerType} transition {TransitionKey} on instance {InstanceId}",
-                context.Trigger, context.TransitionKey, context.InstanceId);
+            sw.Stop();
+            Logger.HandlerPreHandleFailed(
+                ex,
+                TelemetryConstants.Prefixes.Execution,
+                handlerName,
+                context.Trigger.ToString(),
+                context.TransitionKey);
             throw;
         }
-
-        Logger.LogDebug("Completed pre-handling for {TriggerType} transition {TransitionKey}",
-            context.Trigger, context.TransitionKey);
     }
 
     /// <inheritdoc />
     public async Task PostHandleAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
-        Logger.LogDebug("Post-handling {TriggerType} transition {TransitionKey} for instance {InstanceId}",
-            context.Trigger, context.TransitionKey, context.InstanceId);
+        var sw = Stopwatch.StartNew();
+        var handlerName = GetType().Name;
+        
+        Logger.HandlerPostHandleStarted(
+            TelemetryConstants.Prefixes.Execution,
+            handlerName,
+            context.Trigger.ToString(),
+            context.TransitionKey);
 
         try
         {
             await PostProcessAsync(context, cancellationToken);
             await PostValidateAsync(context, cancellationToken);
+            
+            sw.Stop();
+            Logger.HandlerPostHandleCompleted(
+                TelemetryConstants.Prefixes.Execution,
+                handlerName,
+                context.Trigger.ToString(),
+                sw.ElapsedMilliseconds);
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Post-handling failed for {TriggerType} transition {TransitionKey} on instance {InstanceId}",
-                context.Trigger, context.TransitionKey, context.InstanceId);
+            sw.Stop();
+            Logger.HandlerPostHandleFailed(
+                ex,
+                TelemetryConstants.Prefixes.Execution,
+                handlerName,
+                context.Trigger.ToString(),
+                context.TransitionKey);
             throw;
         }
-
-        Logger.LogDebug("Completed post-handling for {TriggerType} transition {TransitionKey}",
-            context.Trigger, context.TransitionKey);
     }
 
     /// <summary>

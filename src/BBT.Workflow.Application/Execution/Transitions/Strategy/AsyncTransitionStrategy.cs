@@ -1,7 +1,9 @@
 using BBT.Workflow.BackgroundJobs;
 using BBT.Workflow.BackgroundJobs.Payloads;
+using BBT.Workflow.Telemetry;
 using Dapr.Jobs.Models;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace BBT.Workflow.Execution.Strategies;
 
@@ -17,12 +19,25 @@ public sealed class AsyncTransitionStrategy(
     /// <inheritdoc />
     public async Task<TransitionExecutionContext> ExecuteAsync(WorkflowExecutionContext context, CancellationToken cancellationToken)
     {
-        logger.LogDebug("Executing transition asynchronously");
+        var sw = Stopwatch.StartNew();
+        
+        logger.StrategyExecutionStarted(
+            TelemetryConstants.Prefixes.Execution,
+            nameof(AsyncTransitionStrategy),
+            context.TransitionKey,
+            context.InstanceId);
 
         try
         {
+            // 1. Create execution context (for state reservation)
             var ctx = await ctxFactory.CreateAsync(context, cancellationToken); // rehydrate
+            
+            logger.ContextCreated(
+                TelemetryConstants.Prefixes.Execution,
+                context.TransitionKey,
+                "BackgroundJob");
 
+            // 2. Prepare job payload
             var jobPayload = new TransitionJobPayload
             {
                 InstanceId = context.InstanceId,
@@ -46,6 +61,7 @@ public sealed class AsyncTransitionStrategy(
                 ["instanceId"] = context.InstanceId.ToString()
             };
 
+            // 3. Enqueue background job for actual execution
             await backgroundJobService.EnqueueAsync(
                 BackgroundJobConsts.TransitionJobName,
                 jobId,
@@ -54,16 +70,23 @@ public sealed class AsyncTransitionStrategy(
                 metadata,
                 cancellationToken);
 
+            sw.Stop();
+            logger.StrategyExecutionCompleted(
+                TelemetryConstants.Prefixes.Execution,
+                nameof(AsyncTransitionStrategy),
+                context.TransitionKey,
+                sw.ElapsedMilliseconds);
+            
             logger.LogInformation("Successfully enqueued transition {TransitionKey} for instance {InstanceId} with job ID {JobId}",
                 context.TransitionKey, context.InstanceId, jobId);
-            
-            logger.LogDebug("Asynchronous transition execution completed successfully");
 
             return ctx;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Asynchronous transition execution failed");
+            sw.Stop();
+            logger.LogError(ex, "Asynchronous transition execution failed for {TransitionKey} on instance {InstanceId}",
+                context.TransitionKey, context.InstanceId);
             throw;
         }
     }

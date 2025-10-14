@@ -28,10 +28,7 @@ public sealed class ManualTransitionHandler(
         // 3. Schema validation for input data
         // 4. Business rule validations
         await base.PreValidateAsync(context, cancellationToken);
-
-        // TODO: Add manual-specific validations:
-        // 1. HMAC validation if required
-        // 2. Rate limiting checks
+        
         await ValidateManualSpecificAsync(context, cancellationToken);
 
         Logger.LogDebug("Manual transition validation completed for {TransitionKey}", context.TransitionKey);
@@ -42,10 +39,6 @@ public sealed class ManualTransitionHandler(
     /// </summary>
     private async Task ValidateManualSpecificAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
-        // TODO: Implement manual-specific validations:
-        // 1. HMAC validation if required
-        // 2. Rate limiting checks
-        // 3. Additional security validations specific to manual transitions
         await Task.CompletedTask;
     }
 
@@ -55,14 +48,7 @@ public sealed class ManualTransitionHandler(
         Logger.LogDebug("Post-processing manual transition {TransitionKey} for instance {InstanceId}",
             context.TransitionKey, context.InstanceId);
 
-        // TODO: Implement manual transition post-processing:
-        // 1. Audit logging
-        // 2. Notification sending
-        // 3. Metrics recording
-        // 4. External system notifications
-
         await RecordAuditLogAsync(context, cancellationToken);
-        await SendNotificationsAsync(context, cancellationToken);
 
         Logger.LogDebug("Manual transition post-processing completed for {TransitionKey}", context.TransitionKey);
     }
@@ -72,16 +58,6 @@ public sealed class ManualTransitionHandler(
     /// </summary>
     private async Task RecordAuditLogAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
-        // TODO: Implement audit logging
-        await Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Sends notifications for manual transition completion.
-    /// </summary>
-    private async Task SendNotificationsAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
-    {
-        // TODO: Implement notification sending
         await Task.CompletedTask;
     }
 }

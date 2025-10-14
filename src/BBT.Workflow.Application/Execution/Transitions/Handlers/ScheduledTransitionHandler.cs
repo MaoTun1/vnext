@@ -54,12 +54,6 @@ public sealed class ScheduledTransitionHandler(
     /// </summary>
     private async Task ValidateExecutionTimingAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
-        // TODO: Implement timing validation:
-        // 1. Check if the scheduled time has actually arrived
-        // 2. Validate that the execution is not too early or too late
-        // 3. Handle timezone considerations
-        // 4. Check for schedule conflicts
-
         Logger.LogTrace("Validating execution timing for scheduled transition {TransitionKey}",
             context.TransitionKey);
 
@@ -78,12 +72,6 @@ public sealed class ScheduledTransitionHandler(
     /// </summary>
     private async Task ValidateScheduleConstraintsAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
-        // TODO: Implement schedule constraint validations:
-        // 1. Check for maximum execution frequency limits
-        // 2. Validate business hours constraints
-        // 3. Check for holiday/maintenance window restrictions
-        // 4. Validate resource availability for scheduled operations
-
         Logger.LogTrace("Validating schedule constraints for transition {TransitionKey}",
             context.TransitionKey);
 
@@ -95,13 +83,7 @@ public sealed class ScheduledTransitionHandler(
     {
         Logger.LogDebug("Post-processing scheduled transition {TransitionKey} for instance {InstanceId}",
             context.TransitionKey, context.InstanceId);
-
-        // TODO: Implement scheduled transition post-processing:
-        // 1. Update schedule execution metrics
-        // 2. Log schedule adherence information
-        // 3. Update next scheduled execution if recurring
-        // 4. Handle schedule completion notifications
-
+        
         await UpdateScheduleMetricsAsync(context, cancellationToken);
         await LogScheduleExecutionAsync(context, cancellationToken);
         await HandleRecurringScheduleAsync(context, cancellationToken);
@@ -114,12 +96,6 @@ public sealed class ScheduledTransitionHandler(
     /// </summary>
     private async Task UpdateScheduleMetricsAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
-        // TODO: Record metrics specific to scheduled transitions:
-        // - Schedule adherence (on-time vs delayed execution)
-        // - Schedule execution frequency
-        // - Schedule success/failure rates
-        // - Resource utilization during scheduled operations
-
         await Task.CompletedTask;
     }
 
@@ -141,12 +117,6 @@ public sealed class ScheduledTransitionHandler(
     /// </summary>
     private async Task HandleRecurringScheduleAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
-        // TODO: Implement recurring schedule handling:
-        // 1. Check if this is a recurring scheduled transition
-        // 2. Calculate next execution time
-        // 3. Enqueue next occurrence if applicable
-        // 4. Handle schedule termination conditions
-
         await Task.CompletedTask;
     }
 }

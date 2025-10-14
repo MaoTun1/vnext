@@ -147,7 +147,9 @@ public static class WorkflowApiBaseServiceCollectionExtensions
 
     private static void ConfigureTelemetry(IServiceCollection services, IConfiguration configuration)
     {
-        services.AddFrameworkTelemetry(configuration);
+        // Use vNext custom OpenTelemetry configuration instead of Aether framework telemetry
+        //services.AddFrameworkTelemetry(configuration);
+         services.AddVNextTelemetry(configuration);
     }
 
     private static void ConfigureDistributedCache(IServiceCollection services, IConfiguration configuration)
