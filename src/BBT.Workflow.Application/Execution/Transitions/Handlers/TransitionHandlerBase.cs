@@ -42,6 +42,14 @@ public abstract class TransitionHandlerBase : ITransitionHandler
             context.Trigger.ToString(),
             context.TransitionKey);
 
+        // Create span for PreHandle
+        using var activity = WorkflowActivitySource.Instance.StartActivity(
+            TelemetryConstants.SpanNames.HandlerPreHandle,
+            ActivityKind.Internal);
+        
+        activity?.SetTag(TelemetryConstants.TagNames.HandlerName, handlerName);
+        activity?.SetTag(TelemetryConstants.TagNames.TriggerType, context.Trigger.ToString());
+
         try
         {
             await PreValidateAsync(context, cancellationToken);
@@ -56,8 +64,10 @@ public abstract class TransitionHandlerBase : ITransitionHandler
         }
         catch (Exception ex)
         {
-            sw.Stop();
-            Logger.HandlerPreHandleFailed(
+                sw.Stop();
+                activity?.RecordExceptionWithStatus(ex);
+                
+                Logger.HandlerPreHandleFailed(
                 ex,
                 TelemetryConstants.Prefixes.Execution,
                 handlerName,
@@ -79,6 +89,14 @@ public abstract class TransitionHandlerBase : ITransitionHandler
             context.Trigger.ToString(),
             context.TransitionKey);
 
+        // Create span for PostHandle
+        using var activity = WorkflowActivitySource.Instance.StartActivity(
+            TelemetryConstants.SpanNames.HandlerPostHandle,
+            ActivityKind.Internal);
+        
+        activity?.SetTag(TelemetryConstants.TagNames.HandlerName, handlerName);
+        activity?.SetTag(TelemetryConstants.TagNames.TriggerType, context.Trigger.ToString());
+
         try
         {
             await PostProcessAsync(context, cancellationToken);
@@ -93,8 +111,10 @@ public abstract class TransitionHandlerBase : ITransitionHandler
         }
         catch (Exception ex)
         {
-            sw.Stop();
-            Logger.HandlerPostHandleFailed(
+                sw.Stop();
+                activity?.RecordExceptionWithStatus(ex);
+                
+                Logger.HandlerPostHandleFailed(
                 ex,
                 TelemetryConstants.Prefixes.Execution,
                 handlerName,

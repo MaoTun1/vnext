@@ -45,9 +45,25 @@ public sealed class SyncTransitionStrategy(
             ctx.InstanceId,
             ctx.TransitionKey);
 
+        // 3. Create distributed tracing span for transition execution
+        using var activity = WorkflowActivitySource.Instance.StartActivity(
+            TelemetryConstants.SpanNames.TransitionExecution,
+            ActivityKind.Internal);
+        
+        activity?.SetTag(TelemetryConstants.TagNames.Domain, ctx.Workflow.Domain);
+        activity?.SetTag(TelemetryConstants.TagNames.Flow, ctx.Workflow.Key);
+        activity?.SetTag(TelemetryConstants.TagNames.FlowVersion, ctx.Workflow.Version?.ToString());
+        activity?.SetTag(TelemetryConstants.TagNames.InstanceId, ctx.InstanceId.ToString());
+        activity?.SetTag(TelemetryConstants.TagNames.TransitionKey, ctx.TransitionKey);
+        activity?.SetTag(TelemetryConstants.TagNames.TriggerType, context.TriggerType.ToString());
+        activity?.SetTag(TelemetryConstants.TagNames.HandlerName, handler.GetType().Name);
+        
+        // Set display name for better trace visualization
+        activity?.SetDisplayName($"{ctx.InstanceId}/{ctx.TransitionKey}");
+
         try
         {
-            // 3. Execute handler lifecycle: PreHandle -> Pipeline -> PostHandle
+            // 4. Execute handler lifecycle: PreHandle -> Pipeline -> PostHandle
             await handler.PreHandleAsync(ctx, cancellationToken);
             await pipeline.RunAsync(ctx, cancellationToken);
             await handler.PostHandleAsync(ctx, cancellationToken);
@@ -64,6 +80,8 @@ public sealed class SyncTransitionStrategy(
         catch (TransitionRuleFailedException ex)
         {
             sw.Stop();
+            activity?.RecordExceptionWithStatus(ex);
+            
             logger.TransitionRuleFailed(
                 TelemetryConstants.Prefixes.Execution,
                 context.TransitionKey,
@@ -74,6 +92,8 @@ public sealed class SyncTransitionStrategy(
         catch (Exception ex)
         {
             sw.Stop();
+            activity?.RecordExceptionWithStatus(ex);
+            
             logger.TransitionFailed(ex, TelemetryConstants.Prefixes.Execution, context.TransitionKey, context.InstanceId);
             throw;
         }

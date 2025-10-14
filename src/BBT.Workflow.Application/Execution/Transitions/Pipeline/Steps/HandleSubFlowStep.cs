@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using BBT.Aether.Guids;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.SubFlow;
+using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Execution.Pipeline.Steps;
@@ -104,6 +106,22 @@ public sealed class HandleSubFlowStep(
             scriptContext,
             cancellationToken
         );
+
+        // Record SubFlow initiation as an event
+        Activity.Current?.AddEvent(new ActivityEvent("subflow.initiated",
+            tags: new ActivityTagsCollection
+            {
+                { TelemetryConstants.TagNames.SubFlowKey, context.Target.SubFlow.Process.Key },
+                { TelemetryConstants.TagNames.Domain, context.Target.SubFlow.Process.Domain },
+                { "workflow.subflow.type", context.Target.SubFlow.Type.Code },
+                { "workflow.subflow.version", context.Target.SubFlow.Process.Version?.ToString() ?? "latest" },
+                { "workflow.correlation.id", correlation.Id.ToString() },
+                { "workflow.subflow.instance.id", correlation.SubFlowInstanceId.ToString() }
+            }));
+
+        logger.LogDebug(
+            "SubFlow {SubFlowKey} initiated with correlation {CorrelationId} and instance {SubFlowInstanceId}",
+            context.Target.SubFlow.Process.Key, correlation.Id, correlation.SubFlowInstanceId);
     }
 
     /// <summary>

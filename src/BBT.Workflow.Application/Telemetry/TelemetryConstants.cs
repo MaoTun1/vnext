@@ -7,6 +7,17 @@ namespace BBT.Workflow.Telemetry;
 public static class TelemetryConstants
 {
     /// <summary>
+    /// OpenTelemetry ActivitySource name for workflow operations.
+    /// Used for distributed tracing of workflow execution.
+    /// </summary>
+    public const string ActivitySourceName = "BBT.Workflow";
+    
+    /// <summary>
+    /// OpenTelemetry ActivitySource version.
+    /// </summary>
+    public const string ActivitySourceVersion = "1.0.0";
+
+    /// <summary>
     /// Telemetry prefix constants for different layers of the application.
     /// Used in structured logging and OpenTelemetry spans to identify the source layer.
     /// </summary>
@@ -102,6 +113,73 @@ public static class TelemetryConstants
         /// Job ID field name.
         /// </summary>
         public const string JobId = "jobId";
+    }
+    
+    /// <summary>
+    /// Span and activity names for distributed tracing.
+    /// </summary>
+    public static class SpanNames
+    {
+        /// <summary>
+        /// Transition execution span name.
+        /// </summary>
+        public const string TransitionExecution = "transition.execute";
+        
+        /// <summary>
+        /// Handler pre-handle span name.
+        /// </summary>
+        public const string HandlerPreHandle = "handler.prehandle";
+        
+        /// <summary>
+        /// Handler post-handle span name.
+        /// </summary>
+        public const string HandlerPostHandle = "handler.posthandle";
+        
+        /// <summary>
+        /// Pipeline execution span name.
+        /// </summary>
+        public const string PipelineExecution = "pipeline.execute";
+        
+        /// <summary>
+        /// Pipeline step span name.
+        /// </summary>
+        public const string PipelineStep = "pipeline.step";
+        
+        /// <summary>
+        /// Task execution span name.
+        /// </summary>
+        public const string TaskExecution = "task.execute";
+        
+        /// <summary>
+        /// SubFlow start span name.
+        /// </summary>
+        public const string SubFlowStart = "subflow.start";
+        
+        /// <summary>
+        /// SubFlow complete span name.
+        /// </summary>
+        public const string SubFlowComplete = "subflow.complete";
+    }
+    
+    /// <summary>
+    /// Tag names for span attributes.
+    /// </summary>
+    public static class TagNames
+    {
+        public const string Domain = "workflow.domain";
+        public const string Flow = "workflow.flow";
+        public const string FlowVersion = "workflow.flow.version";
+        public const string InstanceId = "workflow.instance.id";
+        public const string TransitionKey = "workflow.transition.key";
+        public const string TriggerType = "workflow.trigger.type";
+        public const string HandlerName = "workflow.handler.name";
+        public const string StepName = "workflow.step.name";
+        public const string StepOrder = "workflow.step.order";
+        public const string TaskKey = "workflow.task.key";
+        public const string TaskType = "workflow.task.type";
+        public const string SubFlowKey = "workflow.subflow.key";
+        public const string StateFrom = "workflow.state.from";
+        public const string StateTo = "workflow.state.to";
     }
 }
 

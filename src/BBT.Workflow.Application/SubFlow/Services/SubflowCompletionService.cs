@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using BBT.Aether.Application.Services;
 using BBT.Aether.Guids;
@@ -7,6 +8,7 @@ using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Schemas;
+using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Logging;
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Execution;
@@ -14,6 +16,7 @@ using BBT.Workflow.Execution.Pipeline;
 using BBT.Workflow.Execution.Services;
 using BBT.Workflow.Shared;
 using Microsoft.Extensions.DependencyInjection;
+using OpenTelemetry.Trace;
 
 namespace BBT.Workflow.SubFlow;
 
@@ -37,6 +40,8 @@ public sealed class SubflowCompletionService(
         FlowCompletedDataEto completedDataEto,
         CancellationToken cancellationToken = default)
     {
+        var sw = Stopwatch.StartNew();
+        
         logger.LogInformation(
             "Processing SubFlow completion for instance {InstanceId} in domain {Domain}",
             completedDataEto.InstanceId, completedDataEto.Domain);
@@ -68,51 +73,85 @@ public sealed class SubflowCompletionService(
             "SubFlow completion event belongs to parent instance {ParentInstanceId} in domain {Domain}, flow {Flow}",
             subFlowContractInfo.Id, subFlowContractInfo.Domain, subFlowContractInfo.Flow);
 
-        using (currentSchema.Change(subFlowContractInfo.Flow))
+        // Create span for SubFlow completion
+        using var activity = WorkflowActivitySource.Instance.StartActivity(
+            TelemetryConstants.SpanNames.SubFlowComplete,
+            ActivityKind.Internal);
+        
+        activity?.SetTag(TelemetryConstants.TagNames.SubFlowKey, subFlowContractInfo.Flow);
+        activity?.SetTag(TelemetryConstants.TagNames.Domain, subFlowContractInfo.Domain);
+        activity?.SetTag(TelemetryConstants.TagNames.InstanceId, completedDataEto.InstanceId.ToString());
+        activity?.SetDisplayName($"SubFlow Complete: {subFlowContractInfo.Flow}");
+
+        try
         {
-            // TODO: Bunu instance içinde yönet.
-            // Find the correlation record for this completed SubFlow
-            var correlation = await instanceCorrelationRepository
-                .FindBySubInstanceIdAsync(completedDataEto.InstanceId, cancellationToken);
-
-            if (correlation == null)
+            using (currentSchema.Change(subFlowContractInfo.Flow))
             {
-                logger.LogWarning(
-                    "No correlation found for completed SubFlow instance {InstanceId}. This may be a standalone flow or already processed.",
-                    completedDataEto.InstanceId);
-                return;
-            }
+                // TODO: Bunu instance içinde yönet.
+                // Find the correlation record for this completed SubFlow
+                var correlation = await instanceCorrelationRepository
+                    .FindBySubInstanceIdAsync(completedDataEto.InstanceId, cancellationToken);
 
-            if (correlation.IsCompleted)
-            {
-                logger.LogWarning(
-                    "SubFlow correlation {CorrelationId} for instance {InstanceId} is already marked as completed.",
-                    correlation.Id, completedDataEto.InstanceId);
-                return;
-            }
+                if (correlation == null)
+                {
+                    logger.LogWarning(
+                        "No correlation found for completed SubFlow instance {InstanceId}. This may be a standalone flow or already processed.",
+                        completedDataEto.InstanceId);
+                    return;
+                }
 
-            logger.LogInformation(
-                "Found SubFlow correlation {CorrelationId} for parent instance {ParentInstanceId} in state {ParentState}",
-                correlation.Id, correlation.ParentInstanceId, correlation.ParentState);
+                if (correlation.IsCompleted)
+                {
+                    logger.LogWarning(
+                        "SubFlow correlation {CorrelationId} for instance {InstanceId} is already marked as completed.",
+                        correlation.Id, completedDataEto.InstanceId);
+                    return;
+                }
 
-            // Mark the correlation as completed
-            correlation.Completed();
-            await instanceCorrelationRepository.UpdateAsync(correlation, true, cancellationToken);
-
-            if(correlation.SubFlowType.Equals(SubFlowType.SubProcess))
-            {
                 logger.LogInformation(
-                    "SubProcess {SubFlowName} for instance {InstanceId} has completed",
-                    correlation.SubFlowName, completedDataEto.InstanceId);
-                return;
-            }
-            
-            // Process parent workflow continuation within the parent's schema context
-            await ProcessParentWorkflowContinuationAsync(correlation, completedDataEto, subFlowContractInfo, cancellationToken);
+                    "Found SubFlow correlation {CorrelationId} for parent instance {ParentInstanceId} in state {ParentState}",
+                    correlation.Id, correlation.ParentInstanceId, correlation.ParentState);
 
-            logger.LogInformation(
-                "Successfully completed SubFlow processing for instance {InstanceId}",
+                // Mark the correlation as completed
+                correlation.Completed();
+                await instanceCorrelationRepository.UpdateAsync(correlation, true, cancellationToken);
+
+                if(correlation.SubFlowType.Equals(SubFlowType.SubProcess))
+                {
+                    logger.LogInformation(
+                        "SubProcess {SubFlowName} for instance {InstanceId} has completed",
+                        correlation.SubFlowName, completedDataEto.InstanceId);
+                    return;
+                }
+                
+                // Process parent workflow continuation within the parent's schema context
+                await ProcessParentWorkflowContinuationAsync(correlation, completedDataEto, subFlowContractInfo, cancellationToken);
+
+                sw.Stop();
+                
+                // Log SubFlow completion
+                logger.SubFlowCompleted(
+                    TelemetryConstants.Prefixes.Execution,
+                    correlation.SubFlowName,
+                    completedDataEto.InstanceId);
+                
+                logger.LogInformation(
+                    "Successfully completed SubFlow processing for instance {InstanceId} in {ElapsedMs}ms",
+                    completedDataEto.InstanceId,
+                    sw.ElapsedMilliseconds);
+            }
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            
+            activity?.RecordExceptionWithStatus(ex);
+            
+            logger.LogError(ex,
+                "Failed to process SubFlow completion for instance {InstanceId}",
                 completedDataEto.InstanceId);
+            
+            throw;
         }
     }
 

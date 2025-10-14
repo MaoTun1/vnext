@@ -19,13 +19,13 @@
         <PackageReference Include="prometheus-net.AspNetCore.HealthChecks" Version="$(PrometheusVersion)" />
         
         <!-- OpenTelemetry Packages - Match Aether version -->
-        <PackageReference Include="OpenTelemetry" Version="1.12.0" />
-        <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.12.0" />
-        <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.12.0" />
-        <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.12.0" />
-        <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.12.0" />
-        <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.12.0" />
-        <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.12.0" />
+        <PackageReference Include="OpenTelemetry" Version="$(OpenTelemetryPackageVersion)" />
+        <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="$(OpenTelemetryPackageVersion)" />
+        <PackageReference Include="OpenTelemetry.Exporter.Console" Version="$(OpenTelemetryPackageVersion)" />
+        <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="$(OpenTelemetryPackageVersion)" />
+        <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="$(OpenTelemetryPackageVersion)" />
+        <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="$(OpenTelemetryPackageVersion)" />
+        <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="$(OpenTelemetryPackageVersion)" />
         <PackageReference Include="OpenTelemetry.Instrumentation.Process" Version="1.12.0-beta.1" />
     </ItemGroup>
 

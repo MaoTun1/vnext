@@ -43,6 +43,11 @@ public sealed class TransitionPipeline
             context.InstanceId,
             context.WorkflowKey);
 
+        // Create span for pipeline execution
+        using var pipelineActivity = WorkflowActivitySource.Instance.StartActivity(
+            TelemetryConstants.SpanNames.PipelineExecution,
+            ActivityKind.Internal);
+
         var plan = _planner.Build(context, _steps);
         var i = 0;
         
@@ -54,6 +59,15 @@ public sealed class TransitionPipeline
             var stepName = step.GetType().Name;
             var stepOrder = step.Order;
             var sw = Stopwatch.StartNew();
+            
+            // Create span for each step
+            using var stepActivity = WorkflowActivitySource.Instance.StartActivity(
+                TelemetryConstants.SpanNames.PipelineStep,
+                ActivityKind.Internal);
+            
+            stepActivity?.SetTag(TelemetryConstants.TagNames.StepName, stepName);
+            stepActivity?.SetTag(TelemetryConstants.TagNames.StepOrder, stepOrder);
+            stepActivity?.SetDisplayName($"[{stepOrder}] {stepName}");
             
             try
             {
@@ -94,8 +108,10 @@ public sealed class TransitionPipeline
             }
             catch (Exception ex)
             {
-                sw.Stop();
-                _logger.PipelineStepFailed(ex, TelemetryConstants.Prefixes.Execution, stepOrder, stepName, context.InstanceId);
+                    sw.Stop();
+                    stepActivity?.RecordExceptionWithStatus(ex);
+                    
+                    _logger.PipelineStepFailed(ex, TelemetryConstants.Prefixes.Execution, stepOrder, stepName, context.InstanceId);
                 throw;
             }
         }

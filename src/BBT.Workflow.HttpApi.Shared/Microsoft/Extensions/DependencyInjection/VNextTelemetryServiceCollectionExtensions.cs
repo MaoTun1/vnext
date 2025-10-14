@@ -66,6 +66,8 @@ public static class VNextTelemetryServiceCollectionExtensions
             .WithTracing(tracing =>
             {
                 tracing
+                    // Add workflow custom spans
+                    .AddSource(TelemetryConstants.ActivitySourceName)
                     .AddAspNetCoreInstrumentation(options =>
                     {
                         // Filter out excluded paths using regex patterns

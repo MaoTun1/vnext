@@ -868,9 +868,270 @@ Example configuration for production:
 }
 ```
 
+## Distributed Tracing with Custom Spans
+
+### WorkflowActivitySource
+
+The workflow engine uses a custom `ActivitySource` to create distributed tracing spans for key workflow operations.
+
+Located: `BBT.Workflow.Application/Telemetry/WorkflowActivitySource.cs`
+
+```csharp
+public static class WorkflowActivitySource
+{
+    public static ActivitySource Instance { get; } = new(
+        TelemetryConstants.ActivitySourceName,    // "BBT.Workflow"
+        TelemetryConstants.ActivitySourceVersion); // "1.0.0"
+}
+```
+
+### Tracing Architecture
+
+The workflow engine creates hierarchical spans to represent the execution flow:
+
+```
+HTTP Request (ASP.NET Core)
+└── Transition Execution (SyncTransitionStrategy)
+    ├── Handler PreHandle
+    ├── Pipeline Execution (TransitionPipeline)
+    │   ├── Pipeline Step [1] ValidateTransitionStep
+    │   ├── Pipeline Step [2] ChangeStateStep
+    │   ├── Pipeline Step [3] RunOnExecuteTasksStep
+    │   │   ├── Task Execution: TaskA
+    │   │   └── Task Execution: TaskB
+    │   └── Pipeline Step [4] HandleSubFlowStep
+    │       └── SubFlow Start: ChildFlow
+    └── Handler PostHandle
+```
+
+### Span Types
+
+#### 1. Transition Execution Span
+Created in `SyncTransitionStrategy` to represent the entire transition execution lifecycle.
+
+**Span Name**: `transition.execute`  
+**Display Name**: `{instanceId}/{transitionKey}`
+
+**Tags**:
+- `workflow.domain`: Domain name
+- `workflow.flow`: Flow key
+- `workflow.flow.version`: Flow version
+- `workflow.instance.id`: Instance ID
+- `workflow.transition.key`: Transition key
+- `workflow.trigger.type`: Trigger type (Manual, Event, Timer, etc.)
+- `workflow.handler.name`: Handler class name
+
+**Location**: `src/BBT.Workflow.Application/Execution/Transitions/Strategy/SyncTransitionStrategy.cs`
+
+#### 2. Handler Spans
+Created in `TransitionHandlerBase` for PreHandle and PostHandle operations.
+
+**Span Names**: 
+- `handler.prehandle` - Pre-processing logic
+- `handler.posthandle` - Post-processing logic
+
+**Tags**:
+- `workflow.handler.name`: Handler class name
+- `workflow.trigger.type`: Trigger type
+
+**Location**: `src/BBT.Workflow.Application/Execution/Transitions/Handlers/TransitionHandlerBase.cs`
+
+#### 3. Pipeline Execution Span
+Created in `TransitionPipeline` to represent the entire pipeline execution.
+
+**Span Name**: `pipeline.execute`
+
+Contains child spans for each pipeline step.
+
+**Location**: `src/BBT.Workflow.Application/Execution/Transitions/Pipeline/TransitionPipeline.cs`
+
+#### 4. Pipeline Step Spans
+Created for each pipeline step execution.
+
+**Span Name**: `pipeline.step`  
+**Display Name**: `[{stepOrder}] {stepName}`
+
+**Tags**:
+- `workflow.step.name`: Step class name
+- `workflow.step.order`: Step execution order
+
+**Location**: `src/BBT.Workflow.Application/Execution/Transitions/Pipeline/TransitionPipeline.cs`
+
+#### 5. Task Execution Span
+Created in `LocalTaskExecutor` for task execution.
+
+**Span Name**: `task.execute`  
+**Display Name**: `Task: {taskKey}`
+
+**Tags**:
+- `workflow.task.key`: Task key
+- `workflow.task.type`: Task type (Script, DaprService, DaprBinding, etc.)
+- `workflow.instance.id`: Instance ID
+
+**Location**: `src/BBT.Workflow.Application/Tasks/Execution/LocalTaskExecutor.cs`
+
+#### 6. SubFlow Spans
+Created in `SubflowStarter` and `SubflowCompletionService` for SubFlow lifecycle.
+
+**Span Names**:
+- `subflow.start` - SubFlow initiation
+- `subflow.complete` - SubFlow completion
+
+**Display Names**:
+- `SubFlow Start: {subFlowKey}`
+- `SubFlow Complete: {subFlowKey}`
+
+**Tags**:
+- `workflow.subflow.key`: SubFlow key
+- `workflow.domain`: Domain name
+- `workflow.instance.id`: Parent instance ID
+
+**Locations**:
+- `src/BBT.Workflow.Application/SubFlow/Services/SubflowStarter.cs`
+- `src/BBT.Workflow.Application/SubFlow/Services/SubflowCompletionService.cs`
+
+### Span Events
+
+Events are lightweight point-in-time markers within spans that capture important moments during workflow execution.
+
+#### 1. State Change Event
+Recorded in `ChangeStateStep` when a state transition occurs.
+
+**Event Name**: `state.changed`
+
+**Tags**:
+- `workflow.state.from`: Previous state
+- `workflow.state.to`: New state
+
+**Location**: `src/BBT.Workflow.Application/Execution/Transitions/Pipeline/Steps/ChangeStateStep.cs`
+
+#### 2. SubFlow Initiated Event
+Recorded in `HandleSubFlowStep` when a SubFlow/SubProcess is successfully started.
+
+**Event Name**: `subflow.initiated`
+
+**Tags**:
+- `workflow.subflow.key`: SubFlow process key
+- `workflow.domain`: SubFlow domain
+- `workflow.subflow.type`: Type code ("S" for SubFlow, "P" for SubProcess)
+- `workflow.subflow.version`: SubFlow version
+- `workflow.correlation.id`: Correlation tracking ID
+- `workflow.subflow.instance.id`: Created SubFlow instance ID
+
+**Location**: `src/BBT.Workflow.Application/Execution/Transitions/Pipeline/Steps/HandleSubFlowStep.cs`
+
+#### 3. Workflow Completed Event
+Recorded in `HandleFinishStep` when a workflow instance reaches a Finish state.
+
+**Event Name**: `workflow.completed`
+
+**Tags**:
+- `workflow.instance.id`: Completed instance ID
+- `workflow.flow`: Flow key
+- `workflow.domain`: Domain name
+- `workflow.completed.state`: Final state key
+- `workflow.is.subflow`: Whether this is a SubFlow instance
+- `workflow.duration.ms`: Total workflow duration in milliseconds
+
+**Location**: `src/BBT.Workflow.Application/Execution/Transitions/Pipeline/Steps/HandleFinishStep.cs`
+
+#### 4. Completion Event Published
+Recorded in `HandleFinishStep` when flow completion event is successfully published to Dapr pub/sub.
+
+**Event Name**: `completion.event.published`
+
+**Tags**:
+- `workflow.instance.id`: Instance ID
+- `workflow.flow`: Flow key
+- `workflow.domain`: Domain name
+- `pubsub.store`: Dapr pub/sub store name
+- `pubsub.topic`: Published topic name
+- `workflow.completed.state`: Completed state
+- `workflow.duration.ms`: Workflow duration
+
+**Location**: `src/BBT.Workflow.Application/Execution/Transitions/Pipeline/Steps/HandleFinishStep.cs`
+
+### ActivityExtensions Helper
+
+Provides extension methods to simplify span operations:
+
+**Located**: `src/BBT.Workflow.Application/Telemetry/ActivityExtensions.cs`
+
+```csharp
+// Set display name
+activity?.SetDisplayName("Custom Name");
+
+// Record exception and set error status
+activity?.RecordExceptionWithStatus(exception, "Optional description");
+```
+
+### Registering Custom ActivitySource
+
+The `WorkflowActivitySource` is automatically registered in the OpenTelemetry tracing configuration:
+
+**Location**: `src/BBT.Workflow.HttpApi.Shared/Microsoft/Extensions/DependencyInjection/VNextTelemetryServiceCollectionExtensions.cs`
+
+```csharp
+services.AddOpenTelemetry()
+    .WithTracing(tracing =>
+    {
+        tracing
+            .AddSource(TelemetryConstants.ActivitySourceName) // "BBT.Workflow"
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation();
+    });
+```
+
+### Span Hierarchy Example
+
+Typical trace for a transition execution with tasks and SubFlow:
+
+```
+00-a1b2c3d4e5f6... (TraceId)
+├── POST /api/v1/execution/instances/{id}/transitions/{key}
+│   ├── transition.execute: "abc-123/submit-application"
+│   │   ├── handler.prehandle
+│   │   ├── pipeline.execute
+│   │   │   ├── [1] ValidateTransitionStep
+│   │   │   ├── [2] ChangeStateStep
+│   │   │   │   └── ✓ Event: state.changed (Draft → Submitted)
+│   │   │   ├── [3] RunOnExecuteTasksStep
+│   │   │   │   ├── task.execute: "validate-document"
+│   │   │   │   ├── task.execute: "send-notification"
+│   │   │   │   └── task.execute: "update-external-system"
+│   │   │   ├── [4] HandleSubFlowStep
+│   │   │   │   ├── subflow.start: "approval-workflow"
+│   │   │   │   └── ✓ Event: subflow.initiated (type: S, correlation: xyz-789)
+│   │   │   ├── [5] HandleFinishStep
+│   │   │   │   ├── ✓ Event: workflow.completed (duration: 1250ms)
+│   │   │   │   └── ✓ Event: completion.event.published (topic: flow.completed)
+│   │   │   └── [6] SaveInstanceStep
+│   │   └── handler.posthandle
+```
+
+### Viewing Traces
+
+Traces can be viewed in observability tools:
+
+1. **Jaeger UI**: `http://localhost:16686`
+2. **Grafana Tempo**: Navigate to Explore → Tempo
+3. **Application Insights**: Azure Portal → Application Map / Transaction Search
+
+Use the `X-Trace-Id` from response headers to find specific traces:
+
+```bash
+curl -i http://localhost:5001/api/v1/execution/instances/{id}/transitions/{key}
+
+# Response:
+# X-Trace-Id: a1b2c3d4e5f6789...
+# X-Span-Id: 1a2b3c4d5e6f...
+```
+
 ## References
 
 - [OpenTelemetry Logging Specification](https://opentelemetry.io/docs/specs/otel/logs/)
+- [OpenTelemetry Tracing Specification](https://opentelemetry.io/docs/specs/otel/trace/)
 - [.NET LoggerMessage Source Generator](https://learn.microsoft.com/en-us/dotnet/core/extensions/logger-message-generator)
 - [Structured Logging Best Practices](https://docs.microsoft.com/en-us/aspnet/core/fundamentals/logging/)
+- [System.Diagnostics.Activity](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.activity)
 

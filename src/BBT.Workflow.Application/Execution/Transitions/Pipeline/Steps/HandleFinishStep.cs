@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.SubFlow;
+using BBT.Workflow.Telemetry;
 using Dapr.Client;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -44,6 +46,19 @@ public sealed class HandleFinishStep(
             context.Target.Key, context.InstanceId);
 
         context.Instance.Complete();
+        
+        // Record workflow completion as an event
+        Activity.Current?.AddEvent(new ActivityEvent("workflow.completed",
+            tags: new ActivityTagsCollection
+            {
+                { TelemetryConstants.TagNames.InstanceId, context.InstanceId.ToString() },
+                { TelemetryConstants.TagNames.Flow, context.Workflow.Key },
+                { TelemetryConstants.TagNames.Domain, context.Workflow.Domain },
+                { "workflow.completed.state", context.Target.Key },
+                { "workflow.is.subflow", context.Instance.IsSubFlow.ToString() },
+                { "workflow.duration.ms", context.Instance.Duration?.TotalMilliseconds.ToString() ?? "0" }
+            }));
+        
         // Update instance state and data changes
         await instanceRepository.UpdateStatusAsync(context.Instance, cancellationToken);
 
@@ -109,6 +124,19 @@ public sealed class HandleFinishStep(
             logger.LogInformation(
                 "Successfully published flow completion event for instance {InstanceId}",
                 instance.Id);
+
+            // Record the event publication as a trace event
+            Activity.Current?.AddEvent(new ActivityEvent("completion.event.published",
+                tags: new ActivityTagsCollection
+                {
+                    { TelemetryConstants.TagNames.InstanceId, instance.Id.ToString() },
+                    { TelemetryConstants.TagNames.Flow, workflow.Key },
+                    { TelemetryConstants.TagNames.Domain, workflow.Domain },
+                    { "pubsub.store", configuration["DAPR_PUBSUB_STORE_NAME"] ?? "unknown" },
+                    { "pubsub.topic", string.Format(DomainConsts.FlowCompleted, configuration["ASPNETCORE_ENVIRONMENT"]?.ToLower()) },
+                    { "workflow.completed.state", instance.GetCurrentState },
+                    { "workflow.duration.ms", instance.Duration?.TotalMilliseconds.ToString() ?? "0" }
+                }));
 
             // Record the event publication in metrics
             workflowMetrics.RecordDaprPubsubMessagePublished(configuration["DAPR_PUBSUB_STORE_NAME"],

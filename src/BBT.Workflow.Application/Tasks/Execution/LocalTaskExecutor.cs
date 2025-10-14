@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using BBT.Aether.Guids;
@@ -7,6 +8,9 @@ using BBT.Workflow.Tasks.Factory;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Tasks.Persistence;
 using BBT.Workflow.Monitoring;
+using BBT.Workflow.Telemetry;
+using Microsoft.Extensions.Logging;
+using OpenTelemetry.Trace;
 
 namespace BBT.Workflow.Tasks.Execution;
 
@@ -19,12 +23,14 @@ namespace BBT.Workflow.Tasks.Execution;
 /// <param name="taskPersistenceStrategyFactory">Factory for task persistence strategies.</param>
 /// <param name="taskFactory">Factory for creating task instances.</param>
 /// <param name="workflowMetrics">Service for recording task execution metrics.</param>
+/// <param name="logger">Logger for task execution telemetry.</param>
 public sealed class LocalTaskExecutor(
     ITaskExecutorFactory taskExecutorFactory,
     IGuidGenerator guidGenerator,
     ITaskPersistenceStrategyFactory taskPersistenceStrategyFactory,
     ITaskFactory taskFactory,
-    IWorkflowMetrics workflowMetrics) : ITaskOrchestrator
+    IWorkflowMetrics workflowMetrics,
+    ILogger<LocalTaskExecutor> logger) : ITaskOrchestrator
 {
     /// <summary>
     /// Executes a task locally with comprehensive error handling and state management.
@@ -68,6 +74,24 @@ public sealed class LocalTaskExecutor(
         await persistenceStrategy.HandleCreationAsync(instanceTask, cancellationToken);
 
         var taskType = task.GetTaskType().ToString();
+        var sw = Stopwatch.StartNew();
+
+        // Log task execution start
+        logger.TaskExecutionStarted(
+            TelemetryConstants.Prefixes.Execution,
+            task.Key,
+            taskType,
+            context.Instance.Id);
+
+        // Create span for task execution
+        using var activity = WorkflowActivitySource.Instance.StartActivity(
+            TelemetryConstants.SpanNames.TaskExecution,
+            ActivityKind.Internal);
+        
+        activity?.SetTag(TelemetryConstants.TagNames.TaskKey, task.Key);
+        activity?.SetTag(TelemetryConstants.TagNames.TaskType, taskType);
+        activity?.SetTag(TelemetryConstants.TagNames.InstanceId, context.Instance.Id.ToString());
+        activity?.SetDisplayName($"Task: {task.Key}");
 
         // Record task execution start 
         workflowMetrics.RecordTaskExecution(taskType, "started");
@@ -101,15 +125,39 @@ public sealed class LocalTaskExecutor(
             instanceTask.Completed(
                 new JsonData(JsonSerializer.Serialize(response ?? new { }, JsonSerializerConstants.JsonOptions)));
 
+            sw.Stop();
+            
+            // Log task execution completion
+            logger.TaskExecutionCompleted(
+                TelemetryConstants.Prefixes.Execution,
+                task.Key,
+                taskType,
+                context.Instance.Id,
+                sw.ElapsedMilliseconds);
+
             // Record successful task completion 
             workflowMetrics.RecordTaskExecution(taskType, "success");
         }
         catch (Exception e)
         {
+            sw.Stop();
+            
+            activity?.RecordExceptionWithStatus(e);
+            
             instanceTask.Faulted(e.Message);
+
+            // Log task execution failure
+            logger.TaskExecutionFailed(
+                e,
+                TelemetryConstants.Prefixes.Execution,
+                task.Key,
+                taskType,
+                context.Instance.Id);
 
             // Record task failure
             workflowMetrics.RecordTaskExecution(taskType, "failure");
+            
+            throw;
         }
 
         // Handle task completion persistence

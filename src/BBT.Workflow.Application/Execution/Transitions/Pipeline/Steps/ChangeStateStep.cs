@@ -4,6 +4,7 @@ using BBT.Workflow.Instances;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace BBT.Workflow.Execution.Pipeline.Steps;
 
@@ -52,6 +53,14 @@ public sealed class ChangeStateStep(
             fromState,
             toState,
             context.InstanceId);
+        
+        // Add state changed event to current span
+        Activity.Current?.AddEvent(new ActivityEvent("state.changed", 
+            tags: new ActivityTagsCollection
+            {
+                { TelemetryConstants.TagNames.StateFrom, fromState },
+                { TelemetryConstants.TagNames.StateTo, toState }
+            }));
         
         return StepOutcome.Continue();
     }
