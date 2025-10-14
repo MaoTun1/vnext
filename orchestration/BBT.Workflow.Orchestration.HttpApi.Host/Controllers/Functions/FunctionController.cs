@@ -57,7 +57,7 @@ public sealed class FunctionController(
         [FromRoute] string function,
         [FromRoute] string workflow,
         [FromRoute] string instance,
- [AsParameters] FunctionQueryParemeters parameters,
+ [FromQuery] FunctionQueryParemeters parameters,
         CancellationToken cancellationToken = default)
     {
         switch (function.ToLowerInvariant())

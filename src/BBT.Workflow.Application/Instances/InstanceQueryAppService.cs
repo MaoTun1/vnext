@@ -32,11 +32,11 @@ public sealed class InstanceQueryAppService(
     : ApplicationService(serviceProvider), IInstanceQueryAppService
 {
     // Static URL templates for GetInstanceStateAsync
-    private static readonly string TransitionUrlTemplate = "/{0}/workflows/{1}/instances/{2}/transitions/{3}";
-    private static readonly string DataUrlTemplate = "/{0}/workflows/{1}/instances/{2}/functions/data";
-    private static readonly string DataUrlWithExtensionsTemplate = "/{0}/workflows/{1}/instances/{2}/functions/data?extensions={3}";
-    private static readonly string ViewUrlTemplate = "/{0}/workflows/{1}/instances/{2}/functions/view";
-    private static readonly string SubFlowDataUrlTemplate = "/{0}/workflows/{1}/instances/{2}/functions/data";
+    private const string TransitionUrlTemplate = "/{0}/workflows/{1}/instances/{2}/transitions/{3}";
+    private const string DataUrlTemplate = "/{0}/workflows/{1}/instances/{2}/functions/data";
+    private const string DataUrlWithExtensionsTemplate = "/{0}/workflows/{1}/instances/{2}/functions/data?extensions={3}";
+    private const string ViewUrlTemplate = "/{0}/workflows/{1}/instances/{2}/functions/view";
+    private const string SubFlowDataUrlTemplate = "/{0}/workflows/{1}/instances/{2}/functions/data";
     public async Task<InstanceServiceResult<GetInstanceOutput>> GetInstanceAsync(
         GetInstanceInput input,
         CancellationToken cancellationToken = default)
@@ -356,9 +356,7 @@ public sealed class InstanceQueryAppService(
             Attributes = instanceData?.Data.JsonElement
         };
 
-        // Process extensions for data enrichment
-        if (extensionRequested != null && extensionRequested.Length > 0)
-        {
+
             var scriptContext = await scriptContextFactory.NewBuilder()
                 .WithWorkflow(flow)
                 .WithInstance(instance)
@@ -373,7 +371,6 @@ public sealed class InstanceQueryAppService(
                 flow,
                 currentScope,
                 cancellationToken);
-        }
 
         return response;
     }
@@ -708,7 +705,7 @@ public sealed class InstanceQueryAppService(
             // Build data href with extensions
             var dataHref = new DataHref
             {
-                Href = input.Extension != null && input.Extension.Length > 0
+                Href = input.Extension?.Length > 0
                     ? string.Format(DataUrlWithExtensionsTemplate, input.Domain, input.Workflow, instance.Id, string.Join(",", input.Extension))
                     : string.Format(DataUrlTemplate, input.Domain, input.Workflow, instance.Id)
             };
@@ -833,6 +830,9 @@ public sealed class InstanceQueryAppService(
                     break;
                 case PlatformConst.ios:
                     platformContent = view.PlatformOverrides.Ios?.JsonContent?.RootElement;
+                    break;
+                default: 
+                  platformContent = view?.JsonContent?.RootElement;
                     break;
             }
 

@@ -8,8 +8,8 @@ using BBT.Aether;
 using BBT.Aether.Domain.Values;
 using BBT.Workflow.Definitions;
 
-namespace BBT.Workflow.Shared
-{
+namespace BBT.Workflow.Shared;
+
     public class PlatformOverrides
     {
         private PlatformOverrides()
@@ -99,4 +99,3 @@ namespace BBT.Workflow.Shared
         public const string ios = "ios";
         public const string android = "android";
     }
-}
