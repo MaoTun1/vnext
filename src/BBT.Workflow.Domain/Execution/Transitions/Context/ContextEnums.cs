@@ -12,9 +12,24 @@ public enum ExecMode
     Async = 1
 }
 
+/// <summary>
+/// Epilogue execution mode for transition pipeline.
+/// Controls how automatic and scheduled transitions are handled after state changes.
+/// </summary>
 public enum EpilogueMode
 {
-    Run,           // Schedule + Auto normal ak
-    DispatchOnly,  // sadece enqueue/dispatch, bekleme yok
-    Skip           // epilogue adımlarını tamamen atla
+    /// <summary>
+    /// Execute schedule and automatic transitions normally.
+    /// </summary>
+    Run,
+    
+    /// <summary>
+    /// Dispatch transitions without waiting for completion.
+    /// </summary>
+    DispatchOnly,
+    
+    /// <summary>
+    /// Skip all epilogue steps (schedule and automatic transitions).
+    /// </summary>
+    Skip
 }

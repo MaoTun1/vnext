@@ -96,25 +96,16 @@ Located: `BBT.Workflow.HttpApi.Shared/Middlewares/TraceContextMiddleware.cs`
   "Telemetry": {
     "ServiceName": "vnext-execution",
     "ServiceVersion": "1.0.0",
-    "Otlp": {
-      "Endpoint": "http://localhost:4318",
-      "Protocol": "http"
-    },
     "Tracing": {
-      "FilterDaprInternalOperations": true,
-      "ExcludedUrlPatterns": [
-        "/dapr.proto.runtime",
-        "/v1.0/lock",
-        "/v1.0/unlock"
-      ]
+      "EnableExcludedPaths": true
     },
     "Logging": {
       "Enabled": true,
+      "EnableConsoleExporter": true,
+      "EnableOtlpExporter": true,
       "IncludeFormattedMessage": true,
       "IncludeScopes": true,
       "ParseStateValues": true,
-      "EnableConsoleExporter": true,
-      "EnableOtlpExporter": true,
       "ExcludedPaths": [
         "^/swagger(?:/.*)?$",
         "^/dapr(?:/.*)?$",
@@ -124,19 +115,22 @@ Located: `BBT.Workflow.HttpApi.Shared/Middlewares/TraceContextMiddleware.cs`
         "^/metrics$",
         "^/v1/traces",
         "^/traces",
-        "^/$"
+        "^/$",
+        "^/otel-collector",
+        "^/dapr.proto.runtime",
+        "^/v1.0/lock",
+        "^/v1.0/unlock"
       ],
       "Enrichers": {
         "Headers": [
           "x-correlation-id",
-          "x-request-id",
-          "x-tenant-id"
-        ],
-        "CustomAttributes": {
-          "environment": "development",
-          "team": "workflow-team"
-        }
+          "x-request-id"
+        ]
       }
+    },
+    "Otlp": {
+      "Endpoint": "http://localhost:4318",
+      "Protocol": "http/protobuf"
     }
   }
 }
@@ -196,67 +190,31 @@ The environment is automatically detected from **`ASPNETCORE_ENVIRONMENT`** envi
 - ✅ Works consistently across all deployment methods
 - ✅ No duplication in configuration
 
-##### Telemetry.Tracing.FilterDaprInternalOperations
+##### Telemetry.Tracing.EnableExcludedPaths
 
-Controls whether Dapr internal operations (lock, unlock, etc.) are filtered from traces to reduce noise.
+Controls whether path-based filtering is enabled for tracing and logging.
 
-- **`true`** (default): Filters out Dapr internal operations
-- **`false`**: Includes all Dapr operations in traces
+- **`true`** (default): Enables filtering based on `ExcludedPaths` configuration
+- **`false`**: Disables path filtering, all requests are traced and logged
 
-**What gets filtered:**
-- Dapr gRPC operations: `/dapr.proto.runtime.v1.Dapr/*`
-- Dapr lock operations: `/v1.0/lock`
-- Dapr unlock operations: `/v1.0/unlock`
-- OTLP exporter requests (always filtered)
-- Health check requests (always filtered)
+**What gets filtered when enabled:**
+- Paths matching patterns in `Logging.ExcludedPaths` configuration
+- Health check endpoints (`/health`, `/healthz`)
+- Metrics endpoints (`/metrics`, `/v1/metrics`)
+- Swagger UI (`/swagger`)
+- Dapr internal operations (`/dapr`, `/v1.0/lock`, `/v1.0/unlock`)
+- OpenTelemetry collector endpoints (`/otel-collector`)
 
-**Why filter Dapr operations?**
-- ❌ Without filtering: Traces cluttered with lock/unlock spans that have no span names
-- ✅ With filtering: Clean traces showing only business operations
+**Why enable path filtering?**
+- ✅ Reduces log volume from infrastructure endpoints
+- ✅ Cleaner traces showing only business operations
+- ✅ Better signal-to-noise ratio in observability tools
 - 🎯 Focus on what matters: workflow transitions, tasks, and business logic
 
 **When to disable:**
-- Debugging Dapr lock contention issues
-- Investigating distributed lock behavior
-- Performance analysis of Dapr sidecar
-
-##### Telemetry.Tracing.ExcludedUrlPatterns
-
-List of URL patterns to exclude from tracing. Supports "contains" matching (case-insensitive).
-
-Default patterns:
-```json
-{
-  "Tracing": {
-    "ExcludedUrlPatterns": [
-      "/dapr.proto.runtime",
-      "/v1.0/lock",
-      "/v1.0/unlock"
-    ]
-  }
-}
-```
-
-You can add more patterns:
-```json
-{
-  "Tracing": {
-    "ExcludedUrlPatterns": [
-      "/dapr.proto.runtime",
-      "/v1.0/lock",
-      "/v1.0/unlock",
-      "/internal/",
-      "/metrics",
-      "/actuator"
-    ]
-  }
-}
-```
-
-**How it works:**
-- Each HttpClient request URI is checked against patterns
-- If URI contains any pattern (case-insensitive), span is not created
-- Reduces trace noise and improves observability signal-to-noise ratio
+- Debugging infrastructure or health check issues
+- Investigating performance of system endpoints
+- Development and troubleshooting scenarios
 
 ##### Telemetry.Logging.Enabled
 Controls whether OpenTelemetry logging integration is enabled.
@@ -271,7 +229,9 @@ When disabled:
 - Standard .NET logging providers continue to work normally
 - Performance impact is minimal as the entire OpenTelemetry logging pipeline is skipped
 
-Example to disable OpenTelemetry logging while keeping standard .NET logging:
+**Example configurations:**
+
+Disable OpenTelemetry logging while keeping standard .NET logging:
 ```json
 {
   "Logging": {
@@ -282,6 +242,19 @@ Example to disable OpenTelemetry logging while keeping standard .NET logging:
   "Telemetry": {
     "Logging": {
       "Enabled": false
+    }
+  }
+}
+```
+
+Use only OTLP exporter (no console output):
+```json
+{
+  "Telemetry": {
+    "Logging": {
+      "Enabled": true,
+      "EnableConsoleExporter": false,
+      "EnableOtlpExporter": true
     }
   }
 }
@@ -321,35 +294,83 @@ You can configure different log levels for different namespaces:
 - `BBT.Workflow.Execution.*`: Execution layer logs only
 
 ##### Telemetry.Logging.ExcludedPaths
-List of regex patterns to exclude specific HTTP request paths from logging and tracing. This helps reduce noise from:
-- Health check endpoints (`/health`, `/healthz`)
-- Metrics endpoints (`/metrics`)
-- Swagger UI (`/swagger`)
-- Dapr endpoints (`/dapr`)
 
-Patterns support full regex syntax:
+List of regex patterns to exclude specific HTTP request paths from logging and tracing. Works when `Telemetry.Tracing.EnableExcludedPaths` is set to `true`.
+
+**Default excluded paths:**
+```json
+{
+  "Logging": {
+    "ExcludedPaths": [
+      "^/swagger(?:/.*)?$",      // Swagger UI and documentation
+      "^/dapr(?:/.*)?$",         // Dapr endpoints
+      "^/health$",               // Health check
+      "^/healthz$",              // Kubernetes health check
+      "^/v1/metrics$",           // Metrics endpoint (v1)
+      "^/metrics$",              // Metrics endpoint
+      "^/v1/traces",             // Traces endpoint (v1)
+      "^/traces",                // Traces endpoint
+      "^/$",                     // Root path
+      "^/otel-collector",        // OpenTelemetry collector
+      "^/dapr.proto.runtime",    // Dapr gRPC runtime
+      "^/v1.0/lock",             // Dapr lock operations
+      "^/v1.0/unlock"            // Dapr unlock operations
+    ]
+  }
+}
+```
+
+**Pattern syntax:**
 - `^/health$` - Exact match
 - `^/swagger(?:/.*)?$` - Match swagger and all sub-paths
-- `^/api/v[0-9]+/health$` - Pattern matching
+- `^/api/v[0-9]+/health$` - Pattern matching with regex
+
+**How it works:**
+- Only active when `Telemetry.Tracing.EnableExcludedPaths` is `true`
+- Each HTTP request path is checked against these regex patterns
+- If a match is found, the request is excluded from both logging and tracing
+- Reduces noise from infrastructure and system endpoints
 
 **Note**: This is different from the standard .NET `Logging:LogLevel` configuration. `ExcludedPaths` filters logs based on HTTP request paths, while `LogLevel` filters based on log severity and category.
 
 ##### Telemetry.Logging.Enrichers.Headers
+
 List of HTTP header names to capture and add to log attributes. Headers are prefixed with `http.header.` in the log output.
 
-Common headers to capture:
+**Default headers:**
+```json
+{
+  "Enrichers": {
+    "Headers": [
+      "x-correlation-id",
+      "x-request-id"
+    ]
+  }
+}
+```
+
+**Common headers to capture:**
 - `x-correlation-id`: Request correlation across services
 - `x-request-id`: Unique request identifier
-- `x-tenant-id`: Multi-tenant identifier
+- `x-tenant-id`: Multi-tenant identifier (if using multi-tenancy)
 - `x-user-id`: User identifier (be careful with PII)
+- `x-client-id`: Client application identifier
 
-##### Telemetry.Logging.Enrichers.CustomAttributes
-Dictionary of custom key-value pairs to add to all logs. Useful for:
-- Environment markers
-- Team ownership
-- Application version
-- Deployment region
-- Any static metadata
+**How to add more headers:**
+```json
+{
+  "Enrichers": {
+    "Headers": [
+      "x-correlation-id",
+      "x-request-id",
+      "x-tenant-id",
+      "x-client-version"
+    ]
+  }
+}
+```
+
+**Note:** Only headers present in the incoming HTTP request will be added to logs. Missing headers are ignored.
 
 ### Program.cs Registration
 
@@ -633,9 +654,9 @@ Trace ID: abc123...
 ### 7. Filter Trace Noise
 
 Keep traces clean and focused on business logic:
-- ✅ Enable `FilterDaprInternalOperations: true` (default)
-- ✅ Add internal endpoints to `ExcludedUrlPatterns`
-- ✅ Filter health checks, metrics endpoints
+- ✅ Enable `EnableExcludedPaths: true` (default)
+- ✅ Configure `ExcludedPaths` to filter infrastructure endpoints
+- ✅ Filter health checks, metrics, and internal endpoints
 - ❌ Don't include infrastructure noise in production traces
 - 🎯 Focus: Business transactions and user journeys
 
@@ -644,13 +665,20 @@ Example for clean production traces:
 {
   "Telemetry": {
     "Tracing": {
-      "FilterDaprInternalOperations": true,
-      "ExcludedUrlPatterns": [
-        "/dapr.proto.runtime",
-        "/v1.0/lock",
-        "/v1.0/unlock",
-        "/internal/",
-        "/actuator"
+      "EnableExcludedPaths": true
+    },
+    "Logging": {
+      "ExcludedPaths": [
+        "^/swagger(?:/.*)?$",
+        "^/dapr(?:/.*)?$",
+        "^/health$",
+        "^/healthz$",
+        "^/metrics$",
+        "^/internal/",
+        "^/actuator",
+        "^/dapr.proto.runtime",
+        "^/v1.0/lock",
+        "^/v1.0/unlock"
       ]
     }
   }
@@ -726,17 +754,13 @@ Trace Timeline:
 {
   "Telemetry": {
     "Tracing": {
-      "FilterDaprInternalOperations": false
+      "EnableExcludedPaths": false
     }
   }
 }
 ```
 
-When disabled, Dapr operations will have improved span names:
-- `Dapr.LockAlpha1` instead of empty
-- `Dapr.UnlockAlpha1` instead of empty
-- `Dapr.Lock` for HTTP API
-- `Dapr.Unlock` for HTTP API
+When path filtering is disabled, all Dapr operations will appear in traces. You can also selectively include specific paths by removing them from the `ExcludedPaths` array.
 
 #### Using Trace IDs from API Responses
 

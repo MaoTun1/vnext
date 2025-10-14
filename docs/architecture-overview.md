@@ -128,10 +128,23 @@ Orchestrates domain objects to fulfill use cases. Contains application-specific 
 - **Primary Usage**: Orchestration API for workflow coordination
 
 #### **Execution Module**
-- **StateMachine (`BBT.Workflow.Execution.StateMachine`)**: State transition management
-- **Tasks (`BBT.Workflow.Execution.Tasks`)**: Task execution services  
-- **Rules (`BBT.Workflow.Execution.Rules`)**: Rule evaluation services
-- **Primary Usage**: Execution API for task processing
+- **Transition Pipeline (`BBT.Workflow.Execution.Pipeline`)**: Deterministic transition lifecycle execution
+  - **TransitionPipeline**: Orchestrates step-by-step transition execution
+  - **ITransitionStep**: Pipeline step abstraction with lifecycle order
+  - **Pipeline Steps**: CreateTransition, OnExecute, OnExit, ChangeState, OnEntry, SubFlow, Schedule, Auto, Finalize
+- **Pipeline Planning (`BBT.Workflow.Execution.Planner`)**: Dynamic step selection and sequencing
+  - **IPipelinePlanner**: Plans which steps to execute based on context
+  - **DefaultPlanner**: Handles resume points, epilogue modes, terminal states
+  - **PipelineDirectives**: Runtime control of pipeline behavior (skip, resume, stop)
+  - **StepOutcome**: Step result handling with flow control
+- **Transition Handlers (`BBT.Workflow.Execution.Handlers`)**: Trigger-specific pre/post processing
+  - **ManualTransitionHandler**: User-initiated transitions with auth/validation
+  - **AutomaticTransitionHandler**: Condition-based automatic transitions
+  - **ScheduledTransitionHandler**: Timer-based transitions
+  - **EventTransitionHandler**: Event-driven transitions
+- **Re-entry System (`BBT.Workflow.Execution.ReEntry`)**: Background job dispatch for Auto/Schedule transitions
+- **Task Execution (`BBT.Workflow.Execution.Tasks`)**: Task executor implementations
+- **Primary Usage**: Execution API for transition and task processing
 
 #### **SubFlow Module (`BBT.Workflow.SubFlow`)**
 - **SubFlowService**: SubFlow and SubProcess workflow management
@@ -289,6 +302,107 @@ public interface ITaskExecutorFactory
     ITaskExecutor GetExecutor(TaskType type);
 }
 ```
+
+## Transition Pipeline Architecture
+
+The execution layer uses a **pipeline-based architecture** for managing workflow state transitions. This provides a deterministic, extensible, and observable execution model.
+
+### Core Concepts
+
+#### 1. Pipeline Steps
+Each transition goes through a series of ordered steps:
+```
+Preflight (5) → CreateTransition (10) → OnExecute (20) → OnExit (30) → 
+ChangeState (40) → OnEntry (50) → SubFlow (60) → Schedule (70) → 
+Auto (80) → Finalize (90)
+```
+
+#### 2. Dynamic Planning
+The `IPipelinePlanner` determines which steps to execute based on:
+- **Resume Points**: Start from specific step (e.g., after SubFlow completion)
+- **Epilogue Mode**: Skip/Run/DispatchOnly for Schedule/Auto steps
+- **Terminal States**: Short-circuit to Finalize on workflow completion
+- **Directive Changes**: Re-plan mid-execution based on runtime conditions
+
+#### 3. Step Outcomes
+Each step returns a `StepOutcome` that can:
+- Continue to next step
+- Stop pipeline completely
+- Skip to specific order
+- Mutate pipeline directives
+
+#### 4. Trigger Handlers
+Pre/Post processing based on how transition was triggered:
+- **Manual**: User authentication, authorization, audit logging
+- **Automatic**: Condition validation, chain depth limits
+- **Scheduled**: Timer validation, recurring schedules
+- **Event**: Event source validation, correlation
+
+#### 5. Re-entry System
+Auto and Schedule transitions can be executed:
+- **Inline**: Within same request for immediate transitions
+- **Background**: Via Dapr jobs for delayed/scheduled transitions
+
+### Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   Transition Request                        │
+│            (Manual/Auto/Schedule/Event)                     │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Transition Strategy                            │
+│           (Sync/Async Mode Selection)                       │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│            Trigger Handler (PreHandle)                      │
+│   • Validation  • Auth  • Logging                          │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Pipeline Planner                               │
+│   Build execution plan based on directives                 │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│          Transition Pipeline Execution                      │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  For each step in plan:                              │  │
+│  │  1. Execute step                                     │  │
+│  │  2. Check StepOutcome (Continue/Stop/Skip)          │  │
+│  │  3. Apply directive mutations                        │  │
+│  │  4. Re-plan if needed                                │  │
+│  └──────────────────────────────────────────────────────┘  │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│            Trigger Handler (PostHandle)                     │
+│   • Cleanup  • Final Validation  • Metrics                 │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  Transition Complete                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Key Benefits
+
+1. **Deterministic Execution**: Clearly defined step order and lifecycle
+2. **Extensibility**: Add new steps without modifying existing code
+3. **Testability**: Each step and planner can be tested independently
+4. **Observability**: Detailed telemetry for each step execution
+5. **Flexibility**: Dynamic re-planning based on runtime conditions
+6. **Separation of Concerns**: Trigger logic, planning, and execution are decoupled
+
+For detailed documentation, see [Transition Pipeline Architecture](./transition-pipeline-architecture.md).
 
 ## Benefits of the Microservices Architecture
 

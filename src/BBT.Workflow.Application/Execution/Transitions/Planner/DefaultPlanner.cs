@@ -2,9 +2,13 @@ using BBT.Workflow.Execution.Pipeline;
 
 namespace BBT.Workflow.Execution.Planner;
 
+/// <summary>
+/// Default implementation of pipeline planner that builds execution plans based on context directives.
+/// Handles resume points, epilogue modes, and terminal states.
+/// </summary>
 public sealed class DefaultPlanner : IPipelinePlanner
 {
-    // This scheduler simply selects/sorts the list; the “wait/dispatch” semantics are inside the steps.
+    /// <inheritdoc />
     public IReadOnlyList<ITransitionStep> Build(TransitionExecutionContext context,
         IEnumerable<ITransitionStep> allSteps)
     {

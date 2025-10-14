@@ -1,31 +1,31 @@
 # Transition Pipeline Architecture
 
-Bu dokümantasyon, BBT.Workflow projesinde gerçekleştirilen yeni **Transition Pipeline Architecture** refactoring'ini açıklamaktadır.
+This documentation describes the new **Transition Pipeline Architecture** refactoring implemented in the BBT.Workflow project.
 
-## Genel Bakış
+## Overview
 
-Yeni mimari, transition yürütmeyi **okunabilir, test edilebilir, genişletilebilir** hale getirmek için tasarlanmıştır. `StateMachineExecutor` üzerindeki karmaşıklığı düşürür ve Auto/Schedule gibi **re-entry** senaryolarını ilk sınıf vatandaş olarak tanımlar.
+The new architecture is designed to make transition execution **readable, testable, and extensible**. It reduces complexity on the `StateMachineExecutor` and defines Auto/Schedule **re-entry** scenarios as first-class citizens.
 
-## Temel İlkeler
+## Core Principles
 
-- **SRP & Ayrık Sorumluluk:** Sync/Async mod seçimi ≠ Trigger tipi yönetimi ≠ Lifecycle adımlarının yürütülmesi
-- **Deterministik Lifecycle:** Belirli ve dokümante edilmiş sıra
-- **Context Rehydrate:** Auto/Schedule re-entry'de Context taşınmaz; yeni DI scope'ta yeniden kurulur
-- **Service Locator Yok:** Servisler Context içinde değil, adımlara/handler'lara DI ile verilir
-- **Idempotency & Lock:** Instance bazlı kilit ve idempotency ana akış özelliğidir
+- **SRP & Separation of Concerns:** Sync/Async mode selection ≠ Trigger type management ≠ Lifecycle step execution
+- **Deterministic Lifecycle:** Well-defined and documented sequence
+- **Context Rehydration:** Context is not carried over in Auto/Schedule re-entry; it is rebuilt in a new DI scope
+- **No Service Locator:** Services are not in Context but injected into steps/handlers via DI
+- **Idempotency & Lock:** Instance-based locking and idempotency is a core feature
 
-## Mimari Bileşenleri
+## Architecture Components
 
-### 1. Çekirdek Arayüzler
+### 1. Core Interfaces
 
 #### TriggerType Enum
 ```csharp
 public enum TriggerType
 {
-    Manual = 0,     // Kullanıcı tarafından tetiklenen
-    Automatic = 1,  // Sistem tarafından otomatik tetiklenen
-    Scheduled = 2,  // Zamanlayıcı ile tetiklenen
-    Event = 3       // Harici olay ile tetiklenen
+    Manual = 0,     // User-triggered
+    Automatic = 1,  // System-triggered automatically
+    Scheduled = 2,  // Timer-triggered
+    Event = 3       // Externally triggered by event
 }
 ```
 
@@ -34,9 +34,11 @@ public enum TriggerType
 public interface ITransitionStep
 {
     int Order { get; }
-    Task ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken);
+    Task<StepOutcome> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken);
 }
 ```
+
+**Note:** Pipeline steps now return `StepOutcome` to provide flow control.
 
 #### ITransitionHandler
 ```csharp
@@ -48,28 +50,28 @@ public interface ITransitionHandler
 }
 ```
 
-### 2. Pipeline Adımları (Lifecycle Order)
+### 2. Pipeline Steps (Lifecycle Order)
 
-1. **CreateTransitionRecordStep** (Order: 10) - Transition kaydı oluşturur
-2. **RunOnExecuteTasksStep** (Order: 20) - Transition'ın OnExecute task'larını çalıştırır
-3. **RunOnExitTasksStep** (Order: 30) - Mevcut state'in OnExit task'larını çalıştırır
-4. **ChangeStateStep** (Order: 40) - State değişikliğini gerçekleştirir
-5. **RunOnEntryTasksStep** (Order: 50) - Hedef state'in OnEntry task'larını çalıştırır
-6. **HandleSubFlowOrFinishStep** (Order: 60) - SubFlow veya workflow bitişini yönetir
-7. **ScheduleTransitionsStep** (Order: 70) - Zamanlı transition'ları planlar
-8. **RunAutomaticTransitionsStep** (Order: 80) - Otomatik transition'ları değerlendirir ve tetikler
-9. **FinalizeTransitionStep** (Order: 90) - Transition'ı sonlandırır ve temizlik yapar
+1. **CreateTransitionRecordStep** (Order: 10) - Creates the transition record
+2. **RunOnExecuteTasksStep** (Order: 20) - Executes the transition's OnExecute tasks
+3. **RunOnExitTasksStep** (Order: 30) - Executes the current state's OnExit tasks
+4. **ChangeStateStep** (Order: 40) - Performs the state change
+5. **RunOnEntryTasksStep** (Order: 50) - Executes the target state's OnEntry tasks
+6. **HandleSubFlowOrFinishStep** (Order: 60) - Manages SubFlow or workflow completion
+7. **ScheduleTransitionsStep** (Order: 70) - Schedules timed transitions
+8. **RunAutomaticTransitionsStep** (Order: 80) - Evaluates and triggers automatic transitions
+9. **FinalizeTransitionStep** (Order: 90) - Finalizes the transition and performs cleanup
 
-### 3. Trigger Handler'ları
+### 3. Trigger Handlers
 
 #### ManualTransitionHandler
 - Policy/HMAC/Auth/Schema validation
-- Kullanıcı yetkilendirmesi
+- User authorization
 - Audit logging
 
 #### AutomaticTransitionHandler
 - Condition re-validation
-- Chain depth kontrolü
+- Chain depth control
 - Execution metrics
 
 #### ScheduledTransitionHandler
@@ -100,12 +102,142 @@ public sealed record ReentryCommand(
 ```
 
 #### IReentryDispatcher
-- `DispatchAutoAsync`: Otomatik transition'ları yönetir (inline veya background job)
-- `DispatchScheduledAsync`: Zamanlı transition'ları background job olarak kuyruğa alır
+- `DispatchAutoAsync`: Manages automatic transitions (inline or background job)
+- `DispatchScheduledAsync`: Queues scheduled transitions as background jobs
 
-### 5. TransitionExecutionContext
+### 5. IPipelinePlanner & DefaultPlanner
 
-Minimal, servis-içermeyen context yapısı:
+The pipeline planner dynamically determines which steps to execute and in what order.
+
+#### IPipelinePlanner
+```csharp
+public interface IPipelinePlanner
+{
+    IReadOnlyList<ITransitionStep> Build(
+        TransitionExecutionContext context, 
+        IEnumerable<ITransitionStep> allSteps);
+}
+```
+
+#### DefaultPlanner Strategies
+- **ResumeFrom**: Start from a specific step (subflow completion, re-planning)
+- **Terminal State**: Run only up to Finalize in terminal state
+- **Epilogue Mode**: Run or skip Schedule/Auto steps
+- **ClearBusy**: BUSY→READY cleanup when starting from Schedule
+
+### 6. PipelineDirectives
+
+Directive system controlling pipeline behavior:
+
+```csharp
+public sealed class PipelineDirectives
+{
+    // Which step to resume from
+    public int? ResumeFromOrder { get; private set; }
+    
+    // Behavior of epilogue (Schedule/Auto) steps
+    public EpilogueMode Epilogue { get; private set; }
+    
+    // Inline automatic transition queue
+    public Queue<ReentryCommand> InlineAutoQueue { get; }
+    
+    // Terminal state flag
+    public bool TerminalReached { get; private set; }
+    
+    // SubFlow resume scenario
+    public bool IsSubFlowResume { get; private set; }
+}
+```
+
+#### EpilogueMode
+```csharp
+public enum EpilogueMode
+{
+    Run = 0,          // Run Schedule and Auto steps normally
+    Skip = 1,         // Skip Schedule and Auto steps
+    DispatchOnly = 2  // Only dispatch, don't execute
+}
+```
+
+### 7. StepOutcome
+
+Pipeline step result reporting and flow control:
+
+```csharp
+public sealed class StepOutcome
+{
+    public bool StopPipeline { get; init; }
+    public int? SkipToOrder { get; init; }
+    public Action<PipelineDirectives>? MutateDirectives { get; init; }
+    
+    // Factory methods
+    public static StepOutcome Continue();
+    public static StepOutcome Stop();
+    public static StepOutcome SkipTo(int order);
+    public static StepOutcome With(Action<PipelineDirectives> fx);
+}
+```
+
+**Usage Examples:**
+```csharp
+// Normal continuation
+return StepOutcome.Continue();
+
+// Stop the pipeline
+return StepOutcome.Stop();
+
+// Skip to a specific step (e.g., return to CreateTransition after inline auto)
+return StepOutcome.SkipTo(LifecycleOrder.CreateTransition);
+
+// Mutate directives
+return StepOutcome.With(d => d.RequestEpilogue(EpilogueMode.Skip));
+```
+
+### 8. Dynamic Re-planning
+
+The pipeline detects directive changes during execution and rebuilds the plan:
+
+**Re-planning Scenarios:**
+1. **SubFlow Initiation**: Switch to epilogue SKIP mode
+2. **Inline Auto Chain**: Restart from CreateTransition
+3. **SubFlow Completion**: Resume from Schedule step
+4. **Terminal State**: Execute only up to Finalize
+
+**Pipeline Re-planning Flow:**
+```csharp
+// 1) Create initial plan
+var plan = _planner.Build(context, _steps);
+
+while (i < plan.Count)
+{
+    var outcome = await step.ExecuteAsync(context, cancellationToken);
+    
+    // Mutate directives
+    outcome.MutateDirectives?.Invoke(context.Directives);
+    
+    // Re-plan if SkipTo is set
+    if (outcome.SkipToOrder is { } skipTo)
+    {
+        context.Directives.RequestResumeFrom(skipTo);
+        plan = _planner.Build(context, _steps);
+        i = 0;
+        continue;
+    }
+    
+    // Re-plan if directives changed
+    if (NeedsReplan(plan, context.Directives))
+    {
+        context.Directives.RequestResumeFrom(step.Order + 1);
+        plan = _planner.Build(context, _steps);
+        i = 0;
+        continue;
+    }
+}
+```
+
+### 9. TransitionExecutionContext
+
+Minimal, service-free context structure:
 
 ```csharp
 public sealed class TransitionExecutionContext
@@ -132,19 +264,27 @@ public sealed class TransitionExecutionContext
     // Temporary storage
     public IDictionary<string, object?> Items { get; }
     
+    // Pipeline directives (new!)
+    public PipelineDirectives Directives { get; init; }
+    
     // Helper method
     public ScriptContext GetOrBuildScriptContext(Func<ScriptContext> factory);
 }
 ```
 
-## Kullanım
+**TransitionExecutionContext Properties:**
+- **Directives**: Controls pipeline behavior
+- **Items**: Temporary storage for data sharing between steps
+- **IsReentry**: Re-entry scenario (Auto/Schedule) check
 
-### 1. DI Kayıtları
+## Usage
+
+### 1. DI Registration
 
 ```csharp
 services.AddTransitionPipeline();
 
-// Veya özel konfigürasyon ile:
+// Or with custom configuration:
 services.AddTransitionPipeline(options =>
 {
     options.MaxAutoHops = 15;
@@ -152,7 +292,7 @@ services.AddTransitionPipeline(options =>
 });
 ```
 
-### 2. Transition Yürütme
+### 2. Transition Execution
 
 ```csharp
 var input = new WorkflowExecutionInput
@@ -168,25 +308,34 @@ var input = new WorkflowExecutionInput
 await stateMachineExecutor.ExecuteTransitionAsync(input, cancellationToken);
 ```
 
-### 3. Yeni Pipeline Step Ekleme
+### 3. Adding a New Pipeline Step
 
 ```csharp
 public sealed class CustomValidationStep : ITransitionStep
 {
-    public int Order => 15; // CreateTransition (10) ile OnExecute (20) arasında
+    public int Order => 15; // Between CreateTransition (10) and OnExecute (20)
     
-    public async Task ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    public async Task<StepOutcome> ExecuteAsync(
+        TransitionExecutionContext context, 
+        CancellationToken cancellationToken)
     {
         // Custom validation logic
         await ValidateBusinessRules(context, cancellationToken);
+        
+        // Normal continuation
+        return StepOutcome.Continue();
+        
+        // Or conditionally stop the pipeline
+        // if (validationFailed)
+        //     return StepOutcome.Stop();
     }
 }
 
-// DI'da kayıt:
+// Register in DI:
 services.AddScoped<ITransitionStep, CustomValidationStep>();
 ```
 
-### 4. Yeni Trigger Handler Ekleme
+### 4. Adding a New Trigger Handler
 
 ```csharp
 public sealed class WebhookTransitionHandler : TransitionHandlerBase
@@ -200,52 +349,65 @@ public sealed class WebhookTransitionHandler : TransitionHandlerBase
     }
 }
 
-// DI'da kayıt:
+// Register in DI:
 services.AddScoped<ITransitionHandler, WebhookTransitionHandler>();
 ```
 
-## Avantajlar
+## Benefits
 
-### 1. Ayrık Sorumluluklar
-- Her pipeline step'i tek bir sorumluluğa sahip
-- Trigger handler'ları sadece kendi trigger tiplerini yönetir
-- Execution strategy'leri sadece sync/async farkını yönetir
+### 1. Separation of Concerns
+- Each pipeline step has a single responsibility
+- Trigger handlers only manage their own trigger types
+- Execution strategies only handle sync/async differences
+- Pipeline planner only handles step selection and ordering
 
-### 2. Test Edilebilirlik
-- Her bileşen bağımsız olarak test edilebilir
-- Mock'lama kolay
-- Integration testleri daha odaklı
+### 2. Dynamic Flow Control
+- Step-level flow control with StepOutcome
+- Runtime behavior changes with PipelineDirectives
+- Flexible execution scenarios with re-planning
+- Optimized for SubFlow and Auto transitions
 
-### 3. Genişletilebilirlik
-- Yeni pipeline step'leri kolayca eklenebilir
-- Yeni trigger handler'ları eklenebilir
-- Mevcut davranışlar değiştirilmeden genişletilebilir
+### 3. Testability
+- Each component can be tested independently
+- Easy mocking
+- Pipeline planner can be tested separately
+- Different flow scenarios can be tested with StepOutcome
 
-### 4. Performans
-- Re-entry sistem optimizasyonu
+### 4. Extensibility
+- New pipeline steps can be easily added
+- New trigger handlers can be added
+- Custom planner implementations can be written
+- Custom flow control with StepOutcome
+
+### 5. Performance
+- Re-entry system optimization
 - Distributed locking
-- Idempotency kontrolü
+- Idempotency control
+- Inline auto chain execution (prevents unnecessary I/O)
+- Dynamic step skipping (prevents unnecessary operations)
 
-### 5. Gözlemlenebilirlik
+### 6. Observability
 - Structured logging
 - Metrics collection
-- Distributed tracing desteği
+- Distributed tracing support
+- Detailed telemetry for each step
+- Re-planning events tracking
 
-## Geçiş Planı
+## Migration Plan
 
-1. ✅ Yeni mimari bileşenlerini oluştur
-2. ✅ Pipeline step'lerini implement et
-3. ✅ Trigger handler'ları oluştur
-4. ✅ Re-entry sistemini kur
-5. ✅ DI kayıtlarını güncelle
-6. 🔄 Mevcut kodu yeni mimariye geçir (aşamalı)
-7. 🔄 E2E testleri güncelle
-8. 🔄 Monitoring ve metrics'leri güncelle
-9. 🔄 Eski kodu kaldır
+1. ✅ Create new architecture components
+2. ✅ Implement pipeline steps
+3. ✅ Create trigger handlers
+4. ✅ Set up re-entry system
+5. ✅ Update DI registrations
+6. 🔄 Migrate existing code to new architecture (gradual)
+7. 🔄 Update E2E tests
+8. 🔄 Update monitoring and metrics
+9. 🔄 Remove old code
 
-## Notlar
+## Notes
 
-- Bu refactoring backward compatibility'yi korumaya çalışır
-- Mevcut API'ler çalışmaya devam eder
-- Yeni özellikler yeni mimari üzerinden geliştirilmelidir
-- Performance testleri yapılmalı ve karşılaştırılmalı
+- This refactoring attempts to maintain backward compatibility
+- Existing APIs continue to work
+- New features should be developed on the new architecture
+- Performance tests should be conducted and compared
