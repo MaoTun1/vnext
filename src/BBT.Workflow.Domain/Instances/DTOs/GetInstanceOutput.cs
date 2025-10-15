@@ -27,11 +27,21 @@ public sealed class GetInstanceHistoryOutput
 }
 
 /// <summary>
-/// Output for instance data (attributes only)
+/// Output for instance data
 /// </summary>
 public sealed class GetInstanceDataOutput
 {
-    public JsonElement? Attributes { get; set; }
+    public JsonElement? Data { get; set; }
     public string? Etag { get; set; } = string.Empty;
+    public Dictionary<string, object>? Extensions { get; set; }
+} 
+public sealed class GetInstanceDataResponseOutput
+{
+    public GetInstanceDataResponseOutput(GetInstanceDataOutput output)
+    {
+        Data = output.Data;
+        Extensions = output.Extensions;
+    }
+    public JsonElement? Data { get; set; }
     public Dictionary<string, object>? Extensions { get; set; }
 } 

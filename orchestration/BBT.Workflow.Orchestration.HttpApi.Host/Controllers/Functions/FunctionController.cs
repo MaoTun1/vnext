@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
+using BBT.Workflow.Domain.Shared;
 using BBT.Workflow.Functions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Instances.DTOs;
@@ -57,7 +58,8 @@ public sealed class FunctionController(
         [FromRoute] string function,
         [FromRoute] string workflow,
         [FromRoute] string instance,
- [FromQuery] FunctionQueryParemeters parameters,
+        [FromQuery] FunctionQueryParemeters parameters,
+        [FromHeader(Name = "If-None-Match")] string? ifNoneMatch,
         CancellationToken cancellationToken = default)
     {
         switch (function.ToLowerInvariant())
@@ -85,10 +87,25 @@ public sealed class FunctionController(
 
                 // Return only the content as requested, without Type and Target
                 return Ok(responseView.Data.Content);
+            case Definitions.Functions.FunctionTypeConst.Data:
+                var inputData = new GetInstanceDataInput
+                {
+                    Domain = domain,
+                    Workflow = workflow,
+                    Instance = instance,
+                    IfNoneMatch = ifNoneMatch
+                };
+                var responseData = await queryAppService.GetInstanceDataAsync(inputData, cancellationToken);
+                if (responseData.IsNotModified)
+                {
+                    return StatusCode(StatusCodes.Status304NotModified);
+                }
+                HttpContext.Response.Headers[HeadersConstants.ETag] = responseData.Data.Etag;
+                return Ok(new GetInstanceDataResponseOutput(responseData.Data));
             default:
                 return Ok(
-        await functionAppService.GetFunctionByInstance(function, workflow, domain, instance, cancellationToken));
+                    await functionAppService.GetFunctionByInstance(function, workflow, domain, instance, cancellationToken)
+                    );
         }
-
     }
 }
