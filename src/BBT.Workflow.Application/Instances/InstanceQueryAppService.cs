@@ -351,20 +351,20 @@ public sealed class InstanceQueryAppService(
         };
 
 
-            var scriptContext = await scriptContextFactory.NewBuilder()
-                .WithWorkflow(flow)
-                .WithInstance(instance)
-                .WithRuntime(runtimeInfoProvider)
-                .WithTransition(string.Empty)
-                .WithBody(instanceData?.Data ?? new JsonData("{}"))
-                .BuildAsync(cancellationToken);
+        var scriptContext = await scriptContextFactory.NewBuilder()
+            .WithWorkflow(flow)
+            .WithInstance(instance)
+            .WithRuntime(runtimeInfoProvider)
+            .WithTransition(string.Empty)
+            .WithBody(instanceData?.Data ?? new JsonData("{}"))
+            .BuildAsync(cancellationToken);
 
-            response.Extensions = await instanceExtensionService.ProcessExtensionsAsync(
-                extensionRequested,
-                scriptContext,
-                flow,
-                currentScope,
-                cancellationToken);
+        response.Extensions = await instanceExtensionService.ProcessExtensionsAsync(
+            extensionRequested,
+            scriptContext,
+            flow,
+            currentScope,
+            cancellationToken);
 
         return response;
     }
@@ -760,9 +760,16 @@ public sealed class InstanceQueryAppService(
                 input.Workflow,
                 input.Version,
                 cancellationToken);
-
+            // Get current  state
+            var currentState = currentWorkflow.GetState(instance.CurrentState!);
+            bool IsWizardState = false;
+            if (currentState.StateType == StateType.Wizard)
+            {
+                IsWizardState = true;
+            }
             // Get available transitions
             var availableTransitions = new List<string>();
+
             if (instance.Status.Equals(InstanceStatus.Active))
             {
                 availableTransitions = stateMachineService.AvailableUserTransitionKeys(currentWorkflow, instance);
@@ -771,9 +778,8 @@ public sealed class InstanceQueryAppService(
             View? view = null;
 
             // If there's exactly one transition, get its view
-            if (availableTransitions.Count == 1 && !string.IsNullOrEmpty(instance.CurrentState))
+            if (IsWizardState)
             {
-                var currentState = currentWorkflow.GetState(instance.CurrentState);
                 var transition = currentState.FindTransition(availableTransitions[0]);
                 if (transition?.view != null)
                 {
@@ -785,17 +791,15 @@ public sealed class InstanceQueryAppService(
                 }
             }
             // If there are multiple transitions or no transitions, get the state view
-            else if (!string.IsNullOrEmpty(instance.CurrentState))
+            else if (!string.IsNullOrEmpty(instance.CurrentState) && currentState.View != null)
             {
-                var currentState = currentWorkflow.GetState(instance.CurrentState);
-                if (currentState.View != null)
-                {
-                    view = await componentCacheStore.GetViewAsync(
-                        currentState.View.Domain,
-                        currentState.View.Key,
-                        currentState.View.Version,
-                        cancellationToken);
-                }
+
+                view = await componentCacheStore.GetViewAsync(
+                    currentState.View.Domain,
+                    currentState.View.Key,
+                    currentState.View.Version,
+                    cancellationToken);
+
             }
 
             // If no platform specified, return the default view content
@@ -825,8 +829,8 @@ public sealed class InstanceQueryAppService(
                 case PlatformConst.ios:
                     platformContent = view.PlatformOverrides.Ios?.JsonContent?.RootElement;
                     break;
-                default: 
-                  platformContent = view?.JsonContent?.RootElement;
+                default:
+                    platformContent = view?.JsonContent?.RootElement;
                     break;
             }
 
