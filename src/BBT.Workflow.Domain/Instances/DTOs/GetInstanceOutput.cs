@@ -12,7 +12,8 @@ public sealed class GetInstanceOutput
     public string? Flow { get; set; } = string.Empty;
     public string? Domain { get; set; } = string.Empty;
     public string? FlowVersion { get; set; } = string.Empty;
-    public string? Etag { get; set; } = string.Empty;
+    public string? Etag { get => _etag?.Replace("\"", ""); set => _etag = value; }
+    private string? _etag = string.Empty;
     public List<string>? Tags { get; set; } = [];
     public JsonElement? Attributes { get; set; }
     public Dictionary<string, object>? Extensions { get; set; }
@@ -32,7 +33,8 @@ public sealed class GetInstanceHistoryOutput
 public sealed class GetInstanceDataOutput
 {
     public JsonElement? Data { get; set; }
-    public string? Etag { get; set; } = string.Empty;
+    public string? Etag { get => _etag != null ? $"\"{_etag}\"" : string.Empty; set => _etag = value; }
+    private string? _etag = string.Empty;
     public Dictionary<string, object>? Extensions { get; set; }
 } 
 public sealed class GetInstanceDataResponseOutput
@@ -42,6 +44,6 @@ public sealed class GetInstanceDataResponseOutput
         Data = output.Data;
         Extensions = output.Extensions;
     }
-    public JsonElement? Data { get; set; }
-    public Dictionary<string, object>? Extensions { get; set; }
+    public JsonElement? Data { get; init; }
+    public Dictionary<string, object>? Extensions { get; init; }
 } 
