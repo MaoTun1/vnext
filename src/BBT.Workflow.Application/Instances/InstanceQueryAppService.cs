@@ -369,19 +369,6 @@ public sealed class InstanceQueryAppService(
         return response;
     }
 
-    private string BuildDataUrl(string domain, string workflow, Instance instance)
-    {
-        var httpContext = httpContextAccessor.HttpContext;
-        if (httpContext == null)
-        {
-            return $"/api/v1/{domain}/workflows/{workflow}/instances/{instance.Id}/data";
-        }
-
-        var request = httpContext.Request;
-        var baseUrl = $"{request.Scheme}://{request.Host}";
-        return $"{baseUrl}/api/v1/{domain}/workflows/{workflow}/instances/{instance.Id}/data";
-    }
-
     public async Task<InstanceServiceResult<GetInstanceDataOutput>> GetInstanceDataAsync(
         GetInstanceDataInput input,
         CancellationToken cancellationToken = default)
@@ -573,7 +560,7 @@ public sealed class InstanceQueryAppService(
                 SubFlowName = correlation.SubFlowName,
                 SubFlowVersion = correlation.SubFlowVersion,
                 IsCompleted = correlation.IsCompleted,
-                Href = $"/{correlation.SubFlowDomain}/workflows/{correlation.SubFlowName}/instances/{correlation.SubFlowInstanceId}/data"
+                Href = string.Format(InstanceUrlTemplates.SubFlowData, correlation.SubFlowDomain, correlation.SubFlowName, correlation.SubFlowInstanceId)
             }).ToList();
 
             var result = new GetActiveCorrelationsOutput
