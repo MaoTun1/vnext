@@ -100,7 +100,10 @@ public sealed class FunctionController(
                 {
                     return StatusCode(StatusCodes.Status304NotModified);
                 }
-                HttpContext.Response.Headers[HeadersConstants.ETag] = responseData.Data.Etag;
+                if (!string.IsNullOrEmpty(responseData.Data.Etag))
+                {
+                    HttpContext.Response.Headers[HeadersConstants.ETag] = responseData.Data.Etag;
+                }
                 return Ok(new GetInstanceDataResponseOutput(responseData.Data));
             default:
                 return Ok(
