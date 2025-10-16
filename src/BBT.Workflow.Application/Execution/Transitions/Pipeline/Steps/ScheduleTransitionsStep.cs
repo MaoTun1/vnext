@@ -1,5 +1,6 @@
 using BBT.Workflow.BackgroundJobs;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Domain;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks;
 using Microsoft.Extensions.Logging;
@@ -9,6 +10,7 @@ namespace BBT.Workflow.Execution.Pipeline.Steps;
 /// <summary>
 /// Pipeline step that schedules future transitions based on timers.
 /// Enqueues scheduled transitions for later execution.
+/// Uses Result pattern for exception-free error handling.
 /// </summary>
 public sealed class ScheduleTransitionsStep(
     IBackgroundJobService backgroundJobService,
@@ -20,35 +22,43 @@ public sealed class ScheduleTransitionsStep(
     public int Order => LifecycleOrder.Schedule;
 
     /// <inheritdoc />
-    public async Task<StepOutcome> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
         if (context.Target?.ScheduledTransitions == null || !context.Target.ScheduledTransitions.Any())
         {
             logger.LogTrace("No scheduled transitions for state {StateName}", context.Target?.Key ?? "Unknown");
-            return StepOutcome.Continue();
+            return Result<StepOutcome>.Ok(StepOutcome.Continue());
         }
 
         logger.LogDebug("Scheduling {Count} transitions for state {StateName} on instance {InstanceId}",
             context.Target.ScheduledTransitions.Count(), context.Target.Key, context.InstanceId);
         
-        foreach (var scheduledTransition in context.Target.ScheduledTransitions)
+        return await ResultExtensions.TryAsync<StepOutcome>(async ct =>
         {
-            try
+            foreach (var scheduledTransition in context.Target.ScheduledTransitions)
             {
-                await ScheduleTransitionAsync(context, scheduledTransition, cancellationToken);
+                try
+                {
+                    await ScheduleTransitionAsync(context, scheduledTransition, ct);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Failed to schedule transition {TransitionKey} for instance {InstanceId}",
+                        scheduledTransition.Key, context.InstanceId);
+                    // Continue with other scheduled transitions
+                }
             }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Failed to schedule transition {TransitionKey} for instance {InstanceId}",
-                    scheduledTransition.Key, context.InstanceId);
-                // Continue with other scheduled transitions
-            }
-        }
-        
-        // context.SkipImmediateExecution = true;
+            
+            // context.SkipImmediateExecution = true;
 
-        logger.LogDebug("Completed scheduling transitions for state {StateName}", context.Target.Key);
-        return StepOutcome.Continue();
+            logger.LogDebug("Completed scheduling transitions for state {StateName}", context.Target.Key);
+            return StepOutcome.Continue();
+        },
+        cancellationToken,
+        ex => Error.Failure(
+            WorkflowErrorCodes.ExecutionStepFailed,
+            $"Failed to schedule transitions: {ex.Message}",
+            ex.GetType().Name));
     }
 
     /// <summary>

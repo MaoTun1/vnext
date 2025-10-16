@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Domain;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.SubFlow;
@@ -14,6 +15,7 @@ namespace BBT.Workflow.Execution.Pipeline.Steps;
 /// Pipeline step that handles workflow finishing.
 /// Manages workflow completion when the target state type is Finish.
 /// This step runs after all other pipeline steps to ensure proper completion.
+/// Uses Result pattern for exception-free error handling.
 /// </summary>
 public sealed class HandleFinishStep(
     IInstanceRepository instanceRepository,
@@ -26,12 +28,12 @@ public sealed class HandleFinishStep(
     public int Order => LifecycleOrder.Finish;
 
     /// <inheritdoc />
-    public async Task<StepOutcome> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
         if (context.Target == null)
         {
             logger.LogWarning("Target state is null for instance {InstanceId}", context.InstanceId);
-            return StepOutcome.Continue();
+            return Result<StepOutcome>.Ok(StepOutcome.Continue());
         }
 
         // Only handle Finish state types
@@ -39,34 +41,42 @@ public sealed class HandleFinishStep(
         {
             logger.LogTrace("State {StateName} is not a Finish type, skipping finish handling", 
                 context.Target.Key);
-            return StepOutcome.Continue();
+            return Result<StepOutcome>.Ok(StepOutcome.Continue());
         }
 
         logger.LogDebug("Handling finish state {StateName} for instance {InstanceId}",
             context.Target.Key, context.InstanceId);
 
-        context.Instance.Complete();
-        
-        // Record workflow completion as an event
-        Activity.Current?.AddEvent(new ActivityEvent("workflow.completed",
-            tags: new ActivityTagsCollection
-            {
-                { TelemetryConstants.TagNames.InstanceId, context.InstanceId.ToString() },
-                { TelemetryConstants.TagNames.Flow, context.Workflow.Key },
-                { TelemetryConstants.TagNames.Domain, context.Workflow.Domain },
-                { "workflow.completed.state", context.Target.Key },
-                { "workflow.is.subflow", context.Instance.IsSubFlow.ToString() },
-                { "workflow.duration.ms", context.Instance.Duration?.TotalMilliseconds.ToString() ?? "0" }
-            }));
-        
-        // Update instance state and data changes
-        await instanceRepository.UpdateStatusAsync(context.Instance, cancellationToken);
+        return await ResultExtensions.TryAsync<StepOutcome>(async ct =>
+        {
+            context.Instance.Complete();
+            
+            // Record workflow completion as an event
+            Activity.Current?.AddEvent(new ActivityEvent("workflow.completed",
+                tags: new ActivityTagsCollection
+                {
+                    { TelemetryConstants.TagNames.InstanceId, context.InstanceId.ToString() },
+                    { TelemetryConstants.TagNames.Flow, context.Workflow.Key },
+                    { TelemetryConstants.TagNames.Domain, context.Workflow.Domain },
+                    { "workflow.completed.state", context.Target.Key },
+                    { "workflow.is.subflow", context.Instance.IsSubFlow.ToString() },
+                    { "workflow.duration.ms", context.Instance.Duration?.TotalMilliseconds.ToString() ?? "0" }
+                }));
+            
+            // Update instance state and data changes
+            await instanceRepository.UpdateStatusAsync(context.Instance, ct);
 
-        await HandleFinishStateAsync(context, cancellationToken);
+            await HandleFinishStateAsync(context, ct);
 
-        logger.LogDebug("Completed finish handling for state {StateName}", context.Target.Key);
-        
-        return StepOutcome.Continue();
+            logger.LogDebug("Completed finish handling for state {StateName}", context.Target.Key);
+            
+            return StepOutcome.Continue();
+        },
+        cancellationToken,
+        ex => Error.Failure(
+            WorkflowErrorCodes.ExecutionStepFailed,
+            $"Failed to handle finish state: {ex.Message}",
+            ex.GetType().Name));
     }
 
     /// <summary>

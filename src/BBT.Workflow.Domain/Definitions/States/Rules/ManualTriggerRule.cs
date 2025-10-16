@@ -1,10 +1,10 @@
-using BBT.Workflow.ExceptionHandling;
+using BBT.Workflow.Domain;
 using BBT.Workflow.Rules;
 using BBT.Workflow.Shared;
 
 namespace BBT.Workflow.Definitions.Rules;
 
-public class ManualTriggerRule(Transition transition, ExecutionActor executionActor) : BaseRule<State>
+public class ManualTriggerRule(Transition transition, ExecutionActor executionActor) : ResultBaseRule<State>
 {
     public override bool IsApplicable(State context)
     {
@@ -16,8 +16,11 @@ public class ManualTriggerRule(Transition transition, ExecutionActor executionAc
         return false;
     }
 
-    public override void Execute(State context)
+    public override Result Validate(State context)
     {
-        throw new UnauthorizedTransitionException(transition.Key, transition.TriggerType, executionActor);
+        return Result.Fail(WorkflowErrors.TransitionUnauthorized(
+            transition.Key,
+            transition.TriggerType,
+            executionActor));
     }
 }

@@ -1,3 +1,4 @@
+using BBT.Workflow.Domain;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Telemetry;
@@ -19,7 +20,7 @@ public sealed class ChangeStateStep(
     public int Order => LifecycleOrder.ChangeState;
 
     /// <inheritdoc />
-    public async Task<StepOutcome> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
         var fromState = context.Instance.GetCurrentState;
         var toState = context.Transition.Target;
@@ -35,10 +36,22 @@ public sealed class ChangeStateStep(
 
         // Perform the state change
         context.Instance.ChangeState(context.Transition);
-        await instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
         
-        // Update target state in context
-        context.Target = context.Workflow.GetState(context.Instance.GetCurrentState);
+        // Update instance with Result pattern (no exceptions)
+        var updateResult = await ResultExtensions.TryAsync(
+            async ct => await instanceRepository.UpdateAsync(context.Instance, true, ct),
+            cancellationToken,
+            ex => Error.Dependency("db.update", $"Failed to update instance state: {ex.Message}"));
+        
+        if (!updateResult.IsSuccess)
+            return Result<StepOutcome>.Fail(updateResult.Error);
+        
+        // Update target state in context using Result Pattern
+        var targetStateResult = context.Workflow.GetState(context.Instance.GetCurrentState);
+        if (!targetStateResult.IsSuccess)
+            return Result<StepOutcome>.Fail(targetStateResult.Error);
+        
+        context.Target = targetStateResult.Value!;
         
         // Record state entry metric
         workflowMetrics.RecordStateEntry(
@@ -60,6 +73,6 @@ public sealed class ChangeStateStep(
                 { TelemetryConstants.TagNames.StateTo, toState }
             }));
         
-        return StepOutcome.Continue();
+        return Result<StepOutcome>.Ok(StepOutcome.Continue());
     }
 }

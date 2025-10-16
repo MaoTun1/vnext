@@ -1,3 +1,4 @@
+using BBT.Workflow.Domain;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Scripting;
@@ -8,6 +9,7 @@ namespace BBT.Workflow.Execution.Pipeline.Steps;
 /// <summary>
 /// Pipeline step that finalizes the transition execution.
 /// Updates the transition record and performs cleanup operations.
+/// Uses Result pattern for exception-free error handling.
 /// </summary>
 public sealed class FinalizeTransitionStep(
     IInstanceTransitionRepository instanceTransitionRepository,
@@ -18,7 +20,7 @@ public sealed class FinalizeTransitionStep(
     public int Order => LifecycleOrder.Finalize;
 
     /// <inheritdoc />
-    public async Task<StepOutcome> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
         logger.LogDebug("Finalizing transition {TransitionKey} for instance {InstanceId}",
             context.TransitionKey, context.InstanceId);
@@ -56,7 +58,7 @@ public sealed class FinalizeTransitionStep(
         logger.LogDebug("Finalized transition {TransitionKey} for instance {InstanceId}",
             context.TransitionKey, context.InstanceId);
         
-        return StepOutcome.Continue();
+        return Result<StepOutcome>.Ok(StepOutcome.Continue());
     }
 
     /// <summary>

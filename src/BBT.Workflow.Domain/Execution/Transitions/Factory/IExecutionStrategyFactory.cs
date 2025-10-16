@@ -1,3 +1,5 @@
+using BBT.Workflow.Domain;
+
 namespace BBT.Workflow.Execution.Strategies;
 
 /// <summary>
@@ -11,5 +13,5 @@ public interface IExecutionStrategyFactory
     /// <param name="mode">The execution mode (sync/async).</param>
     /// <returns>The strategy capable of handling the specified execution mode.</returns>
     /// <exception cref="NotSupportedException">Thrown when no strategy is found for the execution mode.</exception>
-    ITransitionStrategy Get(ExecMode mode);
+    Result<ITransitionStrategy> Get(ExecMode mode);
 }

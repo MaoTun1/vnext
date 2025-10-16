@@ -1,3 +1,5 @@
+using BBT.Workflow.Domain;
+
 namespace BBT.Workflow.Execution.Strategies;
 
 /// <summary>
@@ -12,5 +14,5 @@ public interface ITransitionStrategy
     /// <param name="context">The workflow execution context.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    Task<TransitionExecutionContext> ExecuteAsync(WorkflowExecutionContext context, CancellationToken cancellationToken);
+    Task<Result<TransitionExecutionContext>> ExecuteAsync(WorkflowExecutionContext context, CancellationToken cancellationToken);
 }

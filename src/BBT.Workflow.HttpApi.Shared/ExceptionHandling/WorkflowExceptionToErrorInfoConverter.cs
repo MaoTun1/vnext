@@ -26,17 +26,6 @@ public class WorkflowExceptionToErrorInfoConverter(IServiceProvider serviceProvi
         var errorInfo = base.CreateErrorInfoWithoutCode(exception, options);
         return exception switch
         {
-            ConflictException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            NotFoundDomainException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            RuntimeSchemaInvalidException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            SubFlowBlockedException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            TransitionLockedException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            InstanceNotFoundException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            NotFoundStateException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            InvalidStateException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            NotFoundTransitionException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            TransitionRuleFailedException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            AutoTransitionFailedException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
             _ => errorInfo
         };
     }

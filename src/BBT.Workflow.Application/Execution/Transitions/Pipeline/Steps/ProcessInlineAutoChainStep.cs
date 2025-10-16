@@ -1,17 +1,23 @@
-using BBT.Workflow.ExceptionHandling;
+using BBT.Workflow.Domain;
 using BBT.Workflow.Execution.ReEntry;
 
 namespace BBT.Workflow.Execution.Pipeline.Steps;
 
+/// <summary>
+/// Pipeline step that processes inline automatic transition chains.
+/// Uses Result pattern for exception-free error handling.
+/// </summary>
 public sealed class ProcessInlineAutoChainStep(IReentryDispatcher dispatcher, IContextRefresher refresher)
     : ITransitionStep
 {
     public int Order => LifecycleOrder.AfterEpilogueRefresh;
     private const int MaxInlineHops = 10;
 
-    public async Task<StepOutcome> ExecuteAsync(TransitionExecutionContext ctx, CancellationToken ct)
+    /// <inheritdoc />
+    public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext ctx, CancellationToken ct)
     {
-        if (ctx.Directives.InlineAutoQueue.Count == 0) return StepOutcome.Continue();
+        if (ctx.Directives.InlineAutoQueue.Count == 0) 
+            return Result<StepOutcome>.Ok(StepOutcome.Continue());
         
         var hops = 0;
         var anySucceeded = false;
@@ -29,7 +35,10 @@ public sealed class ProcessInlineAutoChainStep(IReentryDispatcher dispatcher, IC
             {
                 anySucceeded = true;
                 // Refresh and check for completion
-                await refresher.RefreshAsync(ctx, ct);
+                var refreshResult = await refresher.RefreshAsync(ctx, ct);
+                if (!refreshResult.IsSuccess)
+                    return Result<StepOutcome>.Fail(refreshResult.Error);
+                
                 if (ctx.Instance.IsCompleted)
                 {
                     ctx.SkipImmediateExecution = true;
@@ -38,12 +47,12 @@ public sealed class ProcessInlineAutoChainStep(IReentryDispatcher dispatcher, IC
             }
         }
 
-        // If we attempted transitions but none succeeded, throw exception
+        // If we attempted transitions but none succeeded, return error
         if (attemptedCount > 0 && !anySucceeded)
         {
-            throw new AutoTransitionFailedException(ctx.InstanceId, ctx.WorkflowKey);
+            return Result<StepOutcome>.Fail(WorkflowErrors.AutoTransitionFailed(ctx.InstanceId, ctx.WorkflowKey));
         }
 
-        return StepOutcome.Continue();
+        return Result<StepOutcome>.Ok(StepOutcome.Continue());
     }
 }

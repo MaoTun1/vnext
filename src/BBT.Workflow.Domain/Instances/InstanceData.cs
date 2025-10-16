@@ -70,7 +70,7 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
 
     private void SetVersion(string version)
     {
-        Version = Check.NotNullOrEmpty(version, nameof(Version), WorkflowConstants.MaxVersionLength);
+        Version = Check.NotNullOrWhiteSpace(version, nameof(Version), WorkflowConstants.MaxVersionLength);
     }
 
     internal InstanceData NewVersion(

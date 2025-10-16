@@ -22,12 +22,12 @@ public class InstanceJob : Entity<Guid>, IHasCreatedAt, IHasModifyTime
         string expressionValue,
         JsonElement payload) : base(id)
     {
-        JobName = Check.NotNull(jobName, nameof(JobName), InstanceJobConstants.MaxJobNameLength);
-        JobId = Check.NotNull(jobId, nameof(JobId), InstanceJobConstants.MaxJobIdLength);
-        Domain = Check.NotNull(domain, nameof(Domain), WorkflowConstants.MaxDomainLength);
-        FlowName = Check.NotNull(flowName, nameof(FlowName), WorkflowConstants.MaxFlowLength);
+        JobName = Check.NotNullOrWhiteSpace(jobName, nameof(JobName), InstanceJobConstants.MaxJobNameLength);
+        JobId = Check.NotNullOrWhiteSpace(jobId, nameof(JobId), InstanceJobConstants.MaxJobIdLength);
+        Domain = Check.NotNullOrWhiteSpace(domain, nameof(Domain), WorkflowConstants.MaxDomainLength);
+        FlowName = Check.NotNullOrWhiteSpace(flowName, nameof(FlowName), WorkflowConstants.MaxFlowLength);
         InstanceId = instanceId;
-        ExpressionValue = Check.NotNull(expressionValue, nameof(ExpressionValue), InstanceJobConstants.MaxExpressionValueLength);
+        ExpressionValue = Check.NotNullOrWhiteSpace(expressionValue, nameof(ExpressionValue), InstanceJobConstants.MaxExpressionValueLength);
         Payload = new JsonData(payload);
         IsTriggered = false;
         CreatedAt = DateTime.UtcNow;

@@ -39,13 +39,8 @@ public static class RemoteServiceExtensions
             services.Configure(configureOptions);
         }
 
-        var options = optionsSection.Get<RemoteOptions>();
-        if (options == null)
-        {
-            throw new InvalidOperationException(
-                $"Remote options not found in configuration section {RemoteOptions.SectionName}");
-        }
-
+        var options = optionsSection.Get<RemoteOptions>() ?? new RemoteOptions();
+        
         services.AddHttpClient<IRemoteInstanceCommandAppService, RemoteInstanceCommandAppService>((sp, client) =>
             {
                 var runtimeInfoProvider = sp.GetRequiredService<IRuntimeInfoProvider>();

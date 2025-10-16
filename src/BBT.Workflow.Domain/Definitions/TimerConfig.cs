@@ -15,8 +15,8 @@ public class TimerConfig : ValueObject
         string reset,
         string duration)
     {
-        Reset = Check.NotNullOrEmpty(reset, nameof(Reset), WorkflowConstants.MaxTimerResetLength);
-        Duration = Check.NotNullOrEmpty(duration, nameof(Duration), WorkflowConstants.MaxDurationLength);
+        Reset = Check.NotNullOrWhiteSpace(reset, nameof(Reset), WorkflowConstants.MaxTimerResetLength);
+        Duration = Check.NotNullOrWhiteSpace(duration, nameof(Duration), WorkflowConstants.MaxDurationLength);
     }
 
     public string Reset { get; private set; }

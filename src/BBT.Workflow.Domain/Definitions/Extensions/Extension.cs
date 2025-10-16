@@ -71,8 +71,8 @@ public sealed class Extension : IDomainEntity, IExtensionReference, IReferenceSe
 
     public void SetReference(IReference reference)
     {
-        Key = Check.NotNullOrEmpty(reference.Key, nameof(Key), ViewConstants.MaxKeyLength);
-        Domain = Check.NotNullOrEmpty(reference.Domain, nameof(Domain), WorkflowConstants.MaxDomainLength);
-        Version = Check.NotNullOrEmpty(reference.Version, nameof(Version), WorkflowConstants.MaxVersionLength);
+        Key = Check.NotNullOrWhiteSpace(reference.Key, nameof(Key), ViewConstants.MaxKeyLength);
+        Domain = Check.NotNullOrWhiteSpace(reference.Domain, nameof(Domain), WorkflowConstants.MaxDomainLength);
+        Version = Check.NotNullOrWhiteSpace(reference.Version, nameof(Version), WorkflowConstants.MaxVersionLength);
     }
 }

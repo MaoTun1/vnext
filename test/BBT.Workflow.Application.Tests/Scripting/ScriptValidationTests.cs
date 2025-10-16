@@ -23,6 +23,7 @@ namespace BBT.Workflow.Scripting;
 /// without needing to debug constantly. These tests provide a way to validate
 /// script compilation and basic execution scenarios.
 /// </summary>
+[Collection("ScriptingTests")]
 public class ScriptValidationTests : ApplicationTestBase<ApplicationEntryPoint>
 {
     private readonly IScriptEngine _scriptEngine;
@@ -32,6 +33,13 @@ public class ScriptValidationTests : ApplicationTestBase<ApplicationEntryPoint>
     {
         _scriptEngine = GetRequiredService<IScriptEngine>();
         _output = output;
+    }
+
+    public override void Dispose()
+    {
+        // Reset static state to prevent test interference
+        ScriptHelper.Reset();
+        base.Dispose();
     }
 
     protected override void AddApplication(IServiceCollection services)

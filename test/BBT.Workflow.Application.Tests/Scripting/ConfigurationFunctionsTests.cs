@@ -16,6 +16,7 @@ using Xunit;
 
 namespace BBT.Workflow.Scripting;
 
+[Collection("ScriptingTests")]
 public class ConfigurationFunctionsTests : ApplicationTestBase<ApplicationEntryPoint>
 {
     private readonly IScriptEngine _scriptEngine;
@@ -24,6 +25,13 @@ public class ConfigurationFunctionsTests : ApplicationTestBase<ApplicationEntryP
     public ConfigurationFunctionsTests()
     {
         _scriptEngine = GetRequiredService<IScriptEngine>();
+    }
+
+    public override void Dispose()
+    {
+        // Reset static state to prevent test interference
+        ScriptHelper.Reset();
+        base.Dispose();
     }
 
     protected override void AddApplication(IServiceCollection services)
@@ -147,7 +155,7 @@ public class ConfigurationFunctionsTests : ApplicationTestBase<ApplicationEntryP
         // Assert
         Assert.NotNull(response);
         Assert.Equal("TestValue", response.Data);
-        _mockConfiguration!.Verify(x => x["TestKey"], Times.Once);
+            _mockConfiguration!.Verify(x => x["TestKey"], Times.Once);
     }
 
     [Fact]

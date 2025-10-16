@@ -4,19 +4,16 @@ using BBT.Aether.Application.Services;
 using BBT.Aether.Guids;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Execution;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Schemas;
 using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Logging;
-using BBT.Workflow.ExceptionHandling;
-using BBT.Workflow.Execution;
 using BBT.Workflow.Execution.Pipeline;
 using BBT.Workflow.Execution.Services;
 using BBT.Workflow.Shared;
-using Microsoft.Extensions.DependencyInjection;
-using OpenTelemetry.Trace;
 
 namespace BBT.Workflow.SubFlow;
 
@@ -57,11 +54,8 @@ public sealed class SubflowCompletionService(
         }
 
         // Check if this domain is handled by this runtime instance
-        try
-        {
-            runtimeInfoProvider.Check(subFlowContractInfo.Domain);
-        }
-        catch (NotFoundDomainException)
+        var domainCheckResult = runtimeInfoProvider.Check(subFlowContractInfo.Domain);
+        if (!domainCheckResult.IsSuccess)
         {
             logger.LogInformation(
                 "SubFlow completion event for instance {InstanceId} belongs to domain {Domain} which is not handled by this runtime instance {RuntimeDomain}. Event will be ignored.",
@@ -191,8 +185,17 @@ public sealed class SubflowCompletionService(
             subFlowContractInfo.Version, // Use the specific version from parent info
             cancellationToken);
 
-        // Get the state where SubFlow was initiated
-        var parentState = parentWorkflow.GetState(correlation.ParentState);
+        // Get the state where SubFlow was initiated using Result Pattern
+        var parentStateResult = parentWorkflow.GetState(correlation.ParentState);
+        if (!parentStateResult.IsSuccess)
+        {
+            logger.LogError(
+                "Parent state {ParentState} not found in workflow {WorkflowKey} for SubFlow completion. Skipping parent continuation.",
+                correlation.ParentState, parentWorkflow.Key);
+            return;
+        }
+        
+        var parentState = parentStateResult.Value!;
         var transition = parentWorkflow.FindTransitionInContext(subFlowContractInfo.Transition!);
 
         // Create script context for output mapping with completed SubFlow data
@@ -343,17 +346,31 @@ public sealed class SubflowCompletionService(
                 }
             };
 
-            await workflowExecutionService.ExecuteTransitionAsync(input, cancellationToken);
+            var result = await workflowExecutionService.ExecuteTransitionAsync(input, cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                // Check if this is an auto-transition condition not met
+                if (result.Error.Code == WorkflowErrorCodes.AutoTransitionConditionNotMet)
+                {
+                    logger.LogDebug(
+                        "Auto-transition condition not met for parent instance {ParentInstanceId} after SubFlow completion - this is normal",
+                        parentInstance.Id);
+                }
+                else
+                {
+                    logger.LogWarning(
+                        "Failed to resume automatic processes for parent instance {ParentInstanceId}: {ErrorCode} - {ErrorMessage}",
+                        parentInstance.Id, result.Error.Code, result.Error.Message);
+                }
+                
+                // Don't throw - SubFlow completion should still be marked as successful
+                return;
+            }
 
             logger.LogInformation(
                 "Successfully resumed automatic processes for parent instance {ParentInstanceId}",
                 parentInstance.Id);
-        }
-        catch (TransitionRuleFailedException ex)
-        {
-            logger.LogWarning(ex,
-                "SubFlowCompletionService: Transition rule failed for  {Message}", ex.Message);
-            // Don't rethrow for rule failures as they are expected business logic
         }
         catch (Exception ex)
         {

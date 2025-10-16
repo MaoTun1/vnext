@@ -1,5 +1,5 @@
 using BBT.Workflow.Definitions;
-using BBT.Workflow.ExceptionHandling;
+using BBT.Workflow.Domain;
 using BBT.Workflow.Execution.Validation;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks;
@@ -21,7 +21,7 @@ public sealed class AutomaticTransitionHandler(
     public override bool CanHandle(TriggerType triggerType) => triggerType == TriggerType.Automatic;
 
     /// <inheritdoc />
-    protected override async Task PreValidateAsync(TransitionExecutionContext context,
+    protected override async Task<Result> PreValidateInternalAsync(TransitionExecutionContext context,
         CancellationToken cancellationToken)
     {
         Logger.LogDebug("Validating automatic transition {TransitionKey} for instance {InstanceId}",
@@ -29,24 +29,30 @@ public sealed class AutomaticTransitionHandler(
 
         // For automatic transitions, we need to validate that the condition is met
         // This is a double-check since the condition was already evaluated in RunAutomaticTransitionsStep
-        await ValidateConditionAsync(context, cancellationToken);
+        var conditionResult = await ValidateConditionAsync(context, cancellationToken);
+        if (!conditionResult.IsSuccess)
+            return conditionResult;
 
         // Additional validations for automatic transitions
-        await ValidateSystemStateAsync(context);
+        var systemStateResult = await ValidateSystemStateAsync(context);
+        if (!systemStateResult.IsSuccess)
+            return systemStateResult;
 
         Logger.LogDebug("Automatic transition validation completed for {TransitionKey}", context.TransitionKey);
+        return Result.Ok();
     }
 
     /// <summary>
     /// Validates that the automatic transition condition is met.
+    /// Returns Result instead of throwing exception to support multi-auto-transition scenarios.
     /// </summary>
-    private async Task ValidateConditionAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    private async Task<Result> ValidateConditionAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
         if (context.Transition?.Rule == null)
         {
             Logger.LogTrace("No condition defined for automatic transition {TransitionKey}, allowing execution",
                 context.TransitionKey);
-            return;
+            return Result.Ok();
         }
 
         Logger.LogTrace("Re-validating condition for automatic transition {TransitionKey}", context.TransitionKey);
@@ -65,42 +71,47 @@ public sealed class AutomaticTransitionHandler(
 
             if (!conditionMet)
             {
-                Logger.LogDebug("Condition evaluation failed for automatic transition {TransitionKey} on instance {InstanceId}",
+                Logger.LogDebug("Condition not met for automatic transition {TransitionKey} on instance {InstanceId} - this is normal in multi-auto-transition scenarios",
                     context.TransitionKey, context.InstanceId);
-                throw new TransitionRuleFailedException(context.TransitionKey, "Transition rule evaluation failed");
+                
+                // Return Result.Fail with special error code - NOT an exception
+                // This allows upstream code to handle it gracefully in multi-auto-transition scenarios
+                return Result.Fail(WorkflowErrors.AutoTransitionConditionNotMet(context.TransitionKey));
             }
 
             Logger.LogTrace("Condition re-validation successful for automatic transition {TransitionKey}",
                 context.TransitionKey);
+            return Result.Ok();
         }
-        catch (TransitionRuleFailedException)
-        {
-            throw;
-        }
-        catch (Exception ex) when (!(ex is InvalidOperationException))
+        catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to re-validate condition for automatic transition {TransitionKey}",
                 context.TransitionKey);
-            throw new InvalidOperationException(
-                $"Failed to validate condition for automatic transition {context.TransitionKey}", ex);
+            return Result.Fail(
+                Error.Failure(
+                    WorkflowErrorCodes.ExecutionStepFailed,
+                    $"Failed to validate condition for automatic transition {context.TransitionKey}: {ex.Message}",
+                    ex.GetType().Name));
         }
     }
 
     /// <summary>
     /// Validates the system state for automatic transition execution.
     /// </summary>
-    private async Task ValidateSystemStateAsync(TransitionExecutionContext context)
+    private Task<Result> ValidateSystemStateAsync(TransitionExecutionContext context)
     {
         // Basic validation: ensure we're not exceeding chain depth limits
         // (This is also checked in the dispatcher, but we double-check here)
         const int maxChainDepth = 50; // This should come from configuration
         if (context.ChainDepth > maxChainDepth)
         {
-            throw new InvalidOperationException(
-                $"Maximum chain depth ({maxChainDepth}) exceeded for automatic transition {context.TransitionKey}");
+            return Task.FromResult(Result.Fail(
+                Error.Validation(
+                    WorkflowErrorCodes.ExecutionStepFailed,
+                    $"Maximum chain depth ({maxChainDepth}) exceeded for automatic transition {context.TransitionKey}")));
         }
 
-        await Task.CompletedTask;
+        return Task.FromResult(Result.Ok());
     }
 
     /// <inheritdoc />

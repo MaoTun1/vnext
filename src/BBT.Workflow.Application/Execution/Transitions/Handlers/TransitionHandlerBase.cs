@@ -1,4 +1,6 @@
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Domain;
+using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Execution.Validation;
 using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Logging;
@@ -49,6 +51,27 @@ public abstract class TransitionHandlerBase : ITransitionHandler
         
         activity?.SetTag(TelemetryConstants.TagNames.HandlerName, handlerName);
         activity?.SetTag(TelemetryConstants.TagNames.TriggerType, context.Trigger.ToString());
+
+        // Check if derived handler supports Result-based validation (e.g., AutomaticTransitionHandler)
+        var internalValidationResult = await PreValidateInternalAsync(context, cancellationToken);
+        if (!internalValidationResult.IsSuccess)
+        {
+            sw.Stop();
+            activity?.SetStatus(ActivityStatusCode.Error, internalValidationResult.Error.Message);
+            activity?.AddTag("error.code", internalValidationResult.Error.Code);
+            
+            Logger.HandlerPreHandleFailed(
+                new Exception(internalValidationResult.Error.Message ?? internalValidationResult.Error.Code),
+                TelemetryConstants.Prefixes.Execution,
+                handlerName,
+                context.Trigger.ToString(),
+                context.TransitionKey);
+            
+            // For auto-transition condition not met, throw special exception that can be handled upstream
+            throw new AutoTransitionConditionNotMetException(
+                internalValidationResult.Error.Code,
+                internalValidationResult.Error.Message ?? internalValidationResult.Error.Code);
+        }
 
         try
         {
@@ -125,20 +148,43 @@ public abstract class TransitionHandlerBase : ITransitionHandler
     }
 
     /// <summary>
-    /// Performs pre-validation logic specific to the trigger type.
+    /// Performs Result-based pre-validation logic for handlers that support it (e.g., AutomaticTransitionHandler).
+    /// Override in derived classes to implement Result-based validation.
+    /// Default implementation returns Ok, allowing the handler to use exception-based validation if needed.
+    /// </summary>
+    /// <param name="context">The transition execution context.</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
+    /// <returns>Result indicating validation success or failure.</returns>
+    protected virtual Task<Result> PreValidateInternalAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    {
+        // Default: no Result-based validation, proceed with exception-based validation
+        return Task.FromResult(Result.Ok());
+    }
+
+    /// <summary>
+    /// Performs pre-validation logic specific to the trigger type using Result Pattern.
     /// This method provides common validation logic and can be overridden in derived classes for specific validation rules.
+    /// Throws an exception if validation fails to maintain backward compatibility with exception-based pipeline.
     /// </summary>
     /// <param name="context">The transition execution context.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
+    /// <exception cref="WorkflowValidationException">Thrown when validation fails with detailed error information</exception>
     protected virtual async Task PreValidateAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
         Logger.LogTrace("Performing common pre-validation for transition {TransitionKey}", context.TransitionKey);
 
-        // Perform common validation using the validation service
-        await ValidationService.ValidateAsync(
-            context,
-            cancellationToken);
+        // Perform common validation using the validation service (Result pattern)
+        var validationResult = await ValidationService.ValidateAsync(context, cancellationToken);
+        
+        if (!validationResult.IsSuccess)
+        {
+            Logger.LogTrace("Common pre-validation failed for transition {TransitionKey}: {ErrorCode} - {ErrorMessage}",
+                context.TransitionKey, validationResult.Error.Code, validationResult.Error.Message);
+            
+            // Convert Result to exception for pipeline compatibility
+            throw new WorkflowValidationException(validationResult.Error);
+        }
 
         Logger.LogTrace("Common pre-validation completed for transition {TransitionKey}", context.TransitionKey);
     }

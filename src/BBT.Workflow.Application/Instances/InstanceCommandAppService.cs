@@ -1,6 +1,7 @@
 using BBT.Aether.Application.Services;
 using BBT.Aether.Guids;
 using BBT.Workflow.Caching;
+using BBT.Workflow.Domain;
 using BBT.Workflow.Execution.Services;
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Headers;
@@ -25,88 +26,169 @@ public sealed class InstanceCommandAppService(
     : ApplicationService(serviceProvider), IInstanceCommandAppService
 {
     /// <inheritdoc />
-    public async Task<InstanceServiceResponse<StartInstanceOutput>> StartAsync(
+    public async Task<Result<StartInstanceOutput>> StartAsync(
         StartInstanceInput input,
         CancellationToken cancellationToken = default)
     {
-        // Validate runtime and prepare schema
-        runtimeInfoProvider.Check(input.Domain);
-
+        // Each step returns Result, errors propagate automatically
+        
+        // Set schema context once at the beginning
         using (currentSchema.Change(input.Workflow))
         {
-            // Load workflow and ensure schema
-            var workflow = await componentCacheStore.GetFlowAsync(
-                input.Domain, input.Workflow, input.Version, cancellationToken);
-            
-            await schemaManager.EnsureSchemaAndTablesAsync(currentSchema.Name, cancellationToken);
-
-            // Create and prepare instance
-            var instance = await CreateAndPrepareInstanceAsync(
-                workflow,
-                input.Instance.Id ?? guidGenerator.Create(),
-                input.Instance.Key,
-                input.Instance.Tags?.ToList(),
-                input.Instance.MetaData,
-                input.Sync,
-                input.Instance.Callback,
-                cancellationToken);
-
-            // Add instance data if provided
-            if (input.Instance.Attributes != null)
-            {
-                var data = new JsonData(input.Instance.Attributes);
-                instance.AddData(
-                    guidGenerator.Create(),
-                    data,
-                    workflow.StartTransition.VersionStrategy
-                );
-            }
-
-            // Persist new instance
-            await instanceRepository.InsertAsync(instance, true, cancellationToken);
-            logger.LogDebug("Created new instance {InstanceId} with key {InstanceKey}",
-                instance.Id, instance.Key);
-
-            // Create WorkflowExecutionContext for start transition
-            var context = input.ToExecutionContext(instance.Id, workflow.StartTransition.Key);
-
-            // Execute start transition using WorkflowExecutionService
-            var transitionResult = await workflowExecutionService.ExecuteTransitionAsync(context, cancellationToken);
-
-            headerService.AddHeader(
-                WorkflowInfo.Name,
-                WorkflowInfo.Generate(runtimeInfoProvider.Domain, workflow.Key, workflow.Version, instance.Id)
-            );
-            
-            // Create and return StartInstanceOutput response
-            return new InstanceServiceResponse<StartInstanceOutput>(new StartInstanceOutput
-            {
-                Id = instance.Id,
-                Status = transitionResult.Data.Status
-            });
+            return await ValidateDomainAsync(input.Domain)
+                .ThenAsync(_ => LoadWorkflowAsync(input, cancellationToken))
+                .OnSuccessAsync(async workflow => 
+                    await schemaManager.EnsureSchemaAndTablesAsync(currentSchema.Name, cancellationToken))
+                .ThenAsync(workflow => PrepareInstanceAsync(workflow, input, cancellationToken))
+                .OnSuccess(data => 
+                    logger.LogDebug("Created new instance {InstanceId} with key {InstanceKey}", 
+                        data.Instance.Id, data.Instance.Key))
+                .ThenAsync(data => ExecuteStartTransitionAsync(data, input, cancellationToken))
+                .OnSuccess(output => AddWorkflowHeader(output, input));
         }
     }
 
+    /// <summary>
+    /// Step 1: Validates the runtime domain.
+    /// </summary>
+    private Task<Result<string>> ValidateDomainAsync(string domain)
+    {
+        var domainCheck = runtimeInfoProvider.Check(domain);
+        return Task.FromResult(
+            domainCheck.IsSuccess 
+                ? Result<string>.Ok(domain) 
+                : Result<string>.Fail(domainCheck.Error));
+    }
+
+    /// <summary>
+    /// Step 2: Loads the workflow definition.
+    /// </summary>
+    private async Task<Result<Definitions.Workflow>> LoadWorkflowAsync(
+        StartInstanceInput input, 
+        CancellationToken cancellationToken)
+    {
+        return await ResultExtensions.TryAsync(
+            async ct => await componentCacheStore.GetFlowAsync(
+                input.Domain, input.Workflow, input.Version, ct),
+            cancellationToken,
+            ex => WorkflowErrors.WorkflowNotFound(input.Workflow, input.Version));
+    }
+
+    /// <summary>
+    /// Step 3: Prepares the instance (create, configure, persist).
+    /// </summary>
+    private async Task<Result<(Definitions.Workflow Workflow, Instance Instance)>> PrepareInstanceAsync(
+        Definitions.Workflow workflow,
+        StartInstanceInput input,
+        CancellationToken cancellationToken)
+    {
+        // Create instance
+        var instanceResult = await CreateAndPrepareInstanceAsync(
+            workflow,
+            input.Instance.Id ?? guidGenerator.Create(),
+            input.Instance.Key,
+            input.Instance.Tags?.ToList(),
+            input.Instance.MetaData,
+            input.Sync,
+            input.Instance.Callback,
+            cancellationToken);
+
+        if (!instanceResult.IsSuccess)
+            return Result<(Definitions.Workflow, Instance)>.Fail(instanceResult.Error);
+
+        var instance = instanceResult.Value!;
+
+        // Add instance data if provided
+        if (input.Instance.Attributes != null)
+        {
+            var data = new JsonData(input.Instance.Attributes);
+            instance.AddData(
+                guidGenerator.Create(),
+                data,
+                workflow.StartTransition.VersionStrategy
+            );
+        }
+
+        // Persist instance
+        var saveResult = await ResultExtensions.TryAsync(
+            async ct => await instanceRepository.InsertAsync(instance, true, ct),
+            cancellationToken,
+            ex => Error.Dependency("db.insert", $"Failed to save instance: {ex.Message}"));
+
+        return saveResult.IsSuccess 
+            ? Result<(Definitions.Workflow, Instance)>.Ok((workflow, instance))
+            : Result<(Definitions.Workflow, Instance)>.Fail(saveResult.Error);
+    }
+
+    /// <summary>
+    /// Step 4: Executes the start transition.
+    /// </summary>
+    private async Task<Result<StartInstanceOutput>> ExecuteStartTransitionAsync(
+        (Definitions.Workflow Workflow, Instance Instance) data,
+        StartInstanceInput input,
+        CancellationToken cancellationToken)
+    {
+        var context = input.ToExecutionContext(data.Instance.Id, data.Workflow.StartTransition.Key);
+        
+        return await workflowExecutionService
+            .ExecuteTransitionAsync(context, cancellationToken)
+            .MapAsync(transitionOutput => new StartInstanceOutput
+            {
+                Id = data.Instance.Id,
+                Status = transitionOutput.Status
+            });
+    }
+
+    /// <summary>
+    /// Step 5: Adds workflow header to response.
+    /// </summary>
+    private StartInstanceOutput AddWorkflowHeader(StartInstanceOutput output, StartInstanceInput input)
+    {
+        headerService.AddHeader(
+            WorkflowInfo.Name,
+            WorkflowInfo.Generate(runtimeInfoProvider.Domain, input.Workflow, input.Version ?? "latest", output.Id)
+        );
+        return output;
+    }
+
     /// <inheritdoc />
-    public async Task<InstanceServiceResponse<TransitionOutput>> TransitionAsync(
+    public async Task<Result<TransitionOutput>> TransitionAsync(
         Guid instanceId,
         string transitionKey,
         TransitionInput input,
         CancellationToken cancellationToken = default)
     {
-        // Validate runtime and set schema context
-        runtimeInfoProvider.Check(input.Domain);
-        
-        // Convert TransitionInput to WorkflowExecutionContext
+        // Validate domain first
+        var domainCheck = runtimeInfoProvider.Check(input.Domain);
+        if (!domainCheck.IsSuccess)
+            return Result<TransitionOutput>.Fail(domainCheck.Error);
+
+        return await ExecuteTransitionAsync(instanceId, transitionKey, input, cancellationToken)
+            .OnSuccess(output => AddTransitionHeader(output, input));
+    }
+
+    /// <summary>
+    /// Executes the transition and returns the output.
+    /// </summary>
+    private async Task<Result<TransitionOutput>> ExecuteTransitionAsync(
+        Guid instanceId,
+        string transitionKey,
+        TransitionInput input,
+        CancellationToken cancellationToken)
+    {
         var context = input.ToExecutionContext(instanceId, transitionKey);
-        
-        var output =  await workflowExecutionService.ExecuteTransitionAsync(context, cancellationToken);
-        
+        return await workflowExecutionService.ExecuteTransitionAsync(context, cancellationToken);
+    }
+
+    /// <summary>
+    /// Adds workflow header to the transition response.
+    /// </summary>
+    private TransitionOutput AddTransitionHeader(TransitionOutput output, TransitionInput input)
+    {
         headerService.AddHeader(
             WorkflowInfo.Name,
-            WorkflowInfo.Generate(runtimeInfoProvider.Domain, context.WorkflowKey, context.WorkflowVersion ?? "latest", output.Data.Id)
+            WorkflowInfo.Generate(runtimeInfoProvider.Domain, input.Workflow, input.Version ?? "latest", output.Id)
         );
-        
         return output;
     }
 
@@ -114,7 +196,7 @@ public sealed class InstanceCommandAppService(
     /// <summary>
     /// Creates and prepares a new instance with the provided parameters.
     /// </summary>
-    private async Task<Instance> CreateAndPrepareInstanceAsync(
+    private async Task<Result<Instance>> CreateAndPrepareInstanceAsync(
         Definitions.Workflow workflow,
         Guid instanceId,
         string instanceKey,
@@ -124,31 +206,32 @@ public sealed class InstanceCommandAppService(
         string? callback,
         CancellationToken cancellationToken = default)
     {
-        var initialState = workflow.GetInitialState();
+        // 1. Get initial state using Result Pattern
+        var initialStateResult = workflow.GetInitialState();
+        if (!initialStateResult.IsSuccess)
+            return Result<Instance>.Fail(initialStateResult.Error);
 
-        // Check for existing instance
+        // 2. Check for existing instance
         var existingInstance = await instanceRepository.FindByKeyAsReadOnlyAsync(instanceKey, cancellationToken);
 
-        // If instance exists and is not completed, throw conflict exception
+        // 3. If instance exists and is not completed, return conflict error
         if (existingInstance is { IsCompleted: false })
-        {
-            throw new ConflictException();
-        }
+            return Result<Instance>.Fail(WorkflowErrors.InstanceAlreadyExists(instanceKey));
 
-        // Create new instance (existing instance would be completed at this point, so we create new one)
+        // 4. Create new instance (existing instance would be completed at this point, so we create new one)
         var instance = Instance.Create(instanceId, workflow.Key, instanceKey);
 
-        // Set system metadata using domain method
+        // 5. Set system metadata using domain method
         instance.SetInfoMetadata(isSync, callback, workflow.Type.Code, metadata);
 
-        // Initialize instance state and tags (always for new instances)
-        instance.ChangeState(initialState);
+        // 6. Initialize instance state and tags (always for new instances)
+        instance.ChangeState(initialStateResult.Value!);
 
         if (tags?.Any() == true)
         {
             instance.AddTags(tags.ToArray());
         }
 
-        return instance;
+        return Result<Instance>.Ok(instance);
     }
 }

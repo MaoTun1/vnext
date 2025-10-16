@@ -1,3 +1,4 @@
+using BBT.Workflow.Domain;
 using BBT.Workflow.Instances;
 
 namespace BBT.Workflow.Execution.Pipeline.Steps;
@@ -9,7 +10,7 @@ public sealed class ClearBusyOnResumeStep(
     public int Order => LifecycleOrder.ClearBusyOnResumeStep;
 
     /// <inheritdoc />
-    public async Task<StepOutcome> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
         // Only process this step if resuming from SubFlow completion
         // Note: ResumeFromOrder is consumed by the planner before steps execute,
@@ -17,9 +18,22 @@ public sealed class ClearBusyOnResumeStep(
         if (context.Directives.IsSubFlowResume)
         {
             context.Instance.Active();
-            await instanceRepository.UpdateStatusAsync(context.Instance, cancellationToken);
-            context.Target = context.Workflow.GetState(context.Instance.GetCurrentState);
+            
+            var updateResult = await ResultExtensions.TryAsync(
+                async ct => await instanceRepository.UpdateStatusAsync(context.Instance, ct),
+                cancellationToken,
+                ex => Error.Dependency("db.updateStatus", $"Failed to update instance status: {ex.Message}"));
+            
+            if (!updateResult.IsSuccess)
+                return Result<StepOutcome>.Fail(updateResult.Error);
+            
+            // Get target state using Result Pattern
+            var targetStateResult = context.Workflow.GetState(context.Instance.GetCurrentState);
+            if (!targetStateResult.IsSuccess)
+                return Result<StepOutcome>.Fail(targetStateResult.Error);
+            
+            context.Target = targetStateResult.Value!;
         }
-        return StepOutcome.Continue();
+        return Result<StepOutcome>.Ok(StepOutcome.Continue());
     }
 }

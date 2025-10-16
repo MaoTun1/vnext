@@ -81,13 +81,6 @@ public sealed class TransitionJobHandler(
                     "TransitionJobHandler: Successfully executed transition {TransitionKey} for instance {InstanceId}",
                     jobInfo.Payload.TransitionKey, jobInfo.Payload.InstanceId);
             }
-            catch (TransitionRuleFailedException ex)
-            {
-                logger.LogWarning(ex,
-                    "TransitionJobHandler: Transition rule failed for JobId {JobId}: {Message}",
-                    jobData.JobId, ex.Message);
-                // Don't rethrow for rule failures as they are expected business logic
-            }
             catch (Exception ex)
             {
                 logger.LogError(ex,

@@ -1,4 +1,5 @@
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Domain;
 
 namespace BBT.Workflow.Execution.Handlers;
 
@@ -13,5 +14,5 @@ public interface ITransitionHandlerFactory
     /// <param name="triggerType">The type of trigger that initiated the transition.</param>
     /// <returns>The handler capable of processing the specified trigger type.</returns>
     /// <exception cref="NotSupportedException">Thrown when no handler is found for the trigger type.</exception>
-    ITransitionHandler Get(TriggerType triggerType);
+    Result<ITransitionHandler> Get(TriggerType triggerType);
 }

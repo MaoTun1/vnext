@@ -106,7 +106,7 @@ public sealed class State : IHasKey
 
     private void SetKey(string key)
     {
-        Key = Check.NotNullOrEmpty(key, nameof(Key), StateConstants.MaxKeyLength);
+        Key = Check.NotNullOrWhiteSpace(key, nameof(Key), StateConstants.MaxKeyLength);
     }
 
     public void AddLanguage(string label, string language)

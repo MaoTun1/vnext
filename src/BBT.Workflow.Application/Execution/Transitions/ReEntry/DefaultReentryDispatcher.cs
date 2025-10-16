@@ -57,7 +57,25 @@ public sealed class DefaultReentryDispatcher(
             var executionService = scope.ServiceProvider.GetRequiredService<IWorkflowExecutionService>();
 
             var input = WorkflowExecutionContext.From(command);
-            await executionService.ExecuteTransitionAsync(input, cancellationToken);
+            var result = await executionService.ExecuteTransitionAsync(input, cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                // Check if this is an auto-transition condition not met error
+                if (result.Error.Code == WorkflowErrorCodes.AutoTransitionConditionNotMet)
+                {
+                    logger.LogDebug(
+                        "Inline re-entry for auto-transition {TransitionKey} on instance {InstanceId} - condition not met, this is normal in multi-auto-transition scenarios",
+                        command.TransitionKey, command.InstanceId);
+                    return false; // Not an error, just condition not met
+                }
+
+                // For other errors, log and return false
+                logger.LogWarning(
+                    "Inline re-entry failed for transition {TransitionKey} on instance {InstanceId}: {ErrorCode} - {ErrorMessage}",
+                    command.TransitionKey, command.InstanceId, result.Error.Code, result.Error.Message);
+                return false;
+            }
 
             logger.LogTrace("Completed inline re-entry for transition {TransitionKey} on instance {InstanceId}",
                 command.TransitionKey, command.InstanceId);
@@ -68,14 +86,6 @@ public sealed class DefaultReentryDispatcher(
             logger.LogDebug("Inline re-entry cancelled for transition {TransitionKey} on instance {InstanceId}",
                 command.TransitionKey, command.InstanceId);
             throw;
-        }
-        catch (TransitionRuleFailedException ex)
-        {
-            logger.LogWarning(ex,
-                "Inline re-entry transition rule failed for transition {TransitionKey} on instance {InstanceId}: {Message}",
-                command.TransitionKey, command.InstanceId, ex.Message);
-            // Don't rethrow for rule failures as they are expected business logic
-            return false; // Rule failed, not successful
         }
         catch (Exception ex)
         {

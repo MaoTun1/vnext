@@ -1,3 +1,4 @@
+using BBT.Workflow.Domain;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -12,7 +13,7 @@ public sealed class ExecutionStrategyFactory(
     ILogger<ExecutionStrategyFactory> logger) : IExecutionStrategyFactory
 {
     /// <inheritdoc />
-    public ITransitionStrategy Get(ExecMode mode)
+    public Result<ITransitionStrategy> Get(ExecMode mode)
     {
         logger.LogDebug("Resolving execution strategy for mode {ExecMode}", mode);
 
@@ -26,12 +27,13 @@ public sealed class ExecutionStrategyFactory(
         if (strategy == null)
         {
             logger.LogError("No execution strategy found for mode {ExecMode}", mode);
-            throw new NotSupportedException($"No execution strategy found for mode {mode}");
+            return Result<ITransitionStrategy>.Fail(
+                Error.Failure("strategy.notFound", $"No execution strategy found for mode {mode}", mode.ToString()));
         }
 
         logger.LogDebug("Resolved execution strategy {StrategyType} for mode {ExecMode}",
             strategy.GetType().Name, mode);
 
-        return strategy;
+        return Result<ITransitionStrategy>.Ok(strategy);
     }
 }

@@ -24,7 +24,7 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
     {
         Type = type;
         Target = target;
-        Content = Check.NotNullOrEmpty(content, nameof(Content));
+        Content = Check.NotNullOrWhiteSpace(content, nameof(Content));
     }
 
     /// <summary>
@@ -107,17 +107,17 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
 
     private void SetKey(string key)
     {
-        Key = Check.NotNullOrEmpty(key, nameof(Key), ViewConstants.MaxKeyLength);
+        Key = Check.NotNullOrWhiteSpace(key, nameof(Key), ViewConstants.MaxKeyLength);
     }
 
     private void SetDomain(string domain)
     {
-        Domain = Check.NotNullOrEmpty(domain, nameof(Domain), WorkflowConstants.MaxDomainLength);
+        Domain = Check.NotNullOrWhiteSpace(domain, nameof(Domain), WorkflowConstants.MaxDomainLength);
     }
     
     private void SetVersion(string version)
     {
-        Version = Check.NotNullOrEmpty(version, nameof(Version), WorkflowConstants.MaxVersionLength);
+        Version = Check.NotNullOrWhiteSpace(version, nameof(Version), WorkflowConstants.MaxVersionLength);
     }
 
     public void SetReference(IReference reference)

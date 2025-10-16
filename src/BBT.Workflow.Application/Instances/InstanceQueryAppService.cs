@@ -1,15 +1,17 @@
 using BBT.Aether.Application.Services;
+using BBT.Aether.Domain.Entities;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Domain;
+using BBT.Workflow.ExceptionHandling;
+using BBT.Workflow.Extentions;
+using BBT.Workflow.Instances.Remote;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
 using BBT.Workflow.Scripting;
-using BBT.Aether.Domain.Entities;
-using BBT.Workflow.Extentions;
-using Microsoft.AspNetCore.Http;
-using BBT.Workflow.Instances.Remote;
-using Microsoft.Extensions.Logging;
 using BBT.Workflow.Tasks.Extensions;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Instances;
 
@@ -268,7 +270,11 @@ public sealed class InstanceQueryAppService(
         
         if (instance.Status.Equals(InstanceStatus.Active))
         {
-            availableTransitions = currentWorkflow.GetAvailableUserTransitionKeys(currentWorkflow.GetState(instance.GetCurrentState));
+            var stateResult = currentWorkflow.GetState(instance.GetCurrentState);
+            if (stateResult.IsSuccess)
+            {
+                availableTransitions = currentWorkflow.GetAvailableUserTransitionKeys(stateResult.Value!);
+            }
         }
 
         var currentState = transitionInfo?.CurrentState ?? instance.CurrentState;
@@ -609,7 +615,11 @@ public sealed class InstanceQueryAppService(
             var availableTransitions = new List<string>();
             if (instance.Status.Equals(InstanceStatus.Active))
             {
-                availableTransitions = currentWorkflow.GetAvailableUserTransitionKeys(currentWorkflow.GetState(instance.GetCurrentState));
+                var stateResult = currentWorkflow.GetState(instance.GetCurrentState);
+                if (stateResult.IsSuccess)
+                {
+                    availableTransitions = currentWorkflow.GetAvailableUserTransitionKeys(stateResult.Value!);
+                }
             }
 
             View? view = null;
@@ -617,28 +627,50 @@ public sealed class InstanceQueryAppService(
             // If there's exactly one transition, get its view
             if (availableTransitions.Count == 1 && !string.IsNullOrEmpty(instance.CurrentState))
             {
-                var currentState = currentWorkflow.GetState(instance.CurrentState);
-                var transition = currentState.FindTransition(availableTransitions[0]);
-                if (transition?.View != null)
+                var currentStateResult = currentWorkflow.GetState(instance.CurrentState);
+                if (!currentStateResult.IsSuccess)
                 {
-                    view = await componentCacheStore.GetViewAsync(
-                        transition.View.Domain,
-                        transition.View.Key,
-                        transition.View.Version,
-                        cancellationToken);
+                    // Log the error and continue without a view
+                    logger.LogWarning(
+                        "State {StateName} not found in workflow {WorkflowKey}. Returning view without content.",
+                        instance.CurrentState, currentWorkflow.Key);
+                }
+                else
+                {
+                    var currentState = currentStateResult.Value!;
+                    var transition = currentState.FindTransition(availableTransitions[0]);
+                    if (transition?.View != null)
+                    {
+                        view = await componentCacheStore.GetViewAsync(
+                            transition.View.Domain,
+                            transition.View.Key,
+                            transition.View.Version,
+                            cancellationToken);
+                    }
                 }
             }
             // If there are multiple transitions or no transitions, get the state view
             else if (!string.IsNullOrEmpty(instance.CurrentState))
             {
-                var currentState = currentWorkflow.GetState(instance.CurrentState);
-                if (currentState.View != null)
+                var currentStateResult = currentWorkflow.GetState(instance.CurrentState);
+                if (!currentStateResult.IsSuccess)
                 {
-                    view = await componentCacheStore.GetViewAsync(
-                        currentState.View.Domain,
-                        currentState.View.Key,
-                        currentState.View.Version,
-                        cancellationToken);
+                    // Log the error and continue without a view
+                    logger.LogWarning(
+                        "State {StateName} not found in workflow {WorkflowKey}. Returning view without content.",
+                        instance.CurrentState, currentWorkflow.Key);
+                }
+                else
+                {
+                    var currentState = currentStateResult.Value!;
+                    if (currentState.View != null)
+                    {
+                        view = await componentCacheStore.GetViewAsync(
+                            currentState.View.Domain,
+                            currentState.View.Key,
+                            currentState.View.Version,
+                            cancellationToken);
+                    }
                 }
             }
 

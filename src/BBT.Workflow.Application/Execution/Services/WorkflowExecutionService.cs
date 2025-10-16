@@ -1,7 +1,8 @@
 using BBT.Aether.DistributedLock;
+using BBT.Workflow.Domain;
 using BBT.Workflow.Domain.Extensions;
-using BBT.Workflow.Execution.Strategies;
 using BBT.Workflow.ExceptionHandling;
+using BBT.Workflow.Execution.Strategies;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Schemas;
 using BBT.Workflow.Telemetry;
@@ -26,8 +27,8 @@ public sealed class WorkflowExecutionService(
     /// </summary>
     /// <param name="context">The workflow execution input containing all necessary data.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>A service response containing the transition result.</returns>
-    public async Task<InstanceServiceResponse<TransitionOutput>> ExecuteTransitionAsync(
+    /// <returns>A Result containing the transition output.</returns>
+    public async Task<Result<TransitionOutput>> ExecuteTransitionAsync(
         WorkflowExecutionContext context,
         CancellationToken cancellationToken = default)
     {
@@ -38,15 +39,41 @@ public sealed class WorkflowExecutionService(
             // Get workflow info for structured logging (we'll get this after schema change)
             var resourceId = $"instance-{context.InstanceId}";
 
-            try
+            // 1. Get execution strategy
+            var strategyResult = execFactory.Get(context.Mode);
+            if (!strategyResult.IsSuccess)
+                return Result<TransitionOutput>.Fail(strategyResult.Error);
+            
+            var strategy = strategyResult.Value!;
+            
+            // 2. Execute with distributed lock
+            return await ResultExtensions.TryAsync<TransitionOutput>(async ct =>
             {
                 return await distributedLockService.ExecuteWithLockAsync(
                     resourceId,
                     InstanceConstants.TransitionLockExpiryInSeconds,
                     async () =>
                     {
-                        var mode = execFactory.Get(context.Mode);
-                        var transitionExecutionContext = await mode.ExecuteAsync(context, cancellationToken);
+                        // Execute strategy (now returns Result properly)
+                        var executionResult = await strategy.ExecuteAsync(context, ct);
+                        
+                        // If strategy failed, propagate the error by throwing an exception
+                        // that will be caught and converted to Result below
+                        if (!executionResult.IsSuccess)
+                        {
+                            // For auto-transition condition not met, throw the special exception
+                            if (executionResult.Error.Code == WorkflowErrorCodes.AutoTransitionConditionNotMet)
+                            {
+                                throw new AutoTransitionConditionNotMetException(
+                                    executionResult.Error.Code,
+                                    executionResult.Error.Message ?? "Auto-transition condition not met");
+                            }
+                            
+                            // For other errors, create a general exception with error info
+                            throw new InvalidOperationException($"{executionResult.Error.Code}:{executionResult.Error.Message}");
+                        }
+                        
+                        var transitionExecutionContext = executionResult.Value!;
                         
                         sw.Stop();
                         
@@ -69,7 +96,7 @@ public sealed class WorkflowExecutionService(
                         else
                         {
                             var freshInstance =
-                                await instanceRepository.FindByIdAsReadOnlyAsync(context.InstanceId, cancellationToken);
+                                await instanceRepository.FindByIdAsReadOnlyAsync(context.InstanceId, ct);
 
                             response = new TransitionOutput
                             {
@@ -78,21 +105,24 @@ public sealed class WorkflowExecutionService(
                             };
                         }
 
-                        return new InstanceServiceResponse<TransitionOutput>(response);
+                        return response;
                     },
-                    cancellationToken,
+                    ct,
                     logger);
-            }
-            catch (DistributedLockAcquisitionException)
+            }, cancellationToken, ex => ex switch
             {
-                throw new TransitionLockedException(context.InstanceId, context.TransitionKey);
-            }
-            catch (Exception ex)
-            {
-                sw.Stop();
-                logger.TransitionFailed(ex, TelemetryConstants.Prefixes.Application, context.TransitionKey, context.InstanceId);
-                throw;
-            }
+                DistributedLockAcquisitionException => WorkflowErrors.TransitionLocked(context.InstanceId, context.TransitionKey),
+                
+                // Special handling for auto-transition condition not met
+                AutoTransitionConditionNotMetException atcEx => 
+                    Error.Validation(atcEx.ErrorCode, atcEx.Message),
+                
+                // Generic error propagation from strategy (backward compatibility)
+                InvalidOperationException ioe when ioe.Message.Contains(':') 
+                    => Error.Failure(ioe.Message.Split(':')[0], ioe.Message.Split(':', 2)[1]),
+                
+                _ => Error.Failure(WorkflowErrorCodes.ExecutionStrategyFailed, $"Transition execution failed: {ex.Message}", ex.GetType().Name)
+            });
         }
     }
 }

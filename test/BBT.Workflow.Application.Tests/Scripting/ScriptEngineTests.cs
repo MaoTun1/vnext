@@ -14,6 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace BBT.Workflow.Scripting;
 
+[Collection("ScriptingTests")]
 public class ScriptEngineTests : ApplicationTestBase<ApplicationEntryPoint>
 {
     private readonly IScriptEngine _scriptEngine;
@@ -21,6 +22,13 @@ public class ScriptEngineTests : ApplicationTestBase<ApplicationEntryPoint>
     public ScriptEngineTests()
     {
         _scriptEngine = GetRequiredService<IScriptEngine>();
+    }
+
+    public override void Dispose()
+    {
+        // Reset static state to prevent test interference
+        ScriptHelper.Reset();
+        base.Dispose();
     }
 
     protected override void AddApplication(IServiceCollection services)

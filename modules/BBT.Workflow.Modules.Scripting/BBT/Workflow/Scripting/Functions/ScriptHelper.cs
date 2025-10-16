@@ -416,4 +416,18 @@ public static class ScriptHelper
     }
 
     #endregion
+
+    #region Testing Support
+
+    /// <summary>
+    /// Resets all static instances. This method should only be used in testing scenarios.
+    /// </summary>
+    public static void Reset()
+    {
+        _daprClient = null;
+        _logger = null;
+        _configuration = null;
+    }
+
+    #endregion
 }

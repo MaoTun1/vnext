@@ -16,6 +16,7 @@ using Xunit;
 
 namespace BBT.Workflow.Scripting;
 
+[Collection("ScriptingTests")]
 public class LoggingFunctionsTests : ApplicationTestBase<ApplicationEntryPoint>
 {
     private readonly IScriptEngine _scriptEngine;
@@ -24,6 +25,13 @@ public class LoggingFunctionsTests : ApplicationTestBase<ApplicationEntryPoint>
     public LoggingFunctionsTests()
     {
         _scriptEngine = GetRequiredService<IScriptEngine>();
+    }
+
+    public override void Dispose()
+    {
+        // Reset static state to prevent test interference
+        ScriptHelper.Reset();
+        base.Dispose();
     }
 
     protected override void AddApplication(IServiceCollection services)

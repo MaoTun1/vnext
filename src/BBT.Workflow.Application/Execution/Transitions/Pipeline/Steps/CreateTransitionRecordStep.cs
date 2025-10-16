@@ -1,4 +1,5 @@
 using BBT.Aether.Guids;
+using BBT.Workflow.Domain;
 using BBT.Workflow.Instances;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
@@ -8,6 +9,7 @@ namespace BBT.Workflow.Execution.Pipeline.Steps;
 /// <summary>
 /// Pipeline step that creates and persists the transition record.
 /// This step tracks the transition attempt and provides audit trail.
+/// Uses Result pattern for exception-free error handling.
 /// </summary>
 public sealed class CreateTransitionRecordStep(
     IInstanceTransitionRepository instanceTransitionRepository,
@@ -18,34 +20,42 @@ public sealed class CreateTransitionRecordStep(
     public int Order => LifecycleOrder.CreateTransition;
 
     /// <inheritdoc />
-    public async Task<StepOutcome> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
         logger.LogDebug("Creating transition record for {TransitionKey} on instance {InstanceId}",
             context.TransitionKey, context.InstanceId);
 
-        var transitionKey = context.Items.TryGetValue("NextTransitionKey", out var v) && v is string next && !string.IsNullOrEmpty(next)
-            ? next : context.TransitionKey;
-        
-        // Create the transition record
-        var instanceTransition = InstanceTransition.Create(
-            guidGenerator.Create(),
-            context.InstanceId,
-            transitionKey,
-            context.Instance.GetCurrentState,
-            new JsonData(context.Data),
-            new JsonData(JsonSerializer.Serialize(context.Headers))
-        );
+        return await ResultExtensions.TryAsync<StepOutcome>(async ct =>
+        {
+            var transitionKey = context.Items.TryGetValue("NextTransitionKey", out var v) && v is string next && !string.IsNullOrEmpty(next)
+                ? next : context.TransitionKey;
+            
+            // Create the transition record
+            var instanceTransition = InstanceTransition.Create(
+                guidGenerator.Create(),
+                context.InstanceId,
+                transitionKey,
+                context.Instance.GetCurrentState,
+                new JsonData(context.Data),
+                new JsonData(JsonSerializer.Serialize(context.Headers))
+            );
 
-        // Persist the record
-        await instanceTransitionRepository.InsertAsync(instanceTransition, saveChanges: true, cancellationToken);
+            // Persist the record
+            await instanceTransitionRepository.InsertAsync(instanceTransition, saveChanges: true, ct);
 
-        // Store in context for other steps to use
-        context.Items["TransitionRecordId"] = instanceTransition.Id;
-        context.Items.Remove("NextTransitionKey");
+            // Store in context for other steps to use
+            context.Items["TransitionRecordId"] = instanceTransition.Id;
+            context.Items.Remove("NextTransitionKey");
 
-        logger.LogDebug("Created transition record {TransitionId} for {TransitionKey}",
-            instanceTransition.Id, context.TransitionKey);
-        
-        return StepOutcome.Continue();
+            logger.LogDebug("Created transition record {TransitionId} for {TransitionKey}",
+                instanceTransition.Id, context.TransitionKey);
+            
+            return StepOutcome.Continue();
+        },
+        cancellationToken,
+        ex => Error.Failure(
+            WorkflowErrorCodes.ExecutionStepFailed,
+            $"Failed to create transition record: {ex.Message}",
+            ex.GetType().Name));
     }
 }

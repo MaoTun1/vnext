@@ -1,4 +1,5 @@
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Domain;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -13,7 +14,7 @@ public sealed class TransitionHandlerFactory(
     ILogger<TransitionHandlerFactory> logger) : ITransitionHandlerFactory
 {
     /// <inheritdoc />
-    public ITransitionHandler Get(TriggerType triggerType)
+    public Result<ITransitionHandler> Get(TriggerType triggerType)
     {
         logger.LogDebug("Resolving transition handler for trigger type {TriggerType}", triggerType);
 
@@ -26,12 +27,13 @@ public sealed class TransitionHandlerFactory(
         if (handler == null)
         {
             logger.LogError("No transition handler found for trigger type {TriggerType}", triggerType);
-            throw new NotSupportedException($"No transition handler found for trigger type {triggerType}");
+            return Result<ITransitionHandler>.Fail(
+                Error.Failure("handler.notFound", $"No transition handler found for trigger type {triggerType}", triggerType.ToString()));
         }
 
         logger.LogDebug("Resolved transition handler {HandlerType} for trigger type {TriggerType}",
             handler.GetType().Name, triggerType);
 
-        return handler;
+        return Result<ITransitionHandler>.Ok(handler);
     }
 }

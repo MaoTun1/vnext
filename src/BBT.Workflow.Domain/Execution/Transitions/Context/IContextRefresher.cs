@@ -1,3 +1,5 @@
+using BBT.Workflow.Domain;
+
 namespace BBT.Workflow.Execution;
 
 /// <summary>
@@ -12,5 +14,5 @@ public interface IContextRefresher
     /// <param name="context">The transition execution context to refresh.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>A task representing the asynchronous refresh operation.</returns>
-    Task RefreshAsync(TransitionExecutionContext context, CancellationToken cancellationToken);
+    Task<Result> RefreshAsync(TransitionExecutionContext context, CancellationToken cancellationToken);
 }

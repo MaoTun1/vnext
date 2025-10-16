@@ -25,12 +25,12 @@ public sealed class InstanceCorrelation : Entity<Guid>
     ) : base(id)
     {
         ParentInstanceId = instanceId;
-        ParentState = Check.NotNullOrEmpty(parentState, nameof(parentState), StateConstants.MaxKeyLength);
+        ParentState = Check.NotNullOrWhiteSpace(parentState, nameof(parentState), StateConstants.MaxKeyLength);
         SubFlowInstanceId = subFlowInstanceId;
         SubFlowType = SubFlowType.FromCode(subFlowType);
         IsCompleted = false;
-        SubFlowDomain = Check.NotNullOrEmpty(subFlowDomain, nameof(subFlowDomain), WorkflowConstants.MaxDomainLength);
-        SubFlowName = Check.NotNullOrEmpty(subFlowName, nameof(subFlowName), WorkflowConstants.MaxKeyLength);
+        SubFlowDomain = Check.NotNullOrWhiteSpace(subFlowDomain, nameof(subFlowDomain), WorkflowConstants.MaxDomainLength);
+        SubFlowName = Check.NotNullOrWhiteSpace(subFlowName, nameof(subFlowName), WorkflowConstants.MaxKeyLength);
         SubFlowVersion = Check.Length(subFlowVersion, nameof(subFlowVersion), WorkflowConstants.MaxVersionLength);
     }
 

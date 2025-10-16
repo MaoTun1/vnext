@@ -1,8 +1,9 @@
 using System.Text.RegularExpressions;
 using BBT.Aether.DistributedCache;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Domain;
+using BBT.Workflow.Domain.Shared;
 using BBT.Workflow.Runtime;
-using BBT.Workflow.Shared;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 

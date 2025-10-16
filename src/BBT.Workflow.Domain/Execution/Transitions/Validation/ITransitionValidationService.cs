@@ -1,41 +1,28 @@
-using System.ComponentModel.DataAnnotations;
-using System.Text.Json;
-using BBT.Workflow.Definitions;
-using BBT.Workflow.ExceptionHandling;
-using BBT.Workflow.Instances;
-using BBT.Workflow.Scripting;
+using BBT.Workflow.Domain;
 using BBT.Workflow.Shared;
 
 namespace BBT.Workflow.Execution.Validation;
 
 /// <summary>
-/// Interface for transition validation operations within the execution pipeline.
-/// This service handles transition validation, rule execution, schema validation, and policy checks.
+/// Interface for transition validation operations within the execution pipeline using Result Pattern.
+/// This service handles transition validation, rule execution, schema validation, and policy checks without throwing exceptions.
 /// </summary>
 public interface ITransitionValidationService
 {
     /// <summary>
-    /// Validates a transition execution context before pipeline execution.
+    /// Validates a transition execution context before pipeline execution using Result Pattern.
+    /// Returns Result.Ok() if all validations pass, or Result.Fail() with detailed error information on failure.
     /// </summary>
     /// <param name="context">The transition execution context containing all necessary data</param>
     /// <param name="cancellationToken">Cancellation token to cancel the operation</param>
-    /// <returns>A task representing the asynchronous validation operation</returns>
-    /// <exception cref="TransitionRuleFailedException">
-    /// Thrown when the transition rule evaluation fails or returns false.
-    /// </exception>
-    /// <exception cref="ValidationException">
-    /// Thrown when the provided data does not conform to the transition's JSON schema.
-    /// </exception>
-    /// <exception cref="UnauthorizedAccessException">
-    /// Thrown when the instance cannot execute the transition based on policies.
-    /// </exception>
+    /// <returns>Result indicating validation success or failure with detailed error information</returns>
     /// <remarks>
-    /// This method performs several validation steps:
-    /// 1. Checks if the instance can execute the transition based on policies
-    /// 2. Evaluates any business rules associated with the transition
-    /// 3. Validates input data against the transition's schema if present
+    /// This method performs validation steps using Result pattern:
+    /// 1. Checks if the instance can execute the transition based on policies (returns Result with rule error details)
+    /// 2. Validates input data against the transition's schema if present (returns Result with field-level validation errors)
+    /// All validations use Result pattern and provide detailed error information for client consumption.
     /// </remarks>
-    Task ValidateAsync(
+    Task<Result> ValidateAsync(
         TransitionExecutionContext context,
         CancellationToken cancellationToken = default);
 }

@@ -1,5 +1,6 @@
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Domain;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
 using Microsoft.Extensions.Logging;
@@ -18,38 +19,95 @@ public sealed class TransitionContextFactory(
     ILogger<TransitionContextFactory> logger) : ITransitionContextFactory
 {
     /// <inheritdoc />
-    public async Task<TransitionExecutionContext> CreateAsync(
+    public async Task<Result<TransitionExecutionContext>> CreateAsync(
         WorkflowExecutionContext input, 
         CancellationToken cancellationToken)
     {
         logger.LogDebug("Creating transition context for instance {InstanceId}, transition {TransitionKey}",
             input.InstanceId, input.TransitionKey);
-
-        // 1. Validate domain/tenant and set schema context
-        runtimeInfoProvider.Check(input.Domain); // TODO: May be remove ??
-
-        // 2. Resolve workflow definition (use instance version if not specified)
-        var workflow = await componentCacheStore.GetFlowAsync(
-            input.Domain, input.WorkflowKey, input.WorkflowVersion, cancellationToken);
         
-        // 3. Rehydrate instance with state and data
-        var instance = await instanceRepository.GetActiveAsync(input.InstanceId, cancellationToken);
+        // Step 1: Validate domain first
+        var domainCheck = runtimeInfoProvider.Check(input.Domain);
+        if (!domainCheck.IsSuccess)
+            return Result<TransitionExecutionContext>.Fail(domainCheck.Error);
 
-        // 4. Resolve current state and transition
-        var currentState = workflow.GetState(instance.GetCurrentState);
-        var transition = ResolveTransition(workflow, currentState, input.TransitionKey);
+        // Step 2-5: Load workflow, rehydrate instance, resolve state/transition, build context
+        return await LoadWorkflowAsync(input, cancellationToken)
+            .ThenAsync(workflow => RehydrateInstanceAsync(workflow, input, cancellationToken))
+            .ThenAsync(data => ResolveStateAndTransitionAsync(data, input))
+            .MapAsync(data => BuildExecutionContext(data, input))
+            .OnSuccess(ctx => 
+                logger.LogDebug("Created transition context for {WorkflowKey}.{TransitionKey} on instance {InstanceId}",
+                    ctx.WorkflowKey, ctx.TransitionKey, ctx.InstanceId));
+    }
 
-        // 5. Initialize telemetry context
+    /// <summary>
+    /// Loads the workflow definition.
+    /// </summary>
+    private async Task<Result<Definitions.Workflow>> LoadWorkflowAsync(
+        WorkflowExecutionContext input,
+        CancellationToken cancellationToken)
+    {
+        return await ResultExtensions.TryAsync(
+            async ct => await componentCacheStore.GetFlowAsync(
+                input.Domain, input.WorkflowKey, input.WorkflowVersion, ct),
+            cancellationToken,
+            ex => WorkflowErrors.WorkflowNotFound(input.WorkflowKey, input.WorkflowVersion));
+    }
+
+    /// <summary>
+    /// Rehydrates the instance from storage.
+    /// </summary>
+    private async Task<Result<(Definitions.Workflow Workflow, Instance Instance)>> RehydrateInstanceAsync(
+        Definitions.Workflow workflow,
+        WorkflowExecutionContext input,
+        CancellationToken cancellationToken)
+    {
+        var instanceResult = await ResultExtensions.TryAsync(
+            async ct => await instanceRepository.GetActiveAsync(input.InstanceId, ct),
+            cancellationToken,
+            ex => WorkflowErrors.InstanceNotFound(input.InstanceId, "not found or is not active"));
+
+            return instanceResult.Map(instance => (workflow, instance));
+    }
+
+    /// <summary>
+    /// Resolves the current state and transition.
+    /// </summary>
+    private Task<Result<(Definitions.Workflow Workflow, Instance Instance, State CurrentState, Transition? Transition)>> 
+        ResolveStateAndTransitionAsync(
+            (Definitions.Workflow Workflow, Instance Instance) data,
+            WorkflowExecutionContext input)
+    {
+        var currentStateResult = data.Workflow.GetState(data.Instance.GetCurrentState);
+        if (!currentStateResult.IsSuccess)
+            return Task.FromResult(
+                Result<(Definitions.Workflow, Instance, State, Transition?)>.Fail(currentStateResult.Error));
+
+        var currentState = currentStateResult.Value!;
+        var transition = ResolveTransition(data.Workflow, currentState, input.TransitionKey);
+
+        return Task.FromResult(
+            Result<(Definitions.Workflow, Instance, State, Transition?)>.Ok(
+                (data.Workflow, data.Instance, currentState, transition)));
+    }
+
+    /// <summary>
+    /// Builds the final TransitionExecutionContext.
+    /// </summary>
+    private TransitionExecutionContext BuildExecutionContext(
+        (Definitions.Workflow Workflow, Instance Instance, State CurrentState, Transition? Transition) data,
+        WorkflowExecutionContext input)
+    {
         var (traceId, spanId) = InitializeTelemetry();
 
-        // 6. Build the context
         var executionContext = new TransitionExecutionContext
         {
             // Identity
             Domain = input.Domain,
-            InstanceId = instance.Id,
-            WorkflowKey = workflow.Key,
-            TransitionKey = transition?.Key ?? input.TransitionKey,
+            InstanceId = data.Instance.Id,
+            WorkflowKey = data.Workflow.Key,
+            TransitionKey = data.Transition?.Key ?? input.TransitionKey,
             Trigger = input.TriggerType,
             Actor = input.Actor,
             CorrelationId = input.CorrelationId ?? Guid.NewGuid().ToString("N"),
@@ -59,13 +117,13 @@ public sealed class TransitionContextFactory(
             RequestedAt = input.RequestedAt ?? DateTimeOffset.UtcNow,
 
             // Definitions
-            Workflow = workflow,
-            Current = currentState,
-            Transition = transition,
+            Workflow = data.Workflow,
+            Current = data.CurrentState,
+            Transition = data.Transition,
 
             // Instance state
-            Instance = instance,
-            ConcurrencyToken = instance.ConcurrencyStamp,
+            Instance = data.Instance,
+            ConcurrencyToken = data.Instance.ConcurrencyStamp,
             Data = input.Data,
 
             // Flags
@@ -77,19 +135,12 @@ public sealed class TransitionContextFactory(
             Headers = new Dictionary<string, string?>(input.Headers)
         };
 
-        // 7. Configure pipeline directives based on execution info
+        // Configure pipeline directives
         if (input.Execution?.ResumeFrom.HasValue == true)
-        {
             executionContext.Directives.RequestResumeFrom(input.Execution.ResumeFrom.Value);
-        }
         
         if (input.Execution?.IsSubFlowResume == true)
-        {
             executionContext.Directives.MarkAsSubFlowResume();
-        }
-
-        logger.LogDebug("Created transition context for {WorkflowKey}.{TransitionKey} on instance {InstanceId}",
-            workflow.Key, input.TransitionKey, instance.Id);
 
         return executionContext;
     }

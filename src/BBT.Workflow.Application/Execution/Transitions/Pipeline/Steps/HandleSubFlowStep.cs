@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using BBT.Aether.Guids;
 using BBT.Workflow.Definitions;
-using BBT.Workflow.ExceptionHandling;
+using BBT.Workflow.Domain;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.SubFlow;
@@ -25,12 +25,12 @@ public sealed class HandleSubFlowStep(
     public int Order => LifecycleOrder.SubFlow;
 
     /// <inheritdoc />
-    public async Task<StepOutcome> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
         if (context.Target == null)
         {
             logger.LogWarning("Target state is null for instance {InstanceId}", context.InstanceId);
-            return StepOutcome.Continue();
+            return Result<StepOutcome>.Ok(StepOutcome.Continue());
         }
 
         // Only handle SubFlow state types
@@ -38,32 +38,47 @@ public sealed class HandleSubFlowStep(
         {
             logger.LogTrace("State {StateName} is not a SubFlow type, skipping SubFlow handling",
                 context.Target.Key);
-            return StepOutcome.Continue();
+            return Result<StepOutcome>.Ok(StepOutcome.Continue());
         }
 
         if (context.Target?.SubFlow == null)
         {
-            logger.LogWarning("No SubFlow defined for state {StateName}", context.Target?.Key);
-            throw new ConfigInvalidException(context.InstanceId);
+            logger.LogError("No SubFlow defined for state {StateName} on instance {InstanceId}", 
+                context.Target?.Key, context.InstanceId);
+            return Result<StepOutcome>.Fail(Error.Validation(
+                WorkflowErrorCodes.ConfigInvalid,
+                $"SubFlow configuration not found for state {context.Target?.Key} on instance {context.InstanceId}"));
         }
 
         logger.LogDebug("Handling SubFlow for state {StateName} on instance {InstanceId}",
             context.Target.Key, context.InstanceId);
 
-        await HandleSubFlowAsync(context, cancellationToken);
-
-        logger.LogDebug("Completed SubFlow handling for state {StateName}", context.Target.Key);
-
-        // Skip the epilogue, go to the finale, then stop the pipeline
-        return new StepOutcome
+        return await ResultExtensions.TryAsync<StepOutcome>(async ct =>
         {
-            MutateDirectives = d =>
+            await HandleSubFlowAsync(context, ct);
+
+            logger.LogDebug("Completed SubFlow handling for state {StateName}", context.Target.Key);
+
+            if (context.Target.SubFlow.Type.Equals(SubFlowType.SubFlow))
             {
-                d.RequestEpilogue(EpilogueMode.Skip);
-                d.MarkTerminal();
-            },
-            SkipToOrder = LifecycleOrder.Finalize
-        };
+                // Skip the epilogue, go to the finale, then stop the pipeline
+                return new StepOutcome
+                {
+                    MutateDirectives = d =>
+                    {
+                        d.RequestEpilogue(EpilogueMode.Skip);
+                        d.MarkTerminal();
+                    },
+                    SkipToOrder = LifecycleOrder.Finalize
+                };
+            }
+            return StepOutcome.Continue();
+        },
+        cancellationToken,
+        ex => Error.Failure(
+            WorkflowErrorCodes.ExecutionStepFailed,
+            $"Failed to handle SubFlow: {ex.Message}",
+            ex.GetType().Name));
     }
 
     /// <summary>
@@ -91,7 +106,14 @@ public sealed class HandleSubFlowStep(
             context.Target.SubFlow.Process.Version);
 
         context.Instance.AddCorrelation(correlation);
-        await instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
+        
+        var updateResult = await ResultExtensions.TryAsync(
+            async ct => await instanceRepository.UpdateAsync(context.Instance, true, ct),
+            cancellationToken,
+            ex => Error.Dependency("db.update", $"Failed to add correlation: {ex.Message}"));
+        
+        if (!updateResult.IsSuccess)
+            throw new InvalidOperationException($"Failed to add correlation: {updateResult.Error.Message}");
 
         // Create script context for SubFlow handling
         var scriptContext = context.GetOrBuildScriptContext(() =>
@@ -101,7 +123,7 @@ public sealed class HandleSubFlowStep(
             context.Workflow,
             context.Instance,
             context.Target,
-            context.Transition,
+            context.Transition!, // Transition is required for SubFlow handling
             correlation,
             scriptContext,
             cancellationToken
@@ -134,7 +156,7 @@ public sealed class HandleSubFlowStep(
         return scriptContextFactory.NewBuilder()
             .WithWorkflow(context.Workflow)
             .WithInstance(context.Instance)
-            .WithTransition(context.Transition)
+            .WithTransition(context.Transition!) // Transition is required for SubFlow handling
             .WithBody(context.Data)
             .WithHeaders(context.Headers.ToDictionary(kvp => kvp.Key, kvp => (string?)kvp.Value))
             .BuildAsync(CancellationToken.None)

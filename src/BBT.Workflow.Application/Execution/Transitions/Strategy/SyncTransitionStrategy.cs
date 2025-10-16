@@ -1,4 +1,4 @@
-using BBT.Workflow.ExceptionHandling;
+using BBT.Workflow.Domain;
 using BBT.Workflow.Execution.Handlers;
 using BBT.Workflow.Execution.Pipeline;
 using BBT.Workflow.Telemetry;
@@ -18,7 +18,7 @@ public sealed class SyncTransitionStrategy(
     ILogger<SyncTransitionStrategy> logger) : ITransitionStrategy
 {
     /// <inheritdoc />
-    public async Task<TransitionExecutionContext> ExecuteAsync(WorkflowExecutionContext context, CancellationToken cancellationToken)
+    public async Task<Result<TransitionExecutionContext>> ExecuteAsync(WorkflowExecutionContext context, CancellationToken cancellationToken)
     {
         var sw = Stopwatch.StartNew();
         
@@ -28,9 +28,19 @@ public sealed class SyncTransitionStrategy(
             context.TransitionKey,
             context.InstanceId);
 
-        // 1. Resolve handler and create execution context
-        var handler = handlerFactory.Get(context.TriggerType);
-        var ctx = await ctxFactory.CreateAsync(context, cancellationToken); // rehydrate
+        // 1. Resolve handler
+        var handlerResult = handlerFactory.Get(context.TriggerType);
+        if (!handlerResult.IsSuccess)
+            return Result<TransitionExecutionContext>.Fail(handlerResult.Error);
+        
+        var handler = handlerResult.Value!;
+        
+        // 2. Create execution context (rehydrate)
+        var ctxResult = await ctxFactory.CreateAsync(context, cancellationToken);
+        if (!ctxResult.IsSuccess)
+            return Result<TransitionExecutionContext>.Fail(ctxResult.Error);
+        
+        var ctx = ctxResult.Value!;
         
         logger.ContextCreated(
             TelemetryConstants.Prefixes.Execution,
@@ -61,41 +71,49 @@ public sealed class SyncTransitionStrategy(
         // Set display name for better trace visualization
         activity?.SetDisplayName($"{ctx.InstanceId}/{ctx.TransitionKey}");
 
-        try
+        // 4. Execute handler lifecycle: PreHandle -> Pipeline -> PostHandle
+        // Pre-handle phase
+        await handler.PreHandleAsync(ctx, cancellationToken);
+        
+        // Pipeline execution (now returns Result)
+        var pipelineResult = await pipeline.RunAsync(ctx, cancellationToken);
+        if (!pipelineResult.IsSuccess)
         {
-            // 4. Execute handler lifecycle: PreHandle -> Pipeline -> PostHandle
-            await handler.PreHandleAsync(ctx, cancellationToken);
-            await pipeline.RunAsync(ctx, cancellationToken);
-            await handler.PostHandleAsync(ctx, cancellationToken);
+            activity?.SetStatus(ActivityStatusCode.Error, pipelineResult.Error.Message);
+            activity?.AddTag("error.code", pipelineResult.Error.Code);
+            
+            logger.TransitionFailed(new Exception(pipelineResult.Error.Message ?? pipelineResult.Error.Code), 
+                TelemetryConstants.Prefixes.Execution, context.TransitionKey, context.InstanceId);
             
             sw.Stop();
-            logger.StrategyExecutionCompleted(
-                TelemetryConstants.Prefixes.Execution,
-                nameof(SyncTransitionStrategy),
-                context.TransitionKey,
-                sw.ElapsedMilliseconds);
-            
-            return ctx;
+            return Result<TransitionExecutionContext>.Fail(pipelineResult.Error);
         }
-        catch (TransitionRuleFailedException ex)
+        
+        // Post-handle phase
+        await handler.PostHandleAsync(ctx, cancellationToken);
+        
+        var executionResult = Result<TransitionExecutionContext>.Ok(ctx);
+        
+        sw.Stop();
+        
+        if (!executionResult.IsSuccess)
         {
-            sw.Stop();
-            activity?.RecordExceptionWithStatus(ex);
+            activity?.SetStatus(ActivityStatusCode.Error, executionResult.Error.Message);
+            activity?.AddTag("error.code", executionResult.Error.Code);
             
-            logger.TransitionRuleFailed(
-                TelemetryConstants.Prefixes.Execution,
-                context.TransitionKey,
-                context.InstanceId,
-                ex.Message);
-            throw; // Rethrow the exception so DefaultReentryDispatcher can catch it
-        }
-        catch (Exception ex)
-        {
-            sw.Stop();
-            activity?.RecordExceptionWithStatus(ex);
+            logger.TransitionFailed(new Exception(executionResult.Error.Message ?? executionResult.Error.Code), 
+                TelemetryConstants.Prefixes.Execution, context.TransitionKey, context.InstanceId);
             
-            logger.TransitionFailed(ex, TelemetryConstants.Prefixes.Execution, context.TransitionKey, context.InstanceId);
-            throw;
+            return executionResult;
         }
+        
+        activity?.SetStatus(ActivityStatusCode.Ok);
+        logger.StrategyExecutionCompleted(
+            TelemetryConstants.Prefixes.Execution,
+            nameof(SyncTransitionStrategy),
+            context.TransitionKey,
+            sw.ElapsedMilliseconds);
+        
+        return executionResult;
     }
 }

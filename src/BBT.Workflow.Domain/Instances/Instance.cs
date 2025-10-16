@@ -5,6 +5,7 @@ using BBT.Aether.Domain.Entities;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances.Policies;
 using BBT.Workflow.Shared;
+using DomainResult = BBT.Workflow.Domain.Result;
 
 namespace BBT.Workflow.Instances;
 
@@ -25,7 +26,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     {
         IsTransient = true;
         CreatedAt = DateTime.UtcNow;
-        Flow = Check.NotNull(flow, nameof(Flow), WorkflowConstants.MaxKeyLength);
+        Flow = Check.NotNullOrWhiteSpace(flow, nameof(Flow), WorkflowConstants.MaxKeyLength);
         Key = Check.Length(key, nameof(Key), InstanceConstants.MaxKeyLength);
         Status = InstanceStatus.Active;
 
@@ -266,7 +267,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
 
     public void SetKey(string key)
     {
-        Key = Check.NotNullOrEmpty(key, nameof(key), InstanceConstants.MaxKeyLength);
+        Key = Check.NotNullOrWhiteSpace(key, nameof(key), InstanceConstants.MaxKeyLength);
     }
 
     private void SetState(string currentState)
@@ -304,11 +305,19 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         }
     }
 
-    public bool CanExecuteTransition(Transition transition, State state, StateTransitionPolicy policy,
+    /// <summary>
+    /// Validates if a transition can be executed from the current state using Result Pattern.
+    /// Delegates validation to the StateTransitionPolicy which checks transition rules and authorization.
+    /// </summary>
+    /// <param name="transition">The transition to validate</param>
+    /// <param name="state">The current state</param>
+    /// <param name="policy">The policy to use for validation</param>
+    /// <param name="executionActor">The actor attempting to execute the transition</param>
+    /// <returns>Result indicating whether the transition can be executed. On failure, contains detailed rule error information.</returns>
+    public DomainResult CanExecuteTransition(Transition transition, State state, StateTransitionPolicy policy,
         ExecutionActor executionActor = ExecutionActor.User)
     {
-        policy.Validate(state, transition, executionActor);
-        return true;
+        return policy.Validate(state, transition, executionActor);
     }
 
     public InstanceData AddDataWithVersion(Guid id, JsonData inputData, string version)

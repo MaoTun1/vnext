@@ -5,6 +5,7 @@ using BBT.Aether.Validation;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions.CastHandlers;
 using BBT.Workflow.Definitions.Validators;
+using BBT.Workflow.Domain;
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Monitoring;
@@ -44,13 +45,18 @@ public sealed class AdminAppService(
     : ApplicationService(serviceProvider), IAdminAppService
 {
     /// <inheritdoc />
-    public async Task PublishAsync(PublishInput input, CancellationToken cancellationToken = default)
+    public async Task<Result> PublishAsync(PublishInput input, CancellationToken cancellationToken = default)
     {
-        runtimeInfoProvider.Check(input.Domain);
+        var domainCheck = runtimeInfoProvider.Check(input.Domain);
+        if (!domainCheck.IsSuccess)
+            return domainCheck;
 
         if (!IsValidSchema(input))
         {
-            throw new RuntimeSchemaInvalidException();
+            return Result.Fail(
+                Error.Validation(
+                    WorkflowErrorCodes.RuntimeSchemaInvalidState, 
+                    "Only defined system flows can be published"));
         }
 
         using (currentSchema.Change(input.Flow))
@@ -68,10 +74,10 @@ public sealed class AdminAppService(
             if (instance.IsTransient)
             {
                 await SaveNewInstanceAsync(instance, input, cancellationToken);
-                return;
+                return Result.Ok();
             }
 
-            await HandleExistingInstanceAsync(instance, input, cancellationToken);
+            return await HandleExistingInstanceAsync(instance, input, cancellationToken);
         }
     }
 
@@ -144,8 +150,8 @@ public sealed class AdminAppService(
     /// <param name="instance">The existing instance to update</param>
     /// <param name="input">The publish input</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <exception cref="ConflictException">Thrown when trying to publish a version that already exists</exception>
-    private async Task HandleExistingInstanceAsync(Instance instance, PublishInput input,
+    /// <returns>Result indicating success or failure with appropriate error</returns>
+    private async Task<Result> HandleExistingInstanceAsync(Instance instance, PublishInput input,
         CancellationToken cancellationToken)
     {
         var existingInstanceData = instance.FindData(input.Version);
@@ -156,7 +162,10 @@ public sealed class AdminAppService(
                 Logger.LogWarning("Instance {InstanceKey} already has data version {Version}", instance.Key, input.Version);
                 await HandleAdditionalDataVersionsAsync(input, cancellationToken);
             }
-            throw new ConflictException();
+            return Result.Fail(
+                Error.Conflict(
+                    WorkflowErrorCodes.ConflictWorkflow, 
+                    "A record with the same version already exists."));
         }   
 
         var workflow = CreateAndValidateWorkflow(input);
@@ -174,6 +183,8 @@ public sealed class AdminAppService(
         {
             await HandleAdditionalDataVersionsAsync(input, cancellationToken);
         }
+
+        return Result.Ok();
     }
 
     /// <summary>
@@ -232,12 +243,18 @@ public sealed class AdminAppService(
     }
 
     /// <inheritdoc />
-    public async Task InvalidateCacheAsync(InvalidateCacheInput input, CancellationToken cancellationToken = default)
+    public async Task<Result> InvalidateCacheAsync(InvalidateCacheInput input, CancellationToken cancellationToken = default)
     {
-        runtimeInfoProvider.Check(input.Domain);
+        var domainCheck = runtimeInfoProvider.Check(input.Domain);
+        if (!domainCheck.IsSuccess)
+            return domainCheck;
+
         if (!runtimeOptions.Value.Schemas.ContainsKey(input.Flow))
         {
-            throw new RuntimeSchemaInvalidException();
+            return Result.Fail(
+                Error.Validation(
+                    WorkflowErrorCodes.RuntimeSchemaInvalidState, 
+                    "Only defined system flows can be published"));
         }
 
         using (currentSchema.Change(input.Flow))
@@ -245,13 +262,19 @@ public sealed class AdminAppService(
             var instance = await instanceRepository.FindByKeyAsync(input.Key, cancellationToken);
             if (instance == null)
             {
-                throw new EntityNotFoundException(typeof(Instance), input.Key);
+                return Result.Fail(
+                    Error.NotFound(
+                        WorkflowErrorCodes.NotFoundInitialState,
+                        $"Instance with key '{input.Key}' not found"));
             }
 
             var instanceData = instance.FindData(input.Version);
             if (instanceData == null)
             {
-                throw new EntityNotFoundException(typeof(InstanceData), new { input.Key, input.Version });
+                return Result.Fail(
+                    Error.NotFound(
+                        WorkflowErrorCodes.NotFoundInstanceData,
+                        $"Instance data not found for key {input.Key} and version {input.Version}"));
             }
 
             if (instanceData.Data.JsonElement.ValueKind != JsonValueKind.Null)
@@ -263,6 +286,8 @@ public sealed class AdminAppService(
                     cancellationToken
                 );
             }
+
+            return Result.Ok();
         }
     }
 

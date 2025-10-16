@@ -39,7 +39,7 @@ public static class WorkflowDomainModuleServiceCollectionExtensions
         services.AddSingleton<WorkflowValidator>();
         services.AddSingleton<ISchemaAccessor>(AsyncLocalSchemaAccessor.Instance);
         services.AddScoped<ICurrentSchema, CurrentSchema>();
-        services.AddScoped<IRuleEngine<State>, RuleEngine<State>>();
+        services.AddScoped<IResultRuleEngine<State>, ResultRuleEngine<State>>();
         services.AddScoped<StateTransitionPolicy>();
         services.AddScoped<IScriptContextFactory, ScriptContextFactory>();
         services.AddSingleton<IJsonSchemaValidator, JsonSchemaValidator>();

@@ -1,3 +1,4 @@
+using BBT.Workflow.Domain;
 using BBT.Workflow.Execution.Planner;
 using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Logging;
@@ -8,6 +9,7 @@ namespace BBT.Workflow.Execution.Pipeline;
 /// <summary>
 /// Orchestrates the execution of transition lifecycle steps in a deterministic order.
 /// Each step in the pipeline performs a specific operation during the transition.
+/// Uses Result pattern for exception-free error handling.
 /// </summary>
 public sealed class TransitionPipeline
 {
@@ -30,11 +32,12 @@ public sealed class TransitionPipeline
 
     /// <summary>
     /// Executes all pipeline steps in order for the given transition context.
+    /// Returns Result to indicate success or failure without throwing exceptions.
     /// </summary>
     /// <param name="context">The transition execution context.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>A task representing the asynchronous operation.</returns>
-    public async Task RunAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    /// <returns>A Result indicating success or failure of the pipeline execution.</returns>
+    public async Task<Result> RunAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
         // Note: ForTransition scope is already created at Strategy level
         _logger.TransitionStarted(
@@ -69,55 +72,63 @@ public sealed class TransitionPipeline
             stepActivity?.SetTag(TelemetryConstants.TagNames.StepOrder, stepOrder);
             stepActivity?.SetDisplayName($"[{stepOrder}] {stepName}");
             
-            try
+            _logger.PipelineStepStarted(TelemetryConstants.Prefixes.Execution, stepOrder, stepName, context.InstanceId);
+            
+            // Execute step and handle Result
+            var outcomeResult = await step.ExecuteAsync(context, cancellationToken);
+            sw.Stop();
+            
+            if (!outcomeResult.IsSuccess)
             {
-                _logger.PipelineStepStarted(TelemetryConstants.Prefixes.Execution, stepOrder, stepName, context.InstanceId);
+                stepActivity?.RecordExceptionWithStatus(new Exception(outcomeResult.Error.Message ?? outcomeResult.Error.Code));
+                stepActivity?.AddTag("error.code", outcomeResult.Error.Code);
                 
-                var outcome = await step.ExecuteAsync(context, cancellationToken);
+                _logger.PipelineStepFailed(
+                    new Exception(outcomeResult.Error.Message ?? outcomeResult.Error.Code), 
+                    TelemetryConstants.Prefixes.Execution, 
+                    stepOrder, 
+                    stepName, 
+                    context.InstanceId);
                 
-                sw.Stop();
-                _logger.PipelineStepCompleted(TelemetryConstants.Prefixes.Execution, stepOrder, stepName, context.InstanceId, sw.ElapsedMilliseconds);
-
-                // Apply if step changed directives
-                outcome.MutateDirectives?.Invoke(context.Directives);
-
-                // 1) Stop?
-                if (outcome.StopPipeline) break;
-
-                // 2) SkipTo? (e.g. start over from CreateTransition after inline auto)
-                if (outcome.SkipToOrder is { } skipTo)
-                {
-                    // Create a plan from scratch based on a new beginning
-                    context.Directives.RequestResumeFrom(skipTo);
-                    plan = _planner.Build(context, _steps);
-                    i = 0;
-                    continue;
-                }
-
-                // 3) If the directive changes (e.g., epilogue becomes RUN→SKIP, subflow starts),
-                // update the plan immediately.
-                if (NeedsReplan(plan, context.Directives))
-                {
-                    context.Directives.RequestResumeFrom(step.Order + 1);
-                    plan = _planner.Build(context, _steps);
-                    i = 0;
-                    continue;
-                }
-
-                i++; // go to next step
+                return Result.Fail(outcomeResult.Error);
             }
-            catch (Exception ex)
+            
+            var outcome = outcomeResult.Value!;
+            _logger.PipelineStepCompleted(TelemetryConstants.Prefixes.Execution, stepOrder, stepName, context.InstanceId, sw.ElapsedMilliseconds);
+
+            // Apply if step changed directives
+            outcome.MutateDirectives?.Invoke(context.Directives);
+
+            // 1) Stop?
+            if (outcome.StopPipeline) break;
+
+            // 2) SkipTo? (e.g. start over from CreateTransition after inline auto)
+            if (outcome.SkipToOrder is { } skipTo)
             {
-                    sw.Stop();
-                    stepActivity?.RecordExceptionWithStatus(ex);
-                    
-                    _logger.PipelineStepFailed(ex, TelemetryConstants.Prefixes.Execution, stepOrder, stepName, context.InstanceId);
-                throw;
+                // Create a plan from scratch based on a new beginning
+                context.Directives.RequestResumeFrom(skipTo);
+                plan = _planner.Build(context, _steps);
+                i = 0;
+                continue;
             }
+
+            // 3) If the directive changes (e.g., epilogue becomes RUN→SKIP, subflow starts),
+            // update the plan immediately.
+            if (NeedsReplan(plan, context.Directives))
+            {
+                context.Directives.RequestResumeFrom(step.Order + 1);
+                plan = _planner.Build(context, _steps);
+                i = 0;
+                continue;
+            }
+
+            i++; // go to next step
         }
 
         _logger.LogDebug("Completed transition pipeline for {WorkflowKey}.{TransitionKey} on instance {InstanceId}",
             context.WorkflowKey, context.TransitionKey, context.InstanceId);
+        
+        return Result.Ok();
     }
     
     private static bool NeedsReplan(IReadOnlyList<ITransitionStep> currentPlan, PipelineDirectives d)
