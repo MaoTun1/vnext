@@ -387,6 +387,7 @@ public sealed class InstanceQueryAppService(
         CancellationToken cancellationToken = default)
     {
         runtimeInfoProvider.Check(input.Domain);
+        var flow = await componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, null, cancellationToken);
         using (currentSchema.Change(input.Workflow))
         {
             var instance = await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken);
@@ -405,9 +406,24 @@ public sealed class InstanceQueryAppService(
 
             var result = new GetInstanceDataOutput
             {
-                Attributes = instance.LatestData?.Data.JsonElement,
+                Data = instance.LatestData?.Data.JsonElement,
                 Etag = instance.LatestData?.ETag ?? string.Empty
             };
+
+            var scriptContext = await scriptContextFactory.NewBuilder()
+                .WithWorkflow(flow)
+                .WithInstance(instance)
+                .WithRuntime(runtimeInfoProvider)
+                .WithTransition(string.Empty)
+                .WithBody(instance.LatestData?.Data ?? new JsonData("{}"))
+                .BuildAsync(cancellationToken);
+
+            result.Extensions = await instanceExtensionService.ProcessExtensionsAsync(
+                input.Extension,
+                scriptContext,
+                flow,
+                ExtensionScope.GetInstance,
+                cancellationToken);
 
             return InstanceServiceResult<GetInstanceDataOutput>.Success(result);
         }
