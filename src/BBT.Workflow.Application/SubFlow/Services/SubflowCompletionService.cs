@@ -123,16 +123,25 @@ public sealed class SubflowCompletionService(
 
                 sw.Stop();
                 
-                // Log SubFlow completion
-                logger.SubFlowCompleted(
-                    TelemetryConstants.Prefixes.Execution,
-                    correlation.SubFlowName,
-                    completedDataEto.InstanceId);
-                
-                logger.LogInformation(
-                    "Successfully completed SubFlow processing for instance {InstanceId} in {ElapsedMs}ms",
-                    completedDataEto.InstanceId,
-                    sw.ElapsedMilliseconds);
+                // Enrich logs with parent workflow context for SubFlow completion
+                using (logger.ForSubFlow(
+                    parentDomain: subFlowContractInfo.Domain,
+                    parentFlow: subFlowContractInfo.Flow,
+                    parentFlowVersion: subFlowContractInfo.Version,
+                    parentInstanceId: correlation.ParentInstanceId,
+                    transitionKey: subFlowContractInfo.Transition))
+                {
+                    // Log SubFlow completion
+                    logger.SubFlowCompleted(
+                        TelemetryConstants.Prefixes.Execution,
+                        correlation.SubFlowName,
+                        completedDataEto.InstanceId);
+                    
+                    logger.LogInformation(
+                        "Successfully completed SubFlow processing for instance {InstanceId} in {ElapsedMs}ms",
+                        completedDataEto.InstanceId,
+                        sw.ElapsedMilliseconds);
+                }
             }
         }
         catch (Exception ex)

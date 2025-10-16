@@ -27,10 +27,29 @@ public sealed class HandleSubFlowStep(
     /// <inheritdoc />
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
+        // Early return if this step is not applicable
+        if (!IsApplicable(context))
+            return Result<StepOutcome>.Ok(StepOutcome.Continue());
+
+        // If applicable, proceed with the railway
+        return await ValidateConfigurationAsync(context)
+            .ThenAsync(_ => LogSubFlowHandlingStartAsync(context))
+            .ThenAsync(_ => HandleSubFlowAsync(context, cancellationToken))
+            .OnSuccessAsync(_ => LogSubFlowHandlingCompletedAsync(context))
+            .ThenAsync(_ => CreateStepOutcomeAsync(context))
+            .OnFailureAsync(error => LogSubFlowHandlingFailedAsync(context, error));
+    }
+
+    /// <summary>
+    /// Checks if this step is applicable for the given context.
+    /// Returns false if target is null or not a SubFlow state type.
+    /// </summary>
+    private bool IsApplicable(TransitionExecutionContext context)
+    {
         if (context.Target == null)
         {
             logger.LogWarning("Target state is null for instance {InstanceId}", context.InstanceId);
-            return Result<StepOutcome>.Ok(StepOutcome.Continue());
+            return false;
         }
 
         // Only handle SubFlow state types
@@ -38,53 +57,106 @@ public sealed class HandleSubFlowStep(
         {
             logger.LogTrace("State {StateName} is not a SubFlow type, skipping SubFlow handling",
                 context.Target.Key);
-            return Result<StepOutcome>.Ok(StepOutcome.Continue());
+            return false;
         }
 
-        if (context.Target?.SubFlow == null)
-        {
-            logger.LogError("No SubFlow defined for state {StateName} on instance {InstanceId}", 
-                context.Target?.Key, context.InstanceId);
-            return Result<StepOutcome>.Fail(Error.Validation(
-                WorkflowErrorCodes.ConfigInvalid,
-                $"SubFlow configuration not found for state {context.Target?.Key} on instance {context.InstanceId}"));
-        }
-
-        logger.LogDebug("Handling SubFlow for state {StateName} on instance {InstanceId}",
-            context.Target.Key, context.InstanceId);
-
-        return await ResultExtensions.TryAsync<StepOutcome>(async ct =>
-        {
-            await HandleSubFlowAsync(context, ct);
-
-            logger.LogDebug("Completed SubFlow handling for state {StateName}", context.Target.Key);
-
-            if (context.Target.SubFlow.Type.Equals(SubFlowType.SubFlow))
-            {
-                // Skip the epilogue, go to the finale, then stop the pipeline
-                return new StepOutcome
-                {
-                    MutateDirectives = d =>
-                    {
-                        d.RequestEpilogue(EpilogueMode.Skip);
-                        d.MarkTerminal();
-                    },
-                    SkipToOrder = LifecycleOrder.Finalize
-                };
-            }
-            return StepOutcome.Continue();
-        },
-        cancellationToken,
-        ex => Error.Failure(
-            WorkflowErrorCodes.ExecutionStepFailed,
-            $"Failed to handle SubFlow: {ex.Message}",
-            ex.GetType().Name));
+        return true;
     }
 
     /// <summary>
-    /// Handles SubFlow operations.
+    /// Validates the SubFlow configuration.
     /// </summary>
-    private async Task HandleSubFlowAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    private Task<Result<TransitionExecutionContext>> ValidateConfigurationAsync(TransitionExecutionContext context)
+    {
+        if (context.Target!.SubFlow == null)
+        {
+            logger.LogError("No SubFlow defined for state {StateName} on instance {InstanceId}", 
+                context.Target.Key, context.InstanceId);
+            return Task.FromResult(Result<TransitionExecutionContext>.Fail(
+                Error.Validation(
+                    WorkflowErrorCodes.ConfigInvalid,
+                    $"SubFlow configuration not found for state {context.Target.Key} on instance {context.InstanceId}")));
+        }
+
+        return Task.FromResult(Result<TransitionExecutionContext>.Ok(context));
+    }
+
+    /// <summary>
+    /// Logs the start of SubFlow handling.
+    /// </summary>
+    private Task<Result<TransitionExecutionContext>> LogSubFlowHandlingStartAsync(TransitionExecutionContext context)
+    {
+        logger.LogDebug("Handling SubFlow for state {StateName} on instance {InstanceId}",
+            context.Target!.Key, context.InstanceId);
+        
+        return Task.FromResult(Result<TransitionExecutionContext>.Ok(context));
+    }
+
+    /// <summary>
+    /// Logs the completion of SubFlow handling.
+    /// </summary>
+    private Task LogSubFlowHandlingCompletedAsync(TransitionExecutionContext context)
+    {
+        logger.LogDebug("Completed SubFlow handling for state {StateName}", context.Target!.Key);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Logs SubFlow handling failures.
+    /// </summary>
+    private Task LogSubFlowHandlingFailedAsync(TransitionExecutionContext context, Error error)
+    {
+        logger.LogError("Failed to handle SubFlow for state {StateName} on instance {InstanceId}: {ErrorCode} - {ErrorMessage}",
+            context.Target?.Key, context.InstanceId, error.Code, error.Message);
+        
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Creates the appropriate StepOutcome based on SubFlow type.
+    /// </summary>
+    private Task<Result<StepOutcome>> CreateStepOutcomeAsync(TransitionExecutionContext context)
+    {
+        if (context.Target!.SubFlow!.Type.Equals(SubFlowType.SubFlow))
+        {
+            // Skip the epilogue, go to the finale, then stop the pipeline
+            var outcome = new StepOutcome
+            {
+                MutateDirectives = d =>
+                {
+                    d.RequestEpilogue(EpilogueMode.Skip);
+                    d.MarkTerminal();
+                },
+                SkipToOrder = LifecycleOrder.Finalize
+            };
+            return Task.FromResult(Result<StepOutcome>.Ok(outcome));
+        }
+        
+        return Task.FromResult(Result<StepOutcome>.Ok(StepOutcome.Continue()));
+    }
+
+    /// <summary>
+    /// Handles SubFlow operations using Railway Oriented Programming.
+    /// </summary>
+    private async Task<Result<TransitionExecutionContext>> HandleSubFlowAsync(
+        TransitionExecutionContext context, 
+        CancellationToken cancellationToken)
+    {
+        return await ResultExtensions.TryAsync(
+            async ct => await ExecuteSubFlowOperationsAsync(context, ct),
+            cancellationToken,
+            ex => Error.Failure(
+                WorkflowErrorCodes.ExecutionStepFailed,
+                $"Failed to handle SubFlow: {ex.Message}",
+                ex.GetType().Name));
+    }
+
+    /// <summary>
+    /// Executes the SubFlow operations: creates correlation, updates instance, and starts SubFlow.
+    /// </summary>
+    private async Task<TransitionExecutionContext> ExecuteSubFlowOperationsAsync(
+        TransitionExecutionContext context,
+        CancellationToken cancellationToken)
     {
         logger.LogDebug("Handling SubFlow {SubFlowType} for state {StateName} on instance {InstanceId}",
             context.Target!.SubFlow!.Type, context.Target.Key, context.InstanceId);
@@ -144,6 +216,8 @@ public sealed class HandleSubFlowStep(
         logger.LogDebug(
             "SubFlow {SubFlowKey} initiated with correlation {CorrelationId} and instance {SubFlowInstanceId}",
             context.Target.SubFlow.Process.Key, correlation.Id, correlation.SubFlowInstanceId);
+
+        return context;
     }
 
     /// <summary>

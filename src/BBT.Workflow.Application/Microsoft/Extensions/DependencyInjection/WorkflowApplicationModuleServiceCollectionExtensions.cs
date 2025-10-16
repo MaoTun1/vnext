@@ -21,7 +21,6 @@ using BBT.Workflow.Execution;
 using BBT.Workflow.Execution.Handlers;
 using BBT.Workflow.Execution.Pipeline;
 using BBT.Workflow.Execution.Pipeline.Steps;
-using BBT.Workflow.Execution.Planner;
 using BBT.Workflow.Execution.ReEntry;
 using BBT.Workflow.Execution.Transitions.Factory;
 using BBT.Workflow.Execution.Validation;
@@ -222,9 +221,6 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddScoped<SyncTransitionStrategy>();
         services.AddScoped<AsyncTransitionStrategy>();
         services.AddScoped<IExecutionStrategyFactory, ExecutionStrategyFactory>();
-        
-        // Pipeline Planner
-        services.AddScoped<IPipelinePlanner, DefaultPlanner>();
 
         // Pipeline Steps (registered in execution order)
         services.AddScoped<ITransitionStep, ForwardToActiveSubflowStep>();

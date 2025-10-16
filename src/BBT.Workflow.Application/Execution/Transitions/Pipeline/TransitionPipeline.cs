@@ -1,5 +1,4 @@
 using BBT.Workflow.Domain;
-using BBT.Workflow.Execution.Planner;
 using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
@@ -14,7 +13,6 @@ namespace BBT.Workflow.Execution.Pipeline;
 public sealed class TransitionPipeline
 {
     private readonly IReadOnlyList<ITransitionStep> _steps;
-    private readonly IPipelinePlanner _planner;
     private readonly ILogger<TransitionPipeline> _logger;
 
     /// <summary>
@@ -22,12 +20,10 @@ public sealed class TransitionPipeline
     /// </summary>
     /// <param name="steps">The collection of pipeline steps to execute.</param>
     /// <param name="logger">Logger for pipeline execution tracking.</param>
-    /// <param name="planner"></param>
-    public TransitionPipeline(IEnumerable<ITransitionStep> steps, ILogger<TransitionPipeline> logger, IPipelinePlanner planner)
+    public TransitionPipeline(IEnumerable<ITransitionStep> steps, ILogger<TransitionPipeline> logger)
     {
         _steps = steps.OrderBy(s => s.Order).ToList();
         _logger = logger;
-        _planner = planner;
     }
 
     /// <summary>
@@ -51,7 +47,7 @@ public sealed class TransitionPipeline
             TelemetryConstants.SpanNames.PipelineExecution,
             ActivityKind.Internal);
 
-        var plan = _planner.Build(context, _steps);
+        var plan = BuildExecutionPlan(context);
         var i = 0;
         
         while (i < plan.Count)
@@ -107,7 +103,7 @@ public sealed class TransitionPipeline
             {
                 // Create a plan from scratch based on a new beginning
                 context.Directives.RequestResumeFrom(skipTo);
-                plan = _planner.Build(context, _steps);
+                plan = BuildExecutionPlan(context);
                 i = 0;
                 continue;
             }
@@ -117,7 +113,7 @@ public sealed class TransitionPipeline
             if (NeedsReplan(plan, context.Directives))
             {
                 context.Directives.RequestResumeFrom(step.Order + 1);
-                plan = _planner.Build(context, _steps);
+                plan = BuildExecutionPlan(context);
                 i = 0;
                 continue;
             }
@@ -129,6 +125,40 @@ public sealed class TransitionPipeline
             context.WorkflowKey, context.TransitionKey, context.InstanceId);
         
         return Result.Ok();
+    }
+
+     /// <summary>
+    /// Builds an execution plan by filtering and ordering steps based on context directives.
+    /// Handles resume points, epilogue modes, and terminal states.
+    /// </summary>
+    /// <param name="context">The transition execution context containing directives.</param>
+    /// <returns>A filtered and ordered list of steps to execute.</returns>
+    private IReadOnlyList<ITransitionStep> BuildExecutionPlan(TransitionExecutionContext context)
+    {
+        var ordered = _steps.ToList(); // Already ordered in constructor
+
+        // 1) ResumeFrom start
+        var startOrder = context.Directives.ConsumeResumeFrom(); // one-time
+        if (startOrder.HasValue)
+            ordered = ordered.Where(s => s.Order >= startOrder.Value).ToList();
+
+        // 2) Subflow terminal short circuit (until Finalize)
+        if (context.Directives.TerminalReached)
+        {
+            var maxOrder = LifecycleOrder.Finalize;
+            ordered = ordered.Where(s => s.Order <= maxOrder).ToList();
+        }
+
+        // 3) Epilogue policy
+        if (context.Directives.Epilogue == EpilogueMode.Skip)
+        {
+            ordered = ordered
+                .Where(s => s.Order != LifecycleOrder.Schedule &&
+                            s.Order != LifecycleOrder.Auto)
+                .ToList();
+        }
+
+        return ordered;
     }
     
     private static bool NeedsReplan(IReadOnlyList<ITransitionStep> currentPlan, PipelineDirectives d)

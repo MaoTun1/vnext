@@ -36,53 +36,61 @@ public sealed class WorkflowExecutionService(
         
         using (currentSchema.Change(context.WorkflowKey))
         {
-            // Get workflow info for structured logging (we'll get this after schema change)
-            var resourceId = $"instance-{context.InstanceId}";
-
-            // 1. Get execution strategy
-            var strategyResult = execFactory.Get(context.Mode);
-            if (!strategyResult.IsSuccess)
-                return Result<TransitionOutput>.Fail(strategyResult.Error);
-            
-            var strategy = strategyResult.Value!;
-            
-            // 2. Execute with distributed lock
-            return await ResultExtensions.TryAsync<TransitionOutput>(async ct =>
+            // Enrich all logs with comprehensive workflow context for distributed tracing
+            using (logger.ForTransition(
+                domain: context.Domain,
+                flow: context.WorkflowKey,
+                flowVersion: context.WorkflowVersion,
+                instanceId: context.InstanceId,
+                transitionKey: context.TransitionKey))
             {
-                return await distributedLockService.ExecuteWithLockAsync(
-                    resourceId,
-                    InstanceConstants.TransitionLockExpiryInSeconds,
-                    async () =>
-                    {
-                        // Execute strategy (now returns Result properly)
-                        var executionResult = await strategy.ExecuteAsync(context, ct);
-                        
-                        // If strategy failed, propagate the error by throwing an exception
-                        // that will be caught and converted to Result below
-                        if (!executionResult.IsSuccess)
+                // Get workflow info for structured logging (we'll get this after schema change)
+                var resourceId = $"instance-{context.InstanceId}";
+
+                // 1. Get execution strategy
+                var strategyResult = execFactory.Get(context.Mode);
+                if (!strategyResult.IsSuccess)
+                    return Result<TransitionOutput>.Fail(strategyResult.Error);
+                
+                var strategy = strategyResult.Value!;
+                
+                // 2. Execute with distributed lock
+                return await ResultExtensions.TryAsync<TransitionOutput>(async ct =>
+                {
+                    return await distributedLockService.ExecuteWithLockAsync(
+                        resourceId,
+                        InstanceConstants.TransitionLockExpiryInSeconds,
+                        async () =>
                         {
-                            // For auto-transition condition not met, throw the special exception
-                            if (executionResult.Error.Code == WorkflowErrorCodes.AutoTransitionConditionNotMet)
+                            // Execute strategy (now returns Result properly)
+                            var executionResult = await strategy.ExecuteAsync(context, ct);
+                            
+                            // If strategy failed, propagate the error by throwing an exception
+                            // that will be caught and converted to Result below
+                            if (!executionResult.IsSuccess)
                             {
-                                throw new AutoTransitionConditionNotMetException(
-                                    executionResult.Error.Code,
-                                    executionResult.Error.Message ?? "Auto-transition condition not met");
+                                // For auto-transition condition not met, throw the special exception
+                                if (executionResult.Error.Code == WorkflowErrorCodes.AutoTransitionConditionNotMet)
+                                {
+                                    throw new AutoTransitionConditionNotMetException(
+                                        executionResult.Error.Code,
+                                        executionResult.Error.Message ?? "Auto-transition condition not met");
+                                }
+                                
+                                // For other errors, create a general exception with error info
+                                throw new InvalidOperationException($"{executionResult.Error.Code}:{executionResult.Error.Message}");
                             }
                             
-                            // For other errors, create a general exception with error info
-                            throw new InvalidOperationException($"{executionResult.Error.Code}:{executionResult.Error.Message}");
-                        }
-                        
-                        var transitionExecutionContext = executionResult.Value!;
-                        
-                        sw.Stop();
-                        
-                        // Log completion with structured data
-                        logger.TransitionCompleted(
-                            TelemetryConstants.Prefixes.Application,
-                            context.TransitionKey,
-                            context.InstanceId,
-                            sw.ElapsedMilliseconds);
+                            var transitionExecutionContext = executionResult.Value!;
+                            
+                            sw.Stop();
+                            
+                            // Log completion with structured data
+                            logger.TransitionCompleted(
+                                TelemetryConstants.Prefixes.Application,
+                                context.TransitionKey,
+                                context.InstanceId,
+                                sw.ElapsedMilliseconds);
                         
                         TransitionOutput? response = null;
                         if (transitionExecutionContext.ClientResponse is not null)
@@ -109,20 +117,23 @@ public sealed class WorkflowExecutionService(
                     },
                     ct,
                     logger);
-            }, cancellationToken, ex => ex switch
-            {
-                DistributedLockAcquisitionException => WorkflowErrors.TransitionLocked(context.InstanceId, context.TransitionKey),
-                
-                // Special handling for auto-transition condition not met
-                AutoTransitionConditionNotMetException atcEx => 
-                    Error.Validation(atcEx.ErrorCode, atcEx.Message),
-                
-                // Generic error propagation from strategy (backward compatibility)
-                InvalidOperationException ioe when ioe.Message.Contains(':') 
-                    => Error.Failure(ioe.Message.Split(':')[0], ioe.Message.Split(':', 2)[1]),
-                
-                _ => Error.Failure(WorkflowErrorCodes.ExecutionStrategyFailed, $"Transition execution failed: {ex.Message}", ex.GetType().Name)
-            });
+                }, cancellationToken, ex => ex switch
+                {
+                    DistributedLockAcquisitionException => WorkflowErrors.TransitionLocked(context.InstanceId, context.TransitionKey),
+                    
+                    // Special handling for auto-transition condition not met
+                    AutoTransitionConditionNotMetException atcEx => 
+                        Error.Validation(atcEx.ErrorCode, atcEx.Message),
+                    
+                    // Special handling for auto-transition condition not met
+                    WorkflowValidationException validationEx => Error.Validation(validationEx.ErrorCode, validationEx.Message, validationEx.ValidationErrors, validationEx.Target),
+                    
+                    InvalidOperationException ioe when ioe.Message.Contains(':') 
+                        => Error.Failure(ioe.Message.Split(':')[0], ioe.Message.Split(':', 2)[1]),
+                    
+                    _ => Error.Failure(WorkflowErrorCodes.ExecutionStrategyFailed, $"Transition execution failed: {ex.Message}", ex.GetType().Name)
+                });
+            }
         }
     }
 }

@@ -27,17 +27,17 @@ public sealed class AutomaticTransitionHandler(
         Logger.LogDebug("Validating automatic transition {TransitionKey} for instance {InstanceId}",
             context.TransitionKey, context.InstanceId);
 
+        // Additional validations for automatic transitions
+        var systemStateResult = await ValidateSystemStateAsync(context);
+        if (!systemStateResult.IsSuccess)
+            return systemStateResult;
+        
         // For automatic transitions, we need to validate that the condition is met
         // This is a double-check since the condition was already evaluated in RunAutomaticTransitionsStep
         var conditionResult = await ValidateConditionAsync(context, cancellationToken);
         if (!conditionResult.IsSuccess)
             return conditionResult;
-
-        // Additional validations for automatic transitions
-        var systemStateResult = await ValidateSystemStateAsync(context);
-        if (!systemStateResult.IsSuccess)
-            return systemStateResult;
-
+        
         Logger.LogDebug("Automatic transition validation completed for {TransitionKey}", context.TransitionKey);
         return Result.Ok();
     }

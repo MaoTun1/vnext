@@ -90,6 +90,11 @@ public static class TelemetryConstants
         public const string TaskType = "taskType";
 
         /// <summary>
+        /// Task trigger field name.
+        /// </summary>
+        public const string TaskTrigger = "taskTrigger";
+
+        /// <summary>
         /// Step order field name.
         /// </summary>
         public const string StepOrder = "stepOrder";

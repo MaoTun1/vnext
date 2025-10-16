@@ -59,7 +59,7 @@ public static class ProblemDetailsMapper
         // Use the configurable mapping instead of hard-coded switch
         var (status, title) = StatusMapping.GetMapping(error.Code);
 
-        return new ProblemDetails
+        var problemDetails = new ProblemDetails
         {
             Title = title,
             Detail = error.Message ?? error.Detail,
@@ -72,6 +72,20 @@ public static class ProblemDetailsMapper
                 ["traceId"] = System.Diagnostics.Activity.Current?.Id ?? string.Empty
             }
         };
+
+        // Include validation errors if available
+        if (error.ValidationErrors is { Count: > 0 })
+        {
+            problemDetails.Extensions["errors"] = error.ValidationErrors
+                .Select(ve => new
+                {
+                    field = ve.MemberNames.FirstOrDefault() ?? string.Empty,
+                    message = ve.ErrorMessage
+                })
+                .ToList();
+        }
+
+        return problemDetails;
     }
 
     /// <summary>

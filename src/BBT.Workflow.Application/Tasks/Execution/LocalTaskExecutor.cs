@@ -76,92 +76,104 @@ public sealed class LocalTaskExecutor(
         var taskType = task.GetTaskType().ToString();
         var sw = Stopwatch.StartNew();
 
-        // Log task execution start
-        logger.TaskExecutionStarted(
-            TelemetryConstants.Prefixes.Execution,
-            task.Key,
-            taskType,
-            context.Instance.Id);
-
-        // Create span for task execution
-        using var activity = WorkflowActivitySource.Instance.StartActivity(
-            TelemetryConstants.SpanNames.TaskExecution,
-            ActivityKind.Internal);
-        
-        activity?.SetTag(TelemetryConstants.TagNames.TaskKey, task.Key);
-        activity?.SetTag(TelemetryConstants.TagNames.TaskType, taskType);
-        activity?.SetTag(TelemetryConstants.TagNames.InstanceId, context.Instance.Id.ToString());
-        activity?.SetDisplayName($"Task: {task.Key}");
-
-        // Record task execution start 
-        workflowMetrics.RecordTaskExecution(taskType, "started");
-
-        try
+        // Enrich all logs within this scope with comprehensive workflow context for distributed tracing
+        using (logger.ForTask(
+            domain: context.Workflow.Domain,
+            flow: context.Workflow.Key,
+            flowVersion: context.Workflow.Version,
+            instanceId: context.Instance.Id,
+            transitionKey: context.Transition?.Key,
+            taskKey: task.Key,
+            taskType: taskType,
+            taskTrigger: taskTrigger.ToString()))
         {
-            var response = await taskExecutor.ExecuteAsync(
-                task,
-                onExecuteTask.Mapping.DecodedCode,
-                context,
-                cancellationToken);
-            if (response != null)
-            {
-                var variableKey = task.Key.ToVariableName();
-                context.TaskResponse[variableKey] = response;
-                if (taskTrigger != TaskTrigger.Extension && response is ScriptResponse scriptResponse)
-                {
-                    if (scriptResponse.Data != null)
-                    {
-                        // NoTracking Instance
-                        context.Instance.AddData(
-                            guidGenerator.Create(),
-                            new JsonData(JsonSerializer.Serialize(
-                                scriptResponse.Data, JsonSerializerConstants.JsonOptions)),
-                            VersionStrategy.IncreasePatch
-                        );
-                    }
-                }
-            }
-
-            instanceTask.Completed(
-                new JsonData(JsonSerializer.Serialize(response ?? new { }, JsonSerializerConstants.JsonOptions)));
-
-            sw.Stop();
-            
-            // Log task execution completion
-            logger.TaskExecutionCompleted(
-                TelemetryConstants.Prefixes.Execution,
-                task.Key,
-                taskType,
-                context.Instance.Id,
-                sw.ElapsedMilliseconds);
-
-            // Record successful task completion 
-            workflowMetrics.RecordTaskExecution(taskType, "success");
-        }
-        catch (Exception e)
-        {
-            sw.Stop();
-            
-            activity?.RecordExceptionWithStatus(e);
-            
-            instanceTask.Faulted(e.Message);
-
-            // Log task execution failure
-            logger.TaskExecutionFailed(
-                e,
+            // Log task execution start
+            logger.TaskExecutionStarted(
                 TelemetryConstants.Prefixes.Execution,
                 task.Key,
                 taskType,
                 context.Instance.Id);
 
-            // Record task failure
-            workflowMetrics.RecordTaskExecution(taskType, "failure");
+            // Create span for task execution
+            using var activity = WorkflowActivitySource.Instance.StartActivity(
+                TelemetryConstants.SpanNames.TaskExecution,
+                ActivityKind.Internal);
             
-            throw;
-        }
+            activity?.SetTag(TelemetryConstants.TagNames.TaskKey, task.Key);
+            activity?.SetTag(TelemetryConstants.TagNames.TaskType, taskType);
+            activity?.SetTag(TelemetryConstants.TagNames.InstanceId, context.Instance.Id.ToString());
+            activity?.SetDisplayName($"Task: {task.Key}");
 
-        // Handle task completion persistence
-        await persistenceStrategy.HandleCompletionAsync(instanceTask, cancellationToken);
+            // Record task execution start 
+            workflowMetrics.RecordTaskExecution(taskType, "started");
+
+            try
+            {
+                var response = await taskExecutor.ExecuteAsync(
+                    task,
+                    onExecuteTask.Mapping.DecodedCode,
+                    context,
+                    cancellationToken);
+                if (response != null)
+                {
+                    var variableKey = task.Key.ToVariableName();
+                    context.TaskResponse[variableKey] = response;
+                    if (taskTrigger != TaskTrigger.Extension && response is ScriptResponse scriptResponse)
+                    {
+                        if (scriptResponse.Data != null)
+                        {
+                            // NoTracking Instance
+                            context.Instance.AddData(
+                                guidGenerator.Create(),
+                                new JsonData(JsonSerializer.Serialize(
+                                    scriptResponse.Data, JsonSerializerConstants.JsonOptions)),
+                                VersionStrategy.IncreasePatch
+                            );
+                        }
+                    }
+                }
+
+                instanceTask.Completed(
+                    new JsonData(JsonSerializer.Serialize(response ?? new { }, JsonSerializerConstants.JsonOptions)));
+
+                sw.Stop();
+                
+                // Log task execution completion
+                logger.TaskExecutionCompleted(
+                    TelemetryConstants.Prefixes.Execution,
+                    task.Key,
+                    taskType,
+                    context.Instance.Id,
+                    sw.ElapsedMilliseconds);
+
+                // Record successful task completion 
+                workflowMetrics.RecordTaskExecution(taskType, "success");
+            }
+            catch (Exception e)
+            {
+                sw.Stop();
+                
+                activity?.RecordExceptionWithStatus(e);
+                
+                instanceTask.Faulted(e.Message);
+
+                // Log task execution failure
+                logger.TaskExecutionFailed(
+                    e,
+                    TelemetryConstants.Prefixes.Execution,
+                    task.Key,
+                    taskType,
+                    context.Instance.Id);
+
+                // Record task failure
+                workflowMetrics.RecordTaskExecution(taskType, "failure");
+                
+                throw;
+            }
+
+            // Handle task completion persistence
+            await persistenceStrategy.HandleCompletionAsync(instanceTask, cancellationToken);
+        }
     }
 
     /// <summary>

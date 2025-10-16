@@ -39,25 +39,33 @@ public sealed class SubflowStarter(
         var subFlowConfig = targetState.SubFlow!;
         var sw = Stopwatch.StartNew();
 
-        // Log SubFlow start
-        logger.SubFlowStarted(
-            TelemetryConstants.Prefixes.Execution,
-            subFlowConfig.Process.Key,
-            correlation.SubFlowInstanceId,
-            parentInstance.Id);
-
-        // Create span for SubFlow start
-        using var activity = WorkflowActivitySource.Instance.StartActivity(
-            TelemetryConstants.SpanNames.SubFlowStart,
-            ActivityKind.Internal);
-        
-        activity?.SetTag(TelemetryConstants.TagNames.SubFlowKey, subFlowConfig.Process.Key);
-        activity?.SetTag(TelemetryConstants.TagNames.Domain, subFlowConfig.Process.Domain);
-        activity?.SetTag(TelemetryConstants.TagNames.InstanceId, parentInstance.Id.ToString());
-        activity?.SetDisplayName($"SubFlow Start: {subFlowConfig.Process.Key}");
-
-        try
+        // Enrich logs with parent workflow context for SubFlow start
+        using (logger.ForSubFlow(
+            parentDomain: workflow.Domain,
+            parentFlow: workflow.Key,
+            parentFlowVersion: workflow.Version,
+            parentInstanceId: parentInstance.Id,
+            transitionKey: transition.Key))
         {
+            // Log SubFlow start
+            logger.SubFlowStarted(
+                TelemetryConstants.Prefixes.Execution,
+                subFlowConfig.Process.Key,
+                correlation.SubFlowInstanceId,
+                parentInstance.Id);
+
+            // Create span for SubFlow start
+            using var activity = WorkflowActivitySource.Instance.StartActivity(
+                TelemetryConstants.SpanNames.SubFlowStart,
+                ActivityKind.Internal);
+            
+            activity?.SetTag(TelemetryConstants.TagNames.SubFlowKey, subFlowConfig.Process.Key);
+            activity?.SetTag(TelemetryConstants.TagNames.Domain, subFlowConfig.Process.Domain);
+            activity?.SetTag(TelemetryConstants.TagNames.InstanceId, parentInstance.Id.ToString());
+            activity?.SetDisplayName($"SubFlow Start: {subFlowConfig.Process.Key}");
+
+            try
+            {
             // Handle input mapping if mapping is configured
             ScriptResponse? inputMappingResult = null;
             if (subFlowConfig.Mapping != null)
@@ -131,20 +139,21 @@ public sealed class SubflowStarter(
                 subFlowConfig.Process.Key,
                 parentInstance.Id,
                 sw.ElapsedMilliseconds);
-        }
-        catch (Exception ex)
-        {
-            sw.Stop();
-            
-            activity?.RecordExceptionWithStatus(ex);
-            
-            logger.LogError(ex,
-                "{Prefix} SubFlow {SubFlowKey} start failed for instance {InstanceId}",
-                TelemetryConstants.Prefixes.Execution,
-                subFlowConfig.Process.Key,
-                parentInstance.Id);
-            
-            throw;
+            }
+            catch (Exception ex)
+            {
+                sw.Stop();
+                
+                activity?.RecordExceptionWithStatus(ex);
+                
+                logger.LogError(ex,
+                    "{Prefix} SubFlow {SubFlowKey} start failed for instance {InstanceId}",
+                    TelemetryConstants.Prefixes.Execution,
+                    subFlowConfig.Process.Key,
+                    parentInstance.Id);
+                
+                throw;
+            }
         }
     }
 
