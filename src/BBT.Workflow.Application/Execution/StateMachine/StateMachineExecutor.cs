@@ -109,7 +109,7 @@ public sealed class StateMachineExecutor(
         await instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
         
        
-        if (targetState.StateType  == StateType.SubFlow)
+        if (targetState.StateType == StateType.SubFlow)
         {
             await HandleSubFlowAsync(context.Workflow, context.Instance, targetState, context, cancellationToken);
 
