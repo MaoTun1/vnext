@@ -1,3 +1,4 @@
+using BBT.Aether;
 using BBT.Aether.DistributedLock;
 using Microsoft.Extensions.Logging;
 
@@ -109,7 +110,7 @@ public static class DistributedLockServiceExtensions
 /// <summary>
 /// Exception thrown when a distributed lock cannot be acquired.
 /// </summary>
-public class DistributedLockAcquisitionException : Exception
+public class DistributedLockAcquisitionException : UserFriendlyException
 {
     /// <summary>
     /// Gets the resource ID that could not be locked.
@@ -121,7 +122,7 @@ public class DistributedLockAcquisitionException : Exception
     /// </summary>
     /// <param name="resourceId">The resource ID that could not be locked.</param>
     public DistributedLockAcquisitionException(string resourceId)
-        : base($"Failed to acquire distributed lock for resource: {resourceId}")
+        : base($"Failed to acquire distributed lock for resource: {resourceId}", WorkflowErrorCodes.Locked)
     {
         ResourceId = resourceId;
     }
@@ -132,7 +133,7 @@ public class DistributedLockAcquisitionException : Exception
     /// <param name="resourceId">The resource ID that could not be locked.</param>
     /// <param name="message">The exception message.</param>
     public DistributedLockAcquisitionException(string resourceId, string message)
-        : base(message)
+        : base(message, WorkflowErrorCodes.Locked)
     {
         ResourceId = resourceId;
     }
@@ -140,11 +141,12 @@ public class DistributedLockAcquisitionException : Exception
     /// <summary>
     /// Initializes a new instance of the DistributedLockAcquisitionException class.
     /// </summary>
+    /// <param name="code">The exception code</param>
     /// <param name="resourceId">The resource ID that could not be locked.</param>
     /// <param name="message">The exception message.</param>
     /// <param name="innerException">The inner exception.</param>
     public DistributedLockAcquisitionException(string resourceId, string message, Exception innerException)
-        : base(message, innerException)
+        : base(message, WorkflowErrorCodes.Locked, innerException: innerException)
     {
         ResourceId = resourceId;
     }

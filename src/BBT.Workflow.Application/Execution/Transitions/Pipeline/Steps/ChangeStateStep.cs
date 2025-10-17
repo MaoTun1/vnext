@@ -38,13 +38,7 @@ public sealed class ChangeStateStep(
         context.Instance.ChangeState(context.Transition);
         
         // Update instance with Result pattern (no exceptions)
-        var updateResult = await ResultExtensions.TryAsync(
-            async ct => await instanceRepository.UpdateAsync(context.Instance, true, ct),
-            cancellationToken,
-            ex => Error.Dependency("db.update", $"Failed to update instance state: {ex.Message}"));
-        
-        if (!updateResult.IsSuccess)
-            return Result<StepOutcome>.Fail(updateResult.Error);
+        await instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
         
         // Update target state in context using Result Pattern
         var targetStateResult = context.Workflow.GetState(context.Instance.GetCurrentState);

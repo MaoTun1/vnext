@@ -24,16 +24,19 @@ public sealed class WorkflowExecutionService(
 {
     /// <summary>
     /// Executes a workflow transition using the new pipeline architecture.
+    /// Exception handling is delegated to the middleware layer for consistent error responses.
     /// </summary>
     /// <param name="context">The workflow execution input containing all necessary data.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>A Result containing the transition output.</returns>
+    /// <exception cref="WorkflowValidationException">Thrown when validation fails</exception>
+    /// <exception cref="AutoTransitionConditionNotMetException">Thrown when auto-transition condition is not met</exception>
+    /// <exception cref="DistributedLockAcquisitionException">Thrown when lock cannot be acquired</exception>
     public async Task<Result<TransitionOutput>> ExecuteTransitionAsync(
         WorkflowExecutionContext context,
         CancellationToken cancellationToken = default)
     {
         var sw = Stopwatch.StartNew();
-        
         using (currentSchema.Change(context.WorkflowKey))
         {
             // Enrich all logs with comprehensive workflow context for distributed tracing
@@ -44,96 +47,89 @@ public sealed class WorkflowExecutionService(
                 instanceId: context.InstanceId,
                 transitionKey: context.TransitionKey))
             {
-                // Get workflow info for structured logging (we'll get this after schema change)
                 var resourceId = $"instance-{context.InstanceId}";
 
                 // 1. Get execution strategy
-                var strategyResult = execFactory.Get(context.Mode);
-                if (!strategyResult.IsSuccess)
-                    return Result<TransitionOutput>.Fail(strategyResult.Error);
-                
-                var strategy = strategyResult.Value!;
+                var strategy = execFactory.Get(context.Mode);
                 
                 // 2. Execute with distributed lock
-                return await ResultExtensions.TryAsync<TransitionOutput>(async ct =>
-                {
-                    return await distributedLockService.ExecuteWithLockAsync(
-                        resourceId,
-                        InstanceConstants.TransitionLockExpiryInSeconds,
-                        async () =>
-                        {
-                            // Execute strategy (now returns Result properly)
-                            var executionResult = await strategy.ExecuteAsync(context, ct);
-                            
-                            // If strategy failed, propagate the error by throwing an exception
-                            // that will be caught and converted to Result below
-                            if (!executionResult.IsSuccess)
-                            {
-                                // For auto-transition condition not met, throw the special exception
-                                if (executionResult.Error.Code == WorkflowErrorCodes.AutoTransitionConditionNotMet)
-                                {
-                                    throw new AutoTransitionConditionNotMetException(
-                                        executionResult.Error.Code,
-                                        executionResult.Error.Message ?? "Auto-transition condition not met");
-                                }
-                                
-                                // For other errors, create a general exception with error info
-                                throw new InvalidOperationException($"{executionResult.Error.Code}:{executionResult.Error.Message}");
-                            }
-                            
-                            var transitionExecutionContext = executionResult.Value!;
-                            
-                            sw.Stop();
-                            
-                            // Log completion with structured data
-                            logger.TransitionCompleted(
-                                TelemetryConstants.Prefixes.Application,
-                                context.TransitionKey,
-                                context.InstanceId,
-                                sw.ElapsedMilliseconds);
+                // Exceptions are propagated to middleware for consistent error handling
+                var transitionExecutionContext = await distributedLockService.ExecuteWithLockAsync(
+                    resourceId,
+                    InstanceConstants.TransitionLockExpiryInSeconds,
+                    async () =>
+                    {
+                        // Execute strategy
+                        var executionResult = await strategy.ExecuteAsync(context, cancellationToken);
                         
-                        TransitionOutput? response = null;
-                        if (transitionExecutionContext.ClientResponse is not null)
+                        // If strategy failed, throw appropriate exception for middleware to handle
+                        if (!executionResult.IsSuccess)
                         {
-                            response = new TransitionOutput
-                            {
-                                Id = transitionExecutionContext.InstanceId,
-                                Status = transitionExecutionContext.ClientResponse.Status
-                            };
+                            ThrowAppropriateException(executionResult.Error);
                         }
-                        else
-                        {
-                            var freshInstance =
-                                await instanceRepository.FindByIdAsReadOnlyAsync(context.InstanceId, ct);
-
-                            response = new TransitionOutput
-                            {
-                                Id = context.InstanceId,
-                                Status = freshInstance!.Status
-                            };
-                        }
-
-                        return response;
+                        
+                        return executionResult.Value!;
                     },
-                    ct,
+                    cancellationToken,
                     logger);
-                }, cancellationToken, ex => ex switch
+                
+                sw.Stop();
+                
+                // Log completion with structured data
+                logger.TransitionCompleted(
+                    TelemetryConstants.Prefixes.Application,
+                    context.TransitionKey,
+                    context.InstanceId,
+                    sw.ElapsedMilliseconds);
+            
+                // Build response
+                TransitionOutput response;
+                if (transitionExecutionContext.ClientResponse is not null)
                 {
-                    DistributedLockAcquisitionException => WorkflowErrors.TransitionLocked(context.InstanceId, context.TransitionKey),
-                    
-                    // Special handling for auto-transition condition not met
-                    AutoTransitionConditionNotMetException atcEx => 
-                        Error.Validation(atcEx.ErrorCode, atcEx.Message),
-                    
-                    // Special handling for auto-transition condition not met
-                    WorkflowValidationException validationEx => Error.Validation(validationEx.ErrorCode, validationEx.Message, validationEx.ValidationErrors, validationEx.Target),
-                    
-                    InvalidOperationException ioe when ioe.Message.Contains(':') 
-                        => Error.Failure(ioe.Message.Split(':')[0], ioe.Message.Split(':', 2)[1]),
-                    
-                    _ => Error.Failure(WorkflowErrorCodes.ExecutionStrategyFailed, $"Transition execution failed: {ex.Message}", ex.GetType().Name)
-                });
+                    response = new TransitionOutput
+                    {
+                        Id = transitionExecutionContext.InstanceId,
+                        Status = transitionExecutionContext.ClientResponse.Status
+                    };
+                }
+                else
+                {
+                    var freshInstance = await instanceRepository.FindByIdAsReadOnlyAsync(
+                        context.InstanceId, 
+                        cancellationToken);
+
+                    response = new TransitionOutput
+                    {
+                        Id = context.InstanceId,
+                        Status = freshInstance!.Status
+                    };
+                }
+
+                return Result<TransitionOutput>.Ok(response);
             }
         }
+    }
+    
+    /// <summary>
+    /// Throws the appropriate exception based on the error code.
+    /// This allows the middleware to handle different error types consistently.
+    /// </summary>
+    private static void ThrowAppropriateException(Error error)
+    {
+        // For auto-transition condition not met, throw specific exception
+        if (error.Code == WorkflowErrorCodes.AutoTransitionConditionNotMet)
+        {
+            throw new AutoTransitionConditionNotMetException();
+        }
+        
+        // For validation errors, throw WorkflowValidationException
+        if (error.ValidationErrors is { Count: > 0 })
+        {
+            throw new WorkflowValidationException(error);
+        }
+        
+        // For other errors, throw InvalidOperationException with error code embedded
+        // This will be handled by the middleware's backward compatibility logic
+        throw new InvalidOperationException($"{error.Code}:{error.Message}");
     }
 }

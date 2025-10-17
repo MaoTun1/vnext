@@ -2,6 +2,7 @@ using System.Reflection;
 using BBT.Aether;
 using BBT.Workflow.Domain;
 using BBT.Workflow.Domain.Shared;
+using BBT.Workflow.ExceptionHandling;
 
 namespace BBT.Workflow.Runtime;
 
@@ -28,13 +29,18 @@ public interface IRuntimeInfoProvider
     /// </value>
     string Domain { get; }
 
+
     /// <summary>
     /// Validates that the requested domain matches the configured runtime domain.
     /// This method ensures that clients can only access workflows within their authorized domain.
     /// </summary>
     /// <param name="requestDomain">The domain name being requested for access.</param>
-    /// <returns>Result indicating whether the domain is valid</returns>
-    Result Check(string requestDomain);
+    /// <exception cref="NotFoundDomainException">
+    /// Thrown when the <paramref name="requestDomain"/> does not match the configured runtime domain.
+    /// This indicates an unauthorized access attempt to a different domain.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="requestDomain"/> is null.</exception>
+    void Check(string requestDomain);
 }
 
 /// <summary>
@@ -62,17 +68,20 @@ public class RuntimeInfoProvider : IRuntimeInfoProvider
 
     /// <summary>
     /// Validates that the requested domain matches the configured runtime domain.
-    /// Returns a Result instead of throwing exceptions for better error handling.
+    /// This method provides domain-based security by ensuring clients can only access
+    /// workflows within their authorized domain scope.
     /// </summary>
     /// <param name="requestDomain">The domain name being requested for access.</param>
-    /// <returns>Result indicating whether the domain is valid</returns>
-    public Result Check(string requestDomain)
+    /// <exception cref="NotFoundDomainException">
+    /// Thrown when the requested domain does not match the configured runtime domain,
+    /// indicating an unauthorized cross-domain access attempt.
+    /// </exception>
+    public void Check(string requestDomain)
     {
         if (!Domain.Equals(requestDomain))
         {
-            return Result.Fail(WorkflowErrors.DomainNotFound(requestDomain, Domain));
+            throw new NotFoundDomainException(requestDomain, Domain);
         }
-        return Result.Ok();
     }
 
     /// <summary>

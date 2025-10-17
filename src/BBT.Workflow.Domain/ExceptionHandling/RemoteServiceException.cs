@@ -1,3 +1,4 @@
+using BBT.Aether;
 using BBT.Aether.Http;
 
 namespace BBT.Workflow.ExceptionHandling;
@@ -7,7 +8,7 @@ namespace BBT.Workflow.ExceptionHandling;
 /// This exception preserves the structured error information from the remote service
 /// and provides access to both the ServiceErrorInfo and HTTP status code.
 /// </summary>
-public class RemoteServiceException : Exception
+public class RemoteServiceException : AetherException
 {
     /// <summary>
     /// The structured error information from the remote service

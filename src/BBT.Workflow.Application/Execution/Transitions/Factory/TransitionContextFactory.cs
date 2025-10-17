@@ -20,61 +20,42 @@ public sealed class TransitionContextFactory(
 {
     /// <inheritdoc />
     public async Task<Result<TransitionExecutionContext>> CreateAsync(
-        WorkflowExecutionContext input, 
+        WorkflowExecutionContext input,
         CancellationToken cancellationToken)
     {
         logger.LogDebug("Creating transition context for instance {InstanceId}, transition {TransitionKey}",
             input.InstanceId, input.TransitionKey);
-        
-        // Step 1: Validate domain first
-        var domainCheck = runtimeInfoProvider.Check(input.Domain);
-        if (!domainCheck.IsSuccess)
-            return Result<TransitionExecutionContext>.Fail(domainCheck.Error);
 
-        // Step 2-5: Load workflow, rehydrate instance, resolve state/transition, build context
-        return await LoadWorkflowAsync(input, cancellationToken)
-            .ThenAsync(workflow => RehydrateInstanceAsync(workflow, input, cancellationToken))
+        // Step 1: Validate domain first
+        runtimeInfoProvider.Check(input.Domain);
+
+        // Load workflow, rehydrate instance, resolve state/transition, build context
+        return await RehydrateInstanceAsync(input, cancellationToken)
             .ThenAsync(data => ResolveStateAndTransitionAsync(data, input))
             .MapAsync(data => BuildExecutionContext(data, input))
-            .OnSuccess(ctx => 
+            .OnSuccess(ctx =>
                 logger.LogDebug("Created transition context for {WorkflowKey}.{TransitionKey} on instance {InstanceId}",
                     ctx.WorkflowKey, ctx.TransitionKey, ctx.InstanceId));
-    }
-
-    /// <summary>
-    /// Loads the workflow definition.
-    /// </summary>
-    private async Task<Result<Definitions.Workflow>> LoadWorkflowAsync(
-        WorkflowExecutionContext input,
-        CancellationToken cancellationToken)
-    {
-        return await ResultExtensions.TryAsync(
-            async ct => await componentCacheStore.GetFlowAsync(
-                input.Domain, input.WorkflowKey, input.WorkflowVersion, ct),
-            cancellationToken,
-            ex => WorkflowErrors.WorkflowNotFound(input.WorkflowKey, input.WorkflowVersion));
     }
 
     /// <summary>
     /// Rehydrates the instance from storage.
     /// </summary>
     private async Task<Result<(Definitions.Workflow Workflow, Instance Instance)>> RehydrateInstanceAsync(
-        Definitions.Workflow workflow,
         WorkflowExecutionContext input,
         CancellationToken cancellationToken)
     {
-        var instanceResult = await ResultExtensions.TryAsync(
-            async ct => await instanceRepository.GetActiveAsync(input.InstanceId, ct),
-            cancellationToken,
-            ex => WorkflowErrors.InstanceNotFound(input.InstanceId, "not found or is not active"));
-
-            return instanceResult.Map(instance => (workflow, instance));
+        var workflow = await componentCacheStore.GetFlowAsync(
+            input.Domain, input.WorkflowKey, input.WorkflowVersion, cancellationToken);
+        var instance = await instanceRepository.GetActiveAsync(input.InstanceId, cancellationToken);
+        
+        return Result<(Definitions.Workflow Workflow, Instance Instance)>.Ok((workflow, instance));
     }
 
     /// <summary>
     /// Resolves the current state and transition.
     /// </summary>
-    private Task<Result<(Definitions.Workflow Workflow, Instance Instance, State CurrentState, Transition? Transition)>> 
+    private Task<Result<(Definitions.Workflow Workflow, Instance Instance, State CurrentState, Transition? Transition)>>
         ResolveStateAndTransitionAsync(
             (Definitions.Workflow Workflow, Instance Instance) data,
             WorkflowExecutionContext input)
@@ -138,7 +119,7 @@ public sealed class TransitionContextFactory(
         // Configure pipeline directives
         if (input.Execution?.ResumeFrom.HasValue == true)
             executionContext.Directives.RequestResumeFrom(input.Execution.ResumeFrom.Value);
-        
+
         if (input.Execution?.IsSubFlowResume == true)
             executionContext.Directives.MarkAsSubFlowResume();
 
@@ -153,7 +134,8 @@ public sealed class TransitionContextFactory(
         State currentState,
         string transitionKey)
     {
-        return workflow.ResolveTransition(transitionKey, currentState) ?? workflow.FindTransitionInContext(transitionKey);
+        return workflow.ResolveTransition(transitionKey, currentState) ??
+               workflow.FindTransitionInContext(transitionKey);
     }
 
     /// <summary>
@@ -164,7 +146,7 @@ public sealed class TransitionContextFactory(
         var activity = Activity.Current;
         var traceId = activity?.TraceId.ToString() ?? Guid.NewGuid().ToString("N");
         var spanId = activity?.SpanId.ToString() ?? Guid.NewGuid().ToString("N")[..16];
-        
+
         return (traceId, spanId);
     }
 }

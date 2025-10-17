@@ -1,12 +1,14 @@
 using BBT.Aether.ExceptionHandling;
 using BBT.Aether.Http;
+using BBT.Workflow.Domain.Extensions;
+using BBT.Workflow.HttpApi.Shared;
 
 namespace BBT.Workflow.ExceptionHandling;
 
 /// <summary>
 /// Custom exception to error info converter for workflow-specific exceptions.
 /// Extends the default Aether exception converter to handle workflow domain exceptions
-/// such as WorkflowValidationException with detailed validation errors.
+/// including validation errors, distributed lock failures, auto-transition conditions, and remote service errors.
 /// </summary>
 /// <param name="serviceProvider">Service provider for resolving dependencies</param>
 public class WorkflowExceptionToErrorInfoConverter(IServiceProvider serviceProvider)
@@ -16,7 +18,6 @@ public class WorkflowExceptionToErrorInfoConverter(IServiceProvider serviceProvi
     /// Creates error information from exceptions without predefined error codes.
     /// Handles workflow-specific exceptions by converting them to appropriate ServiceErrorInfo objects
     /// while maintaining their original error details, codes, and additional data.
-    /// For WorkflowValidationException, includes detailed field-level validation errors in the response.
     /// </summary>
     /// <param name="exception">The exception to convert to error information</param>
     /// <param name="options">Exception handling options from Aether framework</param>
@@ -24,38 +25,45 @@ public class WorkflowExceptionToErrorInfoConverter(IServiceProvider serviceProvi
     protected override ServiceErrorInfo CreateErrorInfoWithoutCode(Exception exception,
         AetherExceptionHandlingOptions options)
     {
-        var errorInfo = base.CreateErrorInfoWithoutCode(exception, options);
-        
         return exception switch
         {
-            WorkflowValidationException validationException => EnrichWithValidationErrors(errorInfo, validationException),
-            _ => errorInfo
+            NotFoundDomainException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
+            RuntimeSchemaInvalidException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
+            DistributedLockAcquisitionException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
+            AutoTransitionConditionNotMetException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
+            RemoteServiceException ex => ex.ErrorInfo,
+            WorkflowValidationException ex => CreateValidationErrorInfo(ex),
+            // Default handling for other exceptions
+            _ => base.CreateErrorInfoWithoutCode(exception, options)
         };
     }
 
     /// <summary>
-    /// Enriches the ServiceErrorInfo with validation errors from WorkflowValidationException.
-    /// Adds detailed field-level validation errors to the Data dictionary for client consumption.
+    /// Creates ServiceErrorInfo from WorkflowValidationException with detailed validation errors.
     /// </summary>
-    /// <param name="errorInfo">The base error information</param>
-    /// <param name="exception">The workflow validation exception containing validation errors</param>
-    /// <returns>Enriched ServiceErrorInfo with validation errors</returns>
-    private static ServiceErrorInfo EnrichWithValidationErrors(
-        ServiceErrorInfo errorInfo, 
-        WorkflowValidationException exception)
+    private static ServiceErrorInfo CreateValidationErrorInfo(WorkflowValidationException exception)
     {
+        var errorInfo = new ServiceErrorInfo
+        {
+            Code = exception.Code,
+            Message = exception.Message,
+            Details = exception.Error.Detail,
+            Data = new Dictionary<string, object>()
+        };
+
+        // Add field-level validation errors
         if (exception.ValidationErrors is { Count: > 0 })
         {
-            errorInfo.Data["errors"] = exception.ValidationErrors
-                .Select(ve => new
+            errorInfo.ValidationErrors = exception.ValidationErrors
+                .Select(ve => new ServiceValidationErrorInfo
                 {
-                    field = ve.MemberNames.FirstOrDefault() ?? string.Empty,
-                    message = ve.ErrorMessage
+                    Members = ve.MemberNames.ToArray(),
+                    Message = ve.ErrorMessage ?? string.Empty
                 })
-                .ToList();
+                .ToArray();
         }
 
-        // Also update target if available from the Error
+        // Add target field if available
         if (!string.IsNullOrEmpty(exception.Target))
         {
             errorInfo.Data["target"] = exception.Target;

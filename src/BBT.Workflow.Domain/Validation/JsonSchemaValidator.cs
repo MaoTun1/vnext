@@ -39,7 +39,7 @@ public sealed class JsonSchemaValidator : IJsonSchemaValidator
 
         return Result.Fail(
             Error.Validation(
-                "schemaValidation",
+                WorkflowErrorCodes.ValidationErrors,
                 "JSON schema validation failed",
                 validationErrors.AsReadOnly()));
     }

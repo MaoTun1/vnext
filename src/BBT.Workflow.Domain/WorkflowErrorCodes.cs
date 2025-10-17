@@ -2,57 +2,54 @@ namespace BBT.Workflow;
 
 /// <summary>
 /// Defines workflow-specific error codes and prefixes for consistent error categorization.
-/// Error codes follow the pattern: prefix.category:code
+/// Error codes follow the pattern: prefix:code
+/// Prefixes: App (Application), Instance, Transition, Execution, Validation, Task
 /// </summary>
 public static class WorkflowErrorCodes
 {
-    #region Error Prefixes
+    public const string ErrorUri = "https://errors.vnext.io";
     
-    /// <summary>
-    /// Error code prefixes for categorizing errors by type.
-    /// Used for automatic HTTP status code mapping.
-    /// </summary>
-    public static class Prefixes
-    {
-        public const string Validation = "validation";
-        public const string NotFound = "notfound";
-        public const string Conflict = "conflict";
-        public const string Unauthorized = "auth.unauthorized";
-        public const string Forbidden = "auth.forbidden";
-        public const string Auth = "auth";
-        public const string Transient = "transient";
-        public const string Dependency = "dep";
-        public const string Failure = "failure";
-    }
-    
+    #region Application Errors (900xxx)
+
+    public const string Locked = "App:900001";
+    public const string ValidationErrors = "App:900002";
+
     #endregion
     
     #region Instance Errors (100xxx)
     
-    public const string NotFoundDomain = "Workflow:100001";
-    public const string ConflictWorkflow = "Workflow:100002";
-    public const string NotFoundInitialState = "Workflow:100003";
-    public const string NotFoundTransition = "Workflow:100004";
-    public const string InvalidState = "Workflow:100005";
-    public const string RuntimeSchemaInvalidState = "Workflow:100006";
-    public const string TransitionRuleFailed = "Workflow:100007";
-    public const string SubFlowBlocked = "Workflow:100008";
-    public const string TransitionLocked = "Workflow:100009";
-    public const string UnauthorizedTransition = "Workflow:100010";
-    public const string AutoTransitionFailed = "Workflow:100011";
-    public const string ConfigInvalid = "Workflow:100012";
-    public const string NotFoundInstanceData = "Workflow:100013";
-    public const string AutoTransitionConditionNotMet = "Workflow:100014";
+    public const string NotFoundDomain = "Instance:100001";
+    public const string ConflictWorkflow = "Instance:100002";
+    public const string NotFoundInitialState = "Instance:100003";
+    public const string ConfigInvalid = "Instance:100012";
+    public const string NotFoundInstanceData = "Instance:100013";
+    public const string NotFoundWorkflow = "Instance:100015";
+    
+    #endregion
+    
+    #region Transition Errors (100xxx)
+    
+    public const string NotFoundTransition = "Transition:100004";
+    public const string InvalidState = "Transition:100005";
+    public const string RuntimeSchemaInvalidState = "Transition:100006";
+    public const string TransitionRuleFailed = "Transition:100007";
+    public const string TransitionLocked = "Transition:100009";
+    public const string UnauthorizedTransition = "Transition:100010";
+    public const string AutoTransitionFailed = "Transition:100011";
+    public const string AutoTransitionConditionNotMet = "Transition:100014";
     
     #endregion
     
     #region Execution Errors (200xxx)
     
-    public const string ExecutionPipelineFailed = "Workflow:200001";
-    public const string ExecutionStepFailed = "Workflow:200002";
-    public const string ExecutionHandlerFailed = "Workflow:200003";
-    public const string ExecutionStrategyFailed = "Workflow:200004";
-    public const string ExecutionContextInvalid = "Workflow:200005";
+    public const string ExecutionStepFailed = "Execution:200002";
+    
+    #endregion
+    
+    #region Task Errors (400xxx)
+    
+    public const string TaskContextCreation = "Task:400001";
+    public const string TaskExecution = "Task:400002";
     
     #endregion
 }

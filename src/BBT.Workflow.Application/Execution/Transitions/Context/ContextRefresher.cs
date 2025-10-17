@@ -10,15 +10,7 @@ public sealed class ContextRefresher(
     public async Task<Result> RefreshAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
         // 1. Get fresh instance
-        var instanceResult = await ResultExtensions.TryAsync(
-            async ct => await instanceRepository.GetAsync(context.InstanceId, true, ct),
-            cancellationToken,
-            ex => WorkflowErrors.InstanceNotFound(context.InstanceId, "not found or could not be loaded"));
-        
-        if (!instanceResult.IsSuccess)
-            return Result.Fail(instanceResult.Error);
-        
-        var fresh = instanceResult.Value!;
+        var fresh = await instanceRepository.GetAsync(context.InstanceId, true, cancellationToken);
         
         // 2. Update instance data
         context.Instance = fresh;

@@ -18,14 +18,8 @@ public sealed class ClearBusyOnResumeStep(
         if (context.Directives.IsSubFlowResume)
         {
             context.Instance.Active();
-            
-            var updateResult = await ResultExtensions.TryAsync(
-                async ct => await instanceRepository.UpdateStatusAsync(context.Instance, ct),
-                cancellationToken,
-                ex => Error.Dependency("db.updateStatus", $"Failed to update instance status: {ex.Message}"));
-            
-            if (!updateResult.IsSuccess)
-                return Result<StepOutcome>.Fail(updateResult.Error);
+
+            await instanceRepository.UpdateStatusAsync(context.Instance, cancellationToken);
             
             // Get target state using Result Pattern
             var targetStateResult = context.Workflow.GetState(context.Instance.GetCurrentState);

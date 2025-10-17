@@ -1,16 +1,21 @@
+using System.Net;
 using System.Text.Json.Serialization;
 using BBT.Aether.AspNetCore.ExceptionHandling;
 using BBT.Aether.Domain.Services;
 using BBT.Aether.ExceptionHandling;
+using BBT.Aether.Http;
 using BBT.Workflow;
 using BBT.Workflow.Data;
+using BBT.Workflow.Events.Distributed;
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Headers;
+using BBT.Workflow.HttpApi.Shared;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
 using BBT.Workflow.Tasks;
 using Dapr.Jobs.Extensions;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -18,8 +23,6 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using System.Net;
-using BBT.Workflow.Events.Distributed;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -182,14 +185,44 @@ public static class WorkflowApiBaseServiceCollectionExtensions
 
     private static void ConfigureExceptionHandling(IServiceCollection services)
     {
+        // Configure Aether's error code to HTTP status code mapping
+        // This is the central place for all error code mappings in the application
+        // Both exception handling and Result pattern use this configuration
         services.Configure<AetherExceptionHttpStatusCodeOptions>(opt =>
         {
+            // General errors
+            opt.Map(WorkflowErrorCodes.Locked, HttpStatusCode.Conflict);
+            opt.Map(WorkflowErrorCodes.ValidationErrors, HttpStatusCode.BadRequest);
+            
+            // Instance errors
             opt.Map(WorkflowErrorCodes.NotFoundDomain, HttpStatusCode.BadRequest);
             opt.Map(WorkflowErrorCodes.ConflictWorkflow, HttpStatusCode.Conflict);
             opt.Map(WorkflowErrorCodes.RuntimeSchemaInvalidState, HttpStatusCode.BadRequest);
+            opt.Map(WorkflowErrorCodes.TransitionLocked, HttpStatusCode.Conflict);
+            opt.Map(WorkflowErrorCodes.AutoTransitionConditionNotMet, HttpStatusCode.BadRequest);
+            opt.Map(WorkflowErrorCodes.UnauthorizedTransition, HttpStatusCode.Forbidden);
+            opt.Map(WorkflowErrorCodes.InvalidState, HttpStatusCode.BadRequest);
+            opt.Map(WorkflowErrorCodes.NotFoundTransition, HttpStatusCode.NotFound);
+            opt.Map(WorkflowErrorCodes.NotFoundInitialState, HttpStatusCode.NotFound);
+            opt.Map(WorkflowErrorCodes.NotFoundWorkflow, HttpStatusCode.NotFound);
+            
+            // Execution errors
+            opt.Map(WorkflowErrorCodes.ExecutionStepFailed, HttpStatusCode.BadRequest);
+            
+            // Task errors
+            opt.Map(WorkflowErrorCodes.TaskContextCreation, HttpStatusCode.InternalServerError);
+            opt.Map(WorkflowErrorCodes.TaskExecution, HttpStatusCode.InternalServerError);
         });
+        
+        services.AddSingleton<ProblemDetailsFactory>();
+        
+        // Replace Aether's default exception converter with our custom one
         services.Remove<IExceptionToErrorInfoConverter>();
         services.AddTransient<IExceptionToErrorInfoConverter, WorkflowExceptionToErrorInfoConverter>();
+        
+        // Replace Aether's default exception handler with our ProblemDetails handler
+        services.Remove<IExceptionHandler>();
+        services.AddExceptionHandler<ProblemDetailsExceptionHandler>();
     }
 
     private static void ConfigureBaseHost(IServiceCollection services)

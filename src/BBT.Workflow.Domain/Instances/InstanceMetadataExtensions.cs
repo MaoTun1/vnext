@@ -68,12 +68,8 @@ public static class InstanceMetadataExtensions
         if (!md.TryGetValue(key, out var raw) || raw is null)
             return Guid.Empty;
 
-        return raw switch
-        {
-            Guid g => g,
-            string s when Guid.TryParse(s, out var g) => g,
-            _ => Guid.Empty
-        };
+        Guid.TryParse(raw.ToString(), out var g);
+        return g;
     }
 
     public static T? GetValue<T>(this Instance instance, string key)

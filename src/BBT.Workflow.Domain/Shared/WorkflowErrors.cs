@@ -12,51 +12,13 @@ public static class WorkflowErrors
     #region Instance Errors
 
     /// <summary>
-    /// Instance was not found or is in an invalid state.
-    /// </summary>
-    public static Error InstanceNotFound(Guid instanceId, string reason)
-        => Error.NotFound(
-            WorkflowErrorCodes.NotFoundInitialState,
-            $"Instance \"{instanceId}\" {reason}",
-            target: instanceId.ToString());
-
-    /// <summary>
     /// Instance already exists with the given key.
     /// </summary>
     public static Error InstanceAlreadyExists(string instanceKey)
         => Error.Conflict(
-            "instanceExists",
+            WorkflowErrorCodes.ConflictWorkflow,
             $"An active instance with key \"{instanceKey}\" already exists",
             target: instanceKey);
-
-    /// <summary>
-    /// Instance is already completed and cannot be modified.
-    /// </summary>
-    public static Error InstanceCompleted(Guid instanceId)
-        => Error.Validation(
-            "instanceCompleted",
-            $"Instance \"{instanceId}\" is already completed",
-            target: instanceId.ToString());
-
-    /// <summary>
-    /// Instance transition is blocked by active SubFlow instances.
-    /// </summary>
-    public static Error SubFlowBlocked(Guid instanceId, string transitionKey, int activeSubFlowCount)
-        => Error.Conflict(
-            WorkflowErrorCodes.SubFlowBlocked,
-            $"Cannot execute transition \"{transitionKey}\" for instance \"{instanceId}\". " +
-            $"There {(activeSubFlowCount == 1 ? "is" : "are")} {activeSubFlowCount} active blocking SubFlow instance{(activeSubFlowCount == 1 ? "" : "s")} that must complete first.",
-            target: transitionKey);
-
-    /// <summary>
-    /// Instance transition is already in progress (locked).
-    /// </summary>
-    public static Error TransitionLocked(Guid instanceId, string transitionKey)
-        => Error.Conflict(
-            WorkflowErrorCodes.TransitionLocked,
-            $"A transition is already in progress for instance \"{instanceId}\". " +
-            $"Cannot execute transition \"{transitionKey}\" until the current transition completes.",
-            target: instanceId.ToString());
 
     #endregion
 
@@ -67,7 +29,7 @@ public static class WorkflowErrors
     /// </summary>
     public static Error WorkflowNotFound(string workflowKey, string? version = null)
         => Error.NotFound(
-            "workflowNotFound",
+            WorkflowErrorCodes.NotFoundWorkflow,
             $"Workflow \"{workflowKey}\" " + (version != null ? $"version \"{version}\" " : "") + "not found",
             target: workflowKey);
 
@@ -115,10 +77,10 @@ public static class WorkflowErrors
     /// Transition schema validation failed with detailed field-level errors.
     /// </summary>
     public static Error SchemaValidationFailed(
-        string transitionKey, 
+        string transitionKey,
         IReadOnlyCollection<System.ComponentModel.DataAnnotations.ValidationResult> validationErrors)
         => Error.Validation(
-            "schemaValidation",
+            WorkflowErrorCodes.ValidationErrors,
             $"Transition \"{transitionKey}\" schema validation failed",
             validationErrors,
             target: transitionKey);
@@ -126,7 +88,8 @@ public static class WorkflowErrors
     /// <summary>
     /// Transition is not authorized for the execution context.
     /// </summary>
-    public static Error TransitionUnauthorized(string transitionKey, TriggerType triggerType, ExecutionActor executionActor)
+    public static Error TransitionUnauthorized(string transitionKey, TriggerType triggerType,
+        ExecutionActor executionActor)
         => Error.Forbidden(
             WorkflowErrorCodes.UnauthorizedTransition,
             $"Transition '{transitionKey}' with trigger type '{triggerType}' cannot be executed by '{executionActor}' context");
@@ -157,41 +120,11 @@ public static class WorkflowErrors
     /// <summary>
     /// SubFlow configuration is invalid or not found.
     /// </summary>
-    public static Error ConfigInvalid(Guid instanceId)
+    public static Error ConfigInvalid(Guid instanceId, string state)
         => Error.Validation(
             WorkflowErrorCodes.ConfigInvalid,
-            $"SubFlow configuration not found for parent instance {instanceId}",
+            $"SubFlow configuration not found for state {state} on instance {instanceId}",
             target: instanceId.ToString());
-
-    /// <summary>
-    /// Runtime schema is in an invalid state.
-    /// </summary>
-    public static Error RuntimeSchemaInvalid()
-        => Error.Validation(
-            WorkflowErrorCodes.RuntimeSchemaInvalidState,
-            "Only defined system flows can be published");
-
-    /// <summary>
-    /// Domain mismatch error.
-    /// </summary>
-    public static Error DomainNotFound(string requestedDomain, string expectedDomain)
-        => Error.NotFound(
-            WorkflowErrorCodes.NotFoundDomain,
-            $"Invalid domain: \"{requestedDomain}\". Expected domain is \"{expectedDomain}\".",
-            target: requestedDomain);
-
-    #endregion
-
-    #region General Errors
-
-    /// <summary>
-    /// Generic conflict error (e.g., duplicate record).
-    /// </summary>
-    public static Error Conflict(string? message = null)
-        => Error.Conflict(
-            WorkflowErrorCodes.ConflictWorkflow,
-            message ?? "A record with the same version already exists.");
 
     #endregion
 }
-

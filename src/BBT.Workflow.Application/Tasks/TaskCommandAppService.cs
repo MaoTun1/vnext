@@ -30,9 +30,7 @@ public sealed class TaskCommandAppService(
         CancellationToken cancellationToken = default)
     {
         // 1. Validate domain
-        var domainCheck = runtimeInfoProvider.Check(input.Context.Workflow.Domain);
-        if (!domainCheck.IsSuccess)
-            return Result<TaskContextUpdateOutput>.Fail(domainCheck.Error);
+        runtimeInfoProvider.Check(input.Context.Workflow.Domain);
 
         using (currentSchema.Change(input.Context.Workflow.Key))
         {
@@ -50,7 +48,7 @@ public sealed class TaskCommandAppService(
                     runtimeInfoProvider, 
                     ct),
                 cancellationToken,
-                ex => Error.Failure("task.contextCreation", $"Failed to create script context: {ex.Message}"));
+                ex => Error.Failure(WorkflowErrorCodes.TaskContextCreation, $"Failed to create script context: {ex.Message}"));
 
             if (!scriptContextResult.IsSuccess)
                 return Result<TaskContextUpdateOutput>.Fail(scriptContextResult.Error);
@@ -68,7 +66,7 @@ public sealed class TaskCommandAppService(
                         scriptContext,
                         ct),
                     cancellationToken,
-                    ex => Error.Failure("task.execution", $"Task execution failed: {ex.Message}"));
+                    ex => Error.Failure(WorkflowErrorCodes.TaskExecution, $"Task execution failed: {ex.Message}"));
 
                 return executionResult;
             }

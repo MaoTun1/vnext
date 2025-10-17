@@ -363,12 +363,13 @@ public static partial class WorkflowLogs
     [LoggerMessage(
         EventId = 10010,
         Level = LogLevel.Information,
-        Message = "{Prefix} SubFlow {SubFlowKey} completed for instance {SubFlowInstanceId}")]
+        Message = "{Prefix} SubFlow {SubFlowKey} completed for instance {SubFlowInstanceId} in {ElapsedMs}ms")]
     public static partial void SubFlowCompleted(
         this ILogger logger,
         string prefix,
         string subFlowKey,
-        Guid subFlowInstanceId);
+        Guid subFlowInstanceId,
+        long elapsedMs);
 
     #endregion
 

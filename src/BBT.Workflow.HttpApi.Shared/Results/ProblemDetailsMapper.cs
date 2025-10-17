@@ -7,15 +7,32 @@ namespace BBT.Workflow.HttpApi.Shared;
 /// <summary>
 /// Maps Result types to ASP.NET Core IResult and ProblemDetails (RFC 7807 compliant).
 /// Provides consistent error responses across all API endpoints.
+/// Uses centralized ProblemDetailsFactory for consistent error formatting.
 /// </summary>
 public static class ProblemDetailsMapper
 {
+    private static ProblemDetailsFactory? _factory;
+    
     /// <summary>
-    /// Gets or sets the error code status mapping configuration.
-    /// Defaults to <see cref="ErrorCodeStatusMapping.Default"/>.
-    /// Can be customized for application-specific error handling.
+    /// Sets the ProblemDetailsFactory to use for creating ProblemDetails.
+    /// This should be called during application startup.
     /// </summary>
-    public static ErrorCodeStatusMapping StatusMapping { get; set; } = ErrorCodeStatusMapping.Default;
+    internal static void Configure(ProblemDetailsFactory factory)
+    {
+        _factory = factory;
+    }
+    
+    private static ProblemDetailsFactory GetFactory()
+    {
+        if (_factory is null)
+        {
+            throw new InvalidOperationException(
+                "ProblemDetailsMapper has not been configured. " +
+                "Ensure UseWorkflowApiBase is called during application startup.");
+        }
+        
+        return _factory;
+    }
     /// <summary>
     /// Converts a non-generic Result to an HTTP response.
     /// Success returns 204 No Content, failure returns ProblemDetails.
@@ -52,40 +69,11 @@ public static class ProblemDetailsMapper
 
     /// <summary>
     /// Converts an Error to RFC 7807 compliant ProblemDetails.
-    /// Maps error codes to appropriate HTTP status codes using the configured <see cref="StatusMapping"/>.
+    /// Uses centralized ProblemDetailsFactory for consistent error formatting.
     /// </summary>
     public static ProblemDetails ToProblemDetails(this Error error)
     {
-        // Use the configurable mapping instead of hard-coded switch
-        var (status, title) = StatusMapping.GetMapping(error.Code);
-
-        var problemDetails = new ProblemDetails
-        {
-            Title = title,
-            Detail = error.Message ?? error.Detail,
-            Status = status,
-            Type = $"https://errors.vnext.io/{error.Code.Replace('.', '/')}",
-            Extensions = 
-            { 
-                ["code"] = error.Code, 
-                ["target"] = error.Target ?? string.Empty,
-                ["traceId"] = System.Diagnostics.Activity.Current?.Id ?? string.Empty
-            }
-        };
-
-        // Include validation errors if available
-        if (error.ValidationErrors is { Count: > 0 })
-        {
-            problemDetails.Extensions["errors"] = error.ValidationErrors
-                .Select(ve => new
-                {
-                    field = ve.MemberNames.FirstOrDefault() ?? string.Empty,
-                    message = ve.ErrorMessage
-                })
-                .ToList();
-        }
-
-        return problemDetails;
+        return GetFactory().CreateFromError(error);
     }
 
     /// <summary>

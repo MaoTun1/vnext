@@ -1,4 +1,7 @@
 using System.ComponentModel.DataAnnotations;
+using BBT.Aether;
+using BBT.Aether.ExceptionHandling;
+using BBT.Aether.Validation;
 
 namespace BBT.Workflow.ExceptionHandling;
 
@@ -7,7 +10,7 @@ namespace BBT.Workflow.ExceptionHandling;
 /// This exception bridges the Result pattern with exception-based error handling,
 /// providing detailed error information including field-level validation errors.
 /// </summary>
-public sealed class WorkflowValidationException : Exception
+public sealed class WorkflowValidationException : AetherValidationException
 {
     /// <summary>
     /// Gets the error information from Result pattern.
@@ -17,18 +20,13 @@ public sealed class WorkflowValidationException : Exception
     /// <summary>
     /// Gets the error code from the validation error.
     /// </summary>
-    public string ErrorCode => Error.Code;
+    public string Code => Error.Code;
 
     /// <summary>
     /// Gets the target field or resource that caused the error.
     /// </summary>
     public string? Target => Error.Target;
-
-    /// <summary>
-    /// Gets detailed field-level validation errors if available.
-    /// </summary>
-    public IReadOnlyCollection<ValidationResult>? ValidationErrors => Error.ValidationErrors;
-
+    
     /// <summary>
     /// Initializes a new instance of WorkflowValidationException from a Result Error.
     /// </summary>
@@ -37,6 +35,7 @@ public sealed class WorkflowValidationException : Exception
         : base(error.Message ?? error.Code)
     {
         Error = error;
+        BuildValidationErrors();
     }
 
     /// <summary>
@@ -48,6 +47,7 @@ public sealed class WorkflowValidationException : Exception
         : base(message)
     {
         Error = Domain.Error.Validation(errorCode, message);
+        BuildValidationErrors();
     }
 
     /// <summary>
@@ -65,6 +65,18 @@ public sealed class WorkflowValidationException : Exception
         : base(message)
     {
         Error = Domain.Error.Validation(errorCode, message, validationErrors, target);
+        BuildValidationErrors();
+    }
+
+    private void BuildValidationErrors()
+    {
+        if (Error.ValidationErrors is { Count: > 0 })
+        {
+            foreach (var errorValidationError in Error.ValidationErrors)
+            {
+                ValidationErrors.Add(errorValidationError);
+            }
+        } 
     }
 }
 

@@ -14,7 +14,7 @@ public sealed class TransitionHandlerFactory(
     ILogger<TransitionHandlerFactory> logger) : ITransitionHandlerFactory
 {
     /// <inheritdoc />
-    public Result<ITransitionHandler> Get(TriggerType triggerType)
+    public ITransitionHandler Get(TriggerType triggerType)
     {
         logger.LogDebug("Resolving transition handler for trigger type {TriggerType}", triggerType);
 
@@ -27,13 +27,12 @@ public sealed class TransitionHandlerFactory(
         if (handler == null)
         {
             logger.LogError("No transition handler found for trigger type {TriggerType}", triggerType);
-            return Result<ITransitionHandler>.Fail(
-                Error.Failure("handler.notFound", $"No transition handler found for trigger type {triggerType}", triggerType.ToString()));
+            throw new NotSupportedException($"No transition handler found for trigger type {triggerType}");
         }
 
         logger.LogDebug("Resolved transition handler {HandlerType} for trigger type {TriggerType}",
             handler.GetType().Name, triggerType);
 
-        return Result<ITransitionHandler>.Ok(handler);
+        return handler;
     }
 }

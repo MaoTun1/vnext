@@ -47,17 +47,9 @@ public sealed class AdminAppService(
     /// <inheritdoc />
     public async Task<Result> PublishAsync(PublishInput input, CancellationToken cancellationToken = default)
     {
-        var domainCheck = runtimeInfoProvider.Check(input.Domain);
-        if (!domainCheck.IsSuccess)
-            return domainCheck;
+        runtimeInfoProvider.Check(input.Domain);
 
-        if (!IsValidSchema(input))
-        {
-            return Result.Fail(
-                Error.Validation(
-                    WorkflowErrorCodes.RuntimeSchemaInvalidState, 
-                    "Only defined system flows can be published"));
-        }
+        CheckValidSchema(input);
 
         using (currentSchema.Change(input.Flow))
         {
@@ -86,10 +78,13 @@ public sealed class AdminAppService(
     /// </summary>
     /// <param name="input">The publish input to validate</param>
     /// <returns>True if the schema is valid, false otherwise</returns>
-    private bool IsValidSchema(PublishInput input)
+    private void CheckValidSchema(PublishInput input)
     {
-        return runtimeOptions.Value.Schemas.ContainsKey(input.Key) &&
-               runtimeOptions.Value.Schemas.ContainsKey(input.Flow);
+        if (!(runtimeOptions.Value.Schemas.ContainsKey(input.Key) &&
+              runtimeOptions.Value.Schemas.ContainsKey(input.Flow)))
+        {
+            throw new RuntimeSchemaInvalidException();
+        }
     }
 
     /// <summary>
@@ -111,7 +106,7 @@ public sealed class AdminAppService(
                 var memberName = error.MemberNames.FirstOrDefault() ?? "unknown";
                 workflowMetrics.RecordValidationFailure("workflow_definition", "AdminAppService", memberName);
             }
-            
+
             throw new AetherValidationException(validationResult.ValidationErrors);
         }
 
@@ -159,14 +154,16 @@ public sealed class AdminAppService(
         {
             if (input.Data?.Any() == true)
             {
-                Logger.LogWarning("Instance {InstanceKey} already has data version {Version}", instance.Key, input.Version);
+                Logger.LogWarning("Instance {InstanceKey} already has data version {Version}", instance.Key,
+                    input.Version);
                 await HandleAdditionalDataVersionsAsync(input, cancellationToken);
             }
+
             return Result.Fail(
                 Error.Conflict(
-                    WorkflowErrorCodes.ConflictWorkflow, 
+                    WorkflowErrorCodes.ConflictWorkflow,
                     "A record with the same version already exists."));
-        }   
+        }
 
         var workflow = CreateAndValidateWorkflow(input);
 
@@ -210,7 +207,8 @@ public sealed class AdminAppService(
 
                 if (instance.FindData(dataItem.Version) != null)
                 {
-                    Logger.LogWarning("Instance {InstanceKey} already has data version {Version}", dataItem.Key, dataItem.Version);
+                    Logger.LogWarning("Instance {InstanceKey} already has data version {Version}", dataItem.Key,
+                        dataItem.Version);
                     continue;
                 }
 
@@ -243,18 +241,14 @@ public sealed class AdminAppService(
     }
 
     /// <inheritdoc />
-    public async Task<Result> InvalidateCacheAsync(InvalidateCacheInput input, CancellationToken cancellationToken = default)
+    public async Task<Result> InvalidateCacheAsync(InvalidateCacheInput input,
+        CancellationToken cancellationToken = default)
     {
-        var domainCheck = runtimeInfoProvider.Check(input.Domain);
-        if (!domainCheck.IsSuccess)
-            return domainCheck;
+        runtimeInfoProvider.Check(input.Domain);
 
         if (!runtimeOptions.Value.Schemas.ContainsKey(input.Flow))
         {
-            return Result.Fail(
-                Error.Validation(
-                    WorkflowErrorCodes.RuntimeSchemaInvalidState, 
-                    "Only defined system flows can be published"));
+            throw new RuntimeSchemaInvalidException();
         }
 
         using (currentSchema.Change(input.Flow))

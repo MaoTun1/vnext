@@ -30,7 +30,7 @@ public readonly record struct Error(
     /// <param name="message">Error message</param>
     /// <param name="target">The field or property that failed validation</param>
     public static Error Validation(string code, string? message = null, string? target = null) 
-        => new($"validation.{code}", message, Target: target);
+        => new($"{code}", message, Target: target);
 
     /// <summary>
     /// Creates a validation error with detailed field-level validation results.
@@ -46,7 +46,7 @@ public readonly record struct Error(
         string? message, 
         IReadOnlyCollection<System.ComponentModel.DataAnnotations.ValidationResult> validationErrors, 
         string? target = null)
-        => new($"validation.{code}", message, Target: target, ValidationErrors: validationErrors);
+        => new($"{code}", message, Target: target, ValidationErrors: validationErrors);
 
     /// <summary>
     /// Creates a conflict error.
@@ -57,7 +57,7 @@ public readonly record struct Error(
     /// <param name="message">Error message</param>
     /// <param name="target">The resource that conflicts</param>
     public static Error Conflict(string code, string? message = null, string? target = null) 
-        => new($"conflict.{code}", message, Target: target);
+        => new($"{code}", message, Target: target);
 
     /// <summary>
     /// Creates a not found error.
@@ -68,7 +68,7 @@ public readonly record struct Error(
     /// <param name="message">Error message</param>
     /// <param name="target">The resource identifier that was not found</param>
     public static Error NotFound(string code, string? message = null, string? target = null) 
-        => new($"notfound.{code}", message, Target: target);
+        => new($"{code}", message, Target: target);
 
     /// <summary>
     /// Creates an unauthorized error.
@@ -78,7 +78,7 @@ public readonly record struct Error(
     /// <param name="code">Specific authorization error code</param>
     /// <param name="message">Error message</param>
     public static Error Unauthorized(string code = "unauthorized", string? message = null) 
-        => new($"auth.{code}", message);
+        => new($"{code}", message);
 
     /// <summary>
     /// Creates a forbidden error.
@@ -88,7 +88,7 @@ public readonly record struct Error(
     /// <param name="code">Specific permission error code</param>
     /// <param name="message">Error message</param>
     public static Error Forbidden(string code = "forbidden", string? message = null) 
-        => new($"auth.{code}", message);
+        => new($"{code}", message);
 
     /// <summary>
     /// Creates a dependency error.
@@ -99,7 +99,7 @@ public readonly record struct Error(
     /// <param name="message">Error message</param>
     /// <param name="target">The dependency that failed</param>
     public static Error Dependency(string code, string? message = null, string? target = null)
-        => new($"dep.{code}", message, Target: target);
+        => new($"{code}", message, Target: target);
 
     /// <summary>
     /// Creates a transient error.
@@ -110,7 +110,7 @@ public readonly record struct Error(
     /// <param name="message">Error message</param>
     /// <param name="target">The operation that failed transiently</param>
     public static Error Transient(string code, string? message = null, string? target = null)
-        => new($"transient.{code}", message, Target: target);
+        => new($"{code}", message, Target: target);
 
     /// <summary>
     /// Creates a general failure error.
@@ -121,6 +121,6 @@ public readonly record struct Error(
     /// <param name="message">Error message</param>
     /// <param name="detail">Additional error details</param>
     public static Error Failure(string code, string? message = null, string? detail = null)
-        => new($"failure.{code}", message, detail);
+        => new($"{code}", message, detail);
 }
 

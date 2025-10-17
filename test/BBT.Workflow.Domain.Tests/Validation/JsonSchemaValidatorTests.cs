@@ -73,7 +73,7 @@ public class JsonSchemaValidatorTests: DomainTestBase<DomainEntryPoint>
 
         // Assert
         Assert.False(result.IsSuccess);
-        Assert.Equal("validation.schemaValidation", result.Error.Code);
+        Assert.Equal(WorkflowErrorCodes.ValidationErrors, result.Error.Code);
         Assert.NotNull(result.Error.ValidationErrors);
         Assert.NotEmpty(result.Error.ValidationErrors);
         Assert.Contains(result.Error.ValidationErrors, vr => vr.MemberNames.Contains("required") || vr.MemberNames.Contains("age"));
@@ -100,7 +100,7 @@ public class JsonSchemaValidatorTests: DomainTestBase<DomainEntryPoint>
 
         // Assert
         Assert.False(result.IsSuccess);
-        Assert.Equal("validation.schemaValidation", result.Error.Code);
+        Assert.Equal(WorkflowErrorCodes.ValidationErrors, result.Error.Code);
         Assert.NotNull(result.Error.ValidationErrors);
         Assert.NotEmpty(result.Error.ValidationErrors);
     }

@@ -31,12 +31,11 @@ public sealed class InstanceCommandAppService(
         CancellationToken cancellationToken = default)
     {
         // Each step returns Result, errors propagate automatically
-        
+        runtimeInfoProvider.Check(input.Domain);
         // Set schema context once at the beginning
         using (currentSchema.Change(input.Workflow))
         {
-            return await ValidateDomainAsync(input.Domain)
-                .ThenAsync(_ => LoadWorkflowAsync(input, cancellationToken))
+            return await LoadWorkflowAsync(input, cancellationToken)
                 .OnSuccessAsync(async workflow => 
                     await schemaManager.EnsureSchemaAndTablesAsync(currentSchema.Name, cancellationToken))
                 .ThenAsync(workflow => PrepareInstanceAsync(workflow, input, cancellationToken))
@@ -46,18 +45,6 @@ public sealed class InstanceCommandAppService(
                 .ThenAsync(data => ExecuteStartTransitionAsync(data, input, cancellationToken))
                 .OnSuccess(output => AddWorkflowHeader(output, input));
         }
-    }
-
-    /// <summary>
-    /// Step 1: Validates the runtime domain.
-    /// </summary>
-    private Task<Result<string>> ValidateDomainAsync(string domain)
-    {
-        var domainCheck = runtimeInfoProvider.Check(domain);
-        return Task.FromResult(
-            domainCheck.IsSuccess 
-                ? Result<string>.Ok(domain) 
-                : Result<string>.Fail(domainCheck.Error));
     }
 
     /// <summary>
@@ -159,10 +146,7 @@ public sealed class InstanceCommandAppService(
         CancellationToken cancellationToken = default)
     {
         // Validate domain first
-        var domainCheck = runtimeInfoProvider.Check(input.Domain);
-        if (!domainCheck.IsSuccess)
-            return Result<TransitionOutput>.Fail(domainCheck.Error);
-
+        runtimeInfoProvider.Check(input.Domain);
         return await ExecuteTransitionAsync(instanceId, transitionKey, input, cancellationToken)
             .OnSuccess(output => AddTransitionHeader(output, input));
     }

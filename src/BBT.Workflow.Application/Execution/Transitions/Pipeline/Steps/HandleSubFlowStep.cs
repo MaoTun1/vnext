@@ -25,7 +25,8 @@ public sealed class HandleSubFlowStep(
     public int Order => LifecycleOrder.SubFlow;
 
     /// <inheritdoc />
-    public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context,
+        CancellationToken cancellationToken)
     {
         // Early return if this step is not applicable
         if (!IsApplicable(context))
@@ -70,12 +71,12 @@ public sealed class HandleSubFlowStep(
     {
         if (context.Target!.SubFlow == null)
         {
-            logger.LogError("No SubFlow defined for state {StateName} on instance {InstanceId}", 
+            logger.LogError("No SubFlow defined for state {StateName} on instance {InstanceId}",
                 context.Target.Key, context.InstanceId);
             return Task.FromResult(Result<TransitionExecutionContext>.Fail(
-                Error.Validation(
-                    WorkflowErrorCodes.ConfigInvalid,
-                    $"SubFlow configuration not found for state {context.Target.Key} on instance {context.InstanceId}")));
+                    WorkflowErrors.ConfigInvalid(context.InstanceId, context.Target.Key)
+                )
+            );
         }
 
         return Task.FromResult(Result<TransitionExecutionContext>.Ok(context));
@@ -88,7 +89,7 @@ public sealed class HandleSubFlowStep(
     {
         logger.LogDebug("Handling SubFlow for state {StateName} on instance {InstanceId}",
             context.Target!.Key, context.InstanceId);
-        
+
         return Task.FromResult(Result<TransitionExecutionContext>.Ok(context));
     }
 
@@ -106,9 +107,10 @@ public sealed class HandleSubFlowStep(
     /// </summary>
     private Task LogSubFlowHandlingFailedAsync(TransitionExecutionContext context, Error error)
     {
-        logger.LogError("Failed to handle SubFlow for state {StateName} on instance {InstanceId}: {ErrorCode} - {ErrorMessage}",
+        logger.LogError(
+            "Failed to handle SubFlow for state {StateName} on instance {InstanceId}: {ErrorCode} - {ErrorMessage}",
             context.Target?.Key, context.InstanceId, error.Code, error.Message);
-        
+
         return Task.CompletedTask;
     }
 
@@ -131,7 +133,7 @@ public sealed class HandleSubFlowStep(
             };
             return Task.FromResult(Result<StepOutcome>.Ok(outcome));
         }
-        
+
         return Task.FromResult(Result<StepOutcome>.Ok(StepOutcome.Continue()));
     }
 
@@ -139,7 +141,7 @@ public sealed class HandleSubFlowStep(
     /// Handles SubFlow operations using Railway Oriented Programming.
     /// </summary>
     private async Task<Result<TransitionExecutionContext>> HandleSubFlowAsync(
-        TransitionExecutionContext context, 
+        TransitionExecutionContext context,
         CancellationToken cancellationToken)
     {
         return await ResultExtensions.TryAsync(
@@ -165,7 +167,7 @@ public sealed class HandleSubFlowStep(
         // Create correlation to track SubFlow/SubProcess instance
         // SubFlow (Type "S"): Blocks parent workflow until completion
         // SubProcess (Type "P"): Runs in parallel without blocking parent
-        
+
         //TODO: Bu creation'ı Instance içine al
         var correlation = InstanceCorrelation.Create(
             guidGenerator.Create(),
@@ -178,14 +180,8 @@ public sealed class HandleSubFlowStep(
             context.Target.SubFlow.Process.Version);
 
         context.Instance.AddCorrelation(correlation);
-        
-        var updateResult = await ResultExtensions.TryAsync(
-            async ct => await instanceRepository.UpdateAsync(context.Instance, true, ct),
-            cancellationToken,
-            ex => Error.Dependency("db.update", $"Failed to add correlation: {ex.Message}"));
-        
-        if (!updateResult.IsSuccess)
-            throw new InvalidOperationException($"Failed to add correlation: {updateResult.Error.Message}");
+
+        await instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
 
         // Create script context for SubFlow handling
         var scriptContext = context.GetOrBuildScriptContext(() =>

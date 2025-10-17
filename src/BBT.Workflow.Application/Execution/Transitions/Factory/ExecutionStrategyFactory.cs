@@ -13,7 +13,7 @@ public sealed class ExecutionStrategyFactory(
     ILogger<ExecutionStrategyFactory> logger) : IExecutionStrategyFactory
 {
     /// <inheritdoc />
-    public Result<ITransitionStrategy> Get(ExecMode mode)
+    public ITransitionStrategy Get(ExecMode mode)
     {
         logger.LogDebug("Resolving execution strategy for mode {ExecMode}", mode);
 
@@ -27,13 +27,12 @@ public sealed class ExecutionStrategyFactory(
         if (strategy == null)
         {
             logger.LogError("No execution strategy found for mode {ExecMode}", mode);
-            return Result<ITransitionStrategy>.Fail(
-                Error.Failure("strategy.notFound", $"No execution strategy found for mode {mode}", mode.ToString()));
+            throw new NotSupportedException($"No execution strategy found for mode {mode}");
         }
 
         logger.LogDebug("Resolved execution strategy {StrategyType} for mode {ExecMode}",
             strategy.GetType().Name, mode);
 
-        return Result<ITransitionStrategy>.Ok(strategy);
+        return strategy;
     }
 }

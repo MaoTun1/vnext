@@ -54,7 +54,7 @@ public class ErrorTests
         var error = Error.Validation(code, message, target);
 
         // Assert
-        Assert.Equal("validation.required", error.Code);
+        Assert.Equal(code, error.Code);
         Assert.Equal(message, error.Message);
         Assert.Equal(target, error.Target);
     }
@@ -75,7 +75,7 @@ public class ErrorTests
         var error = Error.Validation(code, message, validationErrors);
 
         // Assert
-        Assert.Equal("validation.schema", error.Code);
+        Assert.Equal(code, error.Code);
         Assert.Equal(message, error.Message);
         Assert.NotNull(error.ValidationErrors);
         Assert.Equal(2, error.ValidationErrors.Count);
@@ -93,7 +93,7 @@ public class ErrorTests
         var error = Error.Conflict(code, message, target);
 
         // Assert
-        Assert.Equal("conflict.duplicate", error.Code);
+        Assert.Equal(code, error.Code);
         Assert.Equal(message, error.Message);
         Assert.Equal(target, error.Target);
     }
@@ -110,7 +110,7 @@ public class ErrorTests
         var error = Error.NotFound(code, message, target);
 
         // Assert
-        Assert.Equal("notfound.resource", error.Code);
+        Assert.Equal(code, error.Code);
         Assert.Equal(message, error.Message);
         Assert.Equal(target, error.Target);
     }
@@ -126,7 +126,7 @@ public class ErrorTests
         var error = Error.Unauthorized(code, message);
 
         // Assert
-        Assert.Equal("auth.invalid_token", error.Code);
+        Assert.Equal(code, error.Code);
         Assert.Equal(message, error.Message);
     }
 
@@ -137,7 +137,7 @@ public class ErrorTests
         var error = Error.Unauthorized();
 
         // Assert
-        Assert.Equal("auth.unauthorized", error.Code);
+        Assert.Equal("unauthorized", error.Code);
         Assert.Null(error.Message);
     }
 
@@ -152,7 +152,7 @@ public class ErrorTests
         var error = Error.Forbidden(code, message);
 
         // Assert
-        Assert.Equal("auth.insufficient_permissions", error.Code);
+        Assert.Equal("insufficient_permissions", error.Code);
         Assert.Equal(message, error.Message);
     }
 
@@ -163,7 +163,7 @@ public class ErrorTests
         var error = Error.Forbidden();
 
         // Assert
-        Assert.Equal("auth.forbidden", error.Code);
+        Assert.Equal("forbidden", error.Code);
         Assert.Null(error.Message);
     }
 
@@ -179,7 +179,7 @@ public class ErrorTests
         var error = Error.Dependency(code, message, target);
 
         // Assert
-        Assert.Equal("dep.database", error.Code);
+        Assert.Equal("database", error.Code);
         Assert.Equal(message, error.Message);
         Assert.Equal(target, error.Target);
     }
@@ -196,7 +196,7 @@ public class ErrorTests
         var error = Error.Transient(code, message, target);
 
         // Assert
-        Assert.Equal("transient.timeout", error.Code);
+        Assert.Equal("timeout", error.Code);
         Assert.Equal(message, error.Message);
         Assert.Equal(target, error.Target);
     }
@@ -213,7 +213,7 @@ public class ErrorTests
         var error = Error.Failure(code, message, detail);
 
         // Assert
-        Assert.Equal("failure.unexpected", error.Code);
+        Assert.Equal("unexpected", error.Code);
         Assert.Equal(message, error.Message);
         Assert.Equal(detail, error.Detail);
     }
@@ -262,7 +262,7 @@ public class ErrorTests
         var error = Error.Validation("code", message);
 
         // Assert
-        Assert.Equal("validation.code", error.Code);
+        Assert.Equal("code", error.Code);
         Assert.Equal(message, error.Message);
     }
 

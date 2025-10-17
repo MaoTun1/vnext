@@ -81,6 +81,13 @@ public sealed class DefaultReentryDispatcher(
                 command.TransitionKey, command.InstanceId);
             return true; // Success
         }
+        catch (AutoTransitionConditionNotMetException)
+        {
+            logger.LogDebug(
+                "Inline re-entry for auto-transition {TransitionKey} on instance {InstanceId} - condition not met, this is normal in multi-auto-transition scenarios",
+                command.TransitionKey, command.InstanceId);
+            return false; // Not an error, just condition not met
+        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             logger.LogDebug("Inline re-entry cancelled for transition {TransitionKey} on instance {InstanceId}",

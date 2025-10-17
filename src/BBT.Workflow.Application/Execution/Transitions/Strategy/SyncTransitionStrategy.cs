@@ -29,11 +29,7 @@ public sealed class SyncTransitionStrategy(
             context.InstanceId);
 
         // 1. Resolve handler
-        var handlerResult = handlerFactory.Get(context.TriggerType);
-        if (!handlerResult.IsSuccess)
-            return Result<TransitionExecutionContext>.Fail(handlerResult.Error);
-        
-        var handler = handlerResult.Value!;
+        var handler = handlerFactory.Get(context.TriggerType);
         
         // 2. Create execution context (rehydrate)
         var ctxResult = await ctxFactory.CreateAsync(context, cancellationToken);

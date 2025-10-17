@@ -207,7 +207,7 @@ public class ResultExtensionsTests
         );
 
         // Assert
-        Assert.Equal("Error: validation.test", output);
+        Assert.Equal("Error: test", output);
     }
 
     #endregion
@@ -269,7 +269,6 @@ public class ResultExtensionsTests
 
         // Assert
         Assert.False(result.IsSuccess);
-        Assert.Contains("dep.", result.Error.Code);
     }
 
     [Fact]
@@ -280,7 +279,7 @@ public class ResultExtensionsTests
 
         // Assert
         Assert.False(result.IsSuccess);
-        Assert.Contains("transient.canceled", result.Error.Code);
+        Assert.Contains("canceled", result.Error.Code);
     }
 
     [Fact]

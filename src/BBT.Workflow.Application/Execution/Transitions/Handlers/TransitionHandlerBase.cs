@@ -68,9 +68,7 @@ public abstract class TransitionHandlerBase : ITransitionHandler
                 context.TransitionKey);
             
             // For auto-transition condition not met, throw special exception that can be handled upstream
-            throw new AutoTransitionConditionNotMetException(
-                internalValidationResult.Error.Code,
-                internalValidationResult.Error.Message ?? internalValidationResult.Error.Code);
+            throw new AutoTransitionConditionNotMetException();
         }
 
         try
