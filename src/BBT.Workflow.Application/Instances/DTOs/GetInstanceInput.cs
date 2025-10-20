@@ -117,4 +117,9 @@ public sealed class GetInstanceDataInput : IHasDomain
     /// ETag value for conditional requests (If-None-Match header)
     /// </summary>
     public string? IfNoneMatch { get; set; }
+
+    /// <summary>
+    /// Extensions requested for data enrichment
+    /// </summary>
+    public string[]? Extension { get; set; }
 } 

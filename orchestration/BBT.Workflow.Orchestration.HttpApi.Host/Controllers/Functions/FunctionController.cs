@@ -1,7 +1,9 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
+using BBT.Workflow.Domain.Shared;
 using BBT.Workflow.Functions;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Instances.DTOs;
 using BBT.Workflow.Runtime;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -13,7 +15,8 @@ namespace BBT.Workflow.Controllers.Instances;
 [Route("api/v{version:apiVersion}")]
 [ServiceFilter(typeof(ResponseHeaderFilter))]
 public sealed class FunctionController(
-    IFunctionAppService functionAppService) : ControllerBase
+    IFunctionAppService functionAppService,
+    IInstanceQueryAppService queryAppService) : ControllerBase
 {
     [HttpPatch("{domain}/functions")]
     public async Task<IActionResult> GetDomainFunctions(
@@ -55,11 +58,57 @@ public sealed class FunctionController(
         [FromRoute] string function,
         [FromRoute] string workflow,
         [FromRoute] string instance,
-        [FromQuery] bool? async = false,
+        [FromQuery] FunctionQueryParemeters parameters,
+        [FromHeader(Name = "If-None-Match")] string? ifNoneMatch,
         CancellationToken cancellationToken = default)
     {
-        var response =
-            await functionAppService.GetFunctionByInstance(function, workflow, domain, instance, cancellationToken);
-        return Ok(response);
+        switch (function.ToLowerInvariant())
+        {
+            case Definitions.Functions.FunctionTypeConst.Longpooling:
+                var inputLongpooling = new GetInstanceStateInput
+                {
+                    Domain = domain,
+                    Workflow = workflow,
+                    Instance = instance,
+                    Version = parameters.Version,
+                    Extension = parameters.Extension
+                };
+                var response = await queryAppService.GetInstanceStateAsync(inputLongpooling, cancellationToken);
+                return Ok(response.Data);
+            case Definitions.Functions.FunctionTypeConst.View:
+                var inputView = new GetViewInput
+                {
+                    Domain = domain,
+                    Workflow = workflow,
+                    Instance = instance,
+                    Version = parameters.Version
+                };
+                var responseView = await queryAppService.GetPlatformSpecificViewAsync(inputView, parameters.Platform, cancellationToken);
+
+                // Return only the content as requested, without Type and Target
+                return Ok(responseView.Data.Content);
+            case Definitions.Functions.FunctionTypeConst.Data:
+                var inputData = new GetInstanceDataInput
+                {
+                    Domain = domain,
+                    Workflow = workflow,
+                    Instance = instance,
+                    IfNoneMatch = ifNoneMatch
+                };
+                var responseData = await queryAppService.GetInstanceDataAsync(inputData, cancellationToken);
+                if (responseData.IsNotModified)
+                {
+                    return StatusCode(StatusCodes.Status304NotModified);
+                }
+                if (!string.IsNullOrEmpty(responseData.Data.Etag))
+                {
+                    HttpContext.Response.Headers[HeadersConstants.ETag] = responseData.Data.Etag;
+                }
+                return Ok(new GetInstanceDataResponseOutput(responseData.Data));
+            default:
+                return Ok(
+                    await functionAppService.GetFunctionByInstance(function, workflow, domain, instance, cancellationToken)
+                    );
+        }
     }
 }

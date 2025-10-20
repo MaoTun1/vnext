@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using BBT.Aether;
 using BBT.Workflow.Runtime;
+using BBT.Workflow.Shared;
 
 namespace BBT.Workflow.Definitions;
 
@@ -20,11 +21,17 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
     private View(
         ViewType type,
         ViewTarget target,
-        string content): this()
+        string content,
+        string display,
+        LanguageLabel[]? labels,
+        PlatformOverrides? platformOverrides) : this()
     {
         Type = type;
         Target = target;
         Content = Check.NotNullOrWhiteSpace(content, nameof(Content));
+        Display = display;
+        Labels = labels??=[];
+        PlatformOverrides = platformOverrides;
     }
 
     /// <summary>
@@ -66,6 +73,15 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
     /// Content
     /// </summary>
     public string Content { get; private set; } = string.Empty;
+    /// <summary>
+    /// Display
+    /// </summary>
+    public string Display { get; private set; } = string.Empty;
+    /// <summary>
+    /// Display
+    /// </summary>
+    public LanguageLabel[]? Labels { get; private set; } = [];
+    public PlatformOverrides? PlatformOverrides { get; private set; }
 
     /// <summary>
     /// Json Content
@@ -79,7 +95,7 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
                 string jsonWrapped = JsonSerializer.Serialize(Content);
                 return JsonDocument.Parse(jsonWrapped);
             }
-                
+
             // Try to parse as JSON only when type is Json
             try
             {
@@ -114,7 +130,7 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
     {
         Domain = Check.NotNullOrWhiteSpace(domain, nameof(Domain), WorkflowConstants.MaxDomainLength);
     }
-    
+
     private void SetVersion(string version)
     {
         Version = Check.NotNullOrWhiteSpace(version, nameof(Version), WorkflowConstants.MaxVersionLength);
