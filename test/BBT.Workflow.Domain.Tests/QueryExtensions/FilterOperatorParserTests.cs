@@ -384,9 +384,9 @@ public class FilterOperatorParserTests : DomainTestBase<DomainEntryPoint>
     {
         return new List<TestEntity>
         {
-            new() { Id = 1, Name = "John", Age = 30, Price = 199.99m, CreatedAt = DateTime.Now.AddDays(-5) },
-            new() { Id = 2, Name = "Jane", Age = 28, Price = 150.00m, CreatedAt = DateTime.Now.AddDays(-3) },
-            new() { Id = 3, Name = "Alice", Age = 25, Price = 99.99m, CreatedAt = DateTime.Now.AddDays(-1) }
+            new() { Id = 1, Name = "John", Age = 30, Price = 199.99m, CreatedAt = DateTime.UtcNow.AddDays(-5) },
+            new() { Id = 2, Name = "Jane", Age = 28, Price = 150.00m, CreatedAt = DateTime.UtcNow.AddDays(-3) },
+            new() { Id = 3, Name = "Alice", Age = 25, Price = 99.99m, CreatedAt = DateTime.UtcNow.AddDays(-1) }
         };
     }
 }

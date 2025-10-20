@@ -1,5 +1,4 @@
 using System;
-using BBT.Workflow.Shared;
 using Xunit;
 
 namespace BBT.Workflow.Shared;
@@ -81,6 +80,8 @@ public class ExecutionActorTests
             case ExecutionActor.System:
                 result = "System executed";
                 break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(actor), actor, null);
         }
 
         // Assert

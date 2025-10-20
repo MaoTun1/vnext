@@ -1,9 +1,7 @@
-using System;
-using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using BBT.Aether.Domain.Entities;
-using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Runtime;
 using Moq;
@@ -18,7 +16,6 @@ namespace BBT.Workflow.Caching;
 /// </summary>
 public class ComponentCacheStoreTests
 {
-    private readonly Mock<IDomainCacheContext> _mockCacheContext;
     private readonly Mock<ICacheSet<Definitions.Workflow>> _mockWorkflowsCacheSet;
     private readonly Mock<ICacheSet<WorkflowTask>> _mockTasksCacheSet;
     private readonly Mock<ICacheSet<SchemaDefinition>> _mockSchemasCacheSet;
@@ -29,7 +26,7 @@ public class ComponentCacheStoreTests
 
     public ComponentCacheStoreTests()
     {
-        _mockCacheContext = new Mock<IDomainCacheContext>();
+        var mockCacheContext = new Mock<IDomainCacheContext>();
         _mockWorkflowsCacheSet = new Mock<ICacheSet<Definitions.Workflow>>();
         _mockTasksCacheSet = new Mock<ICacheSet<WorkflowTask>>();
         _mockSchemasCacheSet = new Mock<ICacheSet<SchemaDefinition>>();
@@ -37,14 +34,14 @@ public class ComponentCacheStoreTests
         _mockViewsCacheSet = new Mock<ICacheSet<View>>();
         _mockExtensionsCacheSet = new Mock<ICacheSet<Extension>>();
 
-        _mockCacheContext.Setup(x => x.Workflows).Returns(_mockWorkflowsCacheSet.Object);
-        _mockCacheContext.Setup(x => x.Tasks).Returns(_mockTasksCacheSet.Object);
-        _mockCacheContext.Setup(x => x.Schemas).Returns(_mockSchemasCacheSet.Object);
-        _mockCacheContext.Setup(x => x.Functions).Returns(_mockFunctionsCacheSet.Object);
-        _mockCacheContext.Setup(x => x.Views).Returns(_mockViewsCacheSet.Object);
-        _mockCacheContext.Setup(x => x.Extensions).Returns(_mockExtensionsCacheSet.Object);
+        mockCacheContext.Setup(x => x.Workflows).Returns(_mockWorkflowsCacheSet.Object);
+        mockCacheContext.Setup(x => x.Tasks).Returns(_mockTasksCacheSet.Object);
+        mockCacheContext.Setup(x => x.Schemas).Returns(_mockSchemasCacheSet.Object);
+        mockCacheContext.Setup(x => x.Functions).Returns(_mockFunctionsCacheSet.Object);
+        mockCacheContext.Setup(x => x.Views).Returns(_mockViewsCacheSet.Object);
+        mockCacheContext.Setup(x => x.Extensions).Returns(_mockExtensionsCacheSet.Object);
 
-        _store = new ComponentCacheStore(_mockCacheContext.Object);
+        _store = new ComponentCacheStore(mockCacheContext.Object);
     }
 
     #region GetFlowAsync Tests
@@ -294,8 +291,9 @@ public class ComponentCacheStoreTests
         var result = await _store.GetAllExtensionsAsync(domain, CancellationToken.None);
 
         // Assert
-        result.ShouldNotBeNull();
-        System.Linq.Enumerable.Count(result).ShouldBe(3);
+        var enumerable = result as Extension[] ?? result.ToArray();
+        enumerable.ShouldNotBeNull();
+        enumerable.Length.ShouldBe(3);
     }
 
     #endregion
@@ -346,7 +344,7 @@ public class ComponentCacheStoreTests
 
     private Definitions.Workflow CreateMockWorkflow(string key, string domain, string version)
     {
-        var json = $$"""
+        var json = """
         {
             "type": "F",
             "timeout": null,
@@ -367,7 +365,7 @@ public class ComponentCacheStoreTests
 
     private WorkflowTask CreateMockTask(string key, string domain, string version)
     {
-        var json = $$"""
+        var json = """
         {
             "type": "6",
             "config": {
@@ -386,7 +384,7 @@ public class ComponentCacheStoreTests
 
     private SchemaDefinition CreateMockSchema(string key, string domain, string version)
     {
-        var json = $$"""
+        var json = """
         {
             "type": "workflow",
             "schema": {"type": "object"}
@@ -426,7 +424,7 @@ public class ComponentCacheStoreTests
 
     private View CreateMockView(string key, string domain, string version)
     {
-        var json = $$"""
+        var json = """
         {
             "type": 1,
             "target": 1,

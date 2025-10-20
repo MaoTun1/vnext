@@ -194,7 +194,6 @@ public class InstanceTransitionTests : DomainTestBase<DomainEntryPoint>
         instanceTransition.Completed("state-1");
         var firstFinishedAt = instanceTransition.FinishedAt;
         var firstDuration = instanceTransition.Duration;
-        var firstToState = instanceTransition.ToState;
 
         System.Threading.Thread.Sleep(10);
 

@@ -15,7 +15,7 @@ public sealed class DaprDistributedDomainEventPublisher(
     public async Task PublishAsync(IEnumerable<IDistributedDomainEvent> events, CancellationToken cancellationToken = default)
     {
         var distributedDomainEvents = events as IDistributedDomainEvent[] ?? events.ToArray();
-        if (distributedDomainEvents.Any() != true)
+        if (!distributedDomainEvents.Any())
         {
             logger.LogDebug("No distributed events to publish");
             return;
