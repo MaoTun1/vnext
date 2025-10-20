@@ -31,62 +31,63 @@ public sealed class TransitionJobHandler(
         }
 
         // Create structured logging scope for the entire job execution
-        using var scope = logger.ForJob(JobName, jobData.JobId);
-        
-        logger.LogInformation("TransitionJobHandler: Processing job {JobName} - {JobId}", JobName, jobData.JobId);
-
-        var flowName = jobData.GetFlowName();
-        if (flowName.IsNullOrEmpty())
+        using (logger.ForJob(JobName, jobData.JobId))
         {
-            logger.LogWarning("TransitionJobHandler: Job Flow Name is empty for JobId {JobId}", jobData.JobId);
-            return;
-        }
+            logger.LogInformation("TransitionJobHandler: Processing job {JobName} - {JobId}", JobName, jobData.JobId);
 
-        using (currentSchema.Change(flowName))
-        {
-            var jobInfo = await jobStore.GetAsync<TransitionJobPayload>(jobData.JobId, cancellationToken);
-            if (jobInfo == null)
+            var flowName = jobData.GetFlowName();
+            if (flowName.IsNullOrEmpty())
             {
-                logger.LogWarning("TransitionJobHandler: Job info not found for JobId {JobId}", jobData.JobId);
+                logger.LogWarning("TransitionJobHandler: Job Flow Name is empty for JobId {JobId}", jobData.JobId);
                 return;
             }
 
-            // Mark job as triggered to prevent duplicate processing
-            jobInfo.IsTriggered = true;
-            await jobStore.SaveAsync(jobInfo.JobId, jobInfo, cancellationToken);
-
-            try
+            using (currentSchema.Change(flowName))
             {
-                // For async processing, instance should already be pre-reserved and in Busy status
-                // Reconstruct the original TransitionInput with Sync=true
-                var transitionInput = new TransitionInput(
-                        jobInfo.Payload.Domain,
-                        jobInfo.Payload.Workflow,
-                        jobInfo.Payload.Version,
-                        jobInfo.Payload.Data,
-                        sync: true) // Force sync=true to avoid infinite loop
+                var jobInfo = await jobStore.GetAsync<TransitionJobPayload>(jobData.JobId, cancellationToken);
+                if (jobInfo == null)
+                {
+                    logger.LogWarning("TransitionJobHandler: Job info not found for JobId {JobId}", jobData.JobId);
+                    return;
+                }
+
+                // Mark job as triggered to prevent duplicate processing
+                jobInfo.IsTriggered = true;
+                await jobStore.SaveAsync(jobInfo.JobId, jobInfo, cancellationToken);
+
+                try
+                {
+                    // For async processing, instance should already be pre-reserved and in Busy status
+                    // Reconstruct the original TransitionInput with Sync=true
+                    var transitionInput = new TransitionInput(
+                            jobInfo.Payload.Domain,
+                            jobInfo.Payload.Workflow,
+                            jobInfo.Payload.Version,
+                            jobInfo.Payload.Data,
+                            sync: true) // Force sync=true to avoid infinite loop
                     {
                         Headers = jobInfo.Payload.Headers,
                         RouteValues = jobInfo.Payload.RouteValues
                     };
 
-                var context =
-                    transitionInput.ToExecutionContext(jobInfo.Payload.InstanceId, jobInfo.Payload.TransitionKey);
-                context.Actor = jobInfo.Payload.ExecutionActor;
-                
-                // Use the background-specific method that handles pre-reserved instances
-                await workflowExecutionService.ExecuteTransitionAsync(context, cancellationToken);
+                    var context =
+                        transitionInput.ToExecutionContext(jobInfo.Payload.InstanceId, jobInfo.Payload.TransitionKey);
+                    context.Actor = jobInfo.Payload.ExecutionActor;
 
-                logger.LogInformation(
-                    "TransitionJobHandler: Successfully executed transition {TransitionKey} for instance {InstanceId}",
-                    jobInfo.Payload.TransitionKey, jobInfo.Payload.InstanceId);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex,
-                    "TransitionJobHandler: Failed to execute transition for JobId {JobId}",
-                    jobData.JobId);
-                throw;
+                    // Use the background-specific method that handles pre-reserved instances
+                    await workflowExecutionService.ExecuteTransitionAsync(context, cancellationToken);
+
+                    logger.LogInformation(
+                        "TransitionJobHandler: Successfully executed transition {TransitionKey} for instance {InstanceId}",
+                        jobInfo.Payload.TransitionKey, jobInfo.Payload.InstanceId);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex,
+                        "TransitionJobHandler: Failed to execute transition for JobId {JobId}",
+                        jobData.JobId);
+                    throw;
+                }
             }
         }
     }

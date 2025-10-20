@@ -129,20 +129,26 @@ Orchestrates domain objects to fulfill use cases. Contains application-specific 
 
 #### **Execution Module**
 - **Transition Pipeline (`BBT.Workflow.Execution.Pipeline`)**: Deterministic transition lifecycle execution
-  - **TransitionPipeline**: Orchestrates step-by-step transition execution
-  - **ITransitionStep**: Pipeline step abstraction with lifecycle order
-  - **Pipeline Steps**: CreateTransition, OnExecute, OnExit, ChangeState, OnEntry, SubFlow, Schedule, Auto, Finalize
-- **Pipeline Planning (`BBT.Workflow.Execution.Planner`)**: Dynamic step selection and sequencing
-  - **IPipelinePlanner**: Plans which steps to execute based on context
-  - **DefaultPlanner**: Handles resume points, epilogue modes, terminal states
-  - **PipelineDirectives**: Runtime control of pipeline behavior (skip, resume, stop)
-  - **StepOutcome**: Step result handling with flow control
+  - **TransitionPipeline**: Orchestrates step-by-step transition execution with dynamic plan building
+  - **ITransitionStep**: Pipeline step abstraction with lifecycle order, returns `Result<StepOutcome>`
+  - **Pipeline Steps**: ForwardToActiveSubflow, CreateTransition, OnExecute, OnExit, ChangeState, OnEntry, SubFlow, ClearBusyOnResume, Schedule, Auto, HandleFinish, Finalize, ProcessInlineAutoChain
+  - **PipelineDirectives**: Runtime control of pipeline behavior (skip, resume, stop, epilogue modes)
+  - **StepOutcome**: Step result handling with flow control (Continue, Stop, SkipTo, MutateDirectives)
+- **Execution Strategies (`BBT.Workflow.Execution.Strategies`)**: Strategy pattern for sync/async execution modes
+  - **SyncTransitionStrategy**: Immediate execution with pipeline
+  - **AsyncTransitionStrategy**: Background job scheduling
+  - **IExecutionStrategyFactory**: Factory for strategy resolution
 - **Transition Handlers (`BBT.Workflow.Execution.Handlers`)**: Trigger-specific pre/post processing
   - **ManualTransitionHandler**: User-initiated transitions with auth/validation
   - **AutomaticTransitionHandler**: Condition-based automatic transitions
   - **ScheduledTransitionHandler**: Timer-based transitions
   - **EventTransitionHandler**: Event-driven transitions
-- **Re-entry System (`BBT.Workflow.Execution.ReEntry`)**: Background job dispatch for Auto/Schedule transitions
+- **Re-entry System (`BBT.Workflow.Execution.ReEntry`)**: Inline and background job dispatch for Auto/Schedule transitions
+  - **IReentryDispatcher**: Manages re-entry execution (inline vs background)
+  - **ReentryCommand**: Command object for re-entry transitions
+- **Context Management (`BBT.Workflow.Execution.Context`)**: Context factories and refreshers
+  - **ITransitionContextFactory**: Creates `TransitionExecutionContext` from `WorkflowExecutionContext`
+  - **IContextRefresher**: Refreshes context state during execution
 - **Task Execution (`BBT.Workflow.Execution.Tasks`)**: Task executor implementations
 - **Primary Usage**: Execution API for transition and task processing
 
@@ -305,36 +311,46 @@ public interface ITaskExecutorFactory
 
 ## Transition Pipeline Architecture
 
-The execution layer uses a **pipeline-based architecture** for managing workflow state transitions. This provides a deterministic, extensible, and observable execution model.
+The execution layer uses a **pipeline-based architecture** for managing workflow state transitions. This provides a deterministic, extensible, and observable execution model with exception-free error handling using the Result pattern.
 
 ### Core Concepts
 
 #### 1. Pipeline Steps
 Each transition goes through a series of ordered steps:
 ```
-Preflight (5) → CreateTransition (10) → OnExecute (20) → OnExit (30) → 
-ChangeState (40) → OnEntry (50) → SubFlow (60) → Schedule (70) → 
-Auto (80) → Finalize (90)
+ForwardToActiveSubflow (5) → CreateTransition (10) → OnExecute (20) → OnExit (30) → 
+ChangeState (40) → OnEntry (50) → SubFlow (60) → ClearBusyOnResume (69) → 
+Schedule (70) → Auto (80) → HandleFinish (90) → Finalize (100) → ProcessInlineAutoChain (101)
 ```
 
-#### 2. Dynamic Planning
-The `IPipelinePlanner` determines which steps to execute based on:
+#### 2. Dynamic Plan Building
+The `TransitionPipeline` dynamically builds execution plans using the `BuildExecutionPlan` method based on:
 - **Resume Points**: Start from specific step (e.g., after SubFlow completion)
-- **Epilogue Mode**: Skip/Run/DispatchOnly for Schedule/Auto steps
+- **Epilogue Mode**: Skip/Run for Schedule/Auto steps
 - **Terminal States**: Short-circuit to Finalize on workflow completion
-- **Directive Changes**: Re-plan mid-execution based on runtime conditions
+- **Directive Changes**: Rebuild plan mid-execution based on runtime conditions
 
-#### 3. Step Outcomes
-Each step returns a `StepOutcome` that can:
-- Continue to next step
-- Stop pipeline completely
-- Skip to specific order
-- Mutate pipeline directives
+Planning logic is integrated directly into the pipeline for better performance and simpler architecture.
+
+#### 3. Result Pattern & Step Outcomes
+Each step returns `Result<StepOutcome>` for exception-free error handling. `StepOutcome` can:
+- **Continue**: Proceed to next step
+- **Stop**: Stop pipeline completely
+- **SkipTo**: Jump to specific order (e.g., restart from CreateTransition)
+- **MutateDirectives**: Change pipeline behavior (e.g., skip epilogue)
+
+```csharp
+// Success case
+return Result<StepOutcome>.Ok(StepOutcome.Continue());
+
+// Error case
+return Result<StepOutcome>.Fail(Error.Validation("code", "message"));
+```
 
 #### 4. Trigger Handlers
 Pre/Post processing based on how transition was triggered:
 - **Manual**: User authentication, authorization, audit logging
-- **Automatic**: Condition validation, chain depth limits
+- **Automatic**: Condition validation, chain depth limits, inline execution
 - **Scheduled**: Timer validation, recurring schedules
 - **Event**: Event source validation, correlation
 

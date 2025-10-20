@@ -6,13 +6,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
-using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting.Functions;
 using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using IRuntimeInfoProvider = BBT.Workflow.Runtime.IRuntimeInfoProvider;
 using Dapr.Client;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Scripting;
 
@@ -343,7 +343,7 @@ public static class ScriptValidationHelper
             };
 
             // Build script context
-            var context = new ScriptContext.Builder()
+            var context = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>())
                 .SetWorkflow(CreateMockWorkflow())
                 .SetInstance(CreateMockInstance(mockInstanceData))
                 .SetTransition(CreateMockTransition())

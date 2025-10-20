@@ -10,7 +10,7 @@ namespace BBT.Workflow.Execution.Pipeline;
 /// Each step in the pipeline performs a specific operation during the transition.
 /// Uses Result pattern for exception-free error handling.
 /// </summary>
-public sealed class TransitionPipeline
+public class TransitionPipeline
 {
     private readonly IReadOnlyList<ITransitionStep> _steps;
     private readonly ILogger<TransitionPipeline> _logger;
@@ -44,12 +44,19 @@ public sealed class TransitionPipeline
 
         // Create span for pipeline execution
         using var pipelineActivity = WorkflowActivitySource.Instance.StartActivity(
-            TelemetryConstants.SpanNames.PipelineExecution,
-            ActivityKind.Internal);
+            TelemetryConstants.SpanNames.PipelineExecution);
+
+        // Add relevant attributes to the activity
+        if (pipelineActivity != null)
+        {
+            pipelineActivity.SetTag(TelemetryConstants.TagNames.TransitionKey, context.TransitionKey);
+            pipelineActivity.SetTag(TelemetryConstants.TagNames.InstanceId, context.InstanceId);
+            pipelineActivity.SetTag(TelemetryConstants.TagNames.Flow, context.WorkflowKey);
+        }
 
         var plan = BuildExecutionPlan(context);
         var i = 0;
-        
+
         while (i < plan.Count)
         {
             if (context.SkipImmediateExecution) break;
@@ -58,37 +65,37 @@ public sealed class TransitionPipeline
             var stepName = step.GetType().Name;
             var stepOrder = step.Order;
             var sw = Stopwatch.StartNew();
-            
+
             // Create span for each step
             using var stepActivity = WorkflowActivitySource.Instance.StartActivity(
                 TelemetryConstants.SpanNames.PipelineStep,
                 ActivityKind.Internal);
-            
+
             stepActivity?.SetTag(TelemetryConstants.TagNames.StepName, stepName);
             stepActivity?.SetTag(TelemetryConstants.TagNames.StepOrder, stepOrder);
             stepActivity?.SetDisplayName($"[{stepOrder}] {stepName}");
-            
+
             _logger.PipelineStepStarted(TelemetryConstants.Prefixes.Execution, stepOrder, stepName, context.InstanceId);
-            
+
             // Execute step and handle Result
             var outcomeResult = await step.ExecuteAsync(context, cancellationToken);
             sw.Stop();
-            
+
             if (!outcomeResult.IsSuccess)
             {
                 stepActivity?.RecordExceptionWithStatus(new Exception(outcomeResult.Error.Message ?? outcomeResult.Error.Code));
                 stepActivity?.AddTag("error.code", outcomeResult.Error.Code);
-                
+
                 _logger.PipelineStepFailed(
-                    new Exception(outcomeResult.Error.Message ?? outcomeResult.Error.Code), 
-                    TelemetryConstants.Prefixes.Execution, 
-                    stepOrder, 
-                    stepName, 
+                    new Exception(outcomeResult.Error.Message ?? outcomeResult.Error.Code),
+                    TelemetryConstants.Prefixes.Execution,
+                    stepOrder,
+                    stepName,
                     context.InstanceId);
-                
+
                 return Result.Fail(outcomeResult.Error);
             }
-            
+
             var outcome = outcomeResult.Value!;
             _logger.PipelineStepCompleted(TelemetryConstants.Prefixes.Execution, stepOrder, stepName, context.InstanceId, sw.ElapsedMilliseconds);
 
@@ -121,6 +128,7 @@ public sealed class TransitionPipeline
             i++; // go to next step
         }
 
+        pipelineActivity?.SetStatus(ActivityStatusCode.Ok);
         _logger.LogDebug("Completed transition pipeline for {WorkflowKey}.{TransitionKey} on instance {InstanceId}",
             context.WorkflowKey, context.TransitionKey, context.InstanceId);
         

@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
-using System.Dynamic;
 using System.Text.Json;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
-using BBT.Workflow.Scripting;
+using Microsoft.Extensions.Logging;
+using Moq;
 using NSubstitute;
 using Xunit;
 
@@ -17,7 +17,7 @@ public class ScriptContextTests
     public void Builder_ShouldCreateScriptContext()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
 
         // Act
         var context = builder.Build();
@@ -30,7 +30,7 @@ public class ScriptContextTests
     public void Builder_SetBody_ShouldSetBodyProperty()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var body = new { Name = "Test", Value = 123 };
 
         // Act
@@ -46,7 +46,7 @@ public class ScriptContextTests
     public void Builder_SetHeaders_ShouldSetHeadersProperty()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var headers = new { ContentType = "application/json" };
 
         // Act
@@ -62,7 +62,7 @@ public class ScriptContextTests
     public void Builder_SetRouteValues_ShouldSetRouteValuesProperty()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var routeValues = new { Controller = "Workflow", Action = "Execute" };
 
         // Act
@@ -78,7 +78,7 @@ public class ScriptContextTests
     public void Builder_SetWorkflow_ShouldSetWorkflowProperty()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var workflow = Definitions.Workflow.Create();
 
         // Act
@@ -95,7 +95,7 @@ public class ScriptContextTests
     public void Builder_SetInstance_ShouldSetInstanceProperty()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var instance = Instance.Create(
             Guid.NewGuid(),
             "test-flow",
@@ -115,7 +115,7 @@ public class ScriptContextTests
     public void Builder_SetTransition_ShouldSetTransitionProperty()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var transition = Transition.Create("test-transition", null, "target-state", TriggerType.Manual, "Patch");
 
         // Act
@@ -132,7 +132,7 @@ public class ScriptContextTests
     public void Builder_SetTransition_ShouldHandleNullTransition()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
 
         // Act
         var context = builder
@@ -148,7 +148,7 @@ public class ScriptContextTests
     public void Builder_SetRuntime_ShouldSetRuntimeProperty()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var runtime = Substitute.For<IRuntimeInfoProvider>();
 
         // Act
@@ -165,7 +165,7 @@ public class ScriptContextTests
     public void Builder_SetDefinitions_ShouldSetDefinitionsProperty()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var definitions = new Dictionary<string, object>
         {
             { "def1", "value1" },
@@ -186,7 +186,7 @@ public class ScriptContextTests
     public void Builder_SetTaskResponse_ShouldSetTaskResponseProperty()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var taskResponse = new Dictionary<string, object?>
         {
             { "task1", new { Result = "Success" } }
@@ -206,7 +206,7 @@ public class ScriptContextTests
     public void Builder_SetMetadata_ShouldSetMetadataProperty()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var metadata = new Dictionary<string, object>
         {
             { "key1", "value1" },
@@ -227,7 +227,7 @@ public class ScriptContextTests
     public void Builder_ShouldSupportMethodChaining()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var workflow = Definitions.Workflow.Create();
         var instance = Instance.Create(Guid.NewGuid(), "test-flow", "test-key");
         var runtime = Substitute.For<IRuntimeInfoProvider>();
@@ -256,7 +256,7 @@ public class ScriptContextTests
     public void SetBody_ShouldMergeWithExistingBody()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var initialBody = new { Name = "Initial" };
         var additionalData = new { Value = 123 };
 
@@ -278,7 +278,7 @@ public class ScriptContextTests
     public void SetStandardResponse_ShouldSetBodyWithStandardTaskResponse()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var context = builder.Build();
         var response = new StandardTaskResponse
         {
@@ -298,7 +298,7 @@ public class ScriptContextTests
     public void Dispose_ShouldClearCollections()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var context = builder
             .SetTaskResponse(new Dictionary<string, object?> { { "task1", "value" } })
             .SetMetadata(new Dictionary<string, object> { { "key", "value" } })
@@ -319,7 +319,7 @@ public class ScriptContextTests
     public void Dispose_ShouldClearDynamicObjects()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var context = builder
             .SetBody(new { Test = "Data" })
             .SetHeaders(new { Auth = "Token" })
@@ -339,7 +339,7 @@ public class ScriptContextTests
     public void Dispose_ShouldBeIdempotent()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var context = builder.Build();
 
         // Act & Assert - Should not throw
@@ -352,7 +352,7 @@ public class ScriptContextTests
     public void SetBody_ShouldThrowWhenDisposed()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var context = builder.Build();
         context.Dispose();
 
@@ -364,7 +364,7 @@ public class ScriptContextTests
     public void SetStandardResponse_ShouldThrowWhenDisposed()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var context = builder.Build();
         context.Dispose();
         var response = new StandardTaskResponse();
@@ -377,7 +377,7 @@ public class ScriptContextTests
     public void SetBody_ShouldHandleNullValue()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var context = builder
             .SetBody(new { Test = "Data" })
             .Build();
@@ -393,7 +393,7 @@ public class ScriptContextTests
     public void TaskResponse_ShouldBeInitialized()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
 
         // Act
         var context = builder.Build();
@@ -407,7 +407,7 @@ public class ScriptContextTests
     public void MetaData_ShouldBeInitialized()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
 
         // Act
         var context = builder.Build();
@@ -421,7 +421,7 @@ public class ScriptContextTests
     public void SetBody_ShouldSerializeAndDeserializeCorrectly()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
         var context = builder.Build();
         var complexObject = new
         {
@@ -446,7 +446,7 @@ public class ScriptContextTests
     public void Builder_SetBody_ShouldSupportNullValue()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
 
         // Act
         var context = builder
@@ -461,7 +461,7 @@ public class ScriptContextTests
     public void Builder_SetHeaders_ShouldSupportNullValue()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
 
         // Act
         var context = builder
@@ -476,7 +476,7 @@ public class ScriptContextTests
     public void Builder_SetRouteValues_ShouldSupportNullValue()
     {
         // Arrange
-        var builder = new ScriptContext.Builder();
+        var builder = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>());
 
         // Act
         var context = builder

@@ -9,7 +9,7 @@ namespace BBT.Workflow.Definitions.CastHandlers;
 /// This handler deserializes extension data from JSON attributes and updates the extensions cache.
 /// </summary>
 /// <param name="cacheContext">The domain cache context used for storing extension data.</param>
-public sealed class ExtensionWorkflowCastHandler(DomainCacheContext cacheContext) : IWorkflowCastHandler
+public sealed class ExtensionWorkflowCastHandler(IDomainCacheContext cacheContext) : IWorkflowCastHandler
 {
     /// <summary>
     /// Determines whether this handler can process the specified workflow type.

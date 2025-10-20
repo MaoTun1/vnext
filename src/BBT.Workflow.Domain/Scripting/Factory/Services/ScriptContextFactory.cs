@@ -1,5 +1,6 @@
 using BBT.Workflow.Caching;
 using BBT.Workflow.Instances;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Scripting;
 
@@ -9,7 +10,8 @@ namespace BBT.Workflow.Scripting;
 /// </summary>
 public sealed class ScriptContextFactory(
     IComponentCacheStore componentCacheStore,
-    IInstanceRepository instanceRepository) : IScriptContextFactory
+    IInstanceRepository instanceRepository,
+    ILogger<ScriptContext> logger) : IScriptContextFactory
 {
     /// <summary>
     /// Creates a new fluent builder for constructing ScriptContext instances.
@@ -17,6 +19,6 @@ public sealed class ScriptContextFactory(
     /// <returns>A new ScriptContextBuilder instance for fluent configuration.</returns>
     public IScriptContextBuilder NewBuilder()
     {
-        return new ScriptContextBuilder(componentCacheStore, instanceRepository);
+        return new ScriptContextBuilder(componentCacheStore, instanceRepository, logger);
     }
 }

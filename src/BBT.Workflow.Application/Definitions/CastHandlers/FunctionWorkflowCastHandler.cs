@@ -9,7 +9,7 @@ namespace BBT.Workflow.Definitions.CastHandlers;
 /// This handler deserializes function data from JSON attributes and updates the functions cache.
 /// </summary>
 /// <param name="cacheContext">The domain cache context used for storing function data.</param>
-public sealed class FunctionWorkflowCastHandler(DomainCacheContext cacheContext) : IWorkflowCastHandler
+public sealed class FunctionWorkflowCastHandler(IDomainCacheContext cacheContext) : IWorkflowCastHandler
 {
     /// <summary>
     /// Determines whether this handler can process the specified workflow type.

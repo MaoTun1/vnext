@@ -4,6 +4,8 @@ using BBT.Workflow.Instances;
 using BBT.Workflow.Scripting;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.Extensions.Logging;
+using Moq;
 using Xunit;
 
 namespace System.Text.Json;
@@ -301,7 +303,7 @@ public class ScriptContextExtensionsTests : DomainTestBase<DomainEntryPoint>
         var workflow = Workflow.Create();
         var instance = Instance.Create(Guid.NewGuid(), "test-flow", "test-key");
 
-        return new ScriptContext.Builder()
+        return new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>())
             .SetWorkflow(workflow)
             .SetInstance(instance)
             .SetBody(body)

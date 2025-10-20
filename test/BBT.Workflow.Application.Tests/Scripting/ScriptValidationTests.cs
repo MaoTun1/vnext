@@ -5,8 +5,6 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using BBT.Workflow.Definitions;
-using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting.Functions;
 using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,6 +13,7 @@ using Xunit;
 using Xunit.Abstractions;
 using IRuntimeInfoProvider = BBT.Workflow.Runtime.IRuntimeInfoProvider;
 using Dapr.Client;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Scripting;
 
@@ -250,7 +249,7 @@ public class ScriptValidationTests : ApplicationTestBase<ApplicationEntryPoint>
             var instance = InstanceFactory.CreateDefault();
             instance.AddData(Guid.NewGuid(), new JsonData(JsonSerializer.Serialize(mockInstanceData)), VersionStrategy.IncreaseMajor);
 
-            var context = new ScriptContext.Builder()
+            var context = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>())
                 .SetWorkflow(WorkflowFactory.CreateDefault())
                 .SetInstance(instance)
                 .SetTransition(TransitionFactory.CreateDefault())

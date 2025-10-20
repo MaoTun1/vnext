@@ -2,7 +2,6 @@ using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using OpenTelemetry;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -40,7 +39,7 @@ public static class VNextTelemetryServiceCollectionExtensions
 
         // Get environment name from ASPNETCORE_ENVIRONMENT
         var environmentName = environment?.EnvironmentName ?? 
-                             System.Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? 
+                             Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? 
                              "Production";
 
         // Compile excluded paths regex patterns
@@ -56,7 +55,7 @@ public static class VNextTelemetryServiceCollectionExtensions
                     .AddService(
                         serviceName: telemetryOptions.ServiceName,
                         serviceVersion: telemetryOptions.ServiceVersion,
-                        serviceInstanceId: System.Environment.MachineName)
+                        serviceInstanceId: Environment.MachineName)
                     .AddAttributes(new Dictionary<string, object>
                     {
                         ["deployment.environment"] = environmentName,
@@ -186,7 +185,7 @@ public static class VNextTelemetryServiceCollectionExtensions
                         .AddService(
                             serviceName: telemetryOptions.ServiceName,
                             serviceVersion: telemetryOptions.ServiceVersion,
-                            serviceInstanceId: System.Environment.MachineName)
+                            serviceInstanceId: Environment.MachineName)
                         .AddAttributes(new Dictionary<string, object>
                         {
                             ["deployment.environment"] = environmentName,

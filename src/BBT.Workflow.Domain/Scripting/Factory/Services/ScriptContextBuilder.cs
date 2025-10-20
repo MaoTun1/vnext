@@ -3,6 +3,7 @@ using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Scripting;
 
@@ -12,7 +13,8 @@ namespace BBT.Workflow.Scripting;
 /// </summary>
 internal sealed class ScriptContextBuilder(
     IComponentCacheStore componentCacheStore,
-    IInstanceRepository instanceRepository) : IScriptContextBuilder
+    IInstanceRepository instanceRepository,
+    ILogger<ScriptContext> logger) : IScriptContextBuilder
 {
     private IRuntimeInfoProvider? _runtimeInfoProvider;
     private Definitions.Workflow? _workflow;
@@ -153,7 +155,7 @@ internal sealed class ScriptContextBuilder(
         var transition = ResolveTransition(workflow);
 
         // Build the ScriptContext using the domain builder
-        return new ScriptContext.Builder()
+        return new ScriptContext.Builder(logger)
             .SetRuntime(_runtimeInfoProvider!)
             .SetWorkflow(workflow)
             .SetInstance(instance)

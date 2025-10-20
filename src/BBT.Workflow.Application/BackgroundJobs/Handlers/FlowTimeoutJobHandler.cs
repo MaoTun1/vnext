@@ -69,63 +69,66 @@ public sealed class FlowTimeoutJobHandler(
             logger.LogWarning("FlowTimeoutJobHandler: Failed to deserialize job payload.");
             return;
         }
-        
+
         // Create structured logging scope for the entire job execution
-        using var scope = logger.ForJob(JobName, jobData?.JobId);
-        
-        logger.LogInformation("FlowTimeoutJobHandler: {JobName} - {JobId}", JobName, jobData?.JobId);
-
-        var flowName = jobData?.GetFlowName();
-        if (flowName.IsNullOrEmpty())
+        using (logger.ForJob(JobName, jobData?.JobId))
         {
-            logger.LogWarning("AutoTransitionJobHandler: Job Flow Name is empty.");
-            return;
-        }
+            logger.LogInformation("FlowTimeoutJobHandler: {JobName} - {JobId}", JobName, jobData?.JobId);
 
-        using (currentSchema.Change(flowName))
-        {
-            var jobInfo = await jobStore.GetAsync<WorkflowTimeoutPayload>(jobData!.JobId, cancellationToken);
-            if (jobInfo == null)
+            var flowName = jobData?.GetFlowName();
+            if (flowName.IsNullOrEmpty())
             {
-                logger.LogWarning("FlowTimeoutJobHandler: Job info not found for JobId {JobId}", jobData.JobId);
+                logger.LogWarning("AutoTransitionJobHandler: Job Flow Name is empty.");
                 return;
             }
 
-            jobInfo.IsTriggered = true;
-            await jobStore.SaveAsync(jobInfo.JobId, jobInfo, cancellationToken);
-
-            var workflow =
-                await componentCacheStore.GetFlowAsync(jobInfo.Payload.Domain, jobInfo.Payload.FlowName,
-                    jobInfo.Payload.Version, cancellationToken);
-
-            var instance =
-                await instanceRepository.FindAsync(p => p.Id == jobInfo.Payload.InstanceId, true, cancellationToken);
-            if (instance == null)
+            using (currentSchema.Change(flowName))
             {
-                logger.LogWarning("FlowTimeoutJobHandler: Instance not found with Id {InstanceId}",
-                    jobInfo.Payload.InstanceId);
-                return;
-            }
-
-            if (instance.IsActive || instance.IsBusy)
-            {
-                // Record current status before timeout
-                var currentStatus = instance.Status.Code;
-
-                if (workflow.Timeout is null)
+                var jobInfo = await jobStore.GetAsync<WorkflowTimeoutPayload>(jobData!.JobId, cancellationToken);
+                if (jobInfo == null)
                 {
-                    logger.LogWarning("FlowTimeoutJobHandler: Timeout configuration missing for {Flow}", instance.Flow);
+                    logger.LogWarning("FlowTimeoutJobHandler: Job info not found for JobId {JobId}", jobData.JobId);
                     return;
                 }
 
-                instance.ChangeState(workflow.Timeout!);
-                instance.Complete(); // This calculates the Duration
+                jobInfo.IsTriggered = true;
+                await jobStore.SaveAsync(jobInfo.JobId, jobInfo, cancellationToken);
 
-                // Record timeout metrics with duration - this will also decrement the current status gauge
-                var durationSeconds = instance.Duration?.TotalSeconds;
-                workflowMetrics.RecordInstanceTimedOut(instance.Flow, runtimeInfoProvider.Domain, currentStatus,
-                    durationSeconds);
-                await instanceRepository.UpdateAsync(instance, true, cancellationToken);
+                var workflow =
+                    await componentCacheStore.GetFlowAsync(jobInfo.Payload.Domain, jobInfo.Payload.FlowName,
+                        jobInfo.Payload.Version, cancellationToken);
+
+                var instance =
+                    await instanceRepository.FindAsync(p => p.Id == jobInfo.Payload.InstanceId, true,
+                        cancellationToken);
+                if (instance == null)
+                {
+                    logger.LogWarning("FlowTimeoutJobHandler: Instance not found with Id {InstanceId}",
+                        jobInfo.Payload.InstanceId);
+                    return;
+                }
+
+                if (instance.IsActive || instance.IsBusy)
+                {
+                    // Record current status before timeout
+                    var currentStatus = instance.Status.Code;
+
+                    if (workflow.Timeout is null)
+                    {
+                        logger.LogWarning("FlowTimeoutJobHandler: Timeout configuration missing for {Flow}",
+                            instance.Flow);
+                        return;
+                    }
+
+                    instance.ChangeState(workflow.Timeout!);
+                    instance.Complete(); // This calculates the Duration
+
+                    // Record timeout metrics with duration - this will also decrement the current status gauge
+                    var durationSeconds = instance.Duration?.TotalSeconds;
+                    workflowMetrics.RecordInstanceTimedOut(instance.Flow, runtimeInfoProvider.Domain, currentStatus,
+                        durationSeconds);
+                    await instanceRepository.UpdateAsync(instance, true, cancellationToken);
+                }
             }
         }
     }

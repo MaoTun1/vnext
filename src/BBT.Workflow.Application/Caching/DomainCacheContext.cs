@@ -5,15 +5,15 @@ using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Caching;
 
-public class DomainCacheContext : CacheContext, IDisposable
+public class DomainCacheContext : CacheContext, IDomainCacheContext, IDisposable
 {
     private readonly IServiceProvider _serviceProvider;
-    public CacheSet<Definitions.Workflow> Workflows { get; }
-    public CacheSet<WorkflowTask> Tasks { get; }
-    public CacheSet<SchemaDefinition> Schemas { get; }
-    public CacheSet<Function> Functions { get; }
-    public CacheSet<View> Views { get; }
-    public CacheSet<Extension> Extensions { get; }
+    public ICacheSet<Definitions.Workflow> Workflows { get; }
+    public ICacheSet<WorkflowTask> Tasks { get; }
+    public ICacheSet<SchemaDefinition> Schemas { get; }
+    public ICacheSet<Function> Functions { get; }
+    public ICacheSet<View> Views { get; }
+    public ICacheSet<Extension> Extensions { get; }
 
     public DomainCacheContext(IServiceProvider serviceProvider, ILogger<DomainCacheContext> logger)
     {

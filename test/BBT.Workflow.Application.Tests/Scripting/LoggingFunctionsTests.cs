@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using BBT.Workflow.Definitions;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting.Functions;
@@ -131,7 +130,7 @@ public class LoggingFunctionsTests : ApplicationTestBase<ApplicationEntryPoint>
         var httpTask = WorkflowTaskFactory.CreateHttpTask();
         var response = await instance.InputHandler(
             task: httpTask,
-            context: new ScriptContext.Builder()
+            context: new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>())
                 .SetWorkflow(WorkflowFactory.CreateDefault())
                 .SetInstance(InstanceFactory.CreateDefault())
                 .SetTransition(TransitionFactory.CreateDefault())
@@ -206,7 +205,7 @@ public class LoggingFunctionsTests : ApplicationTestBase<ApplicationEntryPoint>
         var httpTask = WorkflowTaskFactory.CreateHttpTask();
         var response = await instance.InputHandler(
             task: httpTask,
-            context: new ScriptContext.Builder()
+            context: new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>())
                 .SetWorkflow(WorkflowFactory.CreateDefault())
                 .SetInstance(InstanceFactory.CreateDefault())
                 .SetTransition(TransitionFactory.CreateDefault())
@@ -281,7 +280,7 @@ public class LoggingFunctionsTests : ApplicationTestBase<ApplicationEntryPoint>
         var httpTask = WorkflowTaskFactory.CreateHttpTask();
         var response = await instance.InputHandler(
             task: httpTask,
-            context: new ScriptContext.Builder()
+            context: new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>())
                 .SetWorkflow(WorkflowFactory.CreateDefault())
                 .SetInstance(InstanceFactory.CreateDefault())
                 .SetTransition(TransitionFactory.CreateDefault())
@@ -356,7 +355,7 @@ public class LoggingFunctionsTests : ApplicationTestBase<ApplicationEntryPoint>
         var httpTask = WorkflowTaskFactory.CreateHttpTask();
         var response = await instance.InputHandler(
             task: httpTask,
-            context: new ScriptContext.Builder()
+            context: new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>())
                 .SetWorkflow(WorkflowFactory.CreateDefault())
                 .SetInstance(InstanceFactory.CreateDefault())
                 .SetTransition(TransitionFactory.CreateDefault())
@@ -431,7 +430,7 @@ public class LoggingFunctionsTests : ApplicationTestBase<ApplicationEntryPoint>
         var httpTask = WorkflowTaskFactory.CreateHttpTask();
         var response = await instance.InputHandler(
             task: httpTask,
-            context: new ScriptContext.Builder()
+            context: new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>())
                 .SetWorkflow(WorkflowFactory.CreateDefault())
                 .SetInstance(InstanceFactory.CreateDefault())
                 .SetTransition(TransitionFactory.CreateDefault())

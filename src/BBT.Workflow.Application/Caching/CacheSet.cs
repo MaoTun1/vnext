@@ -12,7 +12,7 @@ namespace BBT.Workflow.Caching;
 public class CacheSet<T>(
     Func<IDistributedCacheService> cacheResolver,
     ILogger logger,
-    IServiceProvider serviceProvider) : ICacheSet
+    IServiceProvider serviceProvider) : ICacheSet<T>
     where T : class, IDomainEntity, IReferenceSetter
 {
     private readonly ReaderWriterLockSlim _cacheLock = new();

@@ -69,12 +69,12 @@ public class CSharpEvaluator : IEvaluator
         IEnumerable<string>? usingDirectives = null,
         CancellationToken cancellationToken = default)
     {
-        var syntaxTree = CSharpSyntaxTree.ParseText(code);
+        var syntaxTree = CSharpSyntaxTree.ParseText(code, cancellationToken: cancellationToken);
 
         // Eğer usingDirectives varsa root'a ekle
         if (usingDirectives != null && usingDirectives.Any())
         {
-            var root = syntaxTree.GetRoot();
+            var root = syntaxTree.GetRoot(cancellationToken);
             var usings = usingDirectives.Select(u => SyntaxFactory.UsingDirective(SyntaxFactory.ParseName(u)));
             var newRoot = ((CompilationUnitSyntax)root).WithUsings(SyntaxFactory.List(usings));
             syntaxTree = syntaxTree.WithRootAndOptions(newRoot, syntaxTree.Options);
@@ -96,7 +96,7 @@ public class CSharpEvaluator : IEvaluator
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         
         using var ms = new MemoryStream();
-        var emitResult = compilation.Emit(ms);
+        var emitResult = compilation.Emit(ms, cancellationToken: cancellationToken);
 
         if (!emitResult.Success)
         {
@@ -126,7 +126,7 @@ public class CSharpEvaluator : IEvaluator
         return Task.FromResult((T)Activator.CreateInstance(matchedType)!);
     }
 
-    private ScriptOptions CreateDefaultOptions(Func<ScriptOptions, ScriptOptions>? configureScriptOptions)
+    private static ScriptOptions CreateDefaultOptions(Func<ScriptOptions, ScriptOptions>? configureScriptOptions)
     {
         var defaultOptions = CSharpScriptOptionProvider.Default;
         return configureScriptOptions?.Invoke(defaultOptions) ?? defaultOptions;

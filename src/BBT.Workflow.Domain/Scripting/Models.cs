@@ -1,4 +1,3 @@
-using System.Collections;
 using System.Dynamic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -6,6 +5,7 @@ using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Shared.Merging;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Scripting;
 
@@ -111,7 +111,7 @@ public sealed class StandardTaskResponse
     public string? TaskType { get; set; }
 }
 
-public sealed class ScriptContext: IDisposable
+public class ScriptContext(ILogger<ScriptContext> logger) : IDisposable
 {
     public static readonly JsonSerializerOptions JsonScriptBodyOptions = new()
     {
@@ -119,37 +119,38 @@ public sealed class ScriptContext: IDisposable
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
     
-    private bool _disposed = false;
-    
-    /// <summary>
-    /// Releases all resources used by the ScriptContext.
-    /// This helps reduce memory pressure and GC overhead in high-throughput scenarios.
-    /// </summary>
-    public void Dispose()
+    private bool _disposed;
+
+    protected virtual void Dispose(bool disposing)
     {
         if (_disposed)
             return;
 
-        try
+        if (disposing)
         {
-            // Clear large collections to help GC
-            TaskResponse?.Clear();
-            MetaData?.Clear();
-            Definitions?.Clear();
+            try
+            {
+                TaskResponse?.Clear();
+                MetaData?.Clear();
+                Definitions?.Clear();
 
-            // Clear dynamic objects that might hold references
-            Body = null;
-            Headers = null;
-            RouteValues = null;
+                Body = null;
+                Headers = null;
+                RouteValues = null;
+            }
+            catch (InvalidOperationException ex)
+            {
+                logger.LogWarning(ex, "Error clearing collections during disposal");
+            }
         }
-        catch (Exception)
-        {
-            // Suppress exceptions during disposal to prevent issues in finally blocks
-        }
-        finally
-        {
-            _disposed = true;
-        }
+
+        _disposed = true;
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
     }
 
     /// <summary>
@@ -314,8 +315,8 @@ public sealed class ScriptContext: IDisposable
     /// and configuration objects that can be reused across different workflow instances
     /// and execution contexts.
     /// </remarks>
-    public Dictionary<string, dynamic> Definitions { get; private set; }
-    
+    public Dictionary<string, dynamic> Definitions { get; private set; } = new();
+
     /// <summary>
     /// Contains the execution results and responses from completed workflow tasks,
     /// with task keys converted to follow variable naming standards and values containing
@@ -343,7 +344,7 @@ public sealed class ScriptContext: IDisposable
     /// and dynamic property access scenarios.
     /// </remarks>
     public Dictionary<string, dynamic?> TaskResponse { get; private set; } = new();
-    
+
     /// <summary>
     /// Contains execution metadata, performance metrics, and contextual information
     /// about the current task, transition, or workflow execution.
@@ -428,14 +429,10 @@ public sealed class ScriptContext: IDisposable
 
         return target;
     }
-    
-    private ScriptContext()
-    {
-    }
 
-    public sealed class Builder
+    public sealed class Builder(ILogger<ScriptContext> logger)
     {
-        private readonly ScriptContext _context = new();
+        private readonly ScriptContext _context = new(logger);
 
         public Builder SetBody(object? body)
         {

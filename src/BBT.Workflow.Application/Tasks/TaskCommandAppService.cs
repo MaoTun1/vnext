@@ -1,6 +1,5 @@
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Domain;
-using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
 using BBT.Workflow.Scripting;
@@ -13,7 +12,6 @@ public sealed class TaskCommandAppService(
     IRuntimeInfoProvider runtimeInfoProvider,
     ICurrentSchema currentSchema,
     IScriptContextFactory scriptContextFactory,
-    IInstanceTransitionRepository instanceTransitionRepository,
     ITaskOrchestrator taskOrchestrator
 ) : ITaskCommandAppService
 {

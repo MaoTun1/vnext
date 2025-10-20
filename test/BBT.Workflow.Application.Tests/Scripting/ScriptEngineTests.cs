@@ -1,9 +1,7 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using BBT.Workflow.Definitions;
 using BBT.Workflow.Monitoring;
-using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting.Functions;
 using Microsoft.CodeAnalysis;
 using Moq;
@@ -11,6 +9,7 @@ using Xunit;
 using IRuntimeInfoProvider = BBT.Workflow.Runtime.IRuntimeInfoProvider;
 using Dapr.Client;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Scripting;
 
@@ -162,12 +161,12 @@ public class ScriptEngineTests : ApplicationTestBase<ApplicationEntryPoint>
         var httpTask = WorkflowTaskFactory.CreateHttpTask();
         var response = await instance.InputHandler(
             task: httpTask,
-            context: new ScriptContext.Builder()
+            context: new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>())
                 .SetWorkflow(WorkflowFactory.CreateDefault())
                 .SetInstance(InstanceFactory.CreateDefault())
                 .SetTransition(TransitionFactory.CreateDefault())
                 .SetRuntime(Mock.Of<IRuntimeInfoProvider>())
-                .SetDefinitions(new System.Collections.Generic.Dictionary<string, object>())
+                .SetDefinitions(new Dictionary<string, object>())
                 .Build());
 
         // Assert
@@ -236,12 +235,12 @@ public class ScriptEngineTests : ApplicationTestBase<ApplicationEntryPoint>
         var httpTask = WorkflowTaskFactory.CreateHttpTask();
         var response = await instance.InputHandler(
             task: httpTask,
-            context: new ScriptContext.Builder()
+            context: new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>())
                 .SetWorkflow(WorkflowFactory.CreateDefault())
                 .SetInstance(InstanceFactory.CreateDefault())
                 .SetTransition(TransitionFactory.CreateDefault())
                 .SetRuntime(Mock.Of<IRuntimeInfoProvider>())
-                .SetDefinitions(new System.Collections.Generic.Dictionary<string, object>())
+                .SetDefinitions(new Dictionary<string, object>())
                 .Build());
 
         // Assert
@@ -314,12 +313,12 @@ public class ScriptEngineTests : ApplicationTestBase<ApplicationEntryPoint>
         var httpTask = WorkflowTaskFactory.CreateHttpTask();
         var response = await instance.InputHandler(
             task: httpTask,
-            context: new ScriptContext.Builder()
+            context: new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>())
                 .SetWorkflow(WorkflowFactory.CreateDefault())
                 .SetInstance(InstanceFactory.CreateDefault())
                 .SetTransition(TransitionFactory.CreateDefault())
                 .SetRuntime(Mock.Of<IRuntimeInfoProvider>())
-                .SetDefinitions(new System.Collections.Generic.Dictionary<string, object>())
+                .SetDefinitions(new Dictionary<string, object>())
                 .Build());
 
         // Assert
