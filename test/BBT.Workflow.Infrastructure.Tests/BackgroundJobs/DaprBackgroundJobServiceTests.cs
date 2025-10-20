@@ -18,7 +18,6 @@ namespace BBT.Workflow.Infrastructure.Tests.BackgroundJobs;
 /// </summary>
 public sealed class DaprBackgroundJobServiceTests
 {
-    private readonly ILogger<DaprBackgroundJobService> _mockLogger;
     private readonly DaprJobsClient _mockDaprJobsClient;
     private readonly IJobStore _mockJobStore;
     private readonly IWorkflowMetrics _mockMetrics;
@@ -26,13 +25,13 @@ public sealed class DaprBackgroundJobServiceTests
 
     public DaprBackgroundJobServiceTests()
     {
-        _mockLogger = Substitute.For<ILogger<DaprBackgroundJobService>>();
+        var mockLogger = Substitute.For<ILogger<DaprBackgroundJobService>>();
         _mockDaprJobsClient = Substitute.For<DaprJobsClient>();
         _mockJobStore = Substitute.For<IJobStore>();
         _mockMetrics = Substitute.For<IWorkflowMetrics>();
         
         _service = new DaprBackgroundJobService(
-            _mockLogger,
+            mockLogger,
             _mockDaprJobsClient,
             _mockJobStore,
             _mockMetrics
@@ -197,7 +196,7 @@ public sealed class DaprBackgroundJobServiceTests
         var payload = new TestJobPayload { Data = "Test" };
 
         // Act
-        await _service.EnqueueAsync(jobName, jobId, schedule, payload, null);
+        await _service.EnqueueAsync(jobName, jobId, schedule, payload);
 
         // Assert
         await _mockJobStore.Received(1).SaveAsync(
@@ -305,7 +304,7 @@ public sealed class DaprBackgroundJobServiceTests
         var payload = new TestJobPayload { Data = "Test" };
 
         // Act & Assert
-        Should.NotThrow(async () => await _service.EnqueueAsync(jobName, jobId, schedule, payload));
+        await Should.NotThrowAsync(async () => await _service.EnqueueAsync(jobName, jobId, schedule, payload));
     }
     
     [Fact]
@@ -318,7 +317,7 @@ public sealed class DaprBackgroundJobServiceTests
         var payload = new TestJobPayload { Data = "Test" };
 
         // Act & Assert
-        Should.NotThrow(async () => await _service.EnqueueAsync(jobName, jobId, schedule, payload));
+        await Should.NotThrowAsync(async () => await _service.EnqueueAsync(jobName, jobId, schedule, payload));
     }
 
     #endregion

@@ -294,7 +294,7 @@ public class JsonElementExtensionsTests
 
         // Assert
         Assert.Equal(JsonValueKind.Object, result.ValueKind);
-        Assert.Equal(0, result.EnumerateObject().Count());
+        Assert.Empty(result.EnumerateObject());
     }
 
     [Fact]

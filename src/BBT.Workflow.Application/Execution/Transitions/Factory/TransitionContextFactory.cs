@@ -113,7 +113,7 @@ public sealed class TransitionContextFactory(
             // Telemetry
             TraceId = traceId,
             SpanId = spanId,
-            Headers = new Dictionary<string, string?>(input.Headers)
+            Headers = input.Headers
         };
 
         // Configure pipeline directives

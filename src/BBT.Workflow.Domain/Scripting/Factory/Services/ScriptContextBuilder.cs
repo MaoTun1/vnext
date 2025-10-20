@@ -80,8 +80,12 @@ internal sealed class ScriptContextBuilder(
         return this;
     }
 
-    public IScriptContextBuilder WithInstance(Instance instance)
+    public IScriptContextBuilder WithInstance(Instance? instance)
     {
+        if (instance == null)
+        {
+            return this;
+        }
         _instance = instance.CreateSnapshot();
         _instanceId = null; // Clear async retrieval property
         return this;
@@ -94,8 +98,12 @@ internal sealed class ScriptContextBuilder(
         return this;
     }
 
-    public IScriptContextBuilder WithTransition(Transition transition)
+    public IScriptContextBuilder WithTransition(Transition? transition)
     {
+        if (transition == null)
+        {
+            return this;
+        }
         _transition = transition;
         _transitionKey = null; // Clear async retrieval property
         return this;

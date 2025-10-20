@@ -19,14 +19,13 @@ namespace BBT.Workflow.Infrastructure.Tests.Events;
 public sealed class DaprDistributedDomainEventPublisherTests
 {
     private readonly DaprClient _mockDaprClient;
-    private readonly ILogger<DaprDistributedDomainEventPublisher> _mockLogger;
     private readonly DaprEventPublisherOptions _options;
     private readonly DaprDistributedDomainEventPublisher _publisher;
 
     public DaprDistributedDomainEventPublisherTests()
     {
         _mockDaprClient = Substitute.For<DaprClient>();
-        _mockLogger = Substitute.For<ILogger<DaprDistributedDomainEventPublisher>>();
+        var mockLogger = Substitute.For<ILogger<DaprDistributedDomainEventPublisher>>();
         _options = new DaprEventPublisherOptions
         {
             PubSubName = "test-pubsub",
@@ -42,7 +41,7 @@ public sealed class DaprDistributedDomainEventPublisherTests
         _publisher = new DaprDistributedDomainEventPublisher(
             _mockDaprClient,
             mockOptions,
-            _mockLogger
+            mockLogger
         );
     }
 
@@ -396,7 +395,7 @@ public sealed class DaprDistributedDomainEventPublisherTests
         });
 
         // Act & Assert - Should not throw
-        Should.NotThrow(async () => await _publisher.PublishAsync(events));
+        await Should.NotThrowAsync(async () => await _publisher.PublishAsync(events));
     }
 
     [Fact]
@@ -472,7 +471,7 @@ public sealed class DaprDistributedDomainEventPublisherTests
         var events = new[] { testEvent };
 
         // Act & Assert
-        Should.NotThrow(async () => await _publisher.PublishAsync(events));
+        await Should.NotThrowAsync(async () => await _publisher.PublishAsync(events));
     }
 
     #endregion

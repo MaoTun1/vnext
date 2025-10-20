@@ -65,7 +65,7 @@ public sealed class AsyncTransitionStrategy(
         };
 
         // 3. Enqueue background job for actual execution
-        var enqueueResult = await ResultExtensions.TryAsync<bool>(async ct =>
+        var enqueueResult = await ResultExtensions.TryAsync(async ct =>
         {
             await backgroundJobService.EnqueueAsync(
                 BackgroundJobConsts.TransitionJobName,

@@ -1,5 +1,3 @@
-using BBT.Workflow.Domain.Shared;
-
 namespace BBT.Workflow.Caching;
 
 /// <summary>

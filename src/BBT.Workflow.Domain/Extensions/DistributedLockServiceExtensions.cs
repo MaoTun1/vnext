@@ -141,7 +141,6 @@ public class DistributedLockAcquisitionException : UserFriendlyException
     /// <summary>
     /// Initializes a new instance of the DistributedLockAcquisitionException class.
     /// </summary>
-    /// <param name="code">The exception code</param>
     /// <param name="resourceId">The resource ID that could not be locked.</param>
     /// <param name="message">The exception message.</param>
     /// <param name="innerException">The inner exception.</param>

@@ -150,11 +150,11 @@ public class TimerConfigTests
     }
 
     [Theory]
-    [InlineData("PT1H", "1 hour")]
-    [InlineData("PT30M", "30 minutes")]
-    [InlineData("P1D", "1 day")]
-    [InlineData("PT2H30M", "2 hours 30 minutes")]
-    public void Duration_ShouldAcceptValidISO8601Formats(string duration, string description)
+    [InlineData("PT1H")]
+    [InlineData("PT30M")]
+    [InlineData("P1D")]
+    [InlineData("PT2H30M")]
+    public void Duration_ShouldAcceptValidISO8601Formats(string duration)
     {
         // Arrange & Act
         var timerConfig = new TimerConfig("none", duration);

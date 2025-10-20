@@ -66,7 +66,7 @@ public sealed class DataSinkManagerTests
     public async Task HandleInsertAsync_Should_Process_Entity_Through_All_DataSinks()
     {
         // Arrange
-        var entity = new TestEntity { Id = Guid.NewGuid(), Name = "Test" };
+        var entity = new TestEntity { };
         var mockDataSink1 = Substitute.For<IDataSink<TestEntity>>();
         var mockDataSink2 = Substitute.For<IDataSink<TestEntity>>();
         
@@ -82,22 +82,23 @@ public sealed class DataSinkManagerTests
     }
 
     [Fact]
-    public async Task HandleInsertAsync_Should_Handle_No_Registered_DataSinks()
+    public Task HandleInsertAsync_Should_Handle_No_Registered_DataSinks()
     {
         // Arrange
-        var entity = new TestEntity { Id = Guid.NewGuid(), Name = "Test" };
+        var entity = new TestEntity { };
         _mockRegistry.GetDataSinks<TestEntity>()
             .Returns(Enumerable.Empty<IDataSink<TestEntity>>());
 
         // Act & Assert
         Should.NotThrow(async () => await _manager.HandleInsertAsync(entity));
+        return Task.CompletedTask;
     }
 
     [Fact]
     public async Task HandleInsertAsync_Should_Use_CancellationToken()
     {
         // Arrange
-        var entity = new TestEntity { Id = Guid.NewGuid(), Name = "Test" };
+        var entity = new TestEntity { };
         var mockDataSink = Substitute.For<IDataSink<TestEntity>>();
         var cts = new CancellationTokenSource();
         var cancellationToken = cts.Token;
@@ -116,7 +117,7 @@ public sealed class DataSinkManagerTests
     public async Task HandleInsertAsync_Should_Process_All_DataSinks_In_Parallel()
     {
         // Arrange
-        var entity = new TestEntity { Id = Guid.NewGuid(), Name = "Test" };
+        var entity = new TestEntity { };
         var mockDataSink1 = Substitute.For<IDataSink<TestEntity>>();
         var mockDataSink2 = Substitute.For<IDataSink<TestEntity>>();
         var mockDataSink3 = Substitute.For<IDataSink<TestEntity>>();
@@ -158,7 +159,7 @@ public sealed class DataSinkManagerTests
     public async Task HandleUpdateAsync_Should_Process_Entity_Through_All_DataSinks()
     {
         // Arrange
-        var entity = new TestEntity { Id = Guid.NewGuid(), Name = "Updated" };
+        var entity = new TestEntity { };
         var mockDataSink1 = Substitute.For<IDataSink<TestEntity>>();
         var mockDataSink2 = Substitute.For<IDataSink<TestEntity>>();
         
@@ -177,12 +178,12 @@ public sealed class DataSinkManagerTests
     public async Task HandleUpdateAsync_Should_Handle_No_Registered_DataSinks()
     {
         // Arrange
-        var entity = new TestEntity { Id = Guid.NewGuid(), Name = "Updated" };
+        var entity = new TestEntity { };
         _mockRegistry.GetDataSinks<TestEntity>()
             .Returns(Enumerable.Empty<IDataSink<TestEntity>>());
 
         // Act & Assert
-        Should.NotThrow(async () => await _manager.HandleUpdateAsync(entity));
+        await Should.NotThrowAsync(async () => await _manager.HandleUpdateAsync(entity));
     }
 
     #endregion
@@ -202,7 +203,7 @@ public sealed class DataSinkManagerTests
     public async Task HandleDeleteAsync_Should_Process_Entity_Through_All_DataSinks()
     {
         // Arrange
-        var entity = new TestEntity { Id = Guid.NewGuid(), Name = "ToDelete" };
+        var entity = new TestEntity { };
         var mockDataSink1 = Substitute.For<IDataSink<TestEntity>>();
         var mockDataSink2 = Substitute.For<IDataSink<TestEntity>>();
         
@@ -221,12 +222,12 @@ public sealed class DataSinkManagerTests
     public async Task HandleDeleteAsync_Should_Handle_No_Registered_DataSinks()
     {
         // Arrange
-        var entity = new TestEntity { Id = Guid.NewGuid(), Name = "ToDelete" };
+        var entity = new TestEntity { };
         _mockRegistry.GetDataSinks<TestEntity>()
             .Returns(Enumerable.Empty<IDataSink<TestEntity>>());
 
         // Act & Assert
-        Should.NotThrow(async () => await _manager.HandleDeleteAsync(entity));
+        await Should.NotThrowAsync(async () => await _manager.HandleDeleteAsync(entity));
     }
 
     #endregion
@@ -261,7 +262,7 @@ public sealed class DataSinkManagerTests
             .Returns(Enumerable.Empty<IDataSink>());
 
         // Act & Assert
-        Should.NotThrow(async () => await _manager.FlushAllAsync());
+        await Should.NotThrowAsync(async () => await _manager.FlushAllAsync());
     }
 
     [Fact]
@@ -312,7 +313,7 @@ public sealed class DataSinkManagerTests
             .Returns(Enumerable.Empty<IDataSink<TestEntity>>());
 
         // Act & Assert
-        Should.NotThrow(async () => await _manager.FlushAsync<TestEntity>());
+        await Should.NotThrowAsync(async () => await _manager.FlushAsync<TestEntity>());
     }
 
     [Fact]
@@ -341,7 +342,7 @@ public sealed class DataSinkManagerTests
     public async Task HandleInsertAsync_Should_Propagate_Exception_From_DataSink()
     {
         // Arrange
-        var entity = new TestEntity { Id = Guid.NewGuid(), Name = "Test" };
+        var entity = new TestEntity { };
         var mockDataSink = Substitute.For<IDataSink<TestEntity>>();
         var expectedException = new InvalidOperationException("Data sink error");
         
@@ -365,8 +366,6 @@ public sealed class DataSinkManagerTests
 
     public class TestEntity
     {
-        public Guid Id { get; set; }
-        public string Name { get; set; } = string.Empty;
     }
 
     #endregion

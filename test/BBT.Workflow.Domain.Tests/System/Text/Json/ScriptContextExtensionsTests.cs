@@ -28,7 +28,7 @@ public class ScriptContextExtensionsTests : DomainTestBase<DomainEntryPoint>
 
         // Assert
         Assert.Equal(JsonValueKind.Object, result.ValueKind);
-        Assert.Equal(0, result.EnumerateObject().Count());
+        Assert.Empty(result.EnumerateObject());
     }
 
     [Fact]

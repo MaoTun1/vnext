@@ -1,6 +1,5 @@
 using System.Text.Json;
 using BBT.Aether.Application.Services;
-using BBT.Aether.Domain.Entities;
 using BBT.Aether.Validation;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions.CastHandlers;
@@ -39,7 +38,7 @@ public sealed class AdminAppService(
     IOptions<RuntimeOptions> runtimeOptions,
     IInstanceRepository instanceRepository,
     WorkflowValidator workflowValidator,
-    DomainCacheContext domainCacheContext,
+    IDomainCacheContext domainCacheContext,
     WorkflowCastProcessor castProcessor,
     IWorkflowMetrics workflowMetrics)
     : ApplicationService(serviceProvider), IAdminAppService

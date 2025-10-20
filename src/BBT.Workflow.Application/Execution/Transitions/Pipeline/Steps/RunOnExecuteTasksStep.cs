@@ -26,7 +26,7 @@ public sealed class RunOnExecuteTasksStep(
     /// <inheritdoc />
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
-        if (!context.Transition.OnExecutionTasks.Any())
+        if (!context.Transition!.OnExecutionTasks.Any())
         {
             logger.LogTrace("No OnExecute tasks for transition {TransitionKey}", context.TransitionKey);
             return Result<StepOutcome>.Ok(StepOutcome.Continue());

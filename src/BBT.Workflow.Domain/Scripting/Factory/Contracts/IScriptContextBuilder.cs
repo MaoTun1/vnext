@@ -38,7 +38,7 @@ public interface IScriptContextBuilder
     /// <summary>
     /// Sets the instance directly from an existing Instance object.
     /// </summary>
-    IScriptContextBuilder WithInstance(Instance instance);
+    IScriptContextBuilder WithInstance(Instance? instance);
     
     /// <summary>
     /// Sets the transition by finding it in the workflow using transition key.
@@ -48,7 +48,7 @@ public interface IScriptContextBuilder
     /// <summary>
     /// Sets the transition directly from an existing Transition object.
     /// </summary>
-    IScriptContextBuilder WithTransition(Transition transition);
+    IScriptContextBuilder WithTransition(Transition? transition);
     
     /// <summary>
     /// Sets the request body data for the ScriptContext.

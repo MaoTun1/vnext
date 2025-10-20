@@ -238,8 +238,8 @@ public class WorkflowTests : DomainTestBase<DomainEntryPoint>
 
         // Assert
         Assert.True(result.IsSuccess);
-        Assert.Equal("initial", result.Value.Key);
-        Assert.Equal(StateType.Initial, result.Value.StateType);
+        Assert.Equal("initial", result.Value?.Key);
+        Assert.Equal(StateType.Initial, result.Value?.StateType);
     }
 
     [Fact]
@@ -268,7 +268,7 @@ public class WorkflowTests : DomainTestBase<DomainEntryPoint>
 
         // Assert
         Assert.True(result.IsSuccess);
-        Assert.Equal("test-state", result.Value.Key);
+        Assert.Equal("test-state", result.Value?.Key);
     }
 
     [Fact]

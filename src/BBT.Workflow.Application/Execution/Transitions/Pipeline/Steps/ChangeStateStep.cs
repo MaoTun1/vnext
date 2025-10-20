@@ -23,7 +23,7 @@ public sealed class ChangeStateStep(
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
         var fromState = context.Instance.GetCurrentState;
-        var toState = context.Transition.Target;
+        var toState = context.Transition!.Target;
         
         logger.LogDebug("Changing state from {FromState} to {ToState} for instance {InstanceId}",
             fromState, toState, context.InstanceId);

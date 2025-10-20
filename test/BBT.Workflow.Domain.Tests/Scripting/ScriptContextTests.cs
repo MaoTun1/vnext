@@ -270,8 +270,8 @@ public class ScriptContextTests
         // Assert
         Assert.NotNull(context.Body);
         // Both properties should exist after merge
-        Assert.Equal("Initial", context.Body.name);
-        Assert.Equal(123, context.Body.value);
+        Assert.Equal("Initial", context.Body?.name);
+        Assert.Equal(123, context.Body?.value);
     }
 
     [Fact]
@@ -436,10 +436,10 @@ public class ScriptContextTests
 
         // Assert
         Assert.NotNull(context.Body);
-        Assert.Equal("Test", context.Body.name); // camelCase
-        Assert.Equal(123, context.Body.value);
-        Assert.NotNull(context.Body.nested);
-        Assert.NotNull(context.Body.array);
+        Assert.Equal("Test", context.Body?.name); // camelCase
+        Assert.Equal(123, context.Body?.value);
+        Assert.NotNull(context.Body?.nested);
+        Assert.NotNull(context.Body?.array);
     }
 
     [Fact]

@@ -105,7 +105,9 @@ public class ComponentCacheStoreTests
         
         _mockWorkflowsCacheSet
             .Setup(x => x.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+#pragma warning disable CS8600 // Converting null literal or possible null value to non-nullable type.
             .ReturnsAsync((Definitions.Workflow)null);
+#pragma warning restore CS8600 // Converting null literal or possible null value to non-nullable type.
 
         // Act & Assert
         await Should.ThrowAsync<EntityNotFoundException>(
@@ -150,7 +152,9 @@ public class ComponentCacheStoreTests
         
         _mockTasksCacheSet
             .Setup(x => x.GetLatestByNameAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+#pragma warning disable CS8600 // Converting null literal or possible null value to non-nullable type.
             .ReturnsAsync((WorkflowTask)null);
+#pragma warning restore CS8600 // Converting null literal or possible null value to non-nullable type.
 
         // Act & Assert
         await Should.ThrowAsync<EntityNotFoundException>(

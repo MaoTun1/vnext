@@ -96,6 +96,7 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
     private static void AddApplicationServices(this IServiceCollection services)
     {
         services.AddSingleton<DomainCacheContext>();
+        services.AddSingleton<IDomainCacheContext>(serviceProvider => serviceProvider.GetRequiredService<DomainCacheContext>());
         services.AddScoped<IAdminAppService, AdminAppService>();
         services.AddScoped<IInstanceCommandAppService, InstanceCommandAppService>();
         services.AddScoped<IInstanceQueryAppService, InstanceQueryAppService>();

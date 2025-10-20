@@ -794,26 +794,31 @@ public sealed class InstanceQueryAppService(
                 input.Version,
                 cancellationToken);
             // Get current  state
-            var currentState = currentWorkflow.GetState(instance.CurrentState!);
-            bool IsWizardState = false;
-            if (currentState.StateType == StateType.Wizard)
+            var currentStateResult = currentWorkflow.GetState(instance.CurrentState!);
+            var currentState = currentStateResult!.Value;
+            bool isWizardState = false;
+            if (currentStateResult.IsSuccess)
             {
-                IsWizardState = true;
+                if (currentState is { StateType: StateType.Wizard })
+                {
+                    isWizardState = true;
+                }
             }
+            
             // Get available transitions
             var availableTransitions = new List<string>();
 
             if (instance.Status.Equals(InstanceStatus.Active))
             {
-                availableTransitions = stateMachineService.AvailableUserTransitionKeys(currentWorkflow, instance);
+                availableTransitions = currentWorkflow.GetAvailableUserTransitionKeys(currentState!);
             }
 
             View? view = null;
 
             // If there's exactly one transition, get its view
-            if (IsWizardState)
+            if (isWizardState)
             {
-                var transition = currentState.FindTransition(availableTransitions[0]);
+                var transition = currentState?.FindTransition(availableTransitions[0]);
                 if (transition?.view != null)
                 {
                     view = await componentCacheStore.GetViewAsync(
@@ -824,15 +829,13 @@ public sealed class InstanceQueryAppService(
                 }
             }
             // If there are multiple transitions or no transitions, get the state view
-            else if (!string.IsNullOrEmpty(instance.CurrentState) && currentState.View != null)
+            else if (!string.IsNullOrEmpty(instance.CurrentState) && currentState?.View != null)
             {
-
                 view = await componentCacheStore.GetViewAsync(
                     currentState.View.Domain,
                     currentState.View.Key,
                     currentState.View.Version,
                     cancellationToken);
-
             }
 
             // If no platform specified, return the default view content

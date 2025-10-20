@@ -39,8 +39,8 @@ public sealed class StartInstanceInput(
             Mode = Sync ? ExecMode.Sync : ExecMode.Async,
             CorrelationId = Guid.NewGuid().ToString("N"),
             RequestedAt = DateTimeOffset.UtcNow,
-            Headers = Headers.ToDictionary(kvp => kvp.Key, kvp => kvp.Value ?? string.Empty),
-            RouteValues = RouteValues.ToDictionary(kvp => kvp.Key, kvp => kvp.Value ?? string.Empty),
+            Headers = Headers,
+            RouteValues = RouteValues,
             Data = Instance.Attributes,
             IsReentry = false // Start transitions are never re-entry
         };

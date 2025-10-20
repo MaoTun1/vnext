@@ -28,7 +28,7 @@ public static class ActivityExtensions
     {
         if (activity != null)
         {
-            activity.RecordException(exception);
+            activity.AddException(exception);
             activity.SetStatus(ActivityStatusCode.Error, description ?? exception.Message);
         }
         return activity;
