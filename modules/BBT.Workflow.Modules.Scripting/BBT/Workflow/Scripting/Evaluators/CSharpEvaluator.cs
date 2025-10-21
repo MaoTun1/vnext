@@ -8,7 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Scripting;
 
@@ -17,51 +16,6 @@ namespace BBT.Workflow.Scripting.Evaluators;
 public class CSharpEvaluator : IEvaluator
 {
     private static readonly ConcurrentDictionary<string, Script<object>> ScriptCache = new();
-
-    public async Task<object?> EvaluateAsync(string code, Type? returnType = null,
-        Func<ScriptOptions, ScriptOptions>? configureScriptOptions = null, object? globals = null,
-        CancellationToken cancellationToken = default)
-    {
-        var scriptOptions = CreateDefaultOptions(configureScriptOptions);
-
-        if (returnType != null)
-        {
-            var script = CSharpScript.Create(code, scriptOptions, returnType);
-            var result = await script.RunAsync(globals, cancellationToken);
-            return result.ReturnValue!;
-        }
-
-        // Caching
-        if (!ScriptCache.TryGetValue(code, out var cachedScript))
-        {
-            cachedScript = CSharpScript.Create(code, scriptOptions);
-            ScriptCache[code] = cachedScript;
-        }
-
-        var state = await cachedScript.RunAsync(globals, cancellationToken);
-        return state.ReturnValue;
-    }
-
-    public async Task<T> EvaluateAsync<T>(string code,
-        Func<ScriptOptions, ScriptOptions>? configureScriptOptions = null, 
-        Type? returnType = null,
-        object? globals = null,
-        CancellationToken cancellationToken = default)
-    {
-        var scriptOptions = CreateDefaultOptions(configureScriptOptions);
-        if (returnType != null)
-        {
-            var script = CSharpScript.Create<T>(code, scriptOptions, returnType);
-            var state = await script.RunAsync(globals, cancellationToken);
-            return state.ReturnValue!;
-        }
-        else
-        {
-            var script = CSharpScript.Create<T>(code, scriptOptions);
-            var state = await script.RunAsync(globals, cancellationToken);
-            return state.ReturnValue!;
-        }
-    }
 
     public Task<T> CompileToInstanceAsync<T>(
         string code, 

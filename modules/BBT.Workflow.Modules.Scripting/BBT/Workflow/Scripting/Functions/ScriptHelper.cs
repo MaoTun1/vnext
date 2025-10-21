@@ -1,8 +1,6 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Dynamic;
-using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Dapr.Client;
 using Microsoft.Extensions.Configuration;
@@ -200,93 +198,177 @@ public static class ScriptHelper
     #region Logging Functions
 
     /// <summary>
-    /// Logs a trace message
+    /// Logs a trace message with caller information
     /// </summary>
     /// <param name="message">The message to log</param>
-    public static void LogTrace(string message)
+    /// <param name="file">The source file path (automatically captured)</param>
+    /// <param name="method">The method name (automatically captured)</param>
+    /// <param name="line">The line number (automatically captured)</param>
+    /// <param name="args">Optional arguments for string formatting</param>
+    public static void LogTrace(
+        object message,
+        [CallerFilePath] string? file = null,
+        [CallerMemberName] string? method = null,
+        [CallerLineNumber] int line = 0,
+        params object[] args)
     {
         if (_logger == null)
             throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
 
-        if (string.IsNullOrWhiteSpace(message))
+        if (message == null)
             return;
 
-        _logger.LogTrace("{Message}", message);
+        var enrichedMessage = $"Class: {{File}} Method: {{Method}} Line: {{Line}} Message: {message}";
+        var logArgs = new List<object> { file ?? "Unknown", method ?? "Unknown", line };
+        if (args != null && args.Length > 0)
+            logArgs.AddRange(args);
+
+        _logger.LogTrace(enrichedMessage, logArgs.ToArray());
     }
 
     /// <summary>
-    /// Logs a debug message
+    /// Logs a debug message with caller information
     /// </summary>
     /// <param name="message">The message to log</param>
-    public static void LogDebug(string message)
+    /// <param name="file">The source file path (automatically captured)</param>
+    /// <param name="method">The method name (automatically captured)</param>
+    /// <param name="line">The line number (automatically captured)</param>
+    /// <param name="args">Optional arguments for string formatting</param>
+    public static void LogDebug(
+        object message,
+        [CallerFilePath] string? file = null,
+        [CallerMemberName] string? method = null,
+        [CallerLineNumber] int line = 0,
+        params object[] args)
     {
         if (_logger == null)
             throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
 
-        if (string.IsNullOrWhiteSpace(message))
+        if (message == null)
             return;
 
-        _logger.LogDebug("{Message}", message);
+        var enrichedMessage = $"Class: {{File}} Method: {{Method}} Line: {{Line}} Message: {message}";
+        var logArgs = new List<object> { file ?? "Unknown", method ?? "Unknown", line };
+        if (args != null && args.Length > 0)
+            logArgs.AddRange(args);
+
+        _logger.LogDebug(enrichedMessage, logArgs.ToArray());
     }
 
     /// <summary>
-    /// Logs an informational message
+    /// Logs an informational message with caller information
     /// </summary>
     /// <param name="message">The message to log</param>
-    public static void LogInformation(string message)
+    /// <param name="file">The source file path (automatically captured)</param>
+    /// <param name="method">The method name (automatically captured)</param>
+    /// <param name="line">The line number (automatically captured)</param>
+    /// <param name="args">Optional arguments for string formatting</param>
+    public static void LogInformation(
+        object message,
+        [CallerFilePath] string? file = null,
+        [CallerMemberName] string? method = null,
+        [CallerLineNumber] int line = 0,
+        params object[] args)
     {
         if (_logger == null)
             throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
 
-        if (string.IsNullOrWhiteSpace(message))
+        if (message == null)
             return;
 
-        _logger.LogInformation("{Message}", message);
+        var enrichedMessage = $"Class: {{File}} Method: {{Method}} Line: {{Line}} Message: {message}";
+        var logArgs = new List<object> { file ?? "Unknown", method ?? "Unknown", line };
+        if (args != null && args.Length > 0)
+            logArgs.AddRange(args);
+
+        _logger.LogInformation(enrichedMessage, logArgs.ToArray());
     }
 
     /// <summary>
-    /// Logs a warning message
+    /// Logs a warning message with caller information
     /// </summary>
     /// <param name="message">The message to log</param>
-    public static void LogWarning(string message)
+    /// <param name="file">The source file path (automatically captured)</param>
+    /// <param name="method">The method name (automatically captured)</param>
+    /// <param name="line">The line number (automatically captured)</param>
+    /// <param name="args">Optional arguments for string formatting</param>
+    public static void LogWarning(
+        object message,
+        [CallerFilePath] string? file = null,
+        [CallerMemberName] string? method = null,
+        [CallerLineNumber] int line = 0,
+        params object[] args)
     {
         if (_logger == null)
             throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
 
-        if (string.IsNullOrWhiteSpace(message))
+        if (message == null)
             return;
 
-        _logger.LogWarning("{Message}", message);
+        var enrichedMessage = $"Class: {{File}} Method: {{Method}} Line: {{Line}} Message: {message}";
+        var logArgs = new List<object> { file ?? "Unknown", method ?? "Unknown", line };
+        if (args != null && args.Length > 0)
+            logArgs.AddRange(args);
+
+        _logger.LogWarning(enrichedMessage, logArgs.ToArray());
     }
 
     /// <summary>
-    /// Logs an error message
+    /// Logs an error message with caller information
     /// </summary>
     /// <param name="message">The message to log</param>
-    public static void LogError(string message)
+    /// <param name="file">The source file path (automatically captured)</param>
+    /// <param name="method">The method name (automatically captured)</param>
+    /// <param name="line">The line number (automatically captured)</param>
+    /// <param name="args">Optional arguments for string formatting</param>
+    public static void LogError(
+        object message,
+        [CallerFilePath] string? file = null,
+        [CallerMemberName] string? method = null,
+        [CallerLineNumber] int line = 0,
+        params object[] args)
     {
         if (_logger == null)
             throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
 
-        if (string.IsNullOrWhiteSpace(message))
+        if (message == null)
             return;
 
-        _logger.LogError("{Message}", message);
+        var enrichedMessage = $"Class: {{File}} Method: {{Method}} Line: {{Line}} Message: {message}";
+        var logArgs = new List<object> { file ?? "Unknown", method ?? "Unknown", line };
+        if (args != null && args.Length > 0)
+            logArgs.AddRange(args);
+
+        _logger.LogError(enrichedMessage, logArgs.ToArray());
     }
 
     /// <summary>
-    /// Logs a critical message
+    /// Logs a critical message with caller information
     /// </summary>
     /// <param name="message">The message to log</param>
-    public static void LogCritical(string message)
+    /// <param name="file">The source file path (automatically captured)</param>
+    /// <param name="method">The method name (automatically captured)</param>
+    /// <param name="line">The line number (automatically captured)</param>
+    /// <param name="args">Optional arguments for string formatting</param>
+    public static void LogCritical(
+        object message,
+        [CallerFilePath] string? file = null,
+        [CallerMemberName] string? method = null,
+        [CallerLineNumber] int line = 0,
+        params object[] args)
     {
         if (_logger == null)
             throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
 
-        if (string.IsNullOrWhiteSpace(message))
+        if (message == null)
             return;
 
-        _logger.LogCritical("{Message}", message);
+        var enrichedMessage = $"Class: {{File}} Method: {{Method}} Line: {{Line}} Message: {message}";
+        var logArgs = new List<object> { file ?? "Unknown", method ?? "Unknown", line };
+        if (args != null && args.Length > 0)
+            logArgs.AddRange(args);
+
+        _logger.LogCritical(enrichedMessage, logArgs.ToArray());
     }
 
     #endregion

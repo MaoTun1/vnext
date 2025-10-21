@@ -1021,7 +1021,7 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var instance = InstanceFactory.CreateDefault();
-        var state = StateFactory.CreateDefault("test-state");
+        var state = StateFactory.CreateDefault();
         instance.ChangeState(state);
 
         // Act

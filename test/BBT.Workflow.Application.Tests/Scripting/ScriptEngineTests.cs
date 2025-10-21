@@ -55,33 +55,6 @@ public class ScriptEngineTests : ApplicationTestBase<ApplicationEntryPoint>
     }
 
     [Fact]
-    public async Task EvaluateAsync_ShouldReturnExpectedValue()
-    {
-        // Arrange
-        string code = "1 + 2";
-
-        // Act
-        var result = await _scriptEngine.EvaluateAsync(code);
-
-        // Assert
-        Assert.Equal(3, result);
-    }
-
-    [Fact]
-    public async Task EvaluateGenericAsync_ShouldReturnExpectedGenericValue()
-    {
-        // Arrange
-        string code = "\"Hello\"";
-        string expected = "Hello";
-
-        // Act
-        var result = await _scriptEngine.EvaluateAsync<string>(code);
-
-        // Assert
-        Assert.Equal(expected, result);
-    }
-
-    [Fact]
     public async Task CompileToInstanceAsync_ShouldReturnCompiledInstance()
     {
         // Arrange

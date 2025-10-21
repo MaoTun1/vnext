@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Dynamic;
 
@@ -81,57 +82,111 @@ public abstract class ScriptBase
     #region Logging Functions
 
     /// <summary>
-    /// Logs a trace message
+    /// Logs a trace message with caller information
     /// </summary>
     /// <param name="message">The message to log</param>
-    protected static void LogTrace(string message)
+    /// <param name="file">The source file path (automatically captured)</param>
+    /// <param name="method">The method name (automatically captured)</param>
+    /// <param name="line">The line number (automatically captured)</param>
+    /// <param name="args">Optional arguments for string formatting</param>
+    protected static void LogTrace(
+        object message,
+        [CallerFilePath] string? file = null,
+        [CallerMemberName] string? method = null,
+        [CallerLineNumber] int line = 0,
+        params object[] args)
     {
-        ScriptHelper.LogTrace(message);
+        ScriptHelper.LogTrace(message, file, method, line, args);
     }
 
     /// <summary>
-    /// Logs a debug message
+    /// Logs a debug message with caller information
     /// </summary>
     /// <param name="message">The message to log</param>
-    protected static void LogDebug(string message)
+    /// <param name="file">The source file path (automatically captured)</param>
+    /// <param name="method">The method name (automatically captured)</param>
+    /// <param name="line">The line number (automatically captured)</param>
+    /// <param name="args">Optional arguments for string formatting</param>
+    protected static void LogDebug(
+        object message,
+        [CallerFilePath] string? file = null,
+        [CallerMemberName] string? method = null,
+        [CallerLineNumber] int line = 0,
+        params object[] args)
     {
-        ScriptHelper.LogDebug(message);
+        ScriptHelper.LogDebug(message, file, method, line, args);
     }
 
     /// <summary>
-    /// Logs an informational message
+    /// Logs an informational message with caller information
     /// </summary>
     /// <param name="message">The message to log</param>
-    protected static void LogInformation(string message)
+    /// <param name="file">The source file path (automatically captured)</param>
+    /// <param name="method">The method name (automatically captured)</param>
+    /// <param name="line">The line number (automatically captured)</param>
+    /// <param name="args">Optional arguments for string formatting</param>
+    protected static void LogInformation(
+        object message,
+        [CallerFilePath] string? file = null,
+        [CallerMemberName] string? method = null,
+        [CallerLineNumber] int line = 0,
+        params object[] args)
     {
-        ScriptHelper.LogInformation(message);
+        ScriptHelper.LogInformation(message, file, method, line, args);
     }
 
     /// <summary>
-    /// Logs a warning message
+    /// Logs a warning message with caller information
     /// </summary>
     /// <param name="message">The message to log</param>
-    protected static void LogWarning(string message)
+    /// <param name="file">The source file path (automatically captured)</param>
+    /// <param name="method">The method name (automatically captured)</param>
+    /// <param name="line">The line number (automatically captured)</param>
+    /// <param name="args">Optional arguments for string formatting</param>
+    protected static void LogWarning(
+        object message,
+        [CallerFilePath] string? file = null,
+        [CallerMemberName] string? method = null,
+        [CallerLineNumber] int line = 0,
+        params object[] args)
     {
-        ScriptHelper.LogWarning(message);
+        ScriptHelper.LogWarning(message, file, method, line, args);
     }
 
     /// <summary>
-    /// Logs an error message
+    /// Logs an error message with caller information
     /// </summary>
     /// <param name="message">The message to log</param>
-    protected static void LogError(string message)
+    /// <param name="file">The source file path (automatically captured)</param>
+    /// <param name="method">The method name (automatically captured)</param>
+    /// <param name="line">The line number (automatically captured)</param>
+    /// <param name="args">Optional arguments for string formatting</param>
+    protected static void LogError(
+        object message,
+        [CallerFilePath] string? file = null,
+        [CallerMemberName] string? method = null,
+        [CallerLineNumber] int line = 0,
+        params object[] args)
     {
-        ScriptHelper.LogError(message);
+        ScriptHelper.LogError(message, file, method, line, args);
     }
 
     /// <summary>
-    /// Logs a critical message
+    /// Logs a critical message with caller information
     /// </summary>
     /// <param name="message">The message to log</param>
-    protected static void LogCritical(string message)
+    /// <param name="file">The source file path (automatically captured)</param>
+    /// <param name="method">The method name (automatically captured)</param>
+    /// <param name="line">The line number (automatically captured)</param>
+    /// <param name="args">Optional arguments for string formatting</param>
+    protected static void LogCritical(
+        object message,
+        [CallerFilePath] string? file = null,
+        [CallerMemberName] string? method = null,
+        [CallerLineNumber] int line = 0,
+        params object[] args)
     {
-        ScriptHelper.LogCritical(message);
+        ScriptHelper.LogCritical(message, file, method, line, args);
     }
 
     #endregion
