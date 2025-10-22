@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using BBT.Aether;
 using BBT.Aether.Auditing;
-using BBT.Workflow.ExceptionHandling;
+using BBT.Workflow.Domain;
 using BBT.Workflow.Runtime;
 
 namespace BBT.Workflow.Definitions;
@@ -38,12 +38,12 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     {
         Type = type;
         Timeout = timeout;
-        this.labels = labels ?? [];
-        this.functions = functions ?? [];
-        this.features = features ?? [];
-        this.states = states ?? [];
-        this.extensions = extensions ?? [];
-        this.sharedTransitions = sharedTransitions ?? [];
+        this.labels = labels;
+        this.functions = functions;
+        this.features = features;
+        this.states = states ;
+        this.extensions = extensions;
+        this.sharedTransitions = sharedTransitions;
         StartTransition = startTransition;
     }
 
@@ -181,7 +181,7 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
 
     private void SetVersion(string version)
     {
-        Version = Check.NotNullOrEmpty(version, nameof(Version), WorkflowConstants.MaxVersionLength);
+        Version = Check.NotNullOrWhiteSpace(version, nameof(Version), WorkflowConstants.MaxVersionLength);
     }
 
     #endregion
@@ -247,15 +247,20 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
         states.Add(state);
     }
 
-    public State GetInitialState()
+    public Result<State> GetInitialState()
     {
-        return States.FirstOrDefault(s => s.StateType == StateType.Initial) ??
-               throw new NotFoundStateException(Key, "initial");
+        var state = States.FirstOrDefault(s => s.StateType == StateType.Initial);
+        return state is not null 
+            ? Result<State>.Ok(state)
+            : Result<State>.Fail(WorkflowErrors.StateNotFound(Key, "initial"));
     }
 
-    public State GetState(string key)
+    public Result<State> GetState(string key)
     {
-        return States.FirstOrDefault(s => s.Key == key) ?? throw new NotFoundStateException(Key, key);
+        var state = States.FirstOrDefault(s => s.Key == key);
+        return state is not null
+            ? Result<State>.Ok(state)
+            : Result<State>.Fail(WorkflowErrors.StateNotFound(Key, key));
     }
 
     public State? FindState(string key)
@@ -274,7 +279,7 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
                ?? (StartTransition.Key == key ? StartTransition : null);
     }
 
-    public Transition? FindTransition(string key, State currentState)
+    public Transition? ResolveTransition(string key, State currentState)
     {
         return currentState.FindTransition(key) ?? FindTransition(key);
     }
@@ -285,13 +290,34 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
                ?? States.SelectMany(s => s.Transitions).FirstOrDefault(p => p.Key == key);
     }
 
-    public List<string> AvailableSharedTransitionKeys(string state)
+    public List<string> GetSharedTransitionKeys(string state)
     {
         return SharedTransitions.Where(s => s.Key == state).Select(s => s.Key).ToList();
+    }
+
+    public List<string> GetAvailableUserTransitionKeys(State currentState)
+    {
+        // Get manual transitions from current state
+        var manualTransitions = currentState.Transitions
+            .Where(t => t.TriggerType == TriggerType.Manual || t.TriggerType == TriggerType.Event)
+            .Select(t => t.Key)
+            .ToList();
+        
+        // Get manual shared transitions
+        var manualSharedTransitions = SharedTransitions
+            .Where(t => t.AvailableIn.Contains(currentState.Key) && 
+                        (t.TriggerType == TriggerType.Manual || t.TriggerType == TriggerType.Event))
+            .Select(t => t.Key)
+            .ToList();
+        
+        manualTransitions.AddRange(manualSharedTransitions);
+        return manualTransitions;
     }
 
     public static Workflow Create()
     {
         return new Workflow();
     }
+
+    
 }

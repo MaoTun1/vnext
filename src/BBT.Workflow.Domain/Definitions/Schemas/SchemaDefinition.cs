@@ -72,7 +72,7 @@ public sealed class SchemaDefinition : IDomainEntity, ISchemaReference, IReferen
 
     private void SetVersion(string version)
     {
-        Version = Check.NotNullOrEmpty(version, nameof(Version), WorkflowConstants.MaxVersionLength);
+        Version = Check.NotNullOrWhiteSpace(version, nameof(Version), WorkflowConstants.MaxVersionLength);
     }
 
     public void SetReference(IReference reference)

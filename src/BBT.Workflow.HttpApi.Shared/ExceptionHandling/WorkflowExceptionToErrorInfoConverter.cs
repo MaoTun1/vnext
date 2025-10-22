@@ -1,12 +1,14 @@
 using BBT.Aether.ExceptionHandling;
 using BBT.Aether.Http;
+using BBT.Workflow.Domain.Extensions;
+using BBT.Workflow.HttpApi.Shared;
 
 namespace BBT.Workflow.ExceptionHandling;
 
 /// <summary>
 /// Custom exception to error info converter for workflow-specific exceptions.
 /// Extends the default Aether exception converter to handle workflow domain exceptions
-/// such as ConflictException, NotFoundDomainException, and RuntimeSchemaInvalidException.
+/// including validation errors, distributed lock failures, auto-transition conditions, and remote service errors.
 /// </summary>
 /// <param name="serviceProvider">Service provider for resolving dependencies</param>
 public class WorkflowExceptionToErrorInfoConverter(IServiceProvider serviceProvider)
@@ -23,20 +25,50 @@ public class WorkflowExceptionToErrorInfoConverter(IServiceProvider serviceProvi
     protected override ServiceErrorInfo CreateErrorInfoWithoutCode(Exception exception,
         AetherExceptionHandlingOptions options)
     {
-        var errorInfo = base.CreateErrorInfoWithoutCode(exception, options);
         return exception switch
         {
-            ConflictException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
             NotFoundDomainException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
             RuntimeSchemaInvalidException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            SubFlowBlockedException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            TransitionLockedException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            InstanceNotFoundException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            NotFoundStateException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            InvalidStateException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            NotFoundTransitionException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            TransitionRuleFailedException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            _ => errorInfo
+            DistributedLockAcquisitionException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
+            AutoTransitionConditionNotMetException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
+            RemoteServiceException ex => ex.ErrorInfo,
+            WorkflowValidationException ex => CreateValidationErrorInfo(ex),
+            // Default handling for other exceptions
+            _ => base.CreateErrorInfoWithoutCode(exception, options)
         };
+    }
+
+    /// <summary>
+    /// Creates ServiceErrorInfo from WorkflowValidationException with detailed validation errors.
+    /// </summary>
+    private static ServiceErrorInfo CreateValidationErrorInfo(WorkflowValidationException exception)
+    {
+        var errorInfo = new ServiceErrorInfo
+        {
+            Code = exception.Code,
+            Message = exception.Message,
+            Details = exception.Error.Detail,
+            Data = new Dictionary<string, object>()
+        };
+
+        // Add field-level validation errors
+        if (exception.ValidationErrors is { Count: > 0 })
+        {
+            errorInfo.ValidationErrors = exception.ValidationErrors
+                .Select(ve => new ServiceValidationErrorInfo
+                {
+                    Members = ve.MemberNames.ToArray(),
+                    Message = ve.ErrorMessage ?? string.Empty
+                })
+                .ToArray();
+        }
+
+        // Add target field if available
+        if (!string.IsNullOrEmpty(exception.Target))
+        {
+            errorInfo.Data["target"] = exception.Target;
+        }
+
+        return errorInfo;
     }
 }

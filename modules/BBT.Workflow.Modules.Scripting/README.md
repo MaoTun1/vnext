@@ -11,24 +11,27 @@ This module provides the necessary infrastructure to run dynamic C# scripts with
 
 ## Custom Functions
 
-### GetSecret Functions
+`ScriptBase` provides access to various helper functions including secret management, logging, configuration access, and dynamic object helpers.
 
-Functions used to securely retrieve secrets from the Dapr secret store:
-
-#### Three Ways to Use Custom Functions
+### Three Ways to Use Custom Functions
 
 **1. Static ScriptHelper (Recommended for most cases)**
 ```csharp
 var apiKey = ScriptHelper.GetSecret("dapr_store", "secret_store", "Asgard_ApiKey");
+ScriptHelper.LogInformation("Processing started");
+var endpoint = ScriptHelper.GetConfigValue("Api:Endpoint");
 ```
 
-**2. ScriptBase Inheritance (Clean syntax for compiled scripts)**
+**2. ScriptBase Inheritance (Clean syntax for compiled scripts - Recommended)**
 ```csharp
 public class MyMapping : ScriptBase, IMapping
 {
     public Task<ScriptResponse> InputHandler(WorkflowTask task, ScriptContext context)
     {
-        var apiKey = GetSecret("dapr_store", "secret_store", "Asgard_ApiKey"); // Clean syntax!
+        // All functions available without ScriptHelper prefix
+        var apiKey = GetSecret("dapr_store", "secret_store", "Asgard_ApiKey");
+        LogInformation("Processing customer request");
+        var endpoint = GetConfigValue("Api:Endpoint");
         // ...
     }
 }
@@ -41,9 +44,11 @@ string code = @"GetSecret(""dapr_store"", ""secret_store"", ""Asgard_ApiKey"")";
 var result = await scriptEngine.EvaluateAsync<string>(code);
 ```
 
-#### Function Signatures
+### Secret Management Functions
 
-#### `GetSecret(storeName, secretKey)`
+#### Secret Function Signatures
+
+#### `GetSecret(storeName, secretStore, secretKey)`
 
 Retrieves a single secret value (synchronous).
 
@@ -83,38 +88,213 @@ var secrets = await ScriptHelper.GetSecretsAsync("dapr_store", "secret_store");
 var secrets = await GetSecretsAsync("dapr_store", "secret_store");
 ```
 
-## Usage Example
+### Logging Functions
+
+Scripts can output diagnostic information using standard logging functions:
+
+#### Function Signatures
 
 ```csharp
+void LogTrace(string message)      // Detailed debugging information
+void LogDebug(string message)      // Diagnostic information
+void LogInformation(string message) // General information
+void LogWarning(string message)     // Warning messages
+void LogError(string message)       // Error messages
+void LogCritical(string message)    // Critical failures
+```
+
+#### Usage Example
+
+```csharp
+public class DiagnosticMapping : ScriptBase, IMapping
+{
+    public Task<ScriptResponse> InputHandler(WorkflowTask task, ScriptContext context)
+    {
+        LogInformation($"Starting task: {task.Key}");
+        
+        try
+        {
+            LogDebug("Processing customer data");
+            
+            var result = ProcessData(context);
+            
+            LogInformation("Task completed successfully");
+            
+            return Task.FromResult(new ScriptResponse { Data = result });
+        }
+        catch (Exception ex)
+        {
+            LogError($"Task failed: {ex.Message}");
+            throw;
+        }
+    }
+}
+```
+
+**Best Practices:**
+- Use appropriate log levels (Debug for diagnostics, Information for business events)
+- Include contextual information (task keys, instance IDs)
+- Avoid logging sensitive data (passwords, API keys, PII)
+- Keep messages concise and meaningful
+
+### Configuration Functions
+
+Scripts can access application configuration values at runtime:
+
+#### Function Signatures
+
+```csharp
+string? GetConfigValue(string key)
+string GetConfigValue(string key, string defaultValue)
+T? GetConfigValue<T>(string key)
+```
+
+#### Usage Example
+
+```csharp
+public class ConfigurableMapping : ScriptBase, IMapping
+{
+    public Task<ScriptResponse> InputHandler(WorkflowTask task, ScriptContext context)
+    {
+        // Get configuration with different approaches
+        var apiUrl = GetConfigValue("ExternalApi:Endpoint");
+        var timeout = GetConfigValue("ExternalApi:Timeout", "30"); // with default
+        var maxRetries = GetConfigValue<int>("ExternalApi:MaxRetries"); // typed
+        
+        LogInformation($"Using API: {apiUrl}");
+        
+        var httpTask = (task as HttpTask)!;
+        httpTask.Url = apiUrl;
+        httpTask.Timeout = TimeSpan.FromSeconds(int.Parse(timeout));
+        
+        return Task.FromResult(new ScriptResponse 
+        { 
+            Data = new { maxRetries = maxRetries }
+        });
+    }
+}
+```
+
+**Configuration Key Format:**
+- Hierarchical keys with `:` separator (e.g., `"Section:SubSection:Key"`)
+- Case-insensitive
+- Returns `null` if not found (unless default provided)
+
+**Common Patterns:**
+```csharp
+// Service endpoints
+var apiUrl = GetConfigValue("Services:PaymentApi:Url");
+
+// Feature flags
+var enabled = GetConfigValue<bool>("Features:NewEngine");
+
+// Business rules
+var limit = GetConfigValue<decimal>("BusinessRules:CreditLimit");
+```
+
+### Dynamic Object Helper Functions
+
+Work safely with dynamic objects and JSON data:
+
+#### Function Signatures
+
+```csharp
+bool HasProperty(object obj, string propertyName)
+object? GetPropertyValue(object obj, string propertyName)
+```
+
+#### Usage Example
+
+```csharp
+public class SafeDataMapping : ScriptBase, IMapping
+{
+    public Task<ScriptResponse> InputHandler(WorkflowTask task, ScriptContext context)
+    {
+        // Safely check and access dynamic properties
+        if (HasProperty(context.Attributes, "customerId"))
+        {
+            var customerId = GetPropertyValue(context.Attributes, "customerId");
+            LogInformation($"Processing customer: {customerId}");
+        }
+        
+        return Task.FromResult(new ScriptResponse { Data = "processed" });
+    }
+}
+```
+
+## Complete Usage Example
+
+```csharp
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Scripting.Functions;
 
-public class MockMapping : IMapping
+public class AdvancedMapping : ScriptBase, IMapping
 {
     public Task<ScriptResponse> InputHandler(WorkflowTask task, ScriptContext context)
     {
-        var httpTask = (task as HttpTask)!;
-        httpTask.Url = "https://httpbin.org/post/" + context.Transition.Key;
-        httpTask.Method = "POST";
+        // Log execution start
+        LogInformation($"Starting task: {task.Key}");
         
-        return Task.FromResult(new ScriptResponse
+        try
         {
-            Data = "Hello Input",
-            Headers = new Dictionary<string, string>
+            // Get configuration
+            var apiEndpoint = GetConfigValue("ExternalApi:Endpoint");
+            var timeout = GetConfigValue<int>("ExternalApi:Timeout");
+            
+            LogDebug($"Using endpoint: {apiEndpoint}");
+            
+            // Get secret for authentication
+            var apiKey = GetSecret("dapr_store", "secret_store", "Asgard_ApiKey");
+            
+            // Safe property access
+            if (HasProperty(context.Attributes, "customerId"))
             {
-                {"ApiKey", ScriptHelper.GetSecret("dapr_store", "secret_store", "Asgard_ApiKey")}
+                var customerId = GetPropertyValue(context.Attributes, "customerId");
+                LogTrace($"Customer: {customerId}");
             }
-        });
+            
+            var httpTask = (task as HttpTask)!;
+            httpTask.Url = apiEndpoint + "/" + context.Transition.Key;
+            httpTask.Method = "POST";
+            httpTask.Timeout = TimeSpan.FromSeconds(timeout);
+            
+            LogInformation("Task prepared successfully");
+            
+            return Task.FromResult(new ScriptResponse
+            {
+                Data = new { status = "prepared" },
+                Headers = new Dictionary<string, string>
+                {
+                    {"Authorization", "Bearer " + apiKey}
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            LogError($"Task preparation failed: {ex.Message}");
+            throw;
+        }
     }
 
     public Task<ScriptResponse> OutputHandler(ScriptContext context)
     {
+        LogInformation("Processing output");
+        
+        var result = new
+        {
+            success = true,
+            timestamp = DateTime.UtcNow
+        };
+        
+        LogDebug($"Output: {result}");
+        
         return Task.FromResult(new ScriptResponse
         {
-            Data = "Hello Output",
+            Data = result,
             Headers = null
         });
     }

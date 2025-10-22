@@ -1,23 +1,26 @@
-using BBT.Workflow.ExceptionHandling;
+using BBT.Workflow.Domain;
 using BBT.Workflow.Rules;
-using WorkflowExecutionContext = BBT.Workflow.Shared.ExecutionContext;
+using BBT.Workflow.Shared;
 
 namespace BBT.Workflow.Definitions.Rules;
 
-public class ManualTriggerRule(Transition transition, WorkflowExecutionContext executionContext) : BaseRule<State>
+public class ManualTriggerRule(Transition transition, ExecutionActor executionActor) : ResultBaseRule<State>
 {
     public override bool IsApplicable(State context)
     {
         if (transition.TriggerType == TriggerType.Manual)
         {
-            return executionContext != WorkflowExecutionContext.User;
+            return executionActor != ExecutionActor.User;
         }
 
         return false;
     }
 
-    public override void Execute(State context)
+    public override Result Validate(State context)
     {
-        throw new UnauthorizedTransitionException(transition.Key, transition.TriggerType, executionContext);
+        return Result.Fail(WorkflowErrors.TransitionUnauthorized(
+            transition.Key,
+            transition.TriggerType,
+            executionActor));
     }
 }

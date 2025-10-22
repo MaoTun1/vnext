@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using BBT.Workflow.Definitions;
-using BBT.Workflow.Instances;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Shared;
 using BBT.Workflow.Monitoring;
@@ -32,7 +31,7 @@ public sealed class DaprTaskExecutor(
     /// Automatically synchronizes context changes from the remote execution back to the local context.
     /// </summary>
     /// <param name="onExecuteTask">The task configuration to execute.</param>
-    /// <param name="instanceTransition">The instance transition context. Can be null for extension tasks.</param>
+    /// <param name="instanceTransitionId">The instance transition context. Can be null for extension tasks.</param>
     /// <param name="taskTrigger">The trigger type that initiated the task execution.</param>
     /// <param name="context">The script execution context for task execution.</param>
     /// <param name="cancellationToken">Cancellation token for async operation control.</param>
@@ -41,7 +40,7 @@ public sealed class DaprTaskExecutor(
     /// <exception cref="InvalidOperationException">Thrown when the Execution service call fails.</exception>
     public async Task ExecuteTaskAsync(
         OnExecuteTask onExecuteTask,
-        InstanceTransition? instanceTransition,
+        Guid? instanceTransitionId,
         TaskTrigger taskTrigger,
         ScriptContext context,
         CancellationToken cancellationToken = default)
@@ -55,7 +54,7 @@ public sealed class DaprTaskExecutor(
         // Convert Domain models to DTOs
         var input = MapToRequest(
             onExecuteTask,
-            instanceTransition,
+            instanceTransitionId,
             taskTrigger,
             context);
 
@@ -194,7 +193,7 @@ public sealed class DaprTaskExecutor(
 
     private TaskExecutionRequestInput MapToRequest(
         OnExecuteTask onExecuteTask,
-        InstanceTransition? instanceTransition,
+        Guid? instanceTransitionId,
         TaskTrigger taskTrigger,
         ScriptContext context)
     {
@@ -216,13 +215,13 @@ public sealed class DaprTaskExecutor(
                     Code = onExecuteTask.Mapping.Code
                 }
             },
-            InstanceTransitionId = instanceTransition?.Id,
+            InstanceTransitionId = instanceTransitionId,
             TaskTrigger = taskTrigger,
             Context = new TaskScriptContextModel()
             {
                 InstanceId = context.Instance.Id,
                 TransitionKey = context.Transition?.Key,
-                Workflow = new ReferenceInput()
+                Workflow = new ReferenceInput
                 {
                     Domain = context.Workflow.Domain,
                     Flow = context.Workflow.Flow,

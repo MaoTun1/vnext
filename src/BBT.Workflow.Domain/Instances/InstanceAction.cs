@@ -14,7 +14,7 @@ public sealed class InstanceAction : Entity<Guid>
         Guid id,
         Guid taskId,
         string status,
-        JsonData detail)
+        JsonData? detail)
         : base(id)
     {
         TaskId = taskId;
@@ -35,6 +35,6 @@ public sealed class InstanceAction : Entity<Guid>
     
     private void SetStatus(string status)
     {
-        Status = Check.NotNullOrEmpty(status, nameof(status), InstanceActionConstants.MaxStatusLength);
+        Status = Check.NotNullOrWhiteSpace(status, nameof(status), InstanceActionConstants.MaxStatusLength);
     }
 }

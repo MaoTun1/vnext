@@ -8,6 +8,12 @@ namespace Microsoft.AspNetCore.Builder;
 
 public static class WorkflowHealthCheckMapExtensions
 {
+    private static readonly JsonSerializerOptions JsonSerializerOptions = new()
+    {
+        WriteIndented = false,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
     public static WebApplication MapAppHealthChecks(this WebApplication app)
     {
         app.MapHealthChecks("/health",
@@ -35,13 +41,6 @@ public static class WorkflowHealthCheckMapExtensions
         HttpContext context,
         HealthReport report)
     {
-        var jsonSerializerOptions = new JsonSerializerOptions
-        {
-            WriteIndented = false,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-        };
-
         var json = JsonSerializer.Serialize(
             new
             {
@@ -54,16 +53,14 @@ public static class WorkflowHealthCheckMapExtensions
                             Key = e.Key,
                             Description = e.Value.Description,
                             Duration = e.Value.Duration,
-                            Status = Enum.GetName(
-                                typeof(HealthStatus),
-                                e.Value.Status),
+                            Status = Enum.GetName(e.Value.Status),
                             Error = e.Value.Exception?.Message,
                             Tags = e.Value.Tags,
                             Data = e.Value.Data
                         })
                     .ToList()
             },
-            jsonSerializerOptions);
+            JsonSerializerOptions);
 
         context.Response.ContentType = MediaTypeNames.Application.Json;
         return context.Response.WriteAsync(json);

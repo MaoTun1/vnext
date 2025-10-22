@@ -278,6 +278,9 @@ deploy/github-api-key.txt
 deploy/_run_all_log.txt
 **/**/Logs/*.json
 /etc/docker/dapr-etcd-data
+.sonarqube
+sonar-project.properties
+.scannerwork
 
 # Workflow
 /src/BBT.Workflow.HttpApi.Host/Logs/*

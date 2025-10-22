@@ -12,5 +12,9 @@
     <PackageReference Include="Dapr.Client" Version="$(DaprPackageVersion)" />
     <PackageReference Include="Dapr.Jobs" Version="$(DaprPackageVersion)" />
     <ProjectReference Include="..\BBT.Workflow.Domain\BBT.Workflow.Domain.csproj" />
+    <PackageReference Include="OpenTelemetry.Api" Version="$(OpenTelemetryPackageVersion)" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="BackgroundJobs\Handlers\StartInstanceJobHandler.cs" />
   </ItemGroup>
 </Project>

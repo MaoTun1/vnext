@@ -105,12 +105,12 @@ public sealed class Transition : IHasKey
 
     private void SetKey(string key)
     {
-        Key = Check.NotNullOrEmpty(key, nameof(Key), TransitionConstants.MaxKeyLength);
+        Key = Check.NotNullOrWhiteSpace(key, nameof(Key), TransitionConstants.MaxKeyLength);
     }
 
     private void SetTarget(string target)
     {
-        Target = Check.NotNull(target, nameof(Target), TransitionConstants.MaxTargetLength);
+        Target = Check.NotNullOrWhiteSpace(target, nameof(Target), TransitionConstants.MaxTargetLength);
     }
 
     private void SetFrom(string? from)

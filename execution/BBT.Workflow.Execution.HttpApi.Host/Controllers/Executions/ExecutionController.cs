@@ -1,5 +1,8 @@
-using Microsoft.AspNetCore.Mvc;
+using BBT.Workflow.Domain;
+using BBT.Workflow.HttpApi.Shared;
 using BBT.Workflow.Tasks;
+using BBT.Workflow.Telemetry;
+using Microsoft.AspNetCore.Mvc;
 
 namespace BBT.Workflow.Execution.Controllers.Executions;
 
@@ -23,43 +26,54 @@ public sealed class ExecutionController(
     /// <param name="input">The task execution request.</param>
     /// <param name="cancellationToken">Cancellation token for the operation.</param>
     /// <returns>Task execution result with context updates.</returns>
+    /// <response code="200">Task executed successfully</response>
+    /// <response code="400">Validation error or business rule violation</response>
+    /// <response code="500">Internal server error</response>
     [HttpPost("task")]
+    [ProducesResponseType(typeof(TaskExecutionResponseOutput), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ExecuteTaskAsync(
         [FromBody] TaskExecutionRequestInput input,
         CancellationToken cancellationToken = default)
     {
-        try
+        // Enrich all logs within this scope with comprehensive workflow context for distributed tracing
+        // Note: Task type is not available at controller level, will be added by LocalTaskExecutor
+        using (logger.BeginScope(new Dictionary<string, object>
+        {
+            [TelemetryConstants.ScopeFields.Domain] = input.Context.Workflow.Domain,
+            [TelemetryConstants.ScopeFields.Flow] = input.Context.Workflow.Key,
+            [TelemetryConstants.ScopeFields.FlowVersion] = input.Context.Workflow.Version,
+            [TelemetryConstants.ScopeFields.InstanceId] = input.Context.InstanceId,
+            [TelemetryConstants.ScopeFields.TransitionKey] = input.Context.TransitionKey ?? "N/A",
+            [TelemetryConstants.ScopeFields.TaskKey] = input.OnExecuteTask.Task.Key,
+            [TelemetryConstants.ScopeFields.TaskTrigger] = input.TaskTrigger.ToString()
+        }))
         {
             logger.LogInformation("Executing task {TaskKey} for instance {InstanceId}", 
                 input.OnExecuteTask.Task.Key, input.Context.InstanceId);
 
             // Execute task and capture context updates for synchronization
-            var contextUpdate = await taskCommandAppService.ExecuteTaskAsync(
-                input,
-                cancellationToken);
+            var result = await taskCommandAppService.ExecuteTaskAsync(input, cancellationToken);
+            
+            // Use Result Pattern to automatically handle errors
+            if (!result.IsSuccess)
+                return new ObjectResult(result.ToProblemDetails()) 
+                { 
+                    StatusCode = result.ToProblemDetails().Status 
+                };
             
             logger.LogInformation("Successfully executed task {TaskKey} for instance {InstanceId}. Context updates: TaskResponse={TaskResponseCount}, InstanceData={InstanceDataCount}", 
                 input.OnExecuteTask.Task.Key, 
                 input.Context.InstanceId,
-                contextUpdate.TaskResponse.Count,
-                contextUpdate.InstanceDataUpdates.Count);
+                result.Value!.TaskResponse.Count,
+                result.Value!.InstanceDataUpdates.Count);
             
             return Ok(new TaskExecutionResponseOutput 
             { 
                 Success = true, 
                 Message = "Task executed successfully",
-                ContextUpdate = contextUpdate
-            });
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error executing task for instance {InstanceId}", 
-                input.Context.InstanceId);
-            
-            return BadRequest(new TaskExecutionResponseOutput 
-            { 
-                Success = false, 
-                Message = ex.Message 
+                ContextUpdate = result.Value!
             });
         }
     }

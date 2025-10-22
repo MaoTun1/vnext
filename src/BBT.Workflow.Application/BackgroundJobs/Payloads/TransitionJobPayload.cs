@@ -1,5 +1,5 @@
 using System.Text.Json;
-using WorkflowExecutionContext = BBT.Workflow.Shared.ExecutionContext;
+using BBT.Workflow.Shared;
 
 namespace BBT.Workflow.BackgroundJobs.Payloads;
 
@@ -52,5 +52,5 @@ public sealed class TransitionJobPayload
     /// <summary>
     /// Gets or sets the execution context for the transition.
     /// </summary>
-    public WorkflowExecutionContext ExecutionContext { get; set; } = WorkflowExecutionContext.User;
+    public ExecutionActor ExecutionActor { get; set; } = ExecutionActor.User;
 }

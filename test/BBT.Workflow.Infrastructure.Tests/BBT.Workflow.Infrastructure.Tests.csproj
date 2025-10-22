@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-    <Import Project="..\..\common.props" />
+    <Import Project="..\..\common.props"/>
 
     <PropertyGroup>
         <TargetFramework>net9.0</TargetFramework>
@@ -9,14 +9,16 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Microsoft.Data.Sqlite" Version="$(MicrosoftPackageVersion)" />
-        <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="$(MicrosoftPackageVersion)" />
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="$(TestSdkPackageVersion)" />
+        <PackageReference Include="Microsoft.Data.Sqlite" Version="$(MicrosoftPackageVersion)"/>
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="$(MicrosoftPackageVersion)"/>
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="$(TestSdkPackageVersion)"/>
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\src\BBT.Workflow.Infrastructure\BBT.Workflow.Infrastructure.csproj" />
-      <ProjectReference Include="..\BBT.Workflow.Application.Tests\BBT.Workflow.Application.Tests.csproj" />
+        <ProjectReference Include="..\..\src\BBT.Workflow.Infrastructure\BBT.Workflow.Infrastructure.csproj"/>
+        <ProjectReference Include="..\BBT.Workflow.Application.Tests\BBT.Workflow.Application.Tests.csproj"/>
+        <PackageReference Include="Dapr.Extensions.Configuration" Version="$(DaprPackageVersion)"/>
+        <PackageReference Include="Dapr.AspNetCore" Version="$(DaprPackageVersion)" />
     </ItemGroup>
 
 </Project>

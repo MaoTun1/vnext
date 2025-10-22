@@ -2,9 +2,6 @@ using BBT.Workflow.Definitions;
 using BBT.Workflow.Definitions.Tasks;
 using BBT.Workflow.Definitions.Timer;
 using BBT.Workflow.Scripting;
-using BBT.Workflow.Tasks;
-using BBT.Workflow.Instances;
-using BBT.Workflow.Tasks.Factory;
 using BBT.Workflow.Monitoring;
 
 namespace BBT.Workflow.Tasks;
@@ -26,7 +23,7 @@ public class TaskOrchestrationService(
     /// Orchestrates a collection of tasks using the optimal execution strategy (parallel or sequential).
     /// </summary>
     /// <param name="onExecuteTasks">Collection of tasks to be orchestrated.</param>
-    /// <param name="instanceTransition">The instance transition context. Can be null for extension tasks.</param>
+    /// <param name="instanceTransitionId">The instance transition context. Can be null for extension tasks.</param>
     /// <param name="taskTrigger">The trigger type that initiated the task execution.</param>
     /// <param name="context">The script execution context containing instance data and task responses.</param>
     /// <param name="cancellationToken">Cancellation token for async operation control.</param>
@@ -34,7 +31,7 @@ public class TaskOrchestrationService(
     /// <exception cref="ArgumentNullException">Thrown when required parameters are null.</exception>
     public async Task ExecuteAsync(
         IEnumerable<OnExecuteTask> onExecuteTasks,
-        InstanceTransition? instanceTransition,
+        Guid? instanceTransitionId,
         TaskTrigger taskTrigger,
         ScriptContext context,
         CancellationToken cancellationToken = default)
@@ -53,11 +50,11 @@ public class TaskOrchestrationService(
 
         if (canExecuteInParallel)
         {
-            await ExecuteTasksInParallelAsync(tasks, instanceTransition, taskTrigger, context, cancellationToken);
+            await ExecuteTasksInParallelAsync(tasks, instanceTransitionId, taskTrigger, context, cancellationToken);
         }
         else
         {
-            await ExecuteTasksSequentiallyAsync(tasks, instanceTransition, taskTrigger, context, cancellationToken);
+            await ExecuteTasksSequentiallyAsync(tasks, instanceTransitionId, taskTrigger, context, cancellationToken);
         }
     }
 
@@ -119,7 +116,7 @@ public class TaskOrchestrationService(
     /// Orchestrates multiple tasks concurrently in parallel to improve performance.
     /// </summary>
     /// <param name="onExecuteTasks">List of tasks to orchestrate in parallel.</param>
-    /// <param name="instanceTransition">The instance transition context. Can be null for extension tasks.</param>
+    /// <param name="instanceTransitionId">The instance transition context. Can be null for extension tasks.</param>
     /// <param name="taskTrigger">The trigger type that initiated the task execution.</param>
     /// <param name="context">The script execution context shared across all parallel tasks.</param>
     /// <param name="cancellationToken">Cancellation token for async operation control.</param>
@@ -130,14 +127,14 @@ public class TaskOrchestrationService(
     /// </remarks>
     private async Task ExecuteTasksInParallelAsync(
         IList<OnExecuteTask> onExecuteTasks,
-        InstanceTransition? instanceTransition,
+        Guid? instanceTransitionId,
         TaskTrigger taskTrigger,
         ScriptContext context,
         CancellationToken cancellationToken)
     {
         var executionTasks = onExecuteTasks.Select(async onExecuteTask =>
         {
-            await taskOrchestrator.ExecuteTaskAsync(onExecuteTask, instanceTransition, taskTrigger, context, cancellationToken);
+            await taskOrchestrator.ExecuteTaskAsync(onExecuteTask, instanceTransitionId, taskTrigger, context, cancellationToken);
         });
 
         await Task.WhenAll(executionTasks);
@@ -147,7 +144,7 @@ public class TaskOrchestrationService(
     /// Orchestrates tasks one after another in sequential order to maintain dependencies.
     /// </summary>
     /// <param name="onExecuteTasks">List of tasks to orchestrate sequentially.</param>
-    /// <param name="instanceTransition">The instance transition context. Can be null for extension tasks.</param>
+    /// <param name="instanceTransitionId">The instance transition context. Can be null for extension tasks.</param>
     /// <param name="taskTrigger">The trigger type that initiated the task execution.</param>
     /// <param name="context">The script execution context that accumulates results from each task.</param>
     /// <param name="cancellationToken">Cancellation token for async operation control.</param>
@@ -158,14 +155,14 @@ public class TaskOrchestrationService(
     /// </remarks>
     private async Task ExecuteTasksSequentiallyAsync(
         IList<OnExecuteTask> onExecuteTasks,
-        InstanceTransition? instanceTransition,
+        Guid? instanceTransitionId,
         TaskTrigger taskTrigger,
         ScriptContext context,
         CancellationToken cancellationToken)
     {
         foreach (var onExecuteTask in onExecuteTasks)
         {
-            await taskOrchestrator.ExecuteTaskAsync(onExecuteTask, instanceTransition, taskTrigger, context, cancellationToken);
+            await taskOrchestrator.ExecuteTaskAsync(onExecuteTask, instanceTransitionId, taskTrigger, context, cancellationToken);
         }
     }
 

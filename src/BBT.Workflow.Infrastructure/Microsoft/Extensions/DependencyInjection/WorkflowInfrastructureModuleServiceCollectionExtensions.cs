@@ -34,6 +34,7 @@ public static class WorkflowInfrastructureModuleServiceCollectionExtensions
         services.AddScoped<IJobStore, EfCoreJobStore>();
         
         // DbContext
+        // services.AddAetherDbContextFactory<WorkflowDbContext, WorkflowDbContextFactory>(_ => { });
         services.AddScoped<IDbContextFactory<WorkflowDbContext>, WorkflowDbContextFactory>();
 
         // You can register your repositories here.

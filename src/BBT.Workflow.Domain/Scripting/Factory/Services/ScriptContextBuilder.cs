@@ -3,6 +3,7 @@ using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Scripting;
 
@@ -12,7 +13,8 @@ namespace BBT.Workflow.Scripting;
 /// </summary>
 internal sealed class ScriptContextBuilder(
     IComponentCacheStore componentCacheStore,
-    IInstanceRepository instanceRepository) : IScriptContextBuilder
+    IInstanceRepository instanceRepository,
+    ILogger<ScriptContext> logger) : IScriptContextBuilder
 {
     private IRuntimeInfoProvider? _runtimeInfoProvider;
     private Definitions.Workflow? _workflow;
@@ -31,7 +33,6 @@ internal sealed class ScriptContextBuilder(
     private string? _workflowVersion;
     private IReference? _workflowReference;
     private Guid? _instanceId;
-    private bool _includeNavigations = true;
     private bool _noTracking = false;
     private string? _transitionKey;
 
@@ -71,18 +72,21 @@ internal sealed class ScriptContextBuilder(
         return this;
     }
 
-    public IScriptContextBuilder WithInstance(Guid instanceId, bool includeNavigations = true, bool noTracking = false)
+    public IScriptContextBuilder WithInstance(Guid instanceId, bool noTracking = false)
     {
         _instanceId = instanceId;
-        _includeNavigations = includeNavigations;
         _noTracking = noTracking;
         _instance = null; // Clear direct instance if set
         return this;
     }
 
-    public IScriptContextBuilder WithInstance(Instance instance)
+    public IScriptContextBuilder WithInstance(Instance? instance)
     {
-        _instance = instance;
+        if (instance == null)
+        {
+            return this;
+        }
+        _instance = instance.CreateSnapshot();
         _instanceId = null; // Clear async retrieval property
         return this;
     }
@@ -94,8 +98,12 @@ internal sealed class ScriptContextBuilder(
         return this;
     }
 
-    public IScriptContextBuilder WithTransition(Transition transition)
+    public IScriptContextBuilder WithTransition(Transition? transition)
     {
+        if (transition == null)
+        {
+            return this;
+        }
         _transition = transition;
         _transitionKey = null; // Clear async retrieval property
         return this;
@@ -155,7 +163,7 @@ internal sealed class ScriptContextBuilder(
         var transition = ResolveTransition(workflow);
 
         // Build the ScriptContext using the domain builder
-        return new ScriptContext.Builder()
+        return new ScriptContext.Builder(logger)
             .SetRuntime(_runtimeInfoProvider!)
             .SetWorkflow(workflow)
             .SetInstance(instance)
@@ -191,28 +199,16 @@ internal sealed class ScriptContextBuilder(
 
         if (_instanceId.HasValue)
         {
-            Instance? instance = null;
-            if (_noTracking)
-            {
-                var query = (await instanceRepository.GetQueryableAsync());
-                if (_includeNavigations)
-                {
-                    query = query.Include(i => i.DataList);
-                }
-
-                instance = await query
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(p => p.Id == _instanceId.Value, cancellationToken);
-            }
-            else
-            {
-                instance = await instanceRepository.FindAsync(_instanceId.Value, _includeNavigations,
+            var instance = _noTracking
+                ? await instanceRepository.FindByIdAsReadOnlyAsync(_instanceId.Value, cancellationToken)
+                : await instanceRepository.FindAsync(_instanceId.Value, true,
                     cancellationToken);
-            }
-
+            
             if (instance == null)
                 throw new InvalidOperationException($"Instance with ID {_instanceId.Value} not found.");
-            return instance;
+            
+            _instance = instance.CreateSnapshot();
+            return _instance;
         }
 
         throw new InvalidOperationException("Instance must be set either directly or through instance ID.");

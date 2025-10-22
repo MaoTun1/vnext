@@ -5,13 +5,10 @@ using BBT.Workflow.Instances;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
-using BBT.Workflow.States;
 using BBT.Workflow.Tasks;
 using BBT.Workflow.Tasks.Factory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using BBT.Workflow.Execution.Rules;
-using BBT.Workflow.Execution.StateMachine;
 using BBT.Workflow.Extentions;
 using BBT.Workflow.SubFlow;
 using BBT.Workflow.Tasks.Persistence;
@@ -20,6 +17,13 @@ using TaskFactory = BBT.Workflow.Tasks.Factory.TaskFactory;
 using BBT.Workflow.Functions;
 using BBT.Workflow.Execution.Services;
 using BBT.Workflow.Execution.Strategies;
+using BBT.Workflow.Execution;
+using BBT.Workflow.Execution.Handlers;
+using BBT.Workflow.Execution.Pipeline;
+using BBT.Workflow.Execution.Pipeline.Steps;
+using BBT.Workflow.Execution.ReEntry;
+using BBT.Workflow.Execution.Transitions.Factory;
+using BBT.Workflow.Execution.Validation;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -39,7 +43,27 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddDomainModule();
         services.AddAetherApplication();
         
-        // Add HttpClient configuration for task executors (manual configuration)
+        // Add transition pipeline architecture
+        services.AddTransitionPipeline();
+
+        // Configure service groups
+        services.AddHttpClients();
+        services.AddApplicationServices();
+        services.AddExecutionServices();
+        services.AddCacheServices();
+        services.AddTaskServices();
+        services.AddCastHandlers();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Configures HTTP clients for task executors.
+    /// </summary>
+    /// <param name="services">The service collection to configure.</param>
+    /// <returns>The service collection for method chaining.</returns>
+    private static void AddHttpClients(this IServiceCollection services)
+    {
         // Default HTTP client with SSL validation enabled
         services.AddHttpClient("WorkflowHttpClient", client =>
         {
@@ -60,43 +84,61 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         {
             MaxConnectionsPerServer = 10,
             UseCookies = false,
-            ServerCertificateCustomValidationCallback = (message, cert, chain, sslPolicyErrors) => true
+            ServerCertificateCustomValidationCallback = (_, _, _, _) => true
         });
+    }
 
-        // You can register your application service here.
+    /// <summary>
+    /// Configures core application services.
+    /// </summary>
+    /// <param name="services">The service collection to configure.</param>
+    /// <returns>The service collection for method chaining.</returns>
+    private static void AddApplicationServices(this IServiceCollection services)
+    {
         services.AddSingleton<DomainCacheContext>();
+        services.AddSingleton<IDomainCacheContext>(serviceProvider => serviceProvider.GetRequiredService<DomainCacheContext>());
         services.AddScoped<IAdminAppService, AdminAppService>();
         services.AddScoped<IInstanceCommandAppService, InstanceCommandAppService>();
         services.AddScoped<IInstanceQueryAppService, InstanceQueryAppService>();
-         services.AddScoped<IFunctionAppService, FunctionAppService>();
+        services.AddScoped<IFunctionAppService, FunctionAppService>();
         services.AddScoped<ITaskCommandAppService, TaskCommandAppService>();
-        services.AddScoped<IScriptContextFactory, ScriptContextFactory>();
+        services.AddScoped<IInstanceExtensionService, InstanceExtensionService>();
+        services.AddScoped<ISubflowCompletionService, SubflowCompletionService>();
         
-        // Register core execution service
+        services.AddScoped<IRuntimeService, RuntimeService>();
+    }
+
+    /// <summary>
+    /// Configures workflow execution services.
+    /// </summary>
+    /// <param name="services">The service collection to configure.</param>
+    /// <returns>The service collection for method chaining.</returns>
+    private static void AddExecutionServices(this IServiceCollection services)
+    {
+        // Core execution service
         services.AddScoped<IWorkflowExecutionService, WorkflowExecutionService>();
         
-        // Register auto transition service
-        services.AddScoped<IAutoTransitionService, AutoTransitionService>();
-        
-        // Register instance refresh strategy
-        services.AddScoped<IInstanceRefreshStrategy, InstanceRefreshStrategy>();
-        
-        // Register strategy factory
+        // Legacy services (to be removed after transition pipeline migration)
         services.AddScoped<IExecutionStrategyFactory, ExecutionStrategyFactory>();
-        
-        // Register instance start strategies
-        services.AddScoped<IInstanceStartStrategy, SyncInstanceStartStrategy>();
-        services.AddScoped<IInstanceStartStrategy, AsyncInstanceStartStrategy>();
-        
-        // Register transition strategies
         services.AddScoped<ITransitionStrategy, SyncTransitionStrategy>();
         services.AddScoped<ITransitionStrategy, AsyncTransitionStrategy>();
 
-        services.AddScoped<IRuntimeService, RuntimeService>();
-        // Register the original ComponentCacheStore as a concrete service
+        // State machine and orchestration services
+        services.AddScoped<ITaskOrchestrationService, TaskOrchestrationService>();
+        services.AddScoped<ITaskConditionService, TaskOrchestrationService>();
+        services.AddScoped<ITaskTimerService, TaskOrchestrationService>();
+        services.AddScoped<ISubflowStarter, SubflowStarter>();
+        services.AddScoped<ISubflowForwardingService, SubflowForwardingService>();
+    }
+
+    /// <summary>
+    /// Configures component cache store with metrics.
+    /// </summary>
+    /// <param name="services">The service collection to configure.</param>
+    /// <returns>The service collection for method chaining.</returns>
+    private static void AddCacheServices(this IServiceCollection services)
+    {
         services.AddSingleton<ComponentCacheStore>();
-        
-        // Register the metrics-aware decorator as the primary IComponentCacheStore
         services.AddSingleton<IComponentCacheStore>(serviceProvider =>
         {
             var originalStore = serviceProvider.GetRequiredService<ComponentCacheStore>();
@@ -105,10 +147,15 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
             
             return originalStore.WithMetrics(workflowMetrics, logger);
         });
+    }
 
-        // Instance Services
-        services.AddScoped<IInstanceExtensionService, InstanceExtensionService>();
-
+    /// <summary>
+    /// Configures task-related services including factories, executors, and persistence strategies.
+    /// </summary>
+    /// <param name="services">The service collection to configure.</param>
+    /// <returns>The service collection for method chaining.</returns>
+    private static void AddTaskServices(this IServiceCollection services)
+    {
         // Task Factory Services - Configuration Driven
         ConfigureTaskFactory(services);
 
@@ -117,11 +164,7 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddScoped<ITaskPersistenceStrategy, ExtensionTaskPersistenceStrategy>();
         services.AddScoped<ITaskPersistenceStrategyFactory, TaskPersistenceStrategyFactory>();
 
-        // Core workflow execution services - registered with interfaces for better testability and isolation
-        services.AddScoped<IStateMachineExecutor, StateMachineExecutor>();
-        services.AddScoped<ITaskOrchestrationService, TaskOrchestrationService>();
-        services.AddScoped<ISubFlowService, SubFlowService>();
-        services.AddScoped<ISubFlowCompletionService, SubFlowCompletionService>();
+        // Task Executors
         services.AddScoped<ITaskExecutorFactory, TaskExecutorFactory>();
         services.AddScoped<HttpTaskExecutor>();
         services.AddScoped<DaprBindingTaskExecutor>();
@@ -132,15 +175,19 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddScoped<ScriptTaskExecutor>();
         services.AddScoped<ConditionTaskExecutor>();
         services.AddScoped<TimerTaskExecutor>();
-
+        
         // Scripting service
+        services.AddScoped<IScriptContextFactory, ScriptContextFactory>();
         services.AddScoped<IScriptEngine, ScriptEngine>();
+    }
 
-        // Rule execution service
-        services.AddScoped<IRuleExecutionService, RuleExecutionService>();
-        services.AddScoped<ITimerExecutionService, TimerExecutionService>();
-
-        // Cast handlers
+    /// <summary>
+    /// Configures workflow cast handlers.
+    /// </summary>
+    /// <param name="services">The service collection to configure.</param>
+    /// <returns>The service collection for method chaining.</returns>
+    private static void AddCastHandlers(this IServiceCollection services)
+    {
         services.AddSingleton<IWorkflowCastHandler, FlowCastHandler>();
         services.AddSingleton<IWorkflowCastHandler, TaskWorkflowCastHandler>();
         services.AddSingleton<IWorkflowCastHandler, FunctionWorkflowCastHandler>();
@@ -148,6 +195,62 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddSingleton<IWorkflowCastHandler, SchemaWorkflowCastHandler>();
         services.AddSingleton<IWorkflowCastHandler, ExtensionWorkflowCastHandler>();
         services.AddSingleton<WorkflowCastProcessor>();
+    }
+
+    /// <summary>
+    /// Adds the new transition pipeline architecture services to the dependency injection container.
+    /// </summary>
+    /// <param name="services">The service collection to configure.</param>
+    /// <returns>The service collection for method chaining.</returns>
+    public static IServiceCollection AddTransitionPipeline(this IServiceCollection services)
+    {
+        // Context Factory
+        services.AddScoped<ITransitionContextFactory, TransitionContextFactory>();
+        services.AddScoped<IContextRefresher, ContextRefresher>();
+
+        // Validation Services
+        services.AddScoped<ITransitionValidationService, TransitionValidationService>();
+
+        // Trigger Handlers
+        services.AddScoped<ITransitionHandler, ManualTransitionHandler>();
+        services.AddScoped<ITransitionHandler, AutomaticTransitionHandler>();
+        services.AddScoped<ITransitionHandler, ScheduledTransitionHandler>();
+        services.AddScoped<ITransitionHandler, EventTransitionHandler>();
+        services.AddScoped<ITransitionHandlerFactory, TransitionHandlerFactory>();
+
+        // Execution Strategies
+        services.AddScoped<SyncTransitionStrategy>();
+        services.AddScoped<AsyncTransitionStrategy>();
+        services.AddScoped<IExecutionStrategyFactory, ExecutionStrategyFactory>();
+
+        // Pipeline Steps (registered in execution order)
+        services.AddScoped<ITransitionStep, ForwardToActiveSubflowStep>();
+        services.AddScoped<ITransitionStep, CreateTransitionRecordStep>();
+        services.AddScoped<ITransitionStep, RunOnExecuteTasksStep>();
+        services.AddScoped<ITransitionStep, RunOnExitTasksStep>();
+        services.AddScoped<ITransitionStep, ChangeStateStep>();
+        services.AddScoped<ITransitionStep, RunOnEntryTasksStep>();
+        services.AddScoped<ITransitionStep, HandleSubFlowStep>();
+        services.AddScoped<ITransitionStep, ClearBusyOnResumeStep>();
+        services.AddScoped<ITransitionStep, ScheduleTransitionsStep>();
+        services.AddScoped<ITransitionStep, RunAutomaticTransitionsStep>();
+        services.AddScoped<ITransitionStep, HandleFinishStep>();
+        services.AddScoped<ITransitionStep, FinalizeTransitionStep>();
+        services.AddScoped<ITransitionStep, ProcessInlineAutoChainStep>();
+
+        // Pipeline
+        services.AddScoped<TransitionPipeline>();
+
+        // Re-entry System
+        services.AddScoped<IReentryDispatcher, DefaultReentryDispatcher>();
+
+        // Configure Re-entry Options
+        services.Configure<ReentryOptions>(options =>
+        {
+            options.MaxAutoHops = 12;
+            options.AllowInlineAuto = true;
+            options.LockTimeout = TimeSpan.FromSeconds(30);
+        });
 
         return services;
     }

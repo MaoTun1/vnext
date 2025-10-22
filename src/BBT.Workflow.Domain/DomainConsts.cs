@@ -13,6 +13,7 @@ public class DomainConsts
         public const string Version = "parent.version";
         public const string State = "parent.state";
         public const string FlowType = "parent.flowtype";
+        public const string Transition = "parent.transition";
         public const string Sync = "sync";
         public const string Callback = "callback";
     }

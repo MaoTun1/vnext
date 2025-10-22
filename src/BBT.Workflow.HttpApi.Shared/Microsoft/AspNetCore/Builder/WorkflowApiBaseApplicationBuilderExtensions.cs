@@ -1,6 +1,7 @@
 using BBT.Aether.Domain.Services;
 using BBT.Aether.Threading;
 using BBT.Workflow.Data;
+using BBT.Workflow.HttpApi.Shared;
 using BBT.Workflow.Middlewares;
 using BBT.Workflow.Runtime;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +23,10 @@ public static class WorkflowApiBaseApplicationBuilderExtensions
     /// <returns>The web application for chaining</returns>
     public static WebApplication UseWorkflowApiBase(this WebApplication app)
     {
+        // Configure ProblemDetailsMapper with the registered factory from DI
+        var problemDetailsFactory = app.Services.GetRequiredService<ProblemDetailsFactory>();
+        ProblemDetailsMapper.Configure(problemDetailsFactory);
+        
         if (app.Environment.IsDevelopment())
         {
             app.UseDeveloperExceptionPage();
@@ -37,6 +42,7 @@ public static class WorkflowApiBaseApplicationBuilderExtensions
         app.UseHttpsRedirection();
         app.UseRuntime();
         app.UseCorrelationId();
+        app.UseTraceContext(); // Add OpenTelemetry trace context to response headers
         app.UseSecurityHeaders();
         app.UseCurrentUser();
         app.UseStaticFiles();

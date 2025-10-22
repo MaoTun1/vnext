@@ -20,7 +20,9 @@ public static class InstanceMetadataExtensions
             Flow    = GetString(md, DomainConsts.MetaDataKeys.Flow) ?? string.Empty,
             Version = GetString(md, DomainConsts.MetaDataKeys.Version),
             State   = GetString(md, DomainConsts.MetaDataKeys.State),
-            SubType = GetString(md, DomainConsts.MetaDataKeys.FlowType) ?? string.Empty
+            Transition   = GetString(md, DomainConsts.MetaDataKeys.Transition),
+            SubType = GetString(md, DomainConsts.MetaDataKeys.FlowType) ?? string.Empty,
+            
         };
     }
     
@@ -34,6 +36,7 @@ public static class InstanceMetadataExtensions
             Flow    = GetString(metaData, DomainConsts.MetaDataKeys.Flow) ?? string.Empty,
             Version = GetString(metaData, DomainConsts.MetaDataKeys.Version),
             State   = GetString(metaData, DomainConsts.MetaDataKeys.State),
+            Transition   = GetString(metaData, DomainConsts.MetaDataKeys.Transition),
             SubType = GetString(metaData, DomainConsts.MetaDataKeys.FlowType) ?? string.Empty
         };
     }
@@ -65,12 +68,8 @@ public static class InstanceMetadataExtensions
         if (!md.TryGetValue(key, out var raw) || raw is null)
             return Guid.Empty;
 
-        return raw switch
-        {
-            Guid g => g,
-            string s when Guid.TryParse(s, out var g) => g,
-            _ => Guid.Empty
-        };
+        Guid.TryParse(raw.ToString(), out var g);
+        return g;
     }
 
     public static T? GetValue<T>(this Instance instance, string key)

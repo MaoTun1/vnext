@@ -78,7 +78,7 @@ public class TimerSchedule : ValueObject
     /// <returns>A WorkflowTimerSchedule configured for Cron execution.</returns>
     public static TimerSchedule FromCronExpression(string cronExpression)
     {
-        Check.NotNullOrEmpty(cronExpression, nameof(cronExpression));
+        Check.NotNullOrWhiteSpace(cronExpression, nameof(cronExpression));
         return new TimerSchedule(TimerScheduleType.Cron, cronExpression, null, null);
     }
 
@@ -100,7 +100,7 @@ public class TimerSchedule : ValueObject
     /// <returns>A WorkflowTimerSchedule configured for the expression.</returns>
     public static TimerSchedule FromExpression(string expression)
     {
-        Check.NotNullOrEmpty(expression, nameof(expression));
+        Check.NotNullOrWhiteSpace(expression, nameof(expression));
         return new TimerSchedule(TimerScheduleType.Cron, expression, null, null);
     }
 

@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Execution;
 using BBT.Workflow.Shared;
 
 namespace BBT.Workflow.Instances;
@@ -18,6 +19,32 @@ public sealed class StartInstanceInput(
     public CreateInstanceInput Instance { get; set; }
     public Dictionary<string, string?> Headers { get; set; } = new();
     public Dictionary<string, string?> RouteValues { get; set; } = new();
+
+    /// <summary>
+    /// Creates a WorkflowExecutionContext from this StartInstanceInput for starting a new workflow instance.
+    /// </summary>
+    /// <param name="instanceId">The workflow instance identifier</param>
+    /// <param name="startTransitionKey">The start transition key to execute</param>
+    /// <returns>A new WorkflowExecutionContext instance</returns>
+    public WorkflowExecutionContext ToExecutionContext(Guid instanceId, string startTransitionKey)
+    {
+        return new WorkflowExecutionContext
+        {
+            Domain = Domain,
+            InstanceId = instanceId,
+            WorkflowKey = Workflow,
+            WorkflowVersion = Version,
+            TransitionKey = startTransitionKey,
+            TriggerType = TriggerType.Manual, // Start transitions are always manual
+            Mode = Sync ? ExecMode.Sync : ExecMode.Async,
+            CorrelationId = Guid.NewGuid().ToString("N"),
+            RequestedAt = DateTimeOffset.UtcNow,
+            Headers = Headers,
+            RouteValues = RouteValues,
+            Data = Instance.Attributes,
+            IsReentry = false // Start transitions are never re-entry
+        };
+    }
 }
 
 public sealed class CreateInstanceInput

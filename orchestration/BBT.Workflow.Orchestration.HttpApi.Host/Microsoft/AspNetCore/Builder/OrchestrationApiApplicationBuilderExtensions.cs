@@ -19,7 +19,7 @@ public static class OrchestrationApiApplicationBuilderExtensions
         // Use base Workflow API configuration (already includes UseHttpMetrics and MapMetrics)
         app.UseWorkflowApiBase();
         app.MapAppHealthChecks();
-        
+
         // Add Orchestration-specific middleware and configurations
         ConfigureOrchestrationSpecificMiddleware(app);
 

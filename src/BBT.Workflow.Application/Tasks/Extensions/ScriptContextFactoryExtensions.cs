@@ -26,7 +26,7 @@ public static class ScriptContextFactoryExtensions
         return await factory.NewBuilder()
             .WithRuntime(runtimeInfoProvider)
             .WithWorkflow(input.Context.Workflow)
-            .WithInstance(input.Context.InstanceId, true, true)
+            .WithInstance(input.Context.InstanceId, true)
             .WithTransition(input.Context.TransitionKey)
             .WithBody(input.Context.Body)
             .WithHeaders(input.Context.Headers)
