@@ -42,12 +42,21 @@ APP_DOMAIN=${APP_DOMAIN:-"core"}
 echo "Using APP_DOMAIN: $APP_DOMAIN"
 
 # Wait for the vnext-app to be ready with health check
+# Wait for the vnext-app to be ready with health check (with max retries)
+MAX_RETRIES=24  # Wait up to 2 minutes (24 * 5 seconds)
+RETRY_COUNT=0
 while true; do
+    if curl -s "${VNEXT_APP_URL}/health" > /dev/null 2>&1; then
     if curl -s "${VNEXT_APP_URL}/health" > /dev/null 2>&1; then
         echo "VNext App is healthy!"
         break
     else
-        echo "VNext App is not ready yet, waiting..."
+        RETRY_COUNT=$((RETRY_COUNT+1))
+        if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
+            echo "ERROR: VNext App did not become healthy after $((MAX_RETRIES*5)) seconds."
+            exit 1
+        fi
+        echo "VNext App is not ready yet, waiting... ($RETRY_COUNT/$MAX_RETRIES)"
         sleep 5
     fi
 done
@@ -232,43 +241,43 @@ merge_custom_components() {
     
     # Check if /tmp directory is writable, if not use alternative location
     if [ ! -w "/tmp" ]; then
-        echo "DEBUG: /tmp not writable, using alternative location"
+        echo "INFO: /tmp not writable, using alternative location"
         temp_file="/app/merged_$(basename "$sys_file")"
     fi
-    echo "DEBUG: Using temp file: $temp_file"
+    echo "INFO: Using temp file: $temp_file"
     
     # Check if sys_file exists
-    echo "DEBUG: Checking if sys_file exists: $sys_file"
+    echo "INFO: Checking if sys_file exists: $sys_file"
     if [ ! -f "$sys_file" ]; then
         echo "✗ Error: Core sys file not found: $sys_file"
         return 1
     fi
-    echo "DEBUG: sys_file exists and is readable"
+    echo "INFO: sys_file exists and is readable"
     
     echo "Starting merge process for $(basename "$sys_file")"
     echo "  Core file: $sys_file"
     echo "  Custom folder: $custom_folder"
     
     # Copy core sys-* file as base
-    echo "DEBUG: Copying sys_file to temp_file"
+    echo "INFO: Copying sys_file to temp_file"
     if ! cp "$sys_file" "$temp_file"; then
         echo "✗ Error: Failed to copy $sys_file to $temp_file"
         return 1
     fi
-    echo "DEBUG: Copy successful, temp_file: $temp_file"
+    echo "INFO: Copy successful, temp_file: $temp_file"
     
     # Verify the copied file is valid JSON
-    echo "DEBUG: Verifying copied file is valid JSON"
+    echo "INFO: Verifying copied file is valid JSON"
     if ! jq '.' "$temp_file" >/dev/null 2>&1; then
         echo "✗ Error: Copied file is not valid JSON: $temp_file"
-        echo "DEBUG: File contents:"
+        echo "INFO: File contents:"
         head -10 "$temp_file"
         return 1
     fi
-    echo "DEBUG: Copied file is valid JSON"
+    echo "INFO: Copied file is valid JSON"
     
     # Check if the core file has a data array, if not create one
-    echo "DEBUG: Checking for data array in core file"
+    echo "INFO: Checking for data array in core file"
     if ! jq -e '.data' "$temp_file" >/dev/null 2>&1; then
         echo "  - Core file missing 'data' array, creating empty array"
         if ! jq '. + {"data": []}' "$temp_file" > "${temp_file}.tmp"; then
@@ -279,9 +288,9 @@ merge_custom_components() {
             echo "✗ Error: Failed to move temporary file"
             return 1
         fi
-        echo "DEBUG: Successfully created empty data array"
+        echo "INFO: Successfully created empty data array"
     else
-        echo "DEBUG: Core file already has data array"
+        echo "INFO: Core file already has data array"
     fi
     
     # Get initial data count
@@ -363,7 +372,7 @@ merge_custom_components() {
     echo "  - Final merged file size: $(wc -c < "$temp_file") bytes"
     
     # Final validation
-    echo "DEBUG: Final validation of merged file"
+    echo "INFO: Final validation of merged file"
     if [ ! -f "$temp_file" ]; then
         echo "✗ Error: Temp file does not exist after merge: $temp_file"
         return 1
@@ -399,7 +408,7 @@ merge_custom_components() {
         echo "  - Skipping domain replacement (APP_DOMAIN=$APP_DOMAIN)"
     fi
     
-    echo "DEBUG: Returning temp file path: $temp_file"
+    echo "INFO: Returning temp file path: $temp_file"
     
     # Close stderr redirection and return only the file path to stdout
     } >&2
@@ -448,8 +457,8 @@ if [ -f "$SYS_FLOWS_FILE" ]; then
     merge_exit_code=$?
     
     # Check if merge was successful
-    echo "DEBUG: merge_custom_components returned exit code: $merge_exit_code"
-    echo "DEBUG: merged_sys_flows value: '$merged_sys_flows'"
+    echo "INFO: merge_custom_components returned exit code: $merge_exit_code"
+    echo "INFO: merged_sys_flows value: '$merged_sys_flows'"
     
     if [ $merge_exit_code -ne 0 ]; then
         echo "✗ CRITICAL ERROR: merge_custom_components function failed with exit code $merge_exit_code"

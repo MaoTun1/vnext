@@ -8,6 +8,7 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using OpenTelemetry.Exporter;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -46,9 +47,9 @@ public static class VNextTelemetryServiceCollectionExtensions
             configuration.GetSection(VNextTelemetryOptions.SectionName));
 
         // Get environment name from ASPNETCORE_ENVIRONMENT
-        var environmentName = environment?.EnvironmentName ?? 
-                             Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? 
-                             "Production";
+        var environmentName = environment?.EnvironmentName ??
+                              Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ??
+                              "Production";
 
         // Read service name from environment variable (OTEL_SERVICE_NAME)
         var serviceName = Environment.GetEnvironmentVariable("OTEL_SERVICE_NAME") ?? "vNext";
@@ -91,7 +92,7 @@ public static class VNextTelemetryServiceCollectionExtensions
                         options.Filter = httpContext =>
                         {
                             var path = httpContext.Request.Path.Value ?? string.Empty;
-                            
+
                             // Check if path matches any excluded pattern
                             foreach (var pattern in excludedPathPatterns)
                             {
@@ -100,7 +101,7 @@ public static class VNextTelemetryServiceCollectionExtensions
                                     return false;
                                 }
                             }
-                            
+
                             return true;
                         };
 
@@ -157,21 +158,8 @@ public static class VNextTelemetryServiceCollectionExtensions
                     tracing.AddConsoleExporter();
                 }
 
-                tracing.AddOtlpExporter(options =>
-                {
-                    // For gRPC, use the base endpoint without signal-specific paths
-                    // For HTTP/Protobuf, append signal-specific path
-                    var protocol = otlpProtocol == "grpc"
-                        ? OpenTelemetry.Exporter.OtlpExportProtocol.Grpc
-                        : OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
-                    
-                    var endpoint = protocol == OpenTelemetry.Exporter.OtlpExportProtocol.Grpc
-                        ? otlpEndpoint.TrimEnd('/')
-                        : otlpEndpoint.TrimEnd('/') + "/v1/traces";
-                    
-                    options.Endpoint = new Uri(endpoint);
-                    options.Protocol = protocol;
-                });
+                tracing.AddOtlpExporter(exporterOptions =>
+                    ConfigureOtlpExporter(exporterOptions, otlpEndpoint, otlpProtocol, "/v1/traces"));
             })
             .WithMetrics(metrics =>
             {
@@ -187,24 +175,11 @@ public static class VNextTelemetryServiceCollectionExtensions
                 {
                     metrics.AddConsoleExporter();
                 }
-
-                metrics.AddOtlpExporter(options =>
-                {
-                    // For gRPC, use the base endpoint without signal-specific paths
-                    // For HTTP/Protobuf, append signal-specific path
-                    var protocol = otlpProtocol == "grpc"
-                        ? OpenTelemetry.Exporter.OtlpExportProtocol.Grpc
-                        : OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
-                    
-                    var endpoint = protocol == OpenTelemetry.Exporter.OtlpExportProtocol.Grpc
-                        ? otlpEndpoint.TrimEnd('/')
-                        : otlpEndpoint.TrimEnd('/') + "/v1/metrics";
-                    
-                    options.Endpoint = new Uri(endpoint);
-                    options.Protocol = protocol;
-                });
+                
+                metrics.AddOtlpExporter(exporterOptions =>
+                    ConfigureOtlpExporter(exporterOptions, otlpEndpoint, otlpProtocol, "/v1/metrics"));
             });
-        
+
         // Configure logging only if enabled
         if (telemetryOptions.Logging.Enabled)
         {
@@ -228,8 +203,10 @@ public static class VNextTelemetryServiceCollectionExtensions
                     // Use factory pattern to resolve dependencies from DI container
                     logging.AddProcessor(serviceProvider =>
                     {
-                        var httpContextAccessor = serviceProvider.GetService<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
-                        return new VNextLogEnricherProcessor(telemetryOptions, excludedPathPatterns, httpContextAccessor);
+                        var httpContextAccessor =
+                            serviceProvider.GetService<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
+                        return new VNextLogEnricherProcessor(telemetryOptions, excludedPathPatterns,
+                            httpContextAccessor);
                     });
 
                     // Configure logging options
@@ -246,20 +223,7 @@ public static class VNextTelemetryServiceCollectionExtensions
                     if (telemetryOptions.Logging.EnableOtlpExporter)
                     {
                         logging.AddOtlpExporter(exporterOptions =>
-                        {
-                            // For gRPC, use the base endpoint without signal-specific paths
-                            // For HTTP/Protobuf, append signal-specific path
-                            var protocol = otlpProtocol == "grpc"
-                                ? OpenTelemetry.Exporter.OtlpExportProtocol.Grpc
-                                : OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
-                            
-                            var endpoint = protocol == OpenTelemetry.Exporter.OtlpExportProtocol.Grpc
-                                ? otlpEndpoint.TrimEnd('/')
-                                : otlpEndpoint.TrimEnd('/') + "/v1/logs";
-                            
-                            exporterOptions.Endpoint = new Uri(endpoint);
-                            exporterOptions.Protocol = protocol;
-                        });
+                            ConfigureOtlpExporter(exporterOptions, otlpEndpoint, otlpProtocol, "/v1/logs"));
                     }
                 });
             });
@@ -267,5 +231,19 @@ public static class VNextTelemetryServiceCollectionExtensions
 
         return services;
     }
-}
 
+    private static void ConfigureOtlpExporter(OtlpExporterOptions options, string otlpProtocol, string otlpEndpoint,
+        string signalPath)
+    {
+        var protocol = otlpProtocol.Equals("grpc", StringComparison.OrdinalIgnoreCase)
+            ? OtlpExportProtocol.Grpc
+            : OtlpExportProtocol.HttpProtobuf;
+
+        var endpoint = protocol == OtlpExportProtocol.Grpc
+            ? otlpEndpoint.TrimEnd('/')
+            : $"{otlpEndpoint.TrimEnd('/')}{signalPath}";
+
+        options.Protocol = protocol;
+        options.Endpoint = new Uri(endpoint);
+    }
+}
