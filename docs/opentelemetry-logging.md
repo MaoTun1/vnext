@@ -89,13 +89,71 @@ Located: `BBT.Workflow.HttpApi.Shared/Middlewares/TraceContextMiddleware.cs`
 
 ## Configuration
 
+### Environment Variables
+
+Service name, version, and OTLP endpoint are configured via environment variables:
+
+- **`OTEL_SERVICE_NAME`**: Service name for telemetry (e.g., `vnext-orchestration`, `vnext-execution-app`)
+- **`OTEL_EXPORTER_OTLP_ENDPOINT`**: OTLP endpoint URL
+  - For **HTTP/Protobuf**: `http://localhost:4318` (signal-specific paths are automatically appended: `/v1/traces`, `/v1/metrics`, `/v1/logs`)
+  - For **gRPC**: `http://localhost:4317` (no paths appended, gRPC services use the base endpoint)
+- **`OTEL_EXPORTER_OTLP_PROTOCOL`**: OTLP protocol - `grpc` or `http/protobuf` (default: `http/protobuf`)
+- **`ASPNETCORE_ENVIRONMENT`**: Environment name (e.g., `Development`, `Production`, `Staging`)
+
+Service version is automatically read from the assembly version (defined in `common.props`).
+
+**Important Protocol Differences:**
+
+| Protocol | Default Port | Endpoint Format | Signal Paths |
+|----------|--------------|-----------------|--------------|
+| **http/protobuf** | 4318 | `http://localhost:4318` | Automatically appended: `/v1/traces`, `/v1/metrics`, `/v1/logs` |
+| **grpc** | 4317 | `http://localhost:4317` | No paths appended (gRPC services handle routing internally) |
+
+**Benefits of Environment Variable Configuration:**
+- ✅ Follows OpenTelemetry standard conventions
+- ✅ Single source of truth - no duplication between environment variables and configuration files
+- ✅ Service version automatically synced with assembly version from `common.props`
+- ✅ Easier to configure in Docker, Kubernetes, and other deployment environments
+- ✅ No need to update `appsettings.json` when changing service names or endpoints
+- ✅ Consistent with Dapr and other cloud-native tools
+
+**Example launchSettings.json (HTTP/Protobuf):**
+```json
+{
+  "profiles": {
+    "http": {
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "OTEL_SERVICE_NAME": "vnext-app",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
+        "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf"
+      }
+    }
+  }
+}
+```
+
+**Example launchSettings.json (gRPC):**
+```json
+{
+  "profiles": {
+    "http": {
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "OTEL_SERVICE_NAME": "vnext-app",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317",
+        "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc"
+      }
+    }
+  }
+}
+```
+
 ### appsettings.json
 
 ```json
 {
   "Telemetry": {
-    "ServiceName": "vnext-execution",
-    "ServiceVersion": "1.0.0",
     "Tracing": {
       "EnableExcludedPaths": true
     },
@@ -127,10 +185,6 @@ Located: `BBT.Workflow.HttpApi.Shared/Middlewares/TraceContextMiddleware.cs`
           "x-request-id"
         ]
       }
-    },
-    "Otlp": {
-      "Endpoint": "http://localhost:4318",
-      "Protocol": "http/protobuf"
     }
   }
 }

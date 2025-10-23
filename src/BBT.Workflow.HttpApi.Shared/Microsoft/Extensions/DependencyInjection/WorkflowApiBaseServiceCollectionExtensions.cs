@@ -3,14 +3,12 @@ using System.Text.Json.Serialization;
 using BBT.Aether.AspNetCore.ExceptionHandling;
 using BBT.Aether.Domain.Services;
 using BBT.Aether.ExceptionHandling;
-using BBT.Aether.Http;
 using BBT.Workflow;
 using BBT.Workflow.Data;
 using BBT.Workflow.Events.Distributed;
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Headers;
 using BBT.Workflow.HttpApi.Shared;
-using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
 using BBT.Workflow.Tasks;
@@ -22,7 +20,6 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -95,7 +92,7 @@ public static class WorkflowApiBaseServiceCollectionExtensions
         {
             MaxConnectionsPerServer = 10,
             UseCookies = false,
-            ServerCertificateCustomValidationCallback = (message, cert, chain, sslPolicyErrors) => true
+            ServerCertificateCustomValidationCallback = (_, _, _, _) => true
         });
         
         return services;
