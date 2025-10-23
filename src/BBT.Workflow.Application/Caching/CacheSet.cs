@@ -2,7 +2,6 @@ using System.Text.RegularExpressions;
 using BBT.Aether.DistributedCache;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Runtime;
-using BBT.Workflow.Shared;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -11,7 +10,7 @@ namespace BBT.Workflow.Caching;
 public class CacheSet<T>(
     Func<IDistributedCacheService> cacheResolver,
     ILogger logger,
-    IServiceProvider serviceProvider) : ICacheSet
+    IServiceProvider serviceProvider) : ICacheSet<T>
     where T : class, IDomainEntity, IReferenceSetter
 {
     private readonly ReaderWriterLockSlim _cacheLock = new();
@@ -514,11 +513,10 @@ public class CacheSet<T>(
             }
 
             var domain = match.Groups[2].Value;
-            var flow = match.Groups[3].Value;
             var key = match.Groups[4].Value;
             var version = match.Groups[5].Value;
 
-            return await LoadEntityFromDatabaseAsync(domain, flow, key, version, cancellationToken);
+            return await LoadEntityFromDatabaseAsync(domain, key, version, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -539,7 +537,7 @@ public class CacheSet<T>(
     {
         try
         {
-            return await LoadEntityFromDatabaseAsync(domain, flow, key, null, cancellationToken);
+            return await LoadEntityFromDatabaseAsync(domain, key, null, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -553,12 +551,11 @@ public class CacheSet<T>(
     /// Uses the direct key/version method for efficient database access.
     /// </summary>
     /// <param name="domain">Domain identifier</param>
-    /// <param name="flow">Flow identifier</param>
     /// <param name="key">Entity key</param>
     /// <param name="version">Entity version (null for latest)</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>The entity from database or null if not found</returns>
-    private async Task<T?> LoadEntityFromDatabaseAsync(string domain, string flow, string key, string? version, CancellationToken cancellationToken)
+    private async Task<T?> LoadEntityFromDatabaseAsync(string domain, string key, string? version, CancellationToken cancellationToken)
     {
         using var scope = serviceProvider.CreateScope();
         var runtimeService = scope.ServiceProvider.GetRequiredService<IRuntimeService>();
@@ -786,7 +783,7 @@ public class CacheSet<T>(
 
     public void Dispose()
     {
-        _cacheLock?.Dispose();
-        _cleanupSemaphore?.Dispose();
+        _cacheLock.Dispose();
+        _cleanupSemaphore.Dispose();
     }
 }

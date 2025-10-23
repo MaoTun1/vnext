@@ -2,7 +2,7 @@
     <PropertyGroup>
 
         <!-- All Prism packages -->
-        <AetherPackageVersion>1.0.2</AetherPackageVersion>
+        <AetherPackageVersion>1.0.4</AetherPackageVersion>
         <!-- Elastic Apm packages -->
         <ElasticApmPackageVersion>1.31.0</ElasticApmPackageVersion>
         <!-- Microsoft packages -->
@@ -15,6 +15,9 @@
         <UlidPackageVersion>1.3.4</UlidPackageVersion>
         <!-- JsonSchema.NET -->
         <JsonSchemaNetPackageVersion>7.3.3</JsonSchemaNetPackageVersion>
+
+        <!-- OpenTelemetry packages -->
+        <OpenTelemetryPackageVersion>1.12.0</OpenTelemetryPackageVersion>
       
         <!-- Microsot Test SDK packages -->
         <TestSdkPackageVersion>17.12.0</TestSdkPackageVersion>
@@ -25,5 +28,6 @@
         <xunitRunnerPackageVersion>3.0.1</xunitRunnerPackageVersion>
         <MoqPackageVersion>4.20.72</MoqPackageVersion>
         <PrometheusVersion>8.2.1</PrometheusVersion>
+
     </PropertyGroup>
 </Project>

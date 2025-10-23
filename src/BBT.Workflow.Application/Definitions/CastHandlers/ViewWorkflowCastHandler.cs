@@ -9,7 +9,7 @@ namespace BBT.Workflow.Definitions.CastHandlers;
 /// This handler deserializes view data from JSON attributes and updates the views cache.
 /// </summary>
 /// <param name="cacheContext">The domain cache context used for storing view data.</param>
-public sealed class ViewWorkflowCastHandler(DomainCacheContext cacheContext) : IWorkflowCastHandler
+public sealed class ViewWorkflowCastHandler(IDomainCacheContext cacheContext) : IWorkflowCastHandler
 {
     /// <summary>
     /// Determines whether this handler can process the specified workflow type.

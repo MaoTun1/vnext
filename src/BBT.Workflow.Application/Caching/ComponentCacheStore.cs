@@ -10,7 +10,7 @@ namespace BBT.Workflow.Caching;
 /// </summary>
 /// <param name="cacheContext">The domain cache context used for caching operations.</param>
 public sealed class ComponentCacheStore(
-    DomainCacheContext cacheContext) : IComponentCacheStore
+    IDomainCacheContext cacheContext) : IComponentCacheStore
 {
     /// <inheritdoc />
     public async Task<Definitions.Workflow> GetFlowAsync(
@@ -150,14 +150,14 @@ public sealed class ComponentCacheStore(
     /// <typeparam name="T">The entity type.</typeparam>
     /// <returns>The cache set for the specified type.</returns>
     /// <exception cref="NotSupportedException">Thrown when the entity type is not supported in cache context.</exception>
-    private CacheSet<T> GetCacheSet<T>() where T : class, IDomainEntity, IReferenceSetter
+    private ICacheSet<T> GetCacheSet<T>() where T : class, IDomainEntity, IReferenceSetter
     {
-        if (typeof(T) == typeof(Definitions.Workflow)) return (CacheSet<T>)(object)cacheContext.Workflows;
-        if (typeof(T) == typeof(WorkflowTask)) return (CacheSet<T>)(object)cacheContext.Tasks;
-        if (typeof(T) == typeof(SchemaDefinition)) return (CacheSet<T>)(object)cacheContext.Schemas;
-        if (typeof(T) == typeof(Function)) return (CacheSet<T>)(object)cacheContext.Functions;
-        if (typeof(T) == typeof(View)) return (CacheSet<T>)(object)cacheContext.Views;
-        if (typeof(T) == typeof(Extension)) return (CacheSet<T>)(object)cacheContext.Extensions;
+        if (typeof(T) == typeof(Definitions.Workflow)) return (ICacheSet<T>)(object)cacheContext.Workflows;
+        if (typeof(T) == typeof(WorkflowTask)) return (ICacheSet<T>)(object)cacheContext.Tasks;
+        if (typeof(T) == typeof(SchemaDefinition)) return (ICacheSet<T>)(object)cacheContext.Schemas;
+        if (typeof(T) == typeof(Function)) return (ICacheSet<T>)(object)cacheContext.Functions;
+        if (typeof(T) == typeof(View)) return (ICacheSet<T>)(object)cacheContext.Views;
+        if (typeof(T) == typeof(Extension)) return (ICacheSet<T>)(object)cacheContext.Extensions;
 
         throw new NotSupportedException($"Type {typeof(T).Name} is not supported in cache context.");
     }

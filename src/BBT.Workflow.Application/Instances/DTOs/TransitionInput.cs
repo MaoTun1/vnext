@@ -1,5 +1,6 @@
 using System.Text.Json;
-using WorkflowExecutionContext = BBT.Workflow.Shared.ExecutionContext;
+using BBT.Workflow.Definitions;
+using BBT.Workflow.Execution;
 
 namespace BBT.Workflow.Instances;
 
@@ -17,11 +18,32 @@ public sealed class TransitionInput(
     public Dictionary<string, string?> Headers { get; set; } = new();
     public Dictionary<string, string?> RouteValues { get; set; } = new();
     public bool Sync { get; set; } = sync;
-    
+
     /// <summary>
-    /// Execution context - who is executing this transition
+    /// Creates a WorkflowExecutionContext from this TransitionInput for manual transition execution.
     /// </summary>
-    public WorkflowExecutionContext ExecutionContext { get; init; } = WorkflowExecutionContext.User;
+    /// <param name="instanceId">The workflow instance identifier</param>
+    /// <param name="transitionKey">The transition key to execute</param>
+    /// <returns>A new WorkflowExecutionContext instance</returns>
+    public WorkflowExecutionContext ToExecutionContext(Guid instanceId, string transitionKey)
+    {
+        return new WorkflowExecutionContext
+        {
+            Domain = Domain,
+            InstanceId = instanceId,
+            WorkflowKey = Workflow,
+            WorkflowVersion = Version,
+            TransitionKey = transitionKey,
+            TriggerType = TriggerType.Manual, // TransitionInput always represents manual triggers
+            Mode = Sync ? ExecMode.Sync : ExecMode.Async,
+            CorrelationId = Guid.NewGuid().ToString("N"),
+            RequestedAt = DateTimeOffset.UtcNow,
+            Headers = Headers,
+            RouteValues = RouteValues,
+            Data = Data,
+            IsReentry = false // Manual transitions are never re-entry
+        };
+    }
 }
 
 public sealed class TransitionOutput

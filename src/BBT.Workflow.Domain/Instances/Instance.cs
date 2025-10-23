@@ -4,7 +4,8 @@ using BBT.Aether.Auditing;
 using BBT.Aether.Domain.Entities;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances.Policies;
-using WorkflowExecutionContext = BBT.Workflow.Shared.ExecutionContext;
+using BBT.Workflow.Shared;
+using DomainResult = BBT.Workflow.Domain.Result;
 
 namespace BBT.Workflow.Instances;
 
@@ -25,7 +26,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     {
         IsTransient = true;
         CreatedAt = DateTime.UtcNow;
-        Flow = Check.NotNull(flow, nameof(Flow), WorkflowConstants.MaxKeyLength);
+        Flow = Check.NotNullOrWhiteSpace(flow, nameof(Flow), WorkflowConstants.MaxKeyLength);
         Key = Check.Length(key, nameof(Key), InstanceConstants.MaxKeyLength);
         Status = InstanceStatus.Active;
 
@@ -113,6 +114,26 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         MetaData = data;
     }
 
+    /// <summary>
+    /// Sets system-generated metadata for the instance.
+    /// This method encapsulates the business logic for setting system metadata keys.
+    /// </summary>
+    /// <param name="isSync">Whether the instance is synchronous</param>
+    /// <param name="callback">Callback URL for the instance</param>
+    /// <param name="flowType">The workflow type code</param>
+    /// <param name="userMetadata">Optional user-provided metadata to merge</param>
+    public void SetInfoMetadata(bool isSync, string? callback, string flowType, ObjectDictionary? userMetadata = null)
+    {
+        var metadata = userMetadata ?? new ObjectDictionary();
+        
+        // Set system metadata - these are always set by the system
+        metadata.TryAdd(DomainConsts.MetaDataKeys.Sync, isSync.ToString().ToLower());
+        metadata.TryAdd(DomainConsts.MetaDataKeys.Callback, callback ?? string.Empty);
+        metadata.TryAdd(DomainConsts.MetaDataKeys.FlowType, flowType);
+        
+        SetMetaData(metadata);
+    }
+
     private readonly List<InstanceData> _dataList = new();
     private readonly object _dataListLock = new(); // Thread-safe lock for data operations
 
@@ -154,6 +175,40 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// </summary>
     public IReadOnlyCollection<InstanceCorrelation> ChildCorrelations => _childCorrelations.AsReadOnly();
 
+    public InstanceCorrelation? Subflow =>
+        ChildCorrelations.FirstOrDefault(p => !p.IsCompleted && p.SubFlowType.Equals(SubFlowType.SubFlow));
+    
+    public Instance CreateSnapshot()
+    {
+        var snapshot = new Instance
+        {
+            Id = Id,
+            IsTransient = IsTransient,
+            CreatedAt = CreatedAt,
+            ModifiedAt = ModifiedAt,
+            Flow = Flow,
+            Key = Key,
+            Status = Status,
+            CompletedAt = CompletedAt,
+            CurrentState = CurrentState,
+            Duration = Duration,
+            Tags = [..Tags],
+            MetaData = new ObjectDictionary(MetaData)
+        };
+
+        foreach (var data in _dataList)
+        {
+            snapshot._dataList.Add(data.CreateSnapshot());
+        }
+
+        foreach (var correlation in _childCorrelations)
+        {
+            snapshot._childCorrelations.Add(correlation.CreateSnapshot());
+        }
+
+        return snapshot;
+    }
+
     public void Complete()
     {
         Status = InstanceStatus.Completed;
@@ -193,47 +248,6 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     }
 
     /// <summary>
-    /// Sets the instance status based on its completion and active subflow state.
-    /// This encapsulates the business logic for determining whether an instance should be Active or Busy.
-    /// </summary>
-    public bool TrySetStatusBasedOnState()
-    {
-        if (IsCompleted)
-        {
-            return false;
-        }
-
-        if (HasActiveSubFlow)
-        {
-            Busy();
-            return true;
-        }
-
-        if (IsBusy)
-        {
-            Active();
-            return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Sets the parent instance status to Active if it's currently Busy but has no active subflows.
-    /// This is typically used when a subflow completes and the parent should return to Active state.
-    /// </summary>
-    public bool TryActivateIfBusyWithoutSubFlow()
-    {
-        if (IsBusy && !HasActiveSubFlow)
-        {
-            Active();
-            return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>
     /// Determines whether this instance should publish a completion event.
     /// This is typically true for SubItems (SubFlow or SubProcess) that have completed.
     /// </summary>
@@ -245,11 +259,15 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     public void AddCorrelation(InstanceCorrelation correlation)
     {
         _childCorrelations.Add(correlation);
+        if (correlation.SubFlowType.Equals(SubFlowType.SubFlow))
+        {
+            Busy();
+        }
     }
 
     public void SetKey(string key)
     {
-        Key = Check.NotNullOrEmpty(key, nameof(key), InstanceConstants.MaxKeyLength);
+        Key = Check.NotNullOrWhiteSpace(key, nameof(key), InstanceConstants.MaxKeyLength);
     }
 
     private void SetState(string currentState)
@@ -287,11 +305,19 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         }
     }
 
-    public bool CanExecuteTransition(Transition transition, State state, StateTransitionPolicy policy,
-        WorkflowExecutionContext executionContext = WorkflowExecutionContext.User)
+    /// <summary>
+    /// Validates if a transition can be executed from the current state using Result Pattern.
+    /// Delegates validation to the StateTransitionPolicy which checks transition rules and authorization.
+    /// </summary>
+    /// <param name="transition">The transition to validate</param>
+    /// <param name="state">The current state</param>
+    /// <param name="policy">The policy to use for validation</param>
+    /// <param name="executionActor">The actor attempting to execute the transition</param>
+    /// <returns>Result indicating whether the transition can be executed. On failure, contains detailed rule error information.</returns>
+    public DomainResult CanExecuteTransition(Transition transition, State state, StateTransitionPolicy policy,
+        ExecutionActor executionActor = ExecutionActor.User)
     {
-        policy.Validate(state, transition, executionContext);
-        return true;
+        return policy.Validate(state, transition, executionActor);
     }
 
     public InstanceData AddDataWithVersion(Guid id, JsonData inputData, string version)

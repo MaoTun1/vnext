@@ -1,234 +1,135 @@
 using BBT.Aether.DistributedLock;
-using BBT.Aether.Guids;
-using BBT.Workflow.Caching;
+using BBT.Workflow.Domain;
+using BBT.Workflow.Domain.Extensions;
 using BBT.Workflow.ExceptionHandling;
-using BBT.Workflow.Execution.StateMachine;
 using BBT.Workflow.Execution.Strategies;
 using BBT.Workflow.Instances;
-using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
-using BBT.Workflow.SubFlow;
+using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Logging;
-using ExecutionContext = BBT.Workflow.Shared.ExecutionContext;
+using System.Diagnostics;
 
 namespace BBT.Workflow.Execution.Services;
 
 /// <summary>
-/// Service implementation for orchestrating workflow execution operations.
-/// Coordinates between validation, preparation, and execution strategies.
+/// Service implementation for orchestrating workflow execution operations using the new pipeline architecture.
+/// Coordinates between validation, preparation, handlers, and execution strategies.
 /// </summary>
 public sealed class WorkflowExecutionService(
-    IExecutionStrategyFactory strategyFactory,
+    IExecutionStrategyFactory execFactory,
     ICurrentSchema currentSchema,
-    ISchemaManager schemaManager,
-    IRuntimeInfoProvider runtimeInfoProvider,
-    IComponentCacheStore componentCacheStore,
-    IInstanceRepository instanceRepository,
-    IStateMachineExecutor stateMachineExecutor,
-    IGuidGenerator guidGenerator,
-    ISubFlowService subFlowService,
     IDistributedLockService distributedLockService,
+    IInstanceRepository instanceRepository,
     ILogger<WorkflowExecutionService> logger) : IWorkflowExecutionService
 {
-    /// <inheritdoc />
-    public async Task<InstanceServiceResponse<StartInstanceOutput>> ExecuteStartAsync(
-        StartInstanceInput input,
-        CancellationToken cancellationToken = default)
-    {
-        // Validate runtime and prepare schema
-        runtimeInfoProvider.Check(input.Domain);
-
-        using (currentSchema.Change(input.Workflow))
-        {
-            // Load workflow and ensure schema
-            var workflow = await componentCacheStore.GetFlowAsync(
-                input.Domain, input.Workflow, input.Version, cancellationToken);
-
-            // Check initial state
-            workflow.GetInitialState();
-
-            await schemaManager.EnsureSchemaAndTablesAsync(currentSchema.Name, cancellationToken);
-
-            // Create and prepare instance
-            var instance = await CreateAndPrepareInstanceAsync(
-                workflow,
-                input.Instance.Id ?? guidGenerator.Create(),
-                input.Instance.Key,
-                input.Instance.Tags?.ToList(),
-                input.Instance.MetaData,
-                input.Sync,
-                input.Instance.Callback,
-                cancellationToken);
-
-            // Validate transition and build script context
-            var (transition, scriptContextBuilder) = await stateMachineExecutor.ValidateTransitionAsync(
-                workflow,
-                instance,
-                workflow.StartTransition.Key,
-                input.Instance.Attributes,
-                input.Headers.ToDictionary(h => h.Key, h => h.Value),
-                input.RouteValues.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
-                ExecutionContext.User,
-                cancellationToken
-            );
-
-            // Add instance data if provided
-            if (input.Instance.Attributes != null)
-            {
-                var data = new JsonData(input.Instance.Attributes);
-                instance.AddData(
-                    guidGenerator.Create(),
-                    data,
-                    transition.VersionStrategy
-                );
-            }
-
-            // Persist new instance
-            await instanceRepository.InsertAsync(instance, true, cancellationToken);
-            logger.LogDebug("Created new instance {InstanceId} with key {InstanceKey}",
-                instance.Id, instance.Key);
-
-            // Schedule flow timeout if configured
-            await stateMachineExecutor.FlowTimeoutAsync(workflow, instance, cancellationToken);
-
-            // Create execution context
-            var context = new InstanceStartExecutionContext(
-                input, workflow, instance, transition, scriptContextBuilder);
-
-            // Get and execute strategy
-            var strategy = strategyFactory.GetInstanceStartStrategy(input.Sync);
-            return await strategy.ExecuteAsync(context, cancellationToken);
-        }
-    }
-
-    /// <inheritdoc />
-    public async Task<InstanceServiceResponse<TransitionOutput>> ExecuteTransitionAsync(
-        Guid instanceId,
-        string transitionKey,
-        TransitionInput input,
-        CancellationToken cancellationToken = default)
-    {
-        runtimeInfoProvider.Check(input.Domain);
-
-        using (currentSchema.Change(input.Workflow))
-        {
-            var resourceId = $"instance-{instanceId}";
-            var lockAcquired = await distributedLockService.TryAcquireLockAsync(
-                resourceId,
-                InstanceConstants.TransitionLockExpiryInSeconds,
-                cancellationToken);
-
-            if (!lockAcquired)
-            {
-                throw new TransitionLockedException(instanceId, transitionKey);
-            }
-
-            try
-            {
-                // 1. Check if transition should be forwarded to SubFlow instance first
-                var subFlowResponse = await subFlowService.TryForwardTransitionToSubFlowAsync(
-                    instanceId, transitionKey, input, cancellationToken);
-
-                if (subFlowResponse != null)
-                {
-                    // Transition was forwarded to SubFlow, return SubFlow response with main instance ID
-                    return new InstanceServiceResponse<TransitionOutput>(new TransitionOutput
-                    {
-                        Id = instanceId, // Keep main instance ID for client
-                        Status = subFlowResponse.Data.Status
-                    });
-                }
-
-                // Load workflow and ensure schema
-                var workflow = await componentCacheStore.GetFlowAsync(
-                    input.Domain, input.Workflow, input.Version, cancellationToken);
-                await schemaManager.EnsureSchemaAndTablesAsync(currentSchema.Name, cancellationToken);
-
-                // Get and validate instance
-                var instance = await instanceRepository.GetActiveAsync(instanceId, cancellationToken);
-
-                // Validate transition and build script context
-                var (transition, scriptContextBuilder) = await stateMachineExecutor.ValidateTransitionAsync(
-                    workflow,
-                    instance,
-                    transitionKey,
-                    input.Data,
-                    input.Headers,
-                    input.RouteValues,
-                    input.ExecutionContext,
-                    cancellationToken
-                );
-
-                // Create execution context
-                var context = new TransitionExecutionContext(
-                    instanceId, transitionKey, input, workflow, instance, transition, scriptContextBuilder);
-
-                // Get and execute strategy
-                var strategy = strategyFactory.GetTransitionStrategy(input.Sync);
-                return await strategy.ExecuteAsync(context, cancellationToken);
-            }
-            finally
-            {
-                if (lockAcquired)
-                {
-                    // Always release the lock
-                    try
-                    {
-                        await distributedLockService.ReleaseLockAsync(resourceId, cancellationToken);
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogWarning(ex,
-                            "Failed to release distributed lock for instance {InstanceId} transition {TransitionKey}",
-                            instanceId, transitionKey);
-                    }
-                }
-            }
-        }
-    }
-
     /// <summary>
-    /// Creates and prepares an instance for execution, handling both new creation and existing instance retrieval.
-    /// Prevents duplicate active instances with the same key.
+    /// Executes a workflow transition using the new pipeline architecture.
+    /// Exception handling is delegated to the middleware layer for consistent error responses.
     /// </summary>
-    private async Task<Instance> CreateAndPrepareInstanceAsync(
-        Definitions.Workflow workflow,
-        Guid instanceId,
-        string instanceKey,
-        List<string>? tags,
-        ObjectDictionary metadata,
-        bool isSync,
-        string? callback,
+    /// <param name="context">The workflow execution input containing all necessary data.</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
+    /// <returns>A Result containing the transition output.</returns>
+    /// <exception cref="WorkflowValidationException">Thrown when validation fails</exception>
+    /// <exception cref="AutoTransitionConditionNotMetException">Thrown when auto-transition condition is not met</exception>
+    /// <exception cref="DistributedLockAcquisitionException">Thrown when lock cannot be acquired</exception>
+    public async Task<Result<TransitionOutput>> ExecuteTransitionAsync(
+        WorkflowExecutionContext context,
         CancellationToken cancellationToken = default)
     {
-        var initialState = workflow.GetInitialState();
-
-        // Check for existing instance
-        var existingInstance = await instanceRepository.FindByKeyAsReadOnlyAsync(instanceKey, cancellationToken);
-
-        // If instance exists and is not completed, throw conflict exception
-        if (existingInstance is { IsCompleted: false })
+        var sw = Stopwatch.StartNew();
+        using (currentSchema.Change(context.WorkflowKey))
         {
-            throw new ConflictException();
+            // Enrich all logs with comprehensive workflow context for distributed tracing
+            using (logger.ForTransition(
+                domain: context.Domain,
+                flow: context.WorkflowKey,
+                flowVersion: context.WorkflowVersion,
+                instanceId: context.InstanceId,
+                transitionKey: context.TransitionKey))
+            {
+                var resourceId = $"instance-{context.InstanceId}";
+
+                // 1. Get execution strategy
+                var strategy = execFactory.Get(context.Mode);
+                
+                // 2. Execute with distributed lock
+                // Exceptions are propagated to middleware for consistent error handling
+                var transitionExecutionContext = await distributedLockService.ExecuteWithLockAsync(
+                    resourceId,
+                    InstanceConstants.TransitionLockExpiryInSeconds,
+                    async () =>
+                    {
+                        // Execute strategy
+                        var executionResult = await strategy.ExecuteAsync(context, cancellationToken);
+                        
+                        // If strategy failed, throw appropriate exception for middleware to handle
+                        if (!executionResult.IsSuccess)
+                        {
+                            ThrowAppropriateException(executionResult.Error);
+                        }
+                        
+                        return executionResult.Value!;
+                    },
+                    cancellationToken,
+                    logger);
+                
+                sw.Stop();
+                
+                // Log completion with structured data
+                logger.TransitionCompleted(
+                    TelemetryConstants.Prefixes.Application,
+                    context.TransitionKey,
+                    context.InstanceId,
+                    sw.ElapsedMilliseconds);
+            
+                // Build response
+                TransitionOutput response;
+                if (transitionExecutionContext.ClientResponse is not null)
+                {
+                    response = new TransitionOutput
+                    {
+                        Id = transitionExecutionContext.InstanceId,
+                        Status = transitionExecutionContext.ClientResponse.Status
+                    };
+                }
+                else
+                {
+                    var freshInstance = await instanceRepository.FindByIdAsReadOnlyAsync(
+                        context.InstanceId, 
+                        cancellationToken);
+
+                    response = new TransitionOutput
+                    {
+                        Id = context.InstanceId,
+                        Status = freshInstance!.Status
+                    };
+                }
+
+                return Result<TransitionOutput>.Ok(response);
+            }
         }
-
-        // Create new instance (existing instance would be completed at this point, so we create new one)
-        var instance = Instance.Create(instanceId, workflow.Key, instanceKey);
-
-        // Set metadata
-        metadata.TryAdd(DomainConsts.MetaDataKeys.Sync, isSync.ToString().ToLower());
-        metadata.TryAdd(DomainConsts.MetaDataKeys.Callback, callback ?? string.Empty);
-        metadata.TryAdd(DomainConsts.MetaDataKeys.FlowType, workflow.Type.Code);
-        instance.SetMetaData(metadata);
-
-        // Initialize instance state and tags (always for new instances)
-        instance.ChangeState(initialState);
-
-        if (tags?.Any() == true)
+    }
+    
+    /// <summary>
+    /// Throws the appropriate exception based on the error code.
+    /// This allows the middleware to handle different error types consistently.
+    /// </summary>
+    private static void ThrowAppropriateException(Error error)
+    {
+        // For auto-transition condition not met, throw specific exception
+        if (error.Code == WorkflowErrorCodes.AutoTransitionConditionNotMet)
         {
-            instance.AddTags(tags.ToArray());
+            throw new AutoTransitionConditionNotMetException();
         }
-
-        return instance;
+        
+        // For validation errors, throw WorkflowValidationException
+        if (error.ValidationErrors is { Count: > 0 })
+        {
+            throw new WorkflowValidationException(error);
+        }
+        
+        // For other errors, throw InvalidOperationException with error code embedded
+        // This will be handled by the middleware's backward compatibility logic
+        throw new InvalidOperationException($"{error.Code}:{error.Message}");
     }
 }

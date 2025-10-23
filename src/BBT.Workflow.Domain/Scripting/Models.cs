@@ -1,4 +1,3 @@
-using System.Collections;
 using System.Dynamic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -6,6 +5,7 @@ using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Shared.Merging;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Scripting;
 
@@ -111,13 +111,56 @@ public sealed class StandardTaskResponse
     public string? TaskType { get; set; }
 }
 
-public sealed class ScriptContext
+public class ScriptContext(ILogger<ScriptContext> logger) : IDisposable
 {
     public static readonly JsonSerializerOptions JsonScriptBodyOptions = new()
     {
         Converters = { new ExpandoObjectJsonConverter() },
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
+    
+    private bool _disposed;
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed)
+            return;
+
+        if (disposing)
+        {
+            try
+            {
+                TaskResponse?.Clear();
+                MetaData?.Clear();
+                Definitions?.Clear();
+
+                Body = null;
+                Headers = null;
+                RouteValues = null;
+            }
+            catch (InvalidOperationException ex)
+            {
+                logger.LogWarning(ex, "Error clearing collections during disposal");
+            }
+        }
+
+        _disposed = true;
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Throws ObjectDisposedException if the context has been disposed.
+    /// </summary>
+    private void ThrowIfDisposed()
+    {
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(ScriptContext));
+    }
 
     /// <summary>
     /// Contains the request payload data from workflow transitions or task execution responses,
@@ -272,8 +315,8 @@ public sealed class ScriptContext
     /// and configuration objects that can be reused across different workflow instances
     /// and execution contexts.
     /// </remarks>
-    public Dictionary<string, dynamic> Definitions { get; private set; }
-    
+    public Dictionary<string, dynamic> Definitions { get; private set; } = new();
+
     /// <summary>
     /// Contains the execution results and responses from completed workflow tasks,
     /// with task keys converted to follow variable naming standards and values containing
@@ -301,7 +344,7 @@ public sealed class ScriptContext
     /// and dynamic property access scenarios.
     /// </remarks>
     public Dictionary<string, dynamic?> TaskResponse { get; private set; } = new();
-    
+
     /// <summary>
     /// Contains execution metadata, performance metrics, and contextual information
     /// about the current task, transition, or workflow execution.
@@ -327,6 +370,7 @@ public sealed class ScriptContext
     /// <param name="body">The new body content.</param>
     public void SetBody(object? body)
     {
+        ThrowIfDisposed();
         MergeToBody(body, JsonSerializerConstants.JsonOptions);
     }
 
@@ -336,6 +380,7 @@ public sealed class ScriptContext
     /// <param name="response">The standardized task response.</param>
     public void SetStandardResponse(StandardTaskResponse response)
     {
+        ThrowIfDisposed();
         MergeToBody(response, JsonScriptBodyOptions);
     }
 
@@ -384,14 +429,10 @@ public sealed class ScriptContext
 
         return target;
     }
-    
-    private ScriptContext()
-    {
-    }
 
-    public sealed class Builder
+    public sealed class Builder(ILogger<ScriptContext> logger)
     {
-        private readonly ScriptContext _context = new();
+        private readonly ScriptContext _context = new(logger);
 
         public Builder SetBody(object? body)
         {

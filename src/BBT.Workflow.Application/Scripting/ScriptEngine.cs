@@ -3,7 +3,6 @@ using BBT.Workflow.Scripting.Evaluators;
 using BBT.Workflow.Scripting.Functions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Scripting;
-using Dapr.Client;
 using System.Diagnostics;
 using BBT.Workflow.Definitions.Timer;
 
@@ -14,26 +13,21 @@ namespace BBT.Workflow.Scripting;
 /// Integrates with Dapr for distributed computing scenarios and provides global functions for scripts.
 /// Uses Roslyn's scripting APIs for dynamic C# code execution.
 /// </summary>
-/// <param name="daprClient">The Dapr client for distributed computing operations</param>
 /// <param name="workflowMetrics">The workflow metrics service for recording script engine metrics</param>
-public sealed class ScriptEngine(DaprClient daprClient, IWorkflowMetrics workflowMetrics) : IScriptEngine
+public sealed class ScriptEngine(
+    IWorkflowMetrics workflowMetrics) : IScriptEngine
 {
     /// <summary>
     /// The underlying C# evaluator responsible for script compilation and execution
     /// </summary>
     private readonly IEvaluator _evaluator = new CSharpEvaluator();
-    
-    /// <summary>
-    /// Global functions available to all scripts, providing access to Dapr services
-    /// </summary>
-    private readonly GlobalScriptFunctions _globalFunctions = new(daprClient);
 
     /// <summary>
     /// Lazily-initialized default metadata references used for script compilation.
     /// Includes core .NET types, collections, and workflow-specific assemblies.
     /// </summary>
-    private static readonly Lazy<MetadataReference[]> DefaultReferences = new(() => new[]
-    {
+    private static readonly Lazy<MetadataReference[]> DefaultReferences = new(() =>
+    [
         MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
         MetadataReference.CreateFromFile(typeof(IMapping).Assembly.Location),
         MetadataReference.CreateFromFile(typeof(TimerSchedule).Assembly.Location),
@@ -41,7 +35,7 @@ public sealed class ScriptEngine(DaprClient daprClient, IWorkflowMetrics workflo
         MetadataReference.CreateFromFile(typeof(Dictionary<,>).Assembly.Location),
         MetadataReference.CreateFromFile(typeof(Microsoft.CSharp.RuntimeBinder.CSharpArgumentInfo).Assembly.Location),
         MetadataReference.CreateFromFile(typeof(ScriptHelper).Assembly.Location)
-    });
+    ]);
 
     /// <summary>
     /// Default using directives automatically included in all scripts.
@@ -63,174 +57,7 @@ public sealed class ScriptEngine(DaprClient daprClient, IWorkflowMetrics workflo
         "BBT.Workflow.Scripting.Functions",
         "BBT.Workflow.Definitions.Timer"
     };
-
-    /// <summary>
-    /// Evaluates a C# script asynchronously and returns the result as an object.
-    /// Automatically merges provided globals with the engine's global functions.
-    /// </summary>
-    /// <param name="code">The C# code to evaluate</param>
-    /// <param name="configureScriptOptions">Optional function to configure script compilation options</param>
-    /// <param name="returnType">Optional expected return type for the script evaluation</param>
-    /// <param name="globals">Optional global variables accessible within the script</param>
-    /// <param name="cancellationToken">Token to cancel the operation</param>
-    /// <returns>A task containing the evaluation result as an object, or null if no result</returns>
-    /// <exception cref="CompilationErrorException">Thrown when the script contains compilation errors</exception>
-    /// <exception cref="OperationCanceledException">Thrown when the operation is cancelled</exception>
-    public async Task<object?> EvaluateAsync(string code,
-        Func<ScriptOptions, ScriptOptions>? configureScriptOptions = null,
-        Type? returnType = null,
-        object? globals = null,
-        CancellationToken cancellationToken = default)
-    {
-        var stopwatch = Stopwatch.StartNew();
-        const string scriptType = "evaluation";
-        const string language = "csharp";
-
-        try
-        {
-            // Merge provided globals with our global functions
-            object mergedGlobals = globals != null
-                ? new ScriptGlobals { Functions = _globalFunctions, Globals = globals }
-                : new ScriptGlobals { Functions = _globalFunctions };
-
-            var result = await _evaluator.EvaluateAsync(code, returnType ?? typeof(ScriptGlobals), configureScriptOptions,
-                mergedGlobals, cancellationToken);
-
-            stopwatch.Stop();
-            var durationSeconds = stopwatch.Elapsed.TotalSeconds;
-
-            // Record successful script execution
-            workflowMetrics.RecordScriptExecution(scriptType, language, "success");
-            workflowMetrics.RecordScriptExecutionDuration(scriptType, language, "success", durationSeconds);
-
-            return result;
-        }
-        catch (CompilationErrorException ex)
-        {
-            stopwatch.Stop();
-            var durationSeconds = stopwatch.Elapsed.TotalSeconds;
-
-            // Record compilation error
-            workflowMetrics.RecordScriptExecution(scriptType, language, "compilation_error");
-            workflowMetrics.RecordScriptCompilationError(scriptType, language, ex.GetType().Name);
-            workflowMetrics.RecordScriptExecutionDuration(scriptType, language, "compilation_error", durationSeconds);
-
-            throw;
-        }
-        catch (OperationCanceledException)
-        {
-            stopwatch.Stop();
-            var durationSeconds = stopwatch.Elapsed.TotalSeconds;
-
-            // Record cancelled execution
-            workflowMetrics.RecordScriptExecution(scriptType, language, "cancelled");
-            workflowMetrics.RecordScriptExecutionDuration(scriptType, language, "cancelled", durationSeconds);
-
-            throw;
-        }
-        catch (Exception ex)
-        {
-            stopwatch.Stop();
-            var durationSeconds = stopwatch.Elapsed.TotalSeconds;
-
-            // Record runtime error
-            workflowMetrics.RecordScriptExecution(scriptType, language, "runtime_error");
-            workflowMetrics.RecordScriptRuntimeError(scriptType, language, ex.GetType().Name);
-            workflowMetrics.RecordScriptExecutionDuration(scriptType, language, "runtime_error", durationSeconds);
-
-            throw;
-        }
-    }
-
-    /// <summary>
-    /// Evaluates a C# script asynchronously and returns the result as a strongly-typed value.
-    /// Automatically merges provided globals with the engine's global functions.
-    /// </summary>
-    /// <typeparam name="T">The expected return type of the script evaluation</typeparam>
-    /// <param name="code">The C# code to evaluate</param>
-    /// <param name="configureScriptOptions">Optional function to configure script compilation options</param>
-    /// <param name="returnType">Optional expected return type for the script evaluation</param>
-    /// <param name="globals">Optional global variables accessible within the script</param>
-    /// <param name="cancellationToken">Token to cancel the operation</param>
-    /// <returns>A task containing the evaluation result cast to type T</returns>
-    /// <exception cref="CompilationErrorException">Thrown when the script contains compilation errors</exception>
-    /// <exception cref="InvalidCastException">Thrown when the result cannot be cast to type T</exception>
-    /// <exception cref="OperationCanceledException">Thrown when the operation is cancelled</exception>
-    public async Task<T> EvaluateAsync<T>(string code, Func<ScriptOptions, ScriptOptions>? configureScriptOptions = null,
-        Type? returnType = null, object? globals = null, CancellationToken cancellationToken = default)
-    {
-        var stopwatch = Stopwatch.StartNew();
-        const string scriptType = "evaluation_generic";
-        const string language = "csharp";
-
-        try
-        {
-            // Merge provided globals with our global functions
-            object mergedGlobals = globals != null
-                ? new ScriptGlobals { Functions = _globalFunctions, Globals = globals }
-                : new ScriptGlobals { Functions = _globalFunctions };
-
-            var result = await _evaluator.EvaluateAsync<T>(code, configureScriptOptions, returnType ?? typeof(ScriptGlobals),
-                mergedGlobals, cancellationToken);
-
-            stopwatch.Stop();
-            var durationSeconds = stopwatch.Elapsed.TotalSeconds;
-
-            // Record successful script execution
-            workflowMetrics.RecordScriptExecution(scriptType, language, "success");
-            workflowMetrics.RecordScriptExecutionDuration(scriptType, language, "success", durationSeconds);
-
-            return result;
-        }
-        catch (CompilationErrorException ex)
-        {
-            stopwatch.Stop();
-            var durationSeconds = stopwatch.Elapsed.TotalSeconds;
-
-            // Record compilation error
-            workflowMetrics.RecordScriptExecution(scriptType, language, "compilation_error");
-            workflowMetrics.RecordScriptCompilationError(scriptType, language, ex.GetType().Name);
-            workflowMetrics.RecordScriptExecutionDuration(scriptType, language, "compilation_error", durationSeconds);
-
-            throw;
-        }
-        catch (InvalidCastException ex)
-        {
-            stopwatch.Stop();
-            var durationSeconds = stopwatch.Elapsed.TotalSeconds;
-
-            // Record cast error as runtime error
-            workflowMetrics.RecordScriptExecution(scriptType, language, "cast_error");
-            workflowMetrics.RecordScriptRuntimeError(scriptType, language, ex.GetType().Name);
-            workflowMetrics.RecordScriptExecutionDuration(scriptType, language, "cast_error", durationSeconds);
-
-            throw;
-        }
-        catch (OperationCanceledException)
-        {
-            stopwatch.Stop();
-            var durationSeconds = stopwatch.Elapsed.TotalSeconds;
-
-            // Record cancelled execution
-            workflowMetrics.RecordScriptExecution(scriptType, language, "cancelled");
-            workflowMetrics.RecordScriptExecutionDuration(scriptType, language, "cancelled", durationSeconds);
-
-            throw;
-        }
-        catch (Exception ex)
-        {
-            stopwatch.Stop();
-            var durationSeconds = stopwatch.Elapsed.TotalSeconds;
-
-            // Record runtime error
-            workflowMetrics.RecordScriptExecution(scriptType, language, "runtime_error");
-            workflowMetrics.RecordScriptRuntimeError(scriptType, language, ex.GetType().Name);
-            workflowMetrics.RecordScriptExecutionDuration(scriptType, language, "runtime_error", durationSeconds);
-
-            throw;
-        }
-    }
-
+    
     /// <summary>
     /// Compiles C# code into an instance of the specified type asynchronously.
     /// Automatically includes default metadata references and using directives,
@@ -258,12 +85,12 @@ public sealed class ScriptEngine(DaprClient daprClient, IWorkflowMetrics workflo
         try
         {
             // Use cached default references
-            var mergedReferences = (extraReferences ?? Enumerable.Empty<MetadataReference>())
+            var mergedReferences = (extraReferences ?? [])
                 .Concat(DefaultReferences.Value)
                 .Distinct();
 
             // Use cached default usings
-            var mergedUsings = (usingDirectives ?? Enumerable.Empty<string>())
+            var mergedUsings = (usingDirectives ?? [])
                 .Concat(DefaultUsings)
                 .Distinct();
 

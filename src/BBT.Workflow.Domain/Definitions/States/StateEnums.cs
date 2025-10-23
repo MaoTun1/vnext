@@ -23,7 +23,11 @@ public enum StateType
     /// <summary>
     /// State that executes another workflow
     /// </summary>
-    SubFlow = 4
+    SubFlow = 4,
+    /// <summary>
+    /// State that has wizard view
+    /// </summary>
+    Wizard = 5
 }
 
 /// <summary>

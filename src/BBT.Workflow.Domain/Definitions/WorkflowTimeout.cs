@@ -22,8 +22,8 @@ public sealed class WorkflowTimeout : IHasKey
         TimerConfig timer
     )
     {
-        Key = Check.NotNullOrEmpty(key, nameof(Key), WorkflowConstants.MaxKeyLength);
-        Target = Check.NotNullOrEmpty(target, nameof(Target), StateConstants.MaxKeyLength);
+        Key = Check.NotNullOrWhiteSpace(key, nameof(Key), WorkflowConstants.MaxKeyLength);
+        Target = Check.NotNullOrWhiteSpace(target, nameof(Target), StateConstants.MaxKeyLength);
         VersionStrategy = versionStrategy;
         Timer = timer;
     }

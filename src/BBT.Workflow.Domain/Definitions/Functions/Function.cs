@@ -61,17 +61,17 @@ public sealed class Function : IDomainEntity, IFunctionReference, IReferenceSett
 
     private void SetKey(string key)
     {
-        Key = Check.NotNullOrEmpty(key, nameof(Key), FunctionConstants.MaxKeyLength);
+        Key = Check.NotNullOrWhiteSpace(key, nameof(Key), FunctionConstants.MaxKeyLength);
     }
 
     private void SetDomain(string domain)
     {
-        Domain = Check.NotNullOrEmpty(domain, nameof(Domain), WorkflowConstants.MaxDomainLength);
+        Domain = Check.NotNullOrWhiteSpace(domain, nameof(Domain), WorkflowConstants.MaxDomainLength);
     }
 
     private void SetVersion(string version)
     {
-        Version = Check.NotNullOrEmpty(version, nameof(Version), WorkflowConstants.MaxVersionLength);
+        Version = Check.NotNullOrWhiteSpace(version, nameof(Version), WorkflowConstants.MaxVersionLength);
     }
 
     public List<OnExecuteTask> GetExecuteTasks()

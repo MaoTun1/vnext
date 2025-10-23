@@ -1,5 +1,5 @@
 using BBT.Workflow.Definitions;
-using BBT.Workflow.Instances;
+using BBT.Workflow.Domain;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
 using BBT.Workflow.Scripting;
@@ -12,7 +12,6 @@ public sealed class TaskCommandAppService(
     IRuntimeInfoProvider runtimeInfoProvider,
     ICurrentSchema currentSchema,
     IScriptContextFactory scriptContextFactory,
-    IInstanceTransitionRepository instanceTransitionRepository,
     ITaskOrchestrator taskOrchestrator
 ) : ITaskCommandAppService
 {
@@ -23,48 +22,55 @@ public sealed class TaskCommandAppService(
     /// </summary>
     /// <param name="input">The task execution request input.</param>
     /// <param name="cancellationToken">Cancellation token for the operation.</param>
-    /// <returns>Context updates that occurred during task execution.</returns>
-    public async Task<TaskContextUpdateOutput> ExecuteTaskAsync(
+    /// <returns>A Result containing context updates that occurred during task execution.</returns>
+    public async Task<Result<TaskContextUpdateOutput>> ExecuteTaskAsync(
         TaskExecutionRequestInput input,
         CancellationToken cancellationToken = default)
     {
+        // 1. Validate domain
         runtimeInfoProvider.Check(input.Context.Workflow.Domain);
+
         using (currentSchema.Change(input.Context.Workflow.Key))
         {
+            // 2. Create task execution configuration
             var onExecuteTask = OnExecuteTask.Create(
                 input.OnExecuteTask.Order,
                 input.OnExecuteTask.Task,
                 new ScriptCode(input.OnExecuteTask.Mapping.Location, input.OnExecuteTask.Mapping.Code)
             );
 
-            InstanceTransition? instanceTransition = null;
+            // 3. Create script context with all necessary mappings
+            var scriptContextResult = await ResultExtensions.TryAsync(
+                async ct => await scriptContextFactory.CreateFromTaskRequestAsync(
+                    input,
+                    runtimeInfoProvider, 
+                    ct),
+                cancellationToken,
+                ex => Error.Failure(WorkflowErrorCodes.TaskContextCreation, $"Failed to create script context: {ex.Message}"));
 
-            if (input.InstanceTransitionId.HasValue)
-            {
-                instanceTransition =
-                    await instanceTransitionRepository.FindAsync(input.InstanceTransitionId.Value, true,
-                        cancellationToken);
-            }
+            if (!scriptContextResult.IsSuccess)
+                return Result<TaskContextUpdateOutput>.Fail(scriptContextResult.Error);
 
-            // Use the ScriptContextFactory to create the context with all necessary mappings
-            var scriptContext = await scriptContextFactory.CreateFromTaskRequestAsync(
-                input,
-                runtimeInfoProvider, 
-                cancellationToken);
+            var scriptContext = scriptContextResult.Value!;
 
-            // Use LocalTaskExecutor for context tracking
+            // 4. Execute task with context tracking
             if (taskOrchestrator is LocalTaskExecutor localExecutor)
             {
-                return await localExecutor.ExecuteTaskWithContextUpdateAsync(
-                    onExecuteTask,
-                    instanceTransition,
-                    input.TaskTrigger,
-                    scriptContext,
-                    cancellationToken);
+                var executionResult = await ResultExtensions.TryAsync(
+                    async ct => await localExecutor.ExecuteTaskWithContextUpdateAsync(
+                        onExecuteTask,
+                        input.InstanceTransitionId,
+                        input.TaskTrigger,
+                        scriptContext,
+                        ct),
+                    cancellationToken,
+                    ex => Error.Failure(WorkflowErrorCodes.TaskExecution, $"Task execution failed: {ex.Message}"));
+
+                return executionResult;
             }
             
-            // Return empty context update as fallback
-            return new TaskContextUpdateOutput();
+            // 5. Return empty context update as fallback
+            return Result<TaskContextUpdateOutput>.Ok(new TaskContextUpdateOutput());
         }
     }
 }

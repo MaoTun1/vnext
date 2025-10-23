@@ -18,14 +18,14 @@ public sealed class WorkflowCastProcessor(IEnumerable<IWorkflowCastHandler> hand
     /// <param name="attributes">The JSON element containing the workflow attributes to be processed.</param>
     /// <param name="cancellationToken">The cancellation token to observe during the asynchronous operation.</param>
     /// <returns>A task that represents the asynchronous processing operation.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when no handler is found for the specified workflow type.</exception>
+    /// <exception cref="NotSupportedException">Thrown when no handler is found for the specified workflow type.</exception>
     /// <exception cref="ArgumentNullException">Thrown when workflow, reference, or attributes is null.</exception>
     public async Task ProcessAsync(string workflow, IReference reference, JsonElement attributes,
         CancellationToken cancellationToken)
     {
         var handler = handlers.FirstOrDefault(h => h.CanHandle(workflow));
         if (handler == null)
-            throw new InvalidOperationException($"No handler found for workflow '{workflow}'.");
+            throw new NotSupportedException($"No handler found for component '{workflow}'.");
 
         await handler.HandleAsync(reference, attributes, cancellationToken);
     }

@@ -11,5 +11,6 @@ public class SubFlowContractInfo
     public string Flow { get; set; } = string.Empty;
     public string? Version { get; set; }
     public string? State { get; set; }
+    public string? Transition { get; set; }
     public string SubType { get; set; } = string.Empty;
 }

@@ -56,7 +56,7 @@ public class BackgroundJobInfo<T> where T : class
     /// The domain string if found in metadata; otherwise, an empty string.
     /// Returns an empty string if metadata is null or the domain key is not found.
     /// </returns>
-    public string? GetDomain()
+    public string GetDomain()
     {
         if (Metadata == null)
             return string.Empty;
@@ -77,7 +77,7 @@ public class BackgroundJobInfo<T> where T : class
     /// The flow name string if found in metadata; otherwise, an empty string.
     /// Returns an empty string if metadata is null or the flowName key is not found.
     /// </returns>
-    public string? GetFlowName()
+    public string GetFlowName()
     {
         if (Metadata == null)
             return string.Empty;

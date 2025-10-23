@@ -1,17 +1,19 @@
 using System.Text.Json;
-using BBT.Aether.Validation;
+using BBT.Workflow.Domain;
 
 namespace BBT.Workflow.Validation;
 
+/// <summary>
+/// Provides JSON schema validation functionality using Result Pattern.
+/// </summary>
 public interface IJsonSchemaValidator
 {
     /// <summary>
-    /// Validates the given JSON data against the specified JSON schema.
+    /// Validates the given JSON data against the specified JSON schema using Result Pattern.
+    /// Returns Result.Ok() if validation succeeds, or Result.Fail() with detailed validation errors if it fails.
     /// </summary>
     /// <param name="jsonSchema">JSON schema to be used for validation.</param>
-    /// <param name="data">JSON data to be validated. In case of null, an empty JSON object is used..</param>
-    /// <exception cref="AetherValidationException">
-    /// If the JSON data does not conform to the schema, an exception is thrown containing validation errors.
-    /// </exception>
-    void Validate(JsonElement jsonSchema, JsonElement? data);
+    /// <param name="data">JSON data to be validated. In case of null, an empty JSON object is used.</param>
+    /// <returns>Result containing validation outcome. On failure, Error.ValidationErrors contains detailed field-level errors.</returns>
+    Result Validate(JsonElement jsonSchema, JsonElement? data);
 }

@@ -1,3 +1,4 @@
+using System;
 using BBT.Aether.Testing;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,6 +20,8 @@ public abstract class WorkflowTestBase<TEntry> : TestBase<TEntry>
     /// <param name="services">The service collection to add services to.</param>
     protected override void AddApplication(IServiceCollection services)
     {
+        Environment.SetEnvironmentVariable("APP_DOMAIN", "core");
+        Environment.SetEnvironmentVariable("APP_VERSION", "1.0.0");
         RegisterHttpContextAccessor(services);
         base.AddApplication(services);
     }

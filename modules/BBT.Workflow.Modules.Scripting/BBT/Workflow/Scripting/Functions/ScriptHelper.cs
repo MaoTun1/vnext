@@ -1,10 +1,10 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Dynamic;
-using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Dapr.Client;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Scripting.Functions;
 
@@ -14,6 +14,8 @@ namespace BBT.Workflow.Scripting.Functions;
 public static class ScriptHelper
 {
     private static DaprClient? _daprClient;
+    private static ILogger? _logger;
+    private static IConfiguration? _configuration;
 
     /// <summary>
     /// Sets the Dapr client instance (should be called during application startup)
@@ -22,6 +24,24 @@ public static class ScriptHelper
     public static void SetDaprClient(DaprClient daprClient)
     {
         _daprClient = daprClient ?? throw new ArgumentNullException(nameof(daprClient));
+    }
+
+    /// <summary>
+    /// Sets the logger instance (should be called during application startup)
+    /// </summary>
+    /// <param name="logger">The logger instance</param>
+    public static void SetLogger(ILogger logger)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Sets the configuration instance (should be called during application startup)
+    /// </summary>
+    /// <param name="configuration">The configuration instance</param>
+    public static void SetConfiguration(IConfiguration configuration)
+    {
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
     }
 
     /// <summary>
@@ -174,4 +194,322 @@ public static class ScriptHelper
 
         return null;
     }
+
+    #region Logging Functions
+
+    /// <summary>
+    /// Logs a trace message with caller information
+    /// </summary>
+    /// <param name="message">The message to log</param>
+    /// <param name="file">The source file path (automatically captured)</param>
+    /// <param name="method">The method name (automatically captured)</param>
+    /// <param name="line">The line number (automatically captured)</param>
+    /// <param name="args">Optional arguments for string formatting</param>
+    public static void LogTrace(
+        object message,
+        [CallerFilePath] string? file = null,
+        [CallerMemberName] string? method = null,
+        [CallerLineNumber] int line = 0,
+        params object[] args)
+    {
+        if (_logger == null)
+            throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
+
+        if (message == null)
+            return;
+
+        var enrichedMessage = $"Class: {{File}} Method: {{Method}} Line: {{Line}} Message: {message}";
+        var logArgs = new List<object> { file ?? "Unknown", method ?? "Unknown", line };
+        if (args != null && args.Length > 0)
+            logArgs.AddRange(args);
+
+        _logger.LogTrace(enrichedMessage, logArgs.ToArray());
+    }
+
+    /// <summary>
+    /// Logs a debug message with caller information
+    /// </summary>
+    /// <param name="message">The message to log</param>
+    /// <param name="file">The source file path (automatically captured)</param>
+    /// <param name="method">The method name (automatically captured)</param>
+    /// <param name="line">The line number (automatically captured)</param>
+    /// <param name="args">Optional arguments for string formatting</param>
+    public static void LogDebug(
+        object message,
+        [CallerFilePath] string? file = null,
+        [CallerMemberName] string? method = null,
+        [CallerLineNumber] int line = 0,
+        params object[] args)
+    {
+        if (_logger == null)
+            throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
+
+        if (message == null)
+            return;
+
+        var enrichedMessage = $"Class: {{File}} Method: {{Method}} Line: {{Line}} Message: {message}";
+        var logArgs = new List<object> { file ?? "Unknown", method ?? "Unknown", line };
+        if (args != null && args.Length > 0)
+            logArgs.AddRange(args);
+
+        _logger.LogDebug(enrichedMessage, logArgs.ToArray());
+    }
+
+    /// <summary>
+    /// Logs an informational message with caller information
+    /// </summary>
+    /// <param name="message">The message to log</param>
+    /// <param name="file">The source file path (automatically captured)</param>
+    /// <param name="method">The method name (automatically captured)</param>
+    /// <param name="line">The line number (automatically captured)</param>
+    /// <param name="args">Optional arguments for string formatting</param>
+    public static void LogInformation(
+        object message,
+        [CallerFilePath] string? file = null,
+        [CallerMemberName] string? method = null,
+        [CallerLineNumber] int line = 0,
+        params object[] args)
+    {
+        if (_logger == null)
+            throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
+
+        if (message == null)
+            return;
+
+        var enrichedMessage = $"Class: {{File}} Method: {{Method}} Line: {{Line}} Message: {message}";
+        var logArgs = new List<object> { file ?? "Unknown", method ?? "Unknown", line };
+        if (args != null && args.Length > 0)
+            logArgs.AddRange(args);
+
+        _logger.LogInformation(enrichedMessage, logArgs.ToArray());
+    }
+
+    /// <summary>
+    /// Logs a warning message with caller information
+    /// </summary>
+    /// <param name="message">The message to log</param>
+    /// <param name="file">The source file path (automatically captured)</param>
+    /// <param name="method">The method name (automatically captured)</param>
+    /// <param name="line">The line number (automatically captured)</param>
+    /// <param name="args">Optional arguments for string formatting</param>
+    public static void LogWarning(
+        object message,
+        [CallerFilePath] string? file = null,
+        [CallerMemberName] string? method = null,
+        [CallerLineNumber] int line = 0,
+        params object[] args)
+    {
+        if (_logger == null)
+            throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
+
+        if (message == null)
+            return;
+
+        var enrichedMessage = $"Class: {{File}} Method: {{Method}} Line: {{Line}} Message: {message}";
+        var logArgs = new List<object> { file ?? "Unknown", method ?? "Unknown", line };
+        if (args != null && args.Length > 0)
+            logArgs.AddRange(args);
+
+        _logger.LogWarning(enrichedMessage, logArgs.ToArray());
+    }
+
+    /// <summary>
+    /// Logs an error message with caller information
+    /// </summary>
+    /// <param name="message">The message to log</param>
+    /// <param name="file">The source file path (automatically captured)</param>
+    /// <param name="method">The method name (automatically captured)</param>
+    /// <param name="line">The line number (automatically captured)</param>
+    /// <param name="args">Optional arguments for string formatting</param>
+    public static void LogError(
+        object message,
+        [CallerFilePath] string? file = null,
+        [CallerMemberName] string? method = null,
+        [CallerLineNumber] int line = 0,
+        params object[] args)
+    {
+        if (_logger == null)
+            throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
+
+        if (message == null)
+            return;
+
+        var enrichedMessage = $"Class: {{File}} Method: {{Method}} Line: {{Line}} Message: {message}";
+        var logArgs = new List<object> { file ?? "Unknown", method ?? "Unknown", line };
+        if (args != null && args.Length > 0)
+            logArgs.AddRange(args);
+
+        _logger.LogError(enrichedMessage, logArgs.ToArray());
+    }
+
+    /// <summary>
+    /// Logs a critical message with caller information
+    /// </summary>
+    /// <param name="message">The message to log</param>
+    /// <param name="file">The source file path (automatically captured)</param>
+    /// <param name="method">The method name (automatically captured)</param>
+    /// <param name="line">The line number (automatically captured)</param>
+    /// <param name="args">Optional arguments for string formatting</param>
+    public static void LogCritical(
+        object message,
+        [CallerFilePath] string? file = null,
+        [CallerMemberName] string? method = null,
+        [CallerLineNumber] int line = 0,
+        params object[] args)
+    {
+        if (_logger == null)
+            throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
+
+        if (message == null)
+            return;
+
+        var enrichedMessage = $"Class: {{File}} Method: {{Method}} Line: {{Line}} Message: {message}";
+        var logArgs = new List<object> { file ?? "Unknown", method ?? "Unknown", line };
+        if (args != null && args.Length > 0)
+            logArgs.AddRange(args);
+
+        _logger.LogCritical(enrichedMessage, logArgs.ToArray());
+    }
+
+    #endregion
+
+    #region Configuration Functions
+
+    /// <summary>
+    /// Gets a configuration value by key
+    /// </summary>
+    /// <param name="key">The configuration key (supports nested keys with ':' separator)</param>
+    /// <returns>The configuration value or null if not found</returns>
+    public static string? GetConfigValue(string key)
+    {
+        if (_configuration == null)
+            throw new InvalidOperationException("Configuration is not initialized. Call SetConfiguration first.");
+
+        if (string.IsNullOrWhiteSpace(key))
+            throw new ArgumentException("Configuration key cannot be null or empty", nameof(key));
+
+        return _configuration[key];
+    }
+
+    /// <summary>
+    /// Gets a configuration value by key with a default value
+    /// </summary>
+    /// <param name="key">The configuration key (supports nested keys with ':' separator)</param>
+    /// <param name="defaultValue">The default value to return if key is not found</param>
+    /// <returns>The configuration value or default value if not found</returns>
+    public static string GetConfigValue(string key, string defaultValue)
+    {
+        if (_configuration == null)
+            throw new InvalidOperationException("Configuration is not initialized. Call SetConfiguration first.");
+
+        if (string.IsNullOrWhiteSpace(key))
+            throw new ArgumentException("Configuration key cannot be null or empty", nameof(key));
+
+        return _configuration[key] ?? defaultValue;
+    }
+
+    /// <summary>
+    /// Gets a configuration value as a specific type
+    /// </summary>
+    /// <typeparam name="T">The type to convert the value to</typeparam>
+    /// <param name="key">The configuration key (supports nested keys with ':' separator)</param>
+    /// <returns>The configuration value converted to type T</returns>
+    public static T? GetConfigValue<T>(string key)
+    {
+        if (_configuration == null)
+            throw new InvalidOperationException("Configuration is not initialized. Call SetConfiguration first.");
+
+        if (string.IsNullOrWhiteSpace(key))
+            throw new ArgumentException("Configuration key cannot be null or empty", nameof(key));
+
+        var value = _configuration[key];
+        if (value == null)
+            return default;
+
+        try
+        {
+            return (T)Convert.ChangeType(value, typeof(T));
+        }
+        catch
+        {
+            return default;
+        }
+    }
+
+    /// <summary>
+    /// Gets a configuration value as a specific type with a default value
+    /// </summary>
+    /// <typeparam name="T">The type to convert the value to</typeparam>
+    /// <param name="key">The configuration key (supports nested keys with ':' separator)</param>
+    /// <param name="defaultValue">The default value to return if key is not found</param>
+    /// <returns>The configuration value converted to type T or default value if not found</returns>
+    public static T GetConfigValue<T>(string key, T defaultValue)
+    {
+        if (_configuration == null)
+            throw new InvalidOperationException("Configuration is not initialized. Call SetConfiguration first.");
+
+        if (string.IsNullOrWhiteSpace(key))
+            throw new ArgumentException("Configuration key cannot be null or empty", nameof(key));
+
+        var value = _configuration[key];
+        if (value == null)
+            return defaultValue;
+
+        try
+        {
+            return (T)Convert.ChangeType(value, typeof(T));
+        }
+        catch
+        {
+            return defaultValue;
+        }
+    }
+
+    /// <summary>
+    /// Gets a connection string by name
+    /// </summary>
+    /// <param name="name">The connection string name</param>
+    /// <returns>The connection string or null if not found</returns>
+    public static string? GetConnectionString(string name)
+    {
+        if (_configuration == null)
+            throw new InvalidOperationException("Configuration is not initialized. Call SetConfiguration first.");
+
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Connection string name cannot be null or empty", nameof(name));
+
+        return _configuration.GetConnectionString(name);
+    }
+
+    /// <summary>
+    /// Checks if a configuration key exists
+    /// </summary>
+    /// <param name="key">The configuration key to check</param>
+    /// <returns>True if the key exists, false otherwise</returns>
+    public static bool ConfigExists(string key)
+    {
+        if (_configuration == null)
+            throw new InvalidOperationException("Configuration is not initialized. Call SetConfiguration first.");
+
+        if (string.IsNullOrWhiteSpace(key))
+            return false;
+
+        return _configuration[key] != null;
+    }
+
+    #endregion
+
+    #region Testing Support
+
+    /// <summary>
+    /// Resets all static instances. This method should only be used in testing scenarios.
+    /// </summary>
+    public static void Reset()
+    {
+        _daprClient = null;
+        _logger = null;
+        _configuration = null;
+    }
+
+    #endregion
 }

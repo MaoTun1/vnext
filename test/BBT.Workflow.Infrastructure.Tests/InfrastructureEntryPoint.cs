@@ -3,6 +3,8 @@ using BBT.Aether.Domain.Services;
 using BBT.Aether.Testing;
 using BBT.Aether.Threading;
 using BBT.Workflow.Data;
+using BBT.Workflow.Events.Distributed;
+using Dapr.Jobs.Extensions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -17,6 +19,9 @@ public class InfrastructureEntryPoint : ModuleEntryPointBase
 
     public override void Load(IServiceCollection services)
     {
+        services.AddDaprClient();
+        services.AddDaprJobsClient();
+        
         services.AddInfrastructureModule();
         services.AddAetherAutoMapperMapper([
             typeof(WorkflowDomainModuleServiceCollectionExtensions), // Domain
@@ -59,6 +64,8 @@ public class InfrastructureEntryPoint : ModuleEntryPointBase
         {
             options.UseSqlite(_sqliteConnection);
         });
+        
+        services.AddDistributedDomainEventPublisher<DaprDistributedDomainEventPublisher>();
     }
 
     private static SqliteConnection CreateDatabaseAndGetConnection(IServiceCollection services)

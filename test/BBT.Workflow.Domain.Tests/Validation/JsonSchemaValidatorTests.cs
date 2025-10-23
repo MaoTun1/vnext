@@ -1,6 +1,5 @@
 using System.Linq;
 using System.Text.Json;
-using BBT.Aether.Validation;
 using Xunit;
 
 namespace BBT.Workflow.Validation;
@@ -15,7 +14,7 @@ public class JsonSchemaValidatorTests: DomainTestBase<DomainEntryPoint>
     }
 
     [Fact]
-    public void Validate_ValidData_DoesNotThrowException()
+    public void Validate_ValidData_ReturnsSuccess()
     {
         // Arrange
         var schemaJson = JsonSerializer.Serialize(new
@@ -38,13 +37,15 @@ public class JsonSchemaValidatorTests: DomainTestBase<DomainEntryPoint>
         var schema = JsonDocument.Parse(schemaJson).RootElement;
         var data = JsonDocument.Parse(dataJson).RootElement;
 
-        // Act & Assert
-        var exception = Record.Exception(() => _validator.Validate(schema, data));
-        Assert.Null(exception);
+        // Act
+        var result = _validator.Validate(schema, data);
+
+        // Assert
+        Assert.True(result.IsSuccess);
     }
 
     [Fact]
-    public void Validate_InvalidData_ThrowsAetherValidationException()
+    public void Validate_InvalidData_ReturnsFailureWithValidationErrors()
     {
         // Arrange
         var schemaJson = JsonSerializer.Serialize(new
@@ -67,14 +68,19 @@ public class JsonSchemaValidatorTests: DomainTestBase<DomainEntryPoint>
         var schema = JsonDocument.Parse(schemaJson).RootElement;
         var data = JsonDocument.Parse(dataJson).RootElement;
 
-        // Act & Assert
-        var exception = Assert.Throws<AetherValidationException>(() => _validator.Validate(schema, data));
-        Assert.NotEmpty(exception.ValidationErrors);
-        Assert.Contains(exception.ValidationErrors, vr => vr.MemberNames.Contains("required") ||  vr.MemberNames.Contains("age"));
+        // Act
+        var result = _validator.Validate(schema, data);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Equal(WorkflowErrorCodes.ValidationErrors, result.Error.Code);
+        Assert.NotNull(result.Error.ValidationErrors);
+        Assert.NotEmpty(result.Error.ValidationErrors);
+        Assert.Contains(result.Error.ValidationErrors, vr => vr.MemberNames.Contains("required") || vr.MemberNames.Contains("age"));
     }
 
     [Fact]
-    public void Validate_NullDataWithRequiredSchema_ThrowsAetherValidationException()
+    public void Validate_NullDataWithRequiredSchema_ReturnsFailureWithValidationErrors()
     {
         // Arrange
         var schemaJson = JsonSerializer.Serialize(new
@@ -89,8 +95,13 @@ public class JsonSchemaValidatorTests: DomainTestBase<DomainEntryPoint>
 
         var schema = JsonDocument.Parse(schemaJson).RootElement;
 
-        // Act & Assert
-        var exception = Assert.Throws<AetherValidationException>(() => _validator.Validate(schema, null));
-        Assert.NotEmpty(exception.ValidationErrors);
+        // Act
+        var result = _validator.Validate(schema, null);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Equal(WorkflowErrorCodes.ValidationErrors, result.Error.Code);
+        Assert.NotNull(result.Error.ValidationErrors);
+        Assert.NotEmpty(result.Error.ValidationErrors);
     }
 }

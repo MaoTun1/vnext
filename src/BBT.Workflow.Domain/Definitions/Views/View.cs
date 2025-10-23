@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using BBT.Aether;
 using BBT.Workflow.Runtime;
+using BBT.Workflow.Shared;
 
 namespace BBT.Workflow.Definitions;
 
@@ -20,11 +21,17 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
     private View(
         ViewType type,
         ViewTarget target,
-        string content): this()
+        string content,
+        string display,
+        LanguageLabel[]? labels,
+        PlatformOverrides? platformOverrides) : this()
     {
         Type = type;
         Target = target;
-        Content = Check.NotNullOrEmpty(content, nameof(Content));
+        Content = Check.NotNullOrWhiteSpace(content, nameof(Content));
+        Display = display;
+        Labels = labels??=[];
+        PlatformOverrides = platformOverrides;
     }
 
     /// <summary>
@@ -66,6 +73,15 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
     /// Content
     /// </summary>
     public string Content { get; private set; } = string.Empty;
+    /// <summary>
+    /// Display
+    /// </summary>
+    public string Display { get; private set; } = string.Empty;
+    /// <summary>
+    /// Display
+    /// </summary>
+    public LanguageLabel[]? Labels { get; private set; } = [];
+    public PlatformOverrides? PlatformOverrides { get; private set; }
 
     /// <summary>
     /// Json Content
@@ -79,7 +95,7 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
                 string jsonWrapped = JsonSerializer.Serialize(Content);
                 return JsonDocument.Parse(jsonWrapped);
             }
-                
+
             // Try to parse as JSON only when type is Json
             try
             {
@@ -107,17 +123,17 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
 
     private void SetKey(string key)
     {
-        Key = Check.NotNullOrEmpty(key, nameof(Key), ViewConstants.MaxKeyLength);
+        Key = Check.NotNullOrWhiteSpace(key, nameof(Key), ViewConstants.MaxKeyLength);
     }
 
     private void SetDomain(string domain)
     {
-        Domain = Check.NotNullOrEmpty(domain, nameof(Domain), WorkflowConstants.MaxDomainLength);
+        Domain = Check.NotNullOrWhiteSpace(domain, nameof(Domain), WorkflowConstants.MaxDomainLength);
     }
-    
+
     private void SetVersion(string version)
     {
-        Version = Check.NotNullOrEmpty(version, nameof(Version), WorkflowConstants.MaxVersionLength);
+        Version = Check.NotNullOrWhiteSpace(version, nameof(Version), WorkflowConstants.MaxVersionLength);
     }
 
     public void SetReference(IReference reference)

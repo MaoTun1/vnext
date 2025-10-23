@@ -106,7 +106,7 @@ public sealed class State : IHasKey
 
     private void SetKey(string key)
     {
-        Key = Check.NotNullOrEmpty(key, nameof(Key), StateConstants.MaxKeyLength);
+        Key = Check.NotNullOrWhiteSpace(key, nameof(Key), StateConstants.MaxKeyLength);
     }
 
     public void AddLanguage(string label, string language)
@@ -133,9 +133,9 @@ public sealed class State : IHasKey
         onExits.Add(task);
     }
 
-    public void SetView(IReference view)
+    public void SetView(IReference viewRef)
     {
-        view = view.ToReference();
+        view = viewRef.ToReference();
     }
     
     public void SetSubFlow(string type, IReference reference, ScriptCode mapping)
@@ -153,20 +153,11 @@ public sealed class State : IHasKey
         return Transitions.FirstOrDefault(t => t.Key == key);
     }
 
-    public IEnumerable<Transition> GetAutoTransitions()
-    {
-        return Transitions.Where(p => p.TriggerType == TriggerType.Automatic);
-    }
+    public IEnumerable<Transition> AutoTransitions => Transitions.Where(p => p.TriggerType == TriggerType.Automatic);
     
-    public IEnumerable<Transition> GetScheduledTransitions()
-    {
-        return Transitions.Where(p => p.TriggerType == TriggerType.Scheduled);
-    }
+    public IEnumerable<Transition> ScheduledTransitions => Transitions.Where(p => p.TriggerType == TriggerType.Scheduled);
 
-    public List<string> TransitionKeys()
-    {
-        return Transitions.Select(t => t.Key).ToList();
-    }
+    public IReadOnlyList<string> TransitionKeys() => Transitions.Select(t => t.Key).ToList();
 
     public static State Create(
         string key,

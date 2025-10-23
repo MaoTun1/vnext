@@ -6,13 +6,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
-using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting.Functions;
 using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using IRuntimeInfoProvider = BBT.Workflow.Runtime.IRuntimeInfoProvider;
 using Dapr.Client;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Scripting;
 
@@ -49,154 +49,6 @@ public static class ScriptValidationHelper
         }
     }
 
-    /// <summary>
-    /// Quick validation of a script file with console output
-    /// </summary>
-    /// <param name="scriptFilePath">Path to the script file</param>
-    /// <param name="verbose">Enable verbose output</param>
-    /// <returns>True if validation passed, false otherwise</returns>
-    public static async Task<bool> ValidateScriptFileAsync(string scriptFilePath, bool verbose = true)
-    {
-        EnsureInitialized();
-
-        try
-        {
-            if (!File.Exists(scriptFilePath))
-            {
-                Console.WriteLine($"❌ Script file not found: {scriptFilePath}");
-                return false;
-            }
-
-            var scriptCode = await File.ReadAllTextAsync(scriptFilePath);
-            var fileName = Path.GetFileName(scriptFilePath);
-            
-            // Clean script for testing
-            scriptCode = CleanScriptForTesting(scriptCode);
-            
-            if (verbose)
-            {
-                Console.WriteLine($"🔍 Validating script: {fileName}");
-                Console.WriteLine($"📁 Path: {scriptFilePath}");
-                Console.WriteLine("─────────────────────────────────────");
-            }
-
-            var result = await ValidateScriptCodeInternalAsync(scriptCode, fileName, verbose);
-
-            if (verbose)
-            {
-                Console.WriteLine("─────────────────────────────────────");
-                Console.WriteLine(result.IsValid ? 
-                    $"✅ Overall result: {fileName} is valid!" : 
-                    $"❌ Overall result: {fileName} has issues.");
-            }
-
-            return result.IsValid;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"❌ Unexpected error validating {scriptFilePath}: {ex.Message}");
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Quick validation of script code string with console output
-    /// </summary>
-    /// <param name="scriptCode">The script code to validate</param>
-    /// <param name="scriptName">Optional name for the script</param>
-    /// <param name="verbose">Enable verbose output</param>
-    /// <returns>True if validation passed, false otherwise</returns>
-    public static async Task<bool> ValidateScriptCodeAsync(string scriptCode, string scriptName = "InlineScript", bool verbose = true)
-    {
-        EnsureInitialized();
-
-        try
-        {
-            // Clean script for testing
-            scriptCode = CleanScriptForTesting(scriptCode);
-            
-            if (verbose)
-            {
-                Console.WriteLine($"🔍 Validating script: {scriptName}");
-                Console.WriteLine("─────────────────────────────────────");
-            }
-
-            var result = await ValidateScriptCodeInternalAsync(scriptCode, scriptName, verbose);
-
-            if (verbose)
-            {
-                Console.WriteLine("─────────────────────────────────────");
-                Console.WriteLine(result.IsValid ? 
-                    $"✅ Overall result: {scriptName} is valid!" : 
-                    $"❌ Overall result: {scriptName} has issues.");
-            }
-
-            return result.IsValid;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"❌ Unexpected error validating {scriptName}: {ex.Message}");
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Validate all scripts in a directory
-    /// </summary>
-    /// <param name="directoryPath">Directory containing script files</param>
-    /// <param name="pattern">File pattern (default: *.csx)</param>
-    /// <param name="verbose">Enable verbose output</param>
-    /// <returns>Dictionary with script names and their validation results</returns>
-    public static async Task<Dictionary<string, bool>> ValidateDirectoryAsync(
-        string directoryPath, 
-        string pattern = "*.csx", 
-        bool verbose = true)
-    {
-        EnsureInitialized();
-
-        var results = new Dictionary<string, bool>();
-
-        if (!Directory.Exists(directoryPath))
-        {
-            Console.WriteLine($"❌ Directory not found: {directoryPath}");
-            return results;
-        }
-
-        var scriptFiles = Directory.GetFiles(directoryPath, pattern, SearchOption.AllDirectories);
-
-        if (verbose)
-        {
-            Console.WriteLine($"🔍 Found {scriptFiles.Length} script files in {directoryPath}");
-            Console.WriteLine("═════════════════════════════════════");
-        }
-
-        foreach (var scriptFile in scriptFiles)
-        {
-            var fileName = Path.GetFileName(scriptFile);
-            var isValid = await ValidateScriptFileAsync(scriptFile, verbose);
-            results[fileName] = isValid;
-
-            if (verbose)
-            {
-                Console.WriteLine();
-            }
-        }
-
-        if (verbose)
-        {
-            Console.WriteLine("═════════════════════════════════════");
-            Console.WriteLine($"📊 Summary: {results.Values.Count(v => v)}/{results.Count} scripts passed validation");
-            
-            var failedScripts = results.Where(kvp => !kvp.Value).Select(kvp => kvp.Key).ToList();
-            if (failedScripts.Any())
-            {
-                Console.WriteLine($"❌ Failed scripts: {string.Join(", ", failedScripts)}");
-            }
-        }
-
-        return results;
-    }
-
     private static void EnsureInitialized()
     {
         if (_scriptEngine == null)
@@ -206,109 +58,7 @@ public static class ScriptValidationHelper
                 "Call ScriptValidationHelper.Initialize(serviceProvider) first.");
         }
     }
-
-    private static async Task<ScriptValidationResult> ValidateScriptCodeInternalAsync(
-        string scriptCode, 
-        string scriptName, 
-        bool verbose)
-    {
-        try
-        {
-            // Basic compilation test
-            var references = new List<MetadataReference>
-            {
-                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(IMapping).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(ScriptHelper).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(System.Text.Json.JsonElement).Assembly.Location)
-            };
-
-            var usings = new[]
-            {
-                "System",
-                "System.Threading.Tasks",
-                "System.Collections.Generic",
-                "System.Text.Json",
-                "BBT.Workflow.Scripting",
-                "BBT.Workflow.Definitions",
-                "BBT.Workflow.Scripting.Functions"
-            };
-
-            if (verbose)
-            {
-                Console.WriteLine("🔧 Attempting compilation as IMapping...");
-            }
-
-            // Try to compile as IMapping first
-            try
-            {
-                var mappingInstance = await _scriptEngine!.CompileToInstanceAsync<IMapping>(
-                    scriptCode, references, usings);
-
-                if (verbose)
-                {
-                    Console.WriteLine("✅ IMapping compilation successful!");
-                    Console.WriteLine("🧪 Testing execution with mock data...");
-                }
-
-                // Test basic execution
-                var testResult = await TestMappingExecutionInternal(mappingInstance, scriptName, verbose);
-                
-                return ScriptValidationResult.Success(
-                    $"✅ {scriptName} compiled and executed successfully as IMapping", 
-                    mappingInstance, 
-                    testResult);
-            }
-            catch (Exception mappingEx)
-            {
-                if (verbose)
-                {
-                    Console.WriteLine($"⚠️ IMapping compilation failed: {mappingEx.Message}");
-                    Console.WriteLine("🔧 Attempting general script compilation...");
-                }
-
-                // If IMapping fails, try as general compilation
-                try
-                {
-                    var generalResult = await _scriptEngine!.EvaluateAsync(scriptCode);
-                    
-                    if (verbose)
-                    {
-                        Console.WriteLine("✅ General script compilation successful!");
-                    }
-
-                    return ScriptValidationResult.Success(
-                        $"✅ {scriptName} compiled as general script", 
-                        executionResult: generalResult);
-                }
-                catch (Exception generalEx)
-                {
-                    var errorMessage = $"❌ {scriptName} compilation failed:\n" +
-                                     $"IMapping Error: {mappingEx.Message}\n" +
-                                     $"General Error: {generalEx.Message}";
-
-                    if (verbose)
-                    {
-                        Console.WriteLine(errorMessage);
-                    }
-
-                    return ScriptValidationResult.Failed(errorMessage);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            var errorMessage = $"❌ {scriptName} validation error: {ex.Message}";
-            
-            if (verbose)
-            {
-                Console.WriteLine(errorMessage);
-            }
-
-            return ScriptValidationResult.Failed(errorMessage);
-        }
-    }
-
+    
     private static async Task<object?> TestMappingExecutionInternal(
         IMapping mapping, 
         string scriptName, 
@@ -343,7 +93,7 @@ public static class ScriptValidationHelper
             };
 
             // Build script context
-            var context = new ScriptContext.Builder()
+            var context = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>())
                 .SetWorkflow(CreateMockWorkflow())
                 .SetInstance(CreateMockInstance(mockInstanceData))
                 .SetTransition(CreateMockTransition())
