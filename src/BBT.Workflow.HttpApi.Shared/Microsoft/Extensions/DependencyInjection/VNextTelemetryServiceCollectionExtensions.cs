@@ -232,7 +232,7 @@ public static class VNextTelemetryServiceCollectionExtensions
         return services;
     }
 
-    private static void ConfigureOtlpExporter(OtlpExporterOptions options, string otlpProtocol, string otlpEndpoint,
+    private static void ConfigureOtlpExporter(OtlpExporterOptions options, string otlpEndpoint, string otlpProtocol,
         string signalPath)
     {
         var protocol = otlpProtocol.Equals("grpc", StringComparison.OrdinalIgnoreCase)
