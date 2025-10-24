@@ -47,17 +47,18 @@ MAX_RETRIES=24  # Wait up to 2 minutes (24 * 5 seconds)
 RETRY_COUNT=0
 while true; do
     if curl -s "${VNEXT_APP_URL}/health" > /dev/null 2>&1; then
-    if curl -s "${VNEXT_APP_URL}/health" > /dev/null 2>&1; then
-        echo "VNext App is healthy!"
-        break
-    else
-        RETRY_COUNT=$((RETRY_COUNT+1))
-        if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
-            echo "ERROR: VNext App did not become healthy after $((MAX_RETRIES*5)) seconds."
-            exit 1
-        fi
-        echo "VNext App is not ready yet, waiting... ($RETRY_COUNT/$MAX_RETRIES)"
-        sleep 5
+      if curl -s "${VNEXT_APP_URL}/health" > /dev/null 2>&1; then
+          echo "VNext App is healthy!"
+          break
+      else
+          RETRY_COUNT=$((RETRY_COUNT+1))
+          if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
+              echo "ERROR: VNext App did not become healthy after $((MAX_RETRIES*5)) seconds."
+              exit 1
+          fi
+          echo "VNext App is not ready yet, waiting... ($RETRY_COUNT/$MAX_RETRIES)"
+          sleep 5
+      fi
     fi
 done
 
