@@ -1,0 +1,19 @@
+FROM node:20-alpine
+
+ENV VNEXT_CORE_RUNTIME_VERSION=latest \
+    NPM_REGISTRY=https://registry.npmjs.org/ \
+    NPM_CONFIG_CACHE=/app/.npm-cache
+
+WORKDIR /app
+
+# Araçlar + izinler
+RUN apk add --no-cache bash curl jq \
+    && mkdir -p /app/.npm-cache /app/custom-components \
+    && chown -R node:node /app
+
+# Init script'i kopyala
+COPY init-vnext-core.sh /app/init-vnext-core.sh
+RUN chmod +x /app/init-vnext-core.sh
+
+USER node
+ENTRYPOINT ["/app/init-vnext-core.sh"]
