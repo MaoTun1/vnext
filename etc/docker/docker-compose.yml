@@ -1,4 +1,21 @@
 services:
+
+  init:
+    build:
+      context: .
+      dockerfile: Dockerfile.vnext-core-init
+    container_name: init
+    environment:
+      - env.default
+    volumes:
+      - npm-cache:/app/.npm-cache
+      - ./custom-components:/app/custom-components:ro
+    networks:
+      - bbt-development
+    depends_on:
+      - redis
+      - postgres
+    restart: "no"
   
   vnext-orchestration-dapr:
     image: "daprio/daprd"
@@ -323,3 +340,4 @@ volumes:
   grafana:
   metabase:
   clickhouse:
+  npm-cache: {}

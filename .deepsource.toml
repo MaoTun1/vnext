@@ -1,9 +1,8 @@
 version = 1
 
-[[analyzers]]
-name = "csharp"
-
-[analyzers.meta]
 exclude_patterns = [
   "test/**"
 ]
+
+[[analyzers]]
+name = "csharp"

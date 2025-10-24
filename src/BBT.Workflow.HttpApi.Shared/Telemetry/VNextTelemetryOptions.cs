@@ -3,27 +3,19 @@ namespace BBT.Workflow.Telemetry;
 /// <summary>
 /// Configuration options for vNext telemetry (logging, tracing, metrics).
 /// </summary>
+/// <remarks>
+/// Service name, version, and OTLP endpoint are read from environment variables:
+/// - OTEL_SERVICE_NAME: Service name for telemetry
+/// - OTEL_EXPORTER_OTLP_ENDPOINT: OTLP endpoint URL
+/// - OTEL_EXPORTER_OTLP_PROTOCOL: OTLP protocol (grpc or http/protobuf)
+/// Service version is automatically read from assembly version.
+/// </remarks>
 public class VNextTelemetryOptions
 {
     /// <summary>
     /// The configuration section name.
     /// </summary>
     public const string SectionName = "Telemetry";
-
-    /// <summary>
-    /// Gets or sets the service name for telemetry.
-    /// </summary>
-    public string ServiceName { get; set; } = "vNext";
-
-    /// <summary>
-    /// Gets or sets the service version.
-    /// </summary>
-    public string ServiceVersion { get; set; } = "1.0.0";
-
-    /// <summary>
-    /// Gets or sets the OTLP endpoint configuration.
-    /// </summary>
-    public OtlpOptions Otlp { get; set; } = new();
 
     /// <summary>
     /// Gets or sets the tracing configuration.
@@ -34,22 +26,6 @@ public class VNextTelemetryOptions
     /// Gets or sets the logging configuration.
     /// </summary>
     public LoggingOptions Logging { get; set; } = new();
-}
-
-/// <summary>
-/// OTLP exporter configuration.
-/// </summary>
-public class OtlpOptions
-{
-    /// <summary>
-    /// Gets or sets the OTLP endpoint URL.
-    /// </summary>
-    public string Endpoint { get; set; } = "http://localhost:4318";
-
-    /// <summary>
-    /// Gets or sets the protocol (grpc or http/protobuf).
-    /// </summary>
-    public string Protocol { get; set; } = "http/protobuf";
 }
 
 /// <summary>

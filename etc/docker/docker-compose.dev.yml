@@ -69,6 +69,24 @@ services:
       - dapr-placement
       - dapr-scheduler
       - postgres
+
+  init:
+    build:
+      context: .
+      dockerfile: Dockerfile.vnext-core-init
+    container_name: init
+    env_file:
+      - env.dev
+    volumes:
+      - npm-cache:/app/.npm-cache
+      - ./custom-components:/app/custom-components:ro
+    networks:
+      - bbt-development
+    depends_on:
+      - vnext-app
+      - redis
+      - postgres
+    restart: "no"
   
   vnext-orchestration-dapr:
     image: "daprio/daprd"
@@ -385,3 +403,4 @@ volumes:
   grafana:
   metabase:
   clickhouse:
+  npm-cache: {}
