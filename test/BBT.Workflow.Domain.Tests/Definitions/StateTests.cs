@@ -243,14 +243,15 @@ public class StateTests
     {
         // Arrange
         var state = State.Create("test-state", StateType.Intermediate, "Patch");
-        var viewReference = new Reference("view-1", "domain", "sys-views", "1.0.0");
+        var viewRef = new Reference("view-1", "domain", "sys-views", "1.0.0");
+        var viewDefinition = new ViewDefinition(Array.Empty<string>(), true, viewRef);
 
         // Act
-        state.SetView(viewReference);
+        state.SetView(viewDefinition);
 
         // Assert
         Assert.NotNull(state.View);
-        Assert.Equal("view-1", state.View.Key);
+        Assert.Equal("view-1", state.View.View.Key);
     }
 
     [Fact]
