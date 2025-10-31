@@ -33,14 +33,3 @@ public sealed class ViewDefinition(
     /// </summary>
     public Reference View { get; private set; } = view;
 }
-
-public static class ViewDefinitionExtensions
-{
-    public static ViewDefinition ToReference(this IViewDefinition viewDefinition)
-    {
-        return new ViewDefinition(
-            viewDefinition.Extensions,
-            viewDefinition.LoadData,
-            viewDefinition.View);
-    }
-}
