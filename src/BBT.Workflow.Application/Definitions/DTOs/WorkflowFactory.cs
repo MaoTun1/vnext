@@ -186,7 +186,7 @@ public static class WorkflowFactory
         }
 
         if (transitionInput.View != null)
-            transition.SetView(transitionInput.View);
+            transition.SetView(transitionInput.View.ToViewDefinition());
 
         if (transitionInput.OnExecutionTasks != null)
             foreach (var taskInput in transitionInput.OnExecutionTasks)
@@ -264,7 +264,7 @@ public static class WorkflowFactory
 
             if (stateInput.View != null)
             {
-                state.SetView(stateInput.View);
+                state.SetView(stateInput.View.ToViewDefinition());
             }
 
             if (stateInput.SubFlow != null)
