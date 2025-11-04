@@ -92,7 +92,6 @@ public sealed class NotificationTaskExecutor(
 
             var (componentType, notificationType, updatedMetadata) = await componentDetector.DetectAsync(componentName!, metadata, cancellationToken);
 
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
             // Route to appropriate executor based on notification component type
             if (notificationType == NotificationComponentType.HttpBinding)

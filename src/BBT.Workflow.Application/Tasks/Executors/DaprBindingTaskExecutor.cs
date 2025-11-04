@@ -63,7 +63,7 @@ public sealed class DaprBindingTaskExecutor(
             workflowMetrics.RecordDaprBindingInvocation(daprTask.BindingName, daprTask.Operation, "failure");
 
             Logger.LogError(ex, "Error occurred during DAPR binding task {TaskKey} execution  - BindingName: {BindingName}, Operation: {Operation}",
-                daprTask.Key,  daprTask.BindingName, daprTask.Operation);
+                daprTask.Key, daprTask.BindingName, daprTask.Operation);
             throw;
         }
     }
@@ -75,7 +75,7 @@ public sealed class DaprBindingTaskExecutor(
         try
         {
             var metadata = daprTask.Metadata.ToDictionary();
-            
+
             // Get operation from metadata (method), override task operation if present
             var operation = metadata.TryGetValue("method", out var method) && !string.IsNullOrWhiteSpace(method)
                 ? method
@@ -92,14 +92,15 @@ public sealed class DaprBindingTaskExecutor(
                     if (string.Equals(fhValue.Trim(), "all", StringComparison.OrdinalIgnoreCase))
                     {
                         // Forward all headers
-                        foreach (var kvp in contextHeaders!)
-                        {
-                            var headerKey = kvp.Key?.ToString() ?? string.Empty;
-                            if (string.IsNullOrEmpty(headerKey)) continue;
-                            var headerValue = kvp.Value?.ToString() ?? string.Empty;
-                            var normalizedKey = NormalizeHeaderName(headerKey);
-                            metadata[normalizedKey] = headerValue;
-                        }
+                        // foreach (var kvp in contextHeaders!)
+                        // {
+                        //     var headerKey = kvp.Key?.ToString() ?? string.Empty;
+                        //     if (string.IsNullOrEmpty(headerKey)) continue;
+                        //     var headerValue = kvp.Value?.ToString() ?? string.Empty;
+                        //     var normalizedKey = NormalizeHeaderName(headerKey);
+                        //     metadata[normalizedKey] = headerValue;
+                        // }
+                        metadata=SetHeaderToMetadata(metadata, forwardingHeaders, contextHeaders);
                     }
                     else
                     {
@@ -109,31 +110,32 @@ public sealed class DaprBindingTaskExecutor(
                         {
                             forwardingHeaders.Add(headerName.Trim());
                         }
+                        metadata=SetHeaderToMetadata(metadata, forwardingHeaders, contextHeaders);
+                        // foreach (var kvp in contextHeaders!)
+                        // {
+                        //     var headerKey = kvp.Key?.ToString() ?? string.Empty;
+                        //     if (string.IsNullOrEmpty(headerKey) || !forwardingHeaders.Contains(headerKey))
+                        //         continue;
 
-                        foreach (var kvp in contextHeaders!)
-                        {
-                            var headerKey = kvp.Key?.ToString() ?? string.Empty;
-                            if (string.IsNullOrEmpty(headerKey) || !forwardingHeaders.Contains(headerKey))
-                                continue;
-                            
-                            var headerValue = kvp.Value?.ToString() ?? string.Empty;
-                            var normalizedKey = NormalizeHeaderName(headerKey);
-                            metadata[normalizedKey] = headerValue;
-                        }
+                        //     var headerValue = kvp.Value?.ToString() ?? string.Empty;
+                        //     var normalizedKey = NormalizeHeaderName(headerKey);
+                        //     metadata[normalizedKey] = headerValue;
+                        // }
                     }
                 }
                 else
                 {
                     // ForwardingHeaders not found or empty - forward all headers by default
                     Logger.LogDebug("ForwardingHeaders not specified for task {TaskKey}, forwarding all context headers", daprTask.Key);
-                    foreach (var kvp in contextHeaders!)
-                    {
-                        var headerKey = kvp.Key?.ToString() ?? string.Empty;
-                        if (string.IsNullOrEmpty(headerKey)) continue;
-                        var headerValue = kvp.Value?.ToString() ?? string.Empty;
-                        var normalizedKey = NormalizeHeaderName(headerKey);
-                        metadata[normalizedKey] = headerValue;
-                    }
+                    metadata=SetHeaderToMetadata(metadata, null, contextHeaders);
+                    // foreach (var kvp in contextHeaders!)
+                    // {
+                    //     var headerKey = kvp.Key?.ToString() ?? string.Empty;
+                    //     if (string.IsNullOrEmpty(headerKey)) continue;
+                    //     var headerValue = kvp.Value?.ToString() ?? string.Empty;
+                    //     var normalizedKey = NormalizeHeaderName(headerKey);
+                    //     metadata[normalizedKey] = headerValue;
+                    // }
                 }
 
             }
@@ -165,8 +167,8 @@ public sealed class DaprBindingTaskExecutor(
                 daprTask.Key, stopwatch.ElapsedMilliseconds);
 
             Logger.LogDebug("Processing output for DAPR binding task {TaskKey}", daprTask.Key);
-            
-            
+
+
         }
         catch (TaskCanceledException ex) when (ex.CancellationToken.IsCancellationRequested)
         {
@@ -191,7 +193,18 @@ public sealed class DaprBindingTaskExecutor(
             throw;
         }
     }
-
+    private static Dictionary<string, string> SetHeaderToMetadata(Dictionary<string, string> metadata, HashSet<string>? forwardingHeaders, dynamic? contextHeaders)
+    {
+        foreach (var kvp in contextHeaders!)
+        {
+            var headerKey = kvp.Key?.ToString() ?? string.Empty;
+            if (string.IsNullOrEmpty(headerKey)|| (forwardingHeaders!=null&&!forwardingHeaders.Contains(headerKey))) continue;
+            var headerValue = kvp.Value?.ToString() ?? string.Empty;
+            var normalizedKey = NormalizeHeaderName(headerKey);
+            metadata[normalizedKey] = headerValue;
+        }
+        return metadata;
+    }
     /// <summary>
     /// Normalizes header name to start with uppercase letter (e.g., x-device-id -> X-device-id)
     /// Dapr HTTP binding requires headers to start with uppercase.
