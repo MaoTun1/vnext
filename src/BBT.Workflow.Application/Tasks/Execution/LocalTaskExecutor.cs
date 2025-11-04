@@ -98,7 +98,7 @@ public sealed class LocalTaskExecutor(
             using var activity = WorkflowActivitySource.Instance.StartActivity(
                 TelemetryConstants.SpanNames.TaskExecution,
                 ActivityKind.Internal);
-            
+
             activity?.SetTag(TelemetryConstants.TagNames.TaskKey, task.Key);
             activity?.SetTag(TelemetryConstants.TagNames.TaskType, taskType);
             activity?.SetTag(TelemetryConstants.TagNames.InstanceId, context.Instance.Id.ToString());
@@ -109,9 +109,33 @@ public sealed class LocalTaskExecutor(
 
             try
             {
+                // Determine script code to use based on mapping type
+                string scriptCode;
+                if (onExecuteTask.Mapping.Type.Code == "G" && task is IGlobalTask globalTask)
+                {
+                    // For global tasks, serialize the IMapping instance type name
+                    if (globalTask.Mapping == null)
+                    {
+                        scriptCode = string.Empty;
+                    }
+                    else
+                    {
+                        // Serialize IMapping type name to Base64 string
+                        var mappingTypeName = globalTask.Mapping.GetType().AssemblyQualifiedName ?? globalTask.Mapping.GetType().FullName ?? string.Empty;
+                        var bytes = System.Text.Encoding.UTF8.GetBytes(mappingTypeName);
+                        scriptCode = Convert.ToBase64String(bytes);
+                    }
+
+                }
+                else
+                {
+                    // For local tasks, use the decoded script code from mapping
+                    scriptCode = onExecuteTask.Mapping.DecodedCode;
+                }
+
                 var response = await taskExecutor.ExecuteAsync(
                     task,
-                    onExecuteTask.Mapping.DecodedCode,
+                    scriptCode,
                     context,
                     cancellationToken);
                 if (response != null)
@@ -137,7 +161,7 @@ public sealed class LocalTaskExecutor(
                     new JsonData(JsonSerializer.Serialize(response ?? new { }, JsonSerializerConstants.JsonOptions)));
 
                 sw.Stop();
-                
+
                 // Log task execution completion
                 logger.TaskExecutionCompleted(
                     TelemetryConstants.Prefixes.Execution,
@@ -152,9 +176,9 @@ public sealed class LocalTaskExecutor(
             catch (Exception e)
             {
                 sw.Stop();
-                
+
                 activity?.RecordExceptionWithStatus(e);
-                
+
                 instanceTask.Faulted(e.Message);
 
                 // Log task execution failure
@@ -167,7 +191,7 @@ public sealed class LocalTaskExecutor(
 
                 // Record task failure
                 workflowMetrics.RecordTaskExecution(taskType, "failure");
-                
+
                 throw;
             }
 

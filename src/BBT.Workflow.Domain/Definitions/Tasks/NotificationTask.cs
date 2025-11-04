@@ -1,12 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using BBT.Workflow.Scripting;
 
 namespace BBT.Workflow.Definitions;
 
 /// <summary>
 /// SignalR Task Definition
 /// </summary>
-public sealed class NotificationTask : WorkflowTask
+public sealed class NotificationTask : WorkflowTask, IGlobalTask
 {
     private NotificationTask()
     {
@@ -19,7 +20,10 @@ public sealed class NotificationTask : WorkflowTask
          Type = ((int)TaskType.Notification).ToString();
     }
 
-
+    /// <summary>
+    /// Gets the mapping instance for this task. Returns null as NotificationTask uses script-based mapping.
+    /// </summary>
+    public IMapping? Mapping => null;
 
     /// <summary>
     /// Additional metadata for notification sending (e.g., componentName, topic, headers)

@@ -195,7 +195,7 @@ public static class WorkflowFactory
                     OnExecuteTask.Create(
                         taskInput.Order,
                         taskInput.Task,
-                        new ScriptCode(taskInput.Mapping.Location, taskInput.Mapping.Code)
+                        new ScriptCode(taskInput.Mapping.Location, taskInput.Mapping.Code,taskInput.Mapping.Type)
                     )
                 );
             }
@@ -246,7 +246,7 @@ public static class WorkflowFactory
                         OnExecuteTask.Create(
                             taskInput.Order,
                             taskInput.Task,
-                            new ScriptCode(taskInput.Mapping.Location, taskInput.Mapping.Code)
+                            new ScriptCode(taskInput.Mapping.Location, taskInput.Mapping.Code,taskInput.Mapping.Type)
                         )
                     );
                 }
@@ -257,7 +257,7 @@ public static class WorkflowFactory
                     state.AddOnExit(OnExecuteTask.Create(
                             taskInput.Order,
                             taskInput.Task,
-                            new ScriptCode(taskInput.Mapping.Location, taskInput.Mapping.Code)
+                            new ScriptCode(taskInput.Mapping.Location, taskInput.Mapping.Code,taskInput.Mapping.Type)
                         )
                     );
                 }

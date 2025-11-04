@@ -7,5 +7,5 @@ spec:
   version: v1
   metadata:
     - name: url
-      value: https://test-amorphie-workflow-hub.burgan.com.tr/sendMessage/public
+      value: https://{HubUrl}/sendMessage/public
     

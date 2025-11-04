@@ -84,7 +84,7 @@ public sealed class DaprComponentDetector(
         }
         catch
         {
-            // Ignore and fallback to configuration
+            return null;
         }
         return null;
     }

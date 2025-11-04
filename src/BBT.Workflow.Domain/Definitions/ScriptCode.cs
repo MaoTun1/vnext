@@ -7,16 +7,18 @@ public sealed class ScriptCode : ValueObject
 {
     public string Location { get; private set; }
     public string Code { get; private set; }
+    public MappingType Type { get; private set; }
 
     private ScriptCode()
     {
     }
 
     [JsonConstructor]
-    public ScriptCode(string location, string code)
+    public ScriptCode(string location, string code, MappingType? type = null)
     {
         Location = location;
         Code = code;
+        Type = type ?? MappingType.Local;
     }
 
     public string DecodedCode
@@ -25,8 +27,12 @@ public sealed class ScriptCode : ValueObject
         {
             try
             {
-                var bytes = Convert.FromBase64String(Code);
-                return System.Text.Encoding.UTF8.GetString(bytes);
+                if (Type != MappingType.Global)
+                {
+                    var bytes = Convert.FromBase64String(Code);
+                    return System.Text.Encoding.UTF8.GetString(bytes);
+                }
+                return string.Empty;
             }
             catch
             {
@@ -39,5 +45,6 @@ public sealed class ScriptCode : ValueObject
     {
         yield return Location;
         yield return Code;
+        yield return Type;
     }
 }

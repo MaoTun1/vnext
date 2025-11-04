@@ -105,7 +105,7 @@ public sealed class NotificationTaskExecutor(
                     throw new InvalidOperationException("DaprBindingTaskExecutor not found");
 
                 Logger.LogDebug("Preparing input for DAPR binding task {TaskKey}", notificationTask.Key);
-                await PrepareInputAsync(daprBindingTask, scriptCode, context, cancellationToken);
+               
 
                 Logger.LogDebug("Calling DaprBindingTaskExecutor.CallAsync for notification task {TaskKey}", notificationTask.Key);
                 await bindingExecutor.CallAsync(daprBindingTask, context, cancellationToken);
@@ -120,8 +120,7 @@ public sealed class NotificationTaskExecutor(
                     throw new InvalidOperationException("DaprPubSubTaskExecutor not found");
 
                 Logger.LogDebug("Preparing input for DAPR pub/sub task {TaskKey}", notificationTask.Key);
-                await PrepareInputAsync(daprPubSubTask, scriptCode, context, cancellationToken);
-
+               
                 Logger.LogDebug("Calling DaprPubSubTaskExecutor.CallAsync for notification task {TaskKey}", notificationTask.Key);
                 await pubSubExecutor.CallAsync(daprPubSubTask, context, cancellationToken);
             }
@@ -135,7 +134,7 @@ public sealed class NotificationTaskExecutor(
                     throw new InvalidOperationException("DaprBindingTaskExecutor not found");
 
                 Logger.LogDebug("Preparing input for DAPR MQTT binding task {TaskKey}", notificationTask.Key);
-                await PrepareInputAsync(daprBindingTask, scriptCode, context, cancellationToken);
+              
 
                 Logger.LogDebug("Calling DaprBindingTaskExecutor.CallAsync for MQTT notification task {TaskKey}", notificationTask.Key);
                 await bindingExecutor.CallAsync(daprBindingTask, context, cancellationToken);
@@ -157,11 +156,14 @@ public sealed class NotificationTaskExecutor(
             context.SetStandardResponse(standardResponse);
         }
 
-        Logger.LogDebug("Processing output for notification task {TaskKey}", notificationTask.Key);
-        var outputResponse = await ProcessOutputAsync(scriptCode, context, cancellationToken);
+
 
         Logger.LogInformation("Notification task {TaskKey} execution completed, returning processed output", notificationTask.Key);
-        return outputResponse;
+        return new ScriptResponse()
+        {
+            Headers=context.Headers,
+            Data = context.Body
+        };
     }
 
     private async Task<object> BuildInstanceStateOutputAsync(

@@ -211,6 +211,7 @@ public sealed class DaprTaskExecutor(
                 },
                 Mapping = new ScriptCodeInput()
                 {
+                    Type=onExecuteTask.Mapping.Type,
                     Location = onExecuteTask.Mapping.Location,
                     Code = onExecuteTask.Mapping.Code
                 }

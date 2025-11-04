@@ -36,7 +36,7 @@ public sealed class TaskCommandAppService(
             var onExecuteTask = OnExecuteTask.Create(
                 input.OnExecuteTask.Order,
                 input.OnExecuteTask.Task,
-                new ScriptCode(input.OnExecuteTask.Mapping.Location, input.OnExecuteTask.Mapping.Code)
+                new ScriptCode(input.OnExecuteTask.Mapping.Location, input.OnExecuteTask.Mapping.Code,input.OnExecuteTask.Mapping.Type)
             );
 
             // 3. Create script context with all necessary mappings
