@@ -94,9 +94,9 @@ public sealed class Transition : IHasKey
     [JsonIgnore]
     public IReadOnlyCollection<LanguageLabel> Labels => labels.AsReadOnly();
 
-    /// <summary>
-    /// Transition View
-    /// </summary>
+    // /// <summary>
+    // /// Transition View
+    // /// </summary>
     // [JsonIgnore]
     // public ViewDefinition? View { get; private set; }
 

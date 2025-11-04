@@ -1,3 +1,5 @@
+using BBT.Workflow.Domain;
+
 namespace BBT.Workflow.Instances.Remote;
 
 /// <summary>
@@ -8,28 +10,39 @@ public interface IRemoteInstanceQueryAppService
     /// <summary>
     /// Retrieves a single instance with optional extensions for data enrichment
     /// </summary>
-    Task<InstanceServiceResult<GetInstanceOutput>> GetInstanceAsync(
+    Task<ConditionalResult<GetInstanceOutput>> GetInstanceAsync(
         GetInstanceInput input,
         CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Retrieves a paginated list of instances with optional extensions
     /// </summary>
-    Task<InstanceServiceResponse<Definitions.PaginationResult<GetInstanceOutput>>> GetInstanceListAsync(
+    Task<Result<Definitions.PaginationResult<GetInstanceOutput>>> GetInstanceListAsync(
         GetInstanceListInput input,
         CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Retrieves the complete history of an instance (all data transitions)
     /// </summary>
-    Task<InstanceServiceResponse<GetInstanceHistoryOutput>> GetInstanceHistoryAsync(
+    Task<Result<GetInstanceHistoryOutput>> GetInstanceHistoryAsync(
         GetInstanceHistoryInput input,
         CancellationToken cancellationToken = default);
     
     /// <summary>
-    /// Retrieves the available transitions of an instance
+    /// Retrieves function result for an instance (e.g., "state" function returns GetInstanceStateOutput)
+    /// GET {baseUrl}/api/v{version}/{domain}/workflows/{workflow}/instances/{instance}/functions/{function}
     /// </summary>
-    Task<InstanceServiceResponse<GetAvailableTransitionOutput>> GetAvailableTransitionsAsync(
-        GetAvailableTransitionInput input,
+    Task<Result<GetInstanceStateOutput>> GetFunctionWithStateAsync(
+        GetFunctionWithInstanceInput input,
+        CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Retrieves view function result for an instance (returns GetViewOutput with platform-specific content)
+    /// GET {baseUrl}/api/v{version}/{domain}/workflows/{workflow}/instances/{instance}/functions/view
+    /// </summary>
+    Task<Result<GetViewOutput>> GetFunctionWithViewAsync(
+        GetFunctionWithInstanceInput input,
+        string? platform,
+        string? transitionKey,
         CancellationToken cancellationToken = default);
 } 

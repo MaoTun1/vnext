@@ -2,8 +2,8 @@ using BBT.Aether.Application.Services;
 using BBT.Aether.Guids;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Domain;
-using BBT.Workflow.Execution.Services;
 using BBT.Workflow.ExceptionHandling;
+using BBT.Workflow.Execution.Services;
 using BBT.Workflow.Headers;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
@@ -35,14 +35,21 @@ public sealed class InstanceCommandAppService(
         // Set schema context once at the beginning
         using (currentSchema.Change(input.Workflow))
         {
+            Instance? createdInstance = null;
+            
             return await LoadWorkflowAsync(input, cancellationToken)
-                .OnSuccessAsync(async workflow => 
+                .OnSuccessAsync(async _ => 
                     await schemaManager.EnsureSchemaAndTablesAsync(currentSchema.Name, cancellationToken))
                 .ThenAsync(workflow => PrepareInstanceAsync(workflow, input, cancellationToken))
                 .OnSuccess(data => 
+                {
+                    createdInstance = data.Instance;
                     logger.LogDebug("Created new instance {InstanceId} with key {InstanceKey}", 
-                        data.Instance.Id, data.Instance.Key))
+                        data.Instance.Id, data.Instance.Key);
+                })
                 .ThenAsync(data => ExecuteStartTransitionAsync(data, input, cancellationToken))
+                .OnFailureAsync(async error => 
+                    await HandleValidationFailureAsync(error, createdInstance, cancellationToken))
                 .OnSuccess(output => AddWorkflowHeader(output, input));
         }
     }
@@ -58,7 +65,7 @@ public sealed class InstanceCommandAppService(
             async ct => await componentCacheStore.GetFlowAsync(
                 input.Domain, input.Workflow, input.Version, ct),
             cancellationToken,
-            ex => WorkflowErrors.WorkflowNotFound(input.Workflow, input.Version));
+            _ => WorkflowErrors.WorkflowNotFound(input.Workflow, input.Version));
     }
 
     /// <summary>
@@ -84,7 +91,7 @@ public sealed class InstanceCommandAppService(
             return Result<(Definitions.Workflow, Instance)>.Fail(instanceResult.Error);
 
         var instance = instanceResult.Value!;
-
+        
         // Add instance data if provided
         if (input.Instance.Attributes != null)
         {
@@ -95,13 +102,13 @@ public sealed class InstanceCommandAppService(
                 workflow.StartTransition.VersionStrategy
             );
         }
-
+        
         // Persist instance
         var saveResult = await ResultExtensions.TryAsync(
             async ct => await instanceRepository.InsertAsync(instance, true, ct),
             cancellationToken,
             ex => Error.Dependency("db.insert", $"Failed to save instance: {ex.Message}"));
-
+        
         return saveResult.IsSuccess 
             ? Result<(Definitions.Workflow, Instance)>.Ok((workflow, instance))
             : Result<(Definitions.Workflow, Instance)>.Fail(saveResult.Error);
@@ -109,6 +116,7 @@ public sealed class InstanceCommandAppService(
 
     /// <summary>
     /// Step 4: Executes the start transition.
+    /// Catches exceptions and converts them to Result pattern for OnFailureAsync handling.
     /// </summary>
     private async Task<Result<StartInstanceOutput>> ExecuteStartTransitionAsync(
         (Definitions.Workflow Workflow, Instance Instance) data,
@@ -117,13 +125,81 @@ public sealed class InstanceCommandAppService(
     {
         var context = input.ToExecutionContext(data.Instance.Id, data.Workflow.StartTransition.Key);
         
-        return await workflowExecutionService
-            .ExecuteTransitionAsync(context, cancellationToken)
-            .MapAsync(transitionOutput => new StartInstanceOutput
+        try
+        {
+            return await workflowExecutionService
+                .ExecuteTransitionAsync(context, cancellationToken)
+                .MapAsync(transitionOutput => new StartInstanceOutput
+                {
+                    Id = data.Instance.Id,
+                    Status = transitionOutput.Status
+                });
+        }
+        catch (WorkflowValidationException ex)
+        {
+            // Convert WorkflowValidationException to Result for OnFailureAsync handling
+            return Result<StartInstanceOutput>.Fail(ex.Error);
+        }
+    }
+    
+    /// <summary>
+    /// Handles validation failure by deleting the instance if it's a validation error (schema or policy).
+    /// This allows the user to retry the operation without conflicts.
+    /// </summary>
+    /// <param name="error">The error that occurred during transition execution</param>
+    /// <param name="instance">The instance that was created (may be null if creation failed)</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests</param>
+    private async Task HandleValidationFailureAsync(
+        Error error,
+        Instance? instance,
+        CancellationToken cancellationToken)
+    {
+        // If validation fails (schema or policy), delete the instance to allow retry
+        if (instance != null && IsValidationError(error))
+        {
+            logger.LogWarning(
+                "Validation failed for instance {InstanceId} during start transition. Deleting instance to allow retry. Error: {ErrorCode} - {ErrorMessage}",
+                instance.Id, error.Code, error.Message);
+            
+            try
             {
-                Id = data.Instance.Id,
-                Status = transitionOutput.Status
-            });
+                await instanceRepository.DeleteAsync(instance, true, cancellationToken);
+                logger.LogInformation(
+                    "Successfully deleted instance {InstanceId} after validation failure",
+                    instance.Id);
+            }
+            catch (Exception deleteEx)
+            {
+                // Log the deletion error but don't fail - we still want to return the validation error
+                logger.LogError(deleteEx,
+                    "Failed to delete instance {InstanceId} after validation failure",
+                    instance.Id);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Determines if an error is a validation error (schema or policy) that requires instance deletion.
+    /// </summary>
+    private static bool IsValidationError(Error error)
+    {
+        // Schema validation errors have ValidationErrors collection
+        if (error.ValidationErrors is { Count: > 0 })
+            return true;
+        
+        // Policy validation errors (UnauthorizedTransition)
+        if (error.Code == WorkflowErrorCodes.UnauthorizedTransition)
+            return true;
+        
+        // Schema validation error code
+        if (error.Code == WorkflowErrorCodes.ValidationErrors)
+            return true;
+        
+        // Runtime schema validation error
+        if (error.Code == WorkflowErrorCodes.RuntimeSchemaInvalidState)
+            return true;
+        
+        return false;
     }
 
     /// <summary>

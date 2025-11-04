@@ -15,6 +15,7 @@ namespace BBT.Workflow.Shared;
         private PlatformOverrides()
         {
         }
+        
         [JsonConstructor]
         internal PlatformOverrides(
            PlatformOverride? android,
@@ -25,11 +26,8 @@ namespace BBT.Workflow.Shared;
             Ios = ios;
             Web = web;
         }
+        
         public PlatformOverride? Android { get; private set; }
-
-        /// <summary>
-        /// 
-        /// </summary>
         public PlatformOverride? Ios { get; private set; }
         public PlatformOverride? Web { get; private set; }
 
@@ -61,41 +59,17 @@ namespace BBT.Workflow.Shared;
         /// </summary>
         public string Display { get; private set; }
         public ViewType? Type { get; private set; } = ViewType.Json;
-
-
+        
         protected override IEnumerable<object> GetAtomicValues()
         {
             yield return Content;
             yield return Display;
             yield return Type?.ToString() ?? string.Empty;
         }
-        public JsonDocument? JsonContent
-        {
-            get
-            {
-                if (Type != ViewType.Json)
-                {
-                    string jsonWrapped = JsonSerializer.Serialize(Content);
-                    return JsonDocument.Parse(jsonWrapped);
-                }
-
-                // Try to parse as JSON only when type is Json
-                try
-                {
-                    return JsonDocument.Parse(Content);
-                }
-                catch (JsonException)
-                {
-                    // If content is not valid JSON, return null
-                    return null;
-                }
-            }
-            set => Content = value?.RootElement.ToString() ?? string.Empty;
-        }
     }
     public static class PlatformConst
     {
-        public const string web = "web";
-        public const string ios = "ios";
-        public const string android = "android";
+        public const string Web = "web";
+        public const string Ios = "ios";
+        public const string Android = "android";
     }

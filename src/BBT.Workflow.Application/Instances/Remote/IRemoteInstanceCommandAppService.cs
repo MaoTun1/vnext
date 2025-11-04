@@ -1,3 +1,5 @@
+using BBT.Workflow.Domain;
+
 namespace BBT.Workflow.Instances.Remote;
 
 /// <summary>
@@ -5,15 +7,15 @@ namespace BBT.Workflow.Instances.Remote;
 /// </summary>
 public interface IRemoteInstanceCommandAppService
 {
-    Task<InstanceServiceResponse<StartInstanceOutput>> StartAsync(
+    Task<Result<StartInstanceOutput>> StartAsync(
         StartInstanceInput input,
         CancellationToken cancellationToken = default);
     
-    Task<InstanceServiceResponse<StartInstanceOutput>> StartSubAsync(
+    Task<Result<StartInstanceOutput>> StartSubAsync(
         StartInstanceInput input,
         CancellationToken cancellationToken = default);
 
-    Task<InstanceServiceResponse<TransitionOutput>> TransitionAsync(
+    Task<Result<TransitionOutput>> TransitionAsync(
         Guid instanceId,
         string transitionKey,
         TransitionInput input,

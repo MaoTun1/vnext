@@ -354,7 +354,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     {
         lock (_dataListLock)
         {
-            var lastData = _dataList.LastOrDefault();
+            var lastData = _dataList.OrderByDescending(x => x, InstanceDataVersionComparer.Instance).FirstOrDefault();
 
             // If we have existing data, check if the new data is different
             if (lastData?.HasSameData(inputData) == true)

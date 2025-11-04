@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using BBT.Aether.Http;
+using BBT.Workflow.Domain;
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Remote.Configuration;
 using Microsoft.Extensions.Options;
@@ -27,181 +28,197 @@ public sealed class RemoteInstanceCommandAppService(
     /// Starts a new workflow instance by calling the remote API
     /// POST {baseUrl}/api/v{version}/{domain}/workflows/{workflow}/instances/start
     /// </summary>
-    public async Task<InstanceServiceResponse<StartInstanceOutput>> StartAsync(
+    public async Task<Result<StartInstanceOutput>> StartAsync(
         StartInstanceInput input,
         CancellationToken cancellationToken = default)
     {
-        var url = $"api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances/start";
-
-        var queryParams = new List<string>();
-        if (!string.IsNullOrEmpty(input.Version))
-            queryParams.Add($"version={Uri.EscapeDataString(input.Version)}");
-        if (input.Sync)
-            queryParams.Add($"sync={input.Sync}");
-
-        if (queryParams.Count > 0)
-            url += "?" + string.Join("&", queryParams);
-
-        var requestBody = new CreateInstanceInput
-        {
-            Key = input.Instance.Key,
-            Tags = input.Instance.Tags,
-            Attributes = input.Instance.Attributes
-        };
-
-        var jsonContent = JsonSerializer.Serialize(requestBody, JsonOptions);
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
-
-        var requestMessage = new HttpRequestMessage(HttpMethod.Post, url)
-        {
-            Content = content
-        };
-
-        if (input.Headers != null)
-            foreach (var header in input.Headers)
+        return await ResultExtensions.TryAsync(
+            async ct =>
             {
-                if (!IsRestrictedHeader(header.Key))
+                var url = $"api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances/start";
+
+                var queryParams = new List<string>();
+                if (!string.IsNullOrEmpty(input.Version))
+                    queryParams.Add($"version={Uri.EscapeDataString(input.Version)}");
+                if (input.Sync)
+                    queryParams.Add($"sync={input.Sync}");
+
+                if (queryParams.Count > 0)
+                    url += "?" + string.Join("&", queryParams);
+
+                var requestBody = new CreateInstanceInput
                 {
-                    requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                    Key = input.Instance.Key,
+                    Tags = input.Instance.Tags,
+                    Attributes = input.Instance.Attributes
+                };
+
+                var jsonContent = JsonSerializer.Serialize(requestBody, JsonOptions);
+                var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+                var requestMessage = new HttpRequestMessage(HttpMethod.Post, url)
+                {
+                    Content = content
+                };
+
+                if (input.Headers != null)
+                    foreach (var header in input.Headers)
+                    {
+                        if (!IsRestrictedHeader(header.Key))
+                        {
+                            requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                        }
+                    }
+
+                var response = await httpClient.SendAsync(requestMessage, ct);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseContent = await response.Content.ReadAsStringAsync(ct);
+                    var result = JsonSerializer.Deserialize<StartInstanceOutput>(responseContent, JsonOptions);
+                    return result!;
                 }
-            }
 
-        var response = await httpClient.SendAsync(requestMessage, cancellationToken);
-
-        if (response.IsSuccessStatusCode)
-        {
-            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<StartInstanceOutput>(responseContent, JsonOptions);
-            return new InstanceServiceResponse<StartInstanceOutput>(result!);
-        }
-
-        await HandleErrorResponse(response, cancellationToken);
-        throw new InvalidOperationException("Request failed without throwing an exception");
+                var error = await HandleErrorResponse(response, ct);
+                throw new InvalidOperationException($"Request failed: {error.Message}");
+            },
+            cancellationToken,
+            ex => ex is InvalidOperationException
+                ? Error.Dependency("remote_request_failed", ex.Message)
+                : Error.Dependency("unexpected", ex.Message));
     }
 
     /// <summary>
     /// Starts a new sub workflow instance by calling the remote API
     /// POST {baseUrl}/api/v{version}/{domain}/workflows/sub/{workflow}/instances/start
     /// </summary>
-    public async Task<InstanceServiceResponse<StartInstanceOutput>> StartSubAsync(
+    public async Task<Result<StartInstanceOutput>> StartSubAsync(
         StartInstanceInput input,
         CancellationToken cancellationToken = default)
     {
-        var url = $"api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/sub/instances/start";
-
-        var queryParams = new List<string>();
-        if (!string.IsNullOrEmpty(input.Version))
-            queryParams.Add($"version={Uri.EscapeDataString(input.Version)}");
-        if (input.Sync)
-            queryParams.Add($"sync={input.Sync}");
-
-        if (queryParams.Count > 0)
-            url += "?" + string.Join("&", queryParams);
-
-        var requestBody = new CreateInstanceInput
-        {
-            Id = input.Instance.Id,
-            Key = input.Instance.Key,
-            Tags = input.Instance.Tags,
-            Attributes = input.Instance.Attributes,
-            Callback = input.Instance.Callback,
-            MetaData = input.Instance.MetaData
-        };
-
-        var jsonContent = JsonSerializer.Serialize(requestBody, JsonOptions);
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
-
-        var requestMessage = new HttpRequestMessage(HttpMethod.Post, url)
-        {
-            Content = content
-        };
-
-        if (input.Headers != null)
-            foreach (var header in input.Headers)
+        return await ResultExtensions.TryAsync(
+            async ct =>
             {
-                if (!IsRestrictedHeader(header.Key))
+                var url = $"api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/sub/instances/start";
+
+                var queryParams = new List<string>();
+                if (!string.IsNullOrEmpty(input.Version))
+                    queryParams.Add($"version={Uri.EscapeDataString(input.Version)}");
+                if (input.Sync)
+                    queryParams.Add($"sync={input.Sync}");
+
+                if (queryParams.Count > 0)
+                    url += "?" + string.Join("&", queryParams);
+
+                var requestBody = new CreateInstanceInput
                 {
-                    requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                    Id = input.Instance.Id,
+                    Key = input.Instance.Key,
+                    Tags = input.Instance.Tags,
+                    Attributes = input.Instance.Attributes,
+                    Callback = input.Instance.Callback,
+                    MetaData = input.Instance.MetaData
+                };
+
+                var jsonContent = JsonSerializer.Serialize(requestBody, JsonOptions);
+                var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+                var requestMessage = new HttpRequestMessage(HttpMethod.Post, url)
+                {
+                    Content = content
+                };
+
+                if (input.Headers != null)
+                    foreach (var header in input.Headers)
+                    {
+                        if (!IsRestrictedHeader(header.Key))
+                        {
+                            requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                        }
+                    }
+
+                var response = await httpClient.SendAsync(requestMessage, ct);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseContent = await response.Content.ReadAsStringAsync(ct);
+                    var result = JsonSerializer.Deserialize<StartInstanceOutput>(responseContent, JsonOptions);
+                    return result!;
                 }
-            }
 
-        var response = await httpClient.SendAsync(requestMessage, cancellationToken);
-
-        if (response.IsSuccessStatusCode)
-        {
-            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<StartInstanceOutput>(responseContent, JsonOptions);
-            return new InstanceServiceResponse<StartInstanceOutput>(result!);
-        }
-
-        await HandleErrorResponse(response, cancellationToken);
-        throw new InvalidOperationException("Request failed without throwing an exception");
+                var error = await HandleErrorResponse(response, ct);
+                throw new InvalidOperationException($"Request failed: {error.Message}");
+            },
+            cancellationToken,
+            ex => ex is InvalidOperationException
+                ? Error.Dependency("remote_request_failed", ex.Message)
+                : Error.Dependency("unexpected", ex.Message));
     }
 
     /// <summary>
     /// Executes a transition on an existing workflow instance
     /// PATCH {baseUrl}/api/v{version}/{domain}/workflows/{workflow}/instances/{instanceId}/transitions/{transitionKey}
     /// </summary>
-    public async Task<InstanceServiceResponse<TransitionOutput>> TransitionAsync(
+    public async Task<Result<TransitionOutput>> TransitionAsync(
         Guid instanceId,
         string transitionKey,
         TransitionInput input,
         CancellationToken cancellationToken = default)
     {
-        var url =
-            $"api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances/{instanceId}/transitions/{transitionKey}";
-
-        var queryParams = new List<string>();
-        if (!string.IsNullOrEmpty(input.Version))
-            queryParams.Add($"version={Uri.EscapeDataString(input.Version)}");
-        if (input.Sync)
-            queryParams.Add("sync=true");
-
-        if (queryParams.Count > 0)
-            url += "?" + string.Join("&", queryParams);
-
-        var content = input.Data.HasValue
-            ? new StringContent(input.Data.Value.GetRawText(), Encoding.UTF8, "application/json")
-            : new StringContent("null", Encoding.UTF8, "application/json");
-
-        var requestMessage = new HttpRequestMessage(HttpMethod.Patch, url)
-        {
-            Content = content
-        };
-
-        foreach (var header in input.Headers)
-        {
-            if (!IsRestrictedHeader(header.Key))
+        return await ResultExtensions.TryAsync(
+            async ct =>
             {
-                requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value);
-            }
-        }
+                var url =
+                    $"api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances/{instanceId}/transitions/{transitionKey}";
 
-        var response = await httpClient.SendAsync(requestMessage, cancellationToken);
+                var queryParams = new List<string>();
+                if (!string.IsNullOrEmpty(input.Version))
+                    queryParams.Add($"version={Uri.EscapeDataString(input.Version)}");
+                if (input.Sync)
+                    queryParams.Add("sync=true");
 
-        if (response.IsSuccessStatusCode)
-        {
-            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<TransitionOutput>(responseContent, JsonOptions);
-            return new InstanceServiceResponse<TransitionOutput>(result!);
-        }
+                if (queryParams.Count > 0)
+                    url += "?" + string.Join("&", queryParams);
 
-        await HandleErrorResponse(response, cancellationToken);
-        throw new InvalidOperationException("Request failed without throwing an exception");
+                var content = input.Data.HasValue
+                    ? new StringContent(input.Data.Value.GetRawText(), Encoding.UTF8, "application/json")
+                    : new StringContent("null", Encoding.UTF8, "application/json");
+
+                var requestMessage = new HttpRequestMessage(HttpMethod.Patch, url)
+                {
+                    Content = content
+                };
+
+                foreach (var header in input.Headers)
+                {
+                    if (!IsRestrictedHeader(header.Key))
+                    {
+                        requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                    }
+                }
+
+                var response = await httpClient.SendAsync(requestMessage, ct);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseContent = await response.Content.ReadAsStringAsync(ct);
+                    var result = JsonSerializer.Deserialize<TransitionOutput>(responseContent, JsonOptions);
+                    return result!;
+                }
+
+                var error = await HandleErrorResponse(response, ct);
+                throw new InvalidOperationException($"Request failed: {error.Message}");
+            },
+            cancellationToken,
+            ex => ex is InvalidOperationException
+                ? Error.Dependency("remote_request_failed", ex.Message)
+                : Error.Dependency("unexpected", ex.Message));
     }
     
     /// <summary>
-    /// Handles error responses by throwing appropriate exceptions.
-    /// Checks for '_bbt_error_format=true' header to determine if the response contains
-    /// Aether ServiceErrorInfo structure and deserializes it properly.
-    /// For Aether format errors, throws RemoteServiceException with structured error information.
-    /// For other errors, throws standard HttpRequestException.
+    /// Handles error responses by converting to Error
     /// </summary>
-    /// <param name="response">The HTTP response message containing the error</param>
-    /// <param name="cancellationToken">Cancellation token for the operation</param>
-    /// <exception cref="RemoteServiceException">Thrown when response contains Aether error format</exception>
-    /// <exception cref="HttpRequestException">Thrown for other error responses</exception>
-    private static async Task HandleErrorResponse(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static async Task<Error> HandleErrorResponse(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
         var statusCode = (int)response.StatusCode;
@@ -215,10 +232,11 @@ public sealed class RemoteInstanceCommandAppService(
                 var errorResponse = JsonSerializer.Deserialize<ServiceErrorResponse>(errorContent, JsonOptions);
                 if (errorResponse?.Error != null)
                 {
-                    throw new RemoteServiceException(
-                        $"Remote service error: {errorResponse.Error.Message}",
-                        errorResponse.Error,
-                        statusCode);
+                    // Convert ServiceErrorInfo to Error
+                    return new Error(
+                        errorResponse.Error.Code ?? "remote_error",
+                        errorResponse.Error.Message,
+                        errorResponse.Error.Details);
                 }
             }
             catch (JsonException)
@@ -228,7 +246,9 @@ public sealed class RemoteInstanceCommandAppService(
         }
 
         // Default behavior for non-Aether format or deserialization failures
-        throw new HttpRequestException($"HTTP {statusCode}: {response.ReasonPhrase}. Content: {errorContent}");
+        return Error.Dependency("remote_http_error", 
+            $"HTTP {statusCode}: {response.ReasonPhrase}", 
+            target: statusCode.ToString());
     }
 
     /// <summary>

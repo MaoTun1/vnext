@@ -138,9 +138,9 @@ public sealed class State : IHasKey
         view = viewDefinition;
     }
     
-    public void SetSubFlow(string type, IReference reference, ScriptCode mapping)
+    public void SetSubFlow(string type, IReference reference, ScriptCode mapping, Dictionary<string, Reference>? viewOverrides)
     {
-        SubFlow = SubFlow.Create(type, reference, mapping);
+        SubFlow = SubFlow.Create(type, reference, mapping, viewOverrides);
     }
 
     public void AddTransition(Transition transition)
