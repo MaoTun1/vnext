@@ -545,7 +545,7 @@ public sealed class InstanceQueryAppService(
                     var viewHref = new ViewHref
                     {
                         Href = string.Format(InstanceUrlTemplates.View, input.Domain, input.Workflow, instance.Id),
-                        LoadData = viewDefinition?.LoadData ?? false
+                        LoadData = viewDefinition?.LoadData == true
                     };
 
                     // Build active correlations with href links
@@ -577,7 +577,7 @@ public sealed class InstanceQueryAppService(
                 },
                 cancellationToken,
                 ex => ex is EntityNotFoundException
-                    ? WorkflowErrors.StateNotFound(input.Workflow, instance.CurrentState ?? "unknown")
+                    ? Error.NotFound("notfound", ex.Message)
                     : Error.Dependency("unexpected", ex.Message));
         }
     }
@@ -661,9 +661,7 @@ public sealed class InstanceQueryAppService(
                 },
                 cancellationToken,
                 ex => ex is EntityNotFoundException
-                    ? (ex.Message.Contains("State")
-                        ? WorkflowErrors.StateNotFound(input.Workflow, instance.CurrentState ?? "unknown")
-                        : Error.NotFound(WorkflowErrorCodes.NotFoundInstanceData, ex.Message))
+                    ? Error.NotFound("notfound", ex.Message)
                     : Error.Dependency("unexpected", ex.Message));
         }
     }
