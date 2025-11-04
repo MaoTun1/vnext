@@ -1,3 +1,4 @@
+using BBT.Workflow.Domain;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Instances.Remote;
 
@@ -11,7 +12,7 @@ public sealed class SubflowForwardingService(
         string transitionKey, TransitionInput input,
         CancellationToken ct)
     {
-        var response = await remoteInstanceCommandAppService
+        var result = await remoteInstanceCommandAppService
             .TransitionAsync(
                 instanceId,
                 transitionKey,
@@ -19,6 +20,11 @@ public sealed class SubflowForwardingService(
                 ct
             );
 
-        return (true, response.Data.Status);
+        if (!result.IsSuccess)
+        {
+            return (false, null);
+        }
+
+        return (true, result.Value!.Status);
     }
 }

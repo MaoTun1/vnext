@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using BBT.Workflow.Definitions;
 using Xunit;
@@ -13,11 +14,15 @@ public class SubFlowTests
         // Arrange
         var type = "S";
         var reference = new Reference("sub-flow-key", "test-domain", "sys-flows", "1.0.0");
-        var mapping = new ScriptCode("mapping-location", 
+        var mapping = new ScriptCode("mapping-location",
             Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("return data;")));
+        var viewOverrides = new Dictionary<string, Reference>()
+        {
+            { "view-test", new Reference("view-key", "test-domain", "sys-flows", "1.0.0") }
+        };
 
         // Act
-        var subFlow = SubFlow.Create(type, reference, mapping);
+        var subFlow = SubFlow.Create(type, reference, mapping, viewOverrides);
 
         // Assert
         Assert.NotNull(subFlow);
@@ -36,9 +41,13 @@ public class SubFlowTests
         var type = "S";
         var reference = new Reference("key", "domain", "flow", "1.0.0");
         var mapping = new ScriptCode("location", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("code")));
+        var viewOverrides = new Dictionary<string, Reference>()
+        {
+            { "view-test", new Reference("view-key", "test-domain", "sys-flows", "1.0.0") }
+        };
 
         // Act
-        var subFlow = SubFlow.Create(type, reference, mapping);
+        var subFlow = SubFlow.Create(type, reference, mapping, viewOverrides);
 
         // Assert
         Assert.Equal(SubFlowType.SubFlow, subFlow.Type);
@@ -52,9 +61,13 @@ public class SubFlowTests
         var type = "P";
         var reference = new Reference("key", "domain", "flow", "1.0.0");
         var mapping = new ScriptCode("location", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("code")));
-
+        var viewOverrides = new Dictionary<string, Reference>()
+        {
+            { "view-test", new Reference("view-key", "test-domain", "sys-flows", "1.0.0") }
+        };
+        
         // Act
-        var subFlow = SubFlow.Create(type, reference, mapping);
+        var subFlow = SubFlow.Create(type, reference, mapping, viewOverrides);
 
         // Assert
         Assert.Equal(SubFlowType.SubProcess, subFlow.Type);
@@ -67,9 +80,13 @@ public class SubFlowTests
         // Arrange
         var reference = new Reference("key", "domain", "flow", "1.0.0");
         var mapping = new ScriptCode("location", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("code")));
-
+        var viewOverrides = new Dictionary<string, Reference>()
+        {
+            { "view-test", new Reference("view-key", "test-domain", "sys-flows", "1.0.0") }
+        };
+        
         // Act & Assert
-        Assert.Throws<ArgumentException>(() => SubFlow.Create("X", reference, mapping));
+        Assert.Throws<ArgumentException>(() => SubFlow.Create("X", reference, mapping, viewOverrides));
     }
 
     [Theory]
@@ -82,9 +99,13 @@ public class SubFlowTests
         // Arrange
         var reference = new Reference("key", "domain", "flow", "1.0.0");
         var mapping = new ScriptCode("location", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("code")));
-
+        var viewOverrides = new Dictionary<string, Reference>()
+        {
+            { "view-test", new Reference("view-key", "test-domain", "sys-flows", "1.0.0") }
+        };
+        
         // Act & Assert
-        Assert.Throws<ArgumentException>(() => SubFlow.Create(type, reference, mapping));
+        Assert.Throws<ArgumentException>(() => SubFlow.Create(type, reference, mapping, viewOverrides));
     }
 
     [Fact]
@@ -93,9 +114,13 @@ public class SubFlowTests
         // Arrange
         var reference = new Reference("key", "domain", "flow", "1.0.0");
         var mapping = new ScriptCode("location", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("code")));
-
+        var viewOverrides = new Dictionary<string, Reference>()
+        {
+            { "view-test", new Reference("view-key", "test-domain", "sys-flows", "1.0.0") }
+        };
+        
         // Act
-        var subFlow = SubFlow.Create("S", reference, mapping);
+        var subFlow = SubFlow.Create("S", reference, mapping, viewOverrides);
 
         // Assert
         Assert.NotNull(subFlow.Process);
@@ -108,9 +133,13 @@ public class SubFlowTests
         // Arrange
         var reference = new Reference("key", "domain", "flow", "1.0.0");
         var mapping = new ScriptCode("location", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("code")));
-
+        var viewOverrides = new Dictionary<string, Reference>()
+        {
+            { "view-test", new Reference("view-key", "test-domain", "sys-flows", "1.0.0") }
+        };
+        
         // Act
-        var subFlow = SubFlow.Create("S", reference, mapping);
+        var subFlow = SubFlow.Create("S", reference, mapping, viewOverrides);
 
         // Assert
         Assert.NotNull(subFlow.Mapping);
@@ -127,9 +156,13 @@ public class SubFlowTests
         var version = "2.5.3";
         var reference = new Reference(key, domain, flow, version);
         var mapping = new ScriptCode("location", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("code")));
-
+        var viewOverrides = new Dictionary<string, Reference>()
+        {
+            { "view-test", new Reference("view-key", "test-domain", "sys-flows", "1.0.0") }
+        };
+        
         // Act
-        var subFlow = SubFlow.Create("S", reference, mapping);
+        var subFlow = SubFlow.Create("S", reference, mapping, viewOverrides);
 
         // Assert
         Assert.Equal(key, subFlow.Process.Key);
@@ -146,9 +179,13 @@ public class SubFlowTests
         var code = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("function map() { return data; }"));
         var reference = new Reference("key", "domain", "flow", "1.0.0");
         var mapping = new ScriptCode(location, code);
-
+        var viewOverrides = new Dictionary<string, Reference>()
+        {
+            { "view-test", new Reference("view-key", "test-domain", "sys-flows", "1.0.0") }
+        };
+        
         // Act
-        var subFlow = SubFlow.Create("S", reference, mapping);
+        var subFlow = SubFlow.Create("S", reference, mapping, viewOverrides);
 
         // Assert
         Assert.Equal(location, subFlow.Mapping.Location);
@@ -169,15 +206,18 @@ public class SubFlowTests
             return mapData(data);
         ";
         var reference = new Reference("key", "domain", "flow", "1.0.0");
-        var mapping = new ScriptCode("complex-mapping", 
+        var mapping = new ScriptCode("complex-mapping",
             Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(complexScript)));
-
+        var viewOverrides = new Dictionary<string, Reference>()
+        {
+            { "view-test", new Reference("view-key", "test-domain", "sys-flows", "1.0.0") }
+        };
+        
         // Act
-        var subFlow = SubFlow.Create("P", reference, mapping);
+        var subFlow = SubFlow.Create("P", reference, mapping, viewOverrides);
 
         // Assert
         Assert.NotNull(subFlow.Mapping);
         Assert.Equal(complexScript, subFlow.Mapping.DecodedCode);
     }
 }
-

@@ -269,7 +269,11 @@ public static class WorkflowFactory
 
             if (stateInput.SubFlow != null)
             {
-                state.SetSubFlow(stateInput.SubFlow.Type, stateInput.SubFlow.Process, new ScriptCode(stateInput.SubFlow.Mapping.Location, stateInput.SubFlow.Mapping.Code));
+                state.SetSubFlow(
+                    stateInput.SubFlow.Type, 
+                    stateInput.SubFlow.Process, 
+                    new ScriptCode(stateInput.SubFlow.Mapping.Location, stateInput.SubFlow.Mapping.Code),
+                    stateInput.SubFlow.ViewOverrides);
             }
 
             workflow.AddState(state);

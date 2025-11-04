@@ -2,6 +2,7 @@ using System.Text.Json;
 using BBT.Aether.Application.Services;
 using BBT.Aether.Http;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Domain;
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Remote.Configuration;
 using Microsoft.Extensions.Options;
@@ -28,160 +29,268 @@ public sealed class RemoteInstanceQueryAppService(
     /// Retrieves a single instance with optional extensions
     /// GET {baseUrl}/api/v{version}/{domain}/workflows/{workflow}/instances/{instance}
     /// </summary>
-    public async Task<InstanceServiceResult<GetInstanceOutput>> GetInstanceAsync(
+    public async Task<ConditionalResult<GetInstanceOutput>> GetInstanceAsync(
         GetInstanceInput input,
         CancellationToken cancellationToken = default)
     {
-        var url = $"/api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances/{input.Instance}";
-
-        var queryParams = new List<string>();
-        if (input.Extension?.Length > 0)
+        try
         {
-            foreach (var ext in input.Extension)
+            var url = $"/api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances/{input.Instance}";
+
+            var queryParams = new List<string>();
+            if (input.Extension?.Length > 0)
             {
-                queryParams.Add($"extension={Uri.EscapeDataString(ext)}");
+                foreach (var ext in input.Extension)
+                {
+                    queryParams.Add($"extension={Uri.EscapeDataString(ext)}");
+                }
             }
+
+            if (queryParams.Count > 0)
+                url += "?" + string.Join("&", queryParams);
+
+            var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
+
+            // Add If-None-Match header for ETag support
+            if (!string.IsNullOrEmpty(input.IfNoneMatch))
+            {
+                requestMessage.Headers.TryAddWithoutValidation("If-None-Match", input.IfNoneMatch);
+            }
+
+            var response = await httpClient.SendAsync(requestMessage, cancellationToken);
+
+            // Handle 304 Not Modified
+            if (response.StatusCode == System.Net.HttpStatusCode.NotModified)
+            {
+                return ConditionalResult<GetInstanceOutput>.NotModified();
+            }
+
+            if (response.IsSuccessStatusCode)
+            {
+                var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                var result = JsonSerializer.Deserialize<GetInstanceOutput>(responseContent, JsonOptions);
+                return ConditionalResult<GetInstanceOutput>.Success(result!);
+            }
+
+            var error = await HandleErrorResponse(response, cancellationToken);
+            return ConditionalResult<GetInstanceOutput>.Fail(error);
         }
-
-        if (queryParams.Count > 0)
-            url += "?" + string.Join("&", queryParams);
-
-        var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
-
-        // Add If-None-Match header for ETag support
-        if (!string.IsNullOrEmpty(input.IfNoneMatch))
+        catch (Exception ex)
         {
-            requestMessage.Headers.TryAddWithoutValidation("If-None-Match", input.IfNoneMatch);
+            var error = ex is InvalidOperationException
+                ? Error.Dependency("remote_request_failed", ex.Message)
+                : Error.Dependency("unexpected", ex.Message);
+            return ConditionalResult<GetInstanceOutput>.Fail(error);
         }
-
-        var response = await httpClient.SendAsync(requestMessage, cancellationToken);
-
-        // Handle 304 Not Modified
-        if (response.StatusCode == System.Net.HttpStatusCode.NotModified)
-        {
-            return InstanceServiceResult<GetInstanceOutput>.NotModified();
-        }
-
-        if (response.IsSuccessStatusCode)
-        {
-            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<GetInstanceOutput>(responseContent, JsonOptions);
-            return InstanceServiceResult<GetInstanceOutput>.Success(result!);
-        }
-
-        await HandleErrorResponse(response, cancellationToken);
-        throw new InvalidOperationException("Request failed without throwing an exception");
     }
 
     /// <summary>
     /// Retrieves a paginated list of instances with optional extensions
     /// GET {baseUrl}/api/v{version}/{domain}/workflows/{workflow}/instances
     /// </summary>
-    public async Task<InstanceServiceResponse<PaginationResult<GetInstanceOutput>>> GetInstanceListAsync(
+    public async Task<Result<PaginationResult<GetInstanceOutput>>> GetInstanceListAsync(
         GetInstanceListInput input,
         CancellationToken cancellationToken = default)
     {
-        var url = $"/api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances";
-
-        var queryParams = new List<string>
-        {
-            $"page={input.Page}",
-            $"pageSize={input.PageSize}"
-        };
-
-        if (input.Extension?.Length > 0)
-        {
-            foreach (var ext in input.Extension)
+        return await ResultExtensions.TryAsync(
+            async ct =>
             {
-                queryParams.Add($"extension={Uri.EscapeDataString(ext)}");
-            }
-        }
+                var url = $"/api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances";
 
-        url += "?" + string.Join("&", queryParams);
+                var queryParams = new List<string>
+                {
+                    $"page={input.Page}",
+                    $"pageSize={input.PageSize}"
+                };
 
-        var response = await httpClient.GetAsync(url, cancellationToken);
+                if (input.Extension?.Length > 0)
+                {
+                    foreach (var ext in input.Extension)
+                    {
+                        queryParams.Add($"extension={Uri.EscapeDataString(ext)}");
+                    }
+                }
 
-        if (response.IsSuccessStatusCode)
-        {
-            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<PaginationResult<GetInstanceOutput>>(responseContent, JsonOptions);
-            return new InstanceServiceResponse<PaginationResult<GetInstanceOutput>>(result!);
-        }
+                url += "?" + string.Join("&", queryParams);
 
-        await HandleErrorResponse(response, cancellationToken);
-        throw new InvalidOperationException("Request failed without throwing an exception");
+                var response = await httpClient.GetAsync(url, ct);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseContent = await response.Content.ReadAsStringAsync(ct);
+                    var result = JsonSerializer.Deserialize<PaginationResult<GetInstanceOutput>>(responseContent, JsonOptions);
+                    return result!;
+                }
+
+                var error = await HandleErrorResponse(response, ct);
+                throw new InvalidOperationException($"Request failed: {error.Message}");
+            },
+            cancellationToken,
+            ex => ex is InvalidOperationException
+                ? Error.Dependency("remote_request_failed", ex.Message)
+                : Error.Dependency("unexpected", ex.Message));
     }
 
     /// <summary>
     /// Retrieves the complete history of an instance (all data transitions)
     /// GET {baseUrl}/api/v{version}/{domain}/workflows/{workflow}/instances/{instance}/transitions
     /// </summary>
-    public async Task<InstanceServiceResponse<GetInstanceHistoryOutput>> GetInstanceHistoryAsync(
+    public async Task<Result<GetInstanceHistoryOutput>> GetInstanceHistoryAsync(
         GetInstanceHistoryInput input,
         CancellationToken cancellationToken = default)
     {
-        var url =
-            $"/api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances/{input.Instance}/transitions";
-
-        var queryParams = new List<string>();
-        if (input.Extension?.Length > 0)
-        {
-            foreach (var ext in input.Extension)
+        return await ResultExtensions.TryAsync(
+            async ct =>
             {
-                queryParams.Add($"extension={Uri.EscapeDataString(ext)}");
-            }
-        }
+                var url =
+                    $"/api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances/{input.Instance}/transitions";
 
-        if (queryParams.Count > 0)
-            url += "?" + string.Join("&", queryParams);
+                var queryParams = new List<string>();
+                if (input.Extension?.Length > 0)
+                {
+                    foreach (var ext in input.Extension)
+                    {
+                        queryParams.Add($"extension={Uri.EscapeDataString(ext)}");
+                    }
+                }
 
-        var response = await httpClient.GetAsync(url, cancellationToken);
+                if (queryParams.Count > 0)
+                    url += "?" + string.Join("&", queryParams);
 
-        if (response.IsSuccessStatusCode)
-        {
-            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<GetInstanceHistoryOutput>(responseContent, JsonOptions);
-            return new InstanceServiceResponse<GetInstanceHistoryOutput>(result!);
-        }
+                var response = await httpClient.GetAsync(url, ct);
 
-        await HandleErrorResponse(response, cancellationToken);
-        throw new InvalidOperationException("Request failed without throwing an exception");
-    }
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseContent = await response.Content.ReadAsStringAsync(ct);
+                    var result = JsonSerializer.Deserialize<GetInstanceHistoryOutput>(responseContent, JsonOptions);
+                    return result!;
+                }
 
-    public async Task<InstanceServiceResponse<GetAvailableTransitionOutput>> GetAvailableTransitionsAsync(
-        GetAvailableTransitionInput input, CancellationToken cancellationToken = default)
-    {
-        var url =
-            $"/api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances/{input.Instance}transitions/available";
-
-        var queryParams = new List<string>();
-        if (!input.Version.IsNullOrEmpty())
-        {
-            queryParams.Add($"version={Uri.EscapeDataString(input.Version)}");
-        }
-
-        if (queryParams.Count > 0)
-            url += "?" + string.Join("&", queryParams);
-
-        var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
-        
-        var response = await httpClient.SendAsync(requestMessage, cancellationToken);
-        
-        if (response.IsSuccessStatusCode)
-        {
-            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            var result = JsonSerializer.Deserialize<GetAvailableTransitionOutput>(responseContent, JsonOptions);
-            return new InstanceServiceResponse<GetAvailableTransitionOutput>(result!);
-        }
-
-        await HandleErrorResponse(response, cancellationToken);
-        throw new InvalidOperationException("Request failed without throwing an exception");
+                var error = await HandleErrorResponse(response, ct);
+                throw new InvalidOperationException($"Request failed: {error.Message}");
+            },
+            cancellationToken,
+            ex => ex is InvalidOperationException
+                ? Error.Dependency("remote_request_failed", ex.Message)
+                : Error.Dependency("unexpected", ex.Message));
     }
 
     /// <summary>
-    /// Handles error responses by throwing appropriate exceptions
+    /// Retrieves function result for an instance (e.g., "state" function returns GetInstanceStateOutput)
+    /// GET {baseUrl}/api/v{version}/{domain}/workflows/{workflow}/instances/{instance}/functions/{function}
     /// </summary>
-    private static async Task HandleErrorResponse(HttpResponseMessage response, CancellationToken cancellationToken)
+    public async Task<Result<GetInstanceStateOutput>> GetFunctionWithStateAsync(
+        GetFunctionWithInstanceInput input,
+        CancellationToken cancellationToken = default)
+    {
+        return await ResultExtensions.TryAsync(
+            async ct =>
+            {
+                var url =
+                    $"/api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances/{input.Instance}/functions/{input.Function}";
+
+                var queryParams = new List<string>();
+                if (!string.IsNullOrEmpty(input.Version))
+                {
+                    queryParams.Add($"version={Uri.EscapeDataString(input.Version)}");
+                }
+
+                if (input.Extension?.Length > 0)
+                {
+                    foreach (var ext in input.Extension)
+                    {
+                        queryParams.Add($"extension={Uri.EscapeDataString(ext)}");
+                    }
+                }
+
+                if (queryParams.Count > 0)
+                    url += "?" + string.Join("&", queryParams);
+
+                var response = await httpClient.GetAsync(url, ct);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseContent = await response.Content.ReadAsStringAsync(ct);
+                    var result = JsonSerializer.Deserialize<GetInstanceStateOutput>(responseContent, JsonOptions);
+                    return result!;
+                }
+
+                var error = await HandleErrorResponse(response, ct);
+                throw new InvalidOperationException($"Request failed: {error.Message}");
+            },
+            cancellationToken,
+            ex => ex is InvalidOperationException
+                ? Error.Dependency("remote_request_failed", ex.Message)
+                : Error.Dependency("unexpected", ex.Message));
+    }
+
+    /// <summary>
+    /// Retrieves view function result for an instance (returns GetViewOutput with platform-specific content)
+    /// GET {baseUrl}/api/v{version}/{domain}/workflows/{workflow}/instances/{instance}/functions/view
+    /// </summary>
+    public async Task<Result<GetViewOutput>> GetFunctionWithViewAsync(
+        GetFunctionWithInstanceInput input,
+        string? platform,
+        string? transitionKey,
+        CancellationToken cancellationToken = default)
+    {
+        return await ResultExtensions.TryAsync(
+            async ct =>
+            {
+                var url =
+                    $"/api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances/{input.Instance}/functions/view";
+
+                var queryParams = new List<string>();
+                if (!string.IsNullOrEmpty(input.Version))
+                {
+                    queryParams.Add($"version={Uri.EscapeDataString(input.Version)}");
+                }
+
+                if (!string.IsNullOrEmpty(platform))
+                {
+                    queryParams.Add($"{nameof(platform)}={Uri.EscapeDataString(platform)}");
+                }
+                
+                if (!string.IsNullOrEmpty(transitionKey))
+                {
+                    queryParams.Add($"{nameof(transitionKey)}={Uri.EscapeDataString(transitionKey)}");
+                }
+
+                if (input.Extension?.Length > 0)
+                {
+                    foreach (var ext in input.Extension)
+                    {
+                        queryParams.Add($"extension={Uri.EscapeDataString(ext)}");
+                    }
+                }
+
+                if (queryParams.Count > 0)
+                    url += "?" + string.Join("&", queryParams);
+
+                var response = await httpClient.GetAsync(url, ct);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    // The endpoint returns only the Content as a string (not a full GetViewOutput object)
+                    // So we need to wrap it in GetViewOutput structure
+                    var responseContent = await response.Content.ReadAsStringAsync(ct);
+                    var result = JsonSerializer.Deserialize<GetViewOutput>(responseContent, JsonOptions);
+                    return result!;
+                }
+
+                var error = await HandleErrorResponse(response, ct);
+                throw new InvalidOperationException($"Request failed: {error.Message}");
+            },
+            cancellationToken,
+            ex => ex is InvalidOperationException
+                ? Error.Dependency("remote_request_failed", ex.Message)
+                : Error.Dependency("unexpected", ex.Message));
+    }
+
+    /// <summary>
+    /// Handles error responses by converting to Error
+    /// </summary>
+    private static async Task<Error> HandleErrorResponse(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
         var statusCode = (int)response.StatusCode;
@@ -195,10 +304,11 @@ public sealed class RemoteInstanceQueryAppService(
                 var errorResponse = JsonSerializer.Deserialize<ServiceErrorResponse>(errorContent, JsonOptions);
                 if (errorResponse?.Error != null)
                 {
-                    throw new RemoteServiceException(
-                        $"Remote service error: {errorResponse.Error.Message}", 
-                        errorResponse.Error, 
-                        statusCode);
+                    // Convert ServiceErrorInfo to Error
+                    return new Error(
+                        errorResponse.Error.Code ?? "remote_error",
+                        errorResponse.Error.Message,
+                        errorResponse.Error.Details);
                 }
             }
             catch (JsonException)
@@ -208,6 +318,8 @@ public sealed class RemoteInstanceQueryAppService(
         }
 
         // Default behavior for non-Aether format or deserialization failures
-        throw new HttpRequestException($"HTTP {statusCode}: {response.ReasonPhrase}. Content: {errorContent}");
+        return Error.Dependency("remote_http_error", 
+            $"HTTP {statusCode}: {response.ReasonPhrase}", 
+            target: statusCode.ToString());
     }
 }

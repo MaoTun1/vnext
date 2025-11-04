@@ -1,4 +1,5 @@
 using BBT.Workflow.Domain;
+using BBT.Workflow.Instances;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
@@ -97,6 +98,20 @@ public static class ProblemDetailsMapper
             { 
                 StatusCode = result.ToProblemDetails().Status 
             };
+
+    /// <summary>
+    /// Creates an IActionResult from a ConditionalResult&lt;T&gt; for use in MVC controllers.
+    /// Handles 304 Not Modified status for conditional requests.
+    /// </summary>
+    public static IActionResult ToActionResult<T>(this ConditionalResult<T> conditionalResult)
+    {
+        if (conditionalResult.IsNotModified)
+        {
+            return new StatusCodeResult(StatusCodes.Status304NotModified);
+        }
+
+        return conditionalResult.Result.ToActionResult();
+    }
 
     /// <summary>
     /// Creates a CreatedResult from a Result&lt;T&gt; with location.

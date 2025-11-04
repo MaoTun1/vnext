@@ -20,6 +20,15 @@ public static class WorkflowErrors
             $"An active instance with key \"{instanceKey}\" already exists",
             target: instanceKey);
 
+    /// <summary>
+    /// Instance was not found by ID or key.
+    /// </summary>
+    public static Error InstanceNotFound(string instanceIdentifier)
+        => Error.NotFound(
+            WorkflowErrorCodes.NotFoundInstanceData,
+            $"Instance \"{instanceIdentifier}\" not found",
+            target: instanceIdentifier);
+
     #endregion
 
     #region Workflow Definition Errors
