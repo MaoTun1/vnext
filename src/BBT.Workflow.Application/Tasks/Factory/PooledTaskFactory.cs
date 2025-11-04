@@ -230,10 +230,14 @@ public static class PoolableTaskRegistry
         RegisterPoolableTask<DaprHttpEndpointTask>(
             DaprHttpEndpointTask.CreateEmpty,
             (source, target) => ((DaprHttpEndpointTask)target).CopyFromInternal((DaprHttpEndpointTask)source));
-            
+
         RegisterPoolableTask<HumanTask>(
             HumanTask.CreateEmpty,
             (source, target) => ((HumanTask)target).CopyFromInternal((HumanTask)source));
+        RegisterPoolableTask<NotificationTask>(
+            NotificationTask.CreateEmpty,
+            (source, target) => ((NotificationTask)target).CopyFromInternal((NotificationTask)source));
+            
     }
 
     public static void RegisterPoolableTask<T>(
