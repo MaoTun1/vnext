@@ -16,7 +16,8 @@ public enum TaskType
     Http = 6,
     Script = 7,
     Condition = 8,
-    Timer = 9
+    Timer = 9,
+    Notification = 10
 }
 
 /// <summary>
