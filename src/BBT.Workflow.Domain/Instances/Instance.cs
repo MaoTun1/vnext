@@ -125,12 +125,12 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     public void SetInfoMetadata(bool isSync, string? callback, string flowType, ObjectDictionary? userMetadata = null)
     {
         var metadata = userMetadata ?? new ObjectDictionary();
-        
+
         // Set system metadata - these are always set by the system
         metadata.TryAdd(DomainConsts.MetaDataKeys.Sync, isSync.ToString().ToLower());
         metadata.TryAdd(DomainConsts.MetaDataKeys.Callback, callback ?? string.Empty);
         metadata.TryAdd(DomainConsts.MetaDataKeys.FlowType, flowType);
-        
+
         SetMetaData(metadata);
     }
 
@@ -177,7 +177,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
 
     public InstanceCorrelation? Subflow =>
         ChildCorrelations.FirstOrDefault(p => !p.IsCompleted && p.SubFlowType.Equals(SubFlowType.SubFlow));
-    
+
     public Instance CreateSnapshot()
     {
         var snapshot = new Instance
@@ -192,7 +192,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
             CompletedAt = CompletedAt,
             CurrentState = CurrentState,
             Duration = Duration,
-            Tags = [..Tags],
+            Tags = [.. Tags],
             MetaData = new ObjectDictionary(MetaData)
         };
 
@@ -229,9 +229,9 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// </summary>
     public void Busy()
     {
-        if(IsCompleted)
+        if (IsCompleted)
             return;
-        
+
         Status = InstanceStatus.Busy;
     }
 
@@ -241,9 +241,9 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// </summary>
     public void Active()
     {
-        if(IsCompleted)
+        if (IsCompleted)
             return;
-        
+
         Status = InstanceStatus.Active;
     }
 
@@ -325,7 +325,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         lock (_dataListLock)
         {
             var latestData = _dataList.OrderByDescending(x => x, InstanceDataVersionComparer.Instance).FirstOrDefault();
-
+            //TODO: 
             // If we have existing data, check if the new data is different
             if (latestData?.HasSameData(inputData) == true)
             {
@@ -339,11 +339,14 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
                 latestData.MarkAsNotLatest();
             }
 
+
             var newData = new InstanceData(
                 id,
                 Id,
                 version,
-                inputData, true
+                inputData,
+                true,
+                GetNextHistorySequence(version)
             );
             _dataList.Add(newData);
             return newData;
@@ -363,19 +366,35 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
                 return lastData;
             }
 
-            InstanceData newData = lastData is null
-                ? new InstanceData(
+            InstanceData newData;
+            if (lastData is null)
+            {
+                newData = new InstanceData(
                     id,
                     Id,
                     WorkflowConstants.DefaultVersion,
                     inputData,
                     true
-                )
-                : lastData.NewVersion(
-                    id,
-                    inputData,
-                    versionStrategy ?? VersionStrategy.IncreaseMinor
                 );
+            }
+            else
+            {
+                newData = versionStrategy is null
+                        ? new InstanceData(
+                            id,
+                            Id,
+                            lastData.Version,
+                            inputData,
+                            true,
+                            GetNextHistorySequence(lastData.Version)
+                        )
+                        : lastData.NewVersion(
+                            id,
+                            inputData,
+                            versionStrategy ?? VersionStrategy.IncreaseMinor,
+                            0
+                        );
+            }
             _dataList.Add(newData);
             return newData;
         }
@@ -407,6 +426,46 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
             }
 
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Gets the next history sequence for a specific version
+    /// </summary>
+    private int GetNextHistorySequence(string version)
+    {
+        return _dataList
+            .Where(d => d.Version == version)
+            .Select(d => d.HistorySequence)
+            .DefaultIfEmpty(-1) //For an empty list, it returns -1, and by adding +1 it becomes 0"
+            .Max() + 1;
+    }
+
+    /// <summary>
+    /// Gets all history entries for a specific version
+    /// </summary>
+    public IEnumerable<InstanceData> GetVersionHistory(string version)
+    {
+        lock (_dataListLock)
+        {
+            return _dataList
+                .Where(d => d.Version == version)
+                .OrderBy(d => d.HistorySequence)
+                .ToList();
+        }
+    }
+
+    /// <summary>
+    /// Gets the latest data for a specific version
+    /// </summary>
+    public InstanceData? GetLatestDataForVersion(string version)
+    {
+        lock (_dataListLock)
+        {
+            return _dataList
+                .Where(d => d.Version == version)
+                .OrderByDescending(d => d.HistorySequence)
+                .FirstOrDefault();
         }
     }
 }

@@ -286,6 +286,133 @@ public class InstanceDataVersionComparerTests : DomainTestBase<DomainEntryPoint>
         Assert.Equal(4, sorted.Count);
     }
 
+    [Fact]
+    public void Compare_ShouldCompareByHistorySequence_WhenVersionsAreEqual()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        var data1 = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "1.0.0");
+        var data2 = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":2}"), "1.0.0");
+        var data3 = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":3}"), "1.0.0");
+
+        // Act & Assert
+        // data1 (seq=0) < data2 (seq=1)
+        Assert.True(_comparer.Compare(data1, data2) < 0);
+        // data2 (seq=1) < data3 (seq=2)
+        Assert.True(_comparer.Compare(data2, data3) < 0);
+        // data1 (seq=0) < data3 (seq=2)
+        Assert.True(_comparer.Compare(data1, data3) < 0);
+    }
+
+    [Fact]
+    public void Compare_ShouldPrioritizeVersion_OverHistorySequence()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        // Version 2.0.0 with sequence 0
+        var data1 = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "2.0.0");
+        
+        // Version 1.0.0 with higher sequence numbers
+        var data2 = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":2}"), "1.0.0");
+        var data3 = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":3}"), "1.0.0");
+        var data4 = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":4}"), "1.0.0");
+
+        // Act & Assert
+        // Version 2.0.0 (seq=0) > Version 1.0.0 (seq=2) - Version takes priority
+        Assert.True(_comparer.Compare(data1, data4) > 0);
+    }
+
+    [Fact]
+    public void Compare_WithMixedVersionsAndSequences_ShouldSortCorrectly()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        var list = new List<InstanceData>
+        {
+            instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "2.0.0"), // seq=0
+            instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":2}"), "1.0.0"), // seq=0
+            instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":3}"), "1.0.0"), // seq=1
+            instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":4}"), "2.0.0"), // seq=1
+            instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":5}"), "1.0.0"), // seq=2
+        };
+
+        // Act
+        var sorted = list.OrderBy(x => x, _comparer).ToList();
+
+        // Assert - Should be sorted by version first, then by sequence
+        Assert.Equal("1.0.0", sorted[0].Version);
+        Assert.Equal(0, sorted[0].HistorySequence);
+        
+        Assert.Equal("1.0.0", sorted[1].Version);
+        Assert.Equal(1, sorted[1].HistorySequence);
+        
+        Assert.Equal("1.0.0", sorted[2].Version);
+        Assert.Equal(2, sorted[2].HistorySequence);
+        
+        Assert.Equal("2.0.0", sorted[3].Version);
+        Assert.Equal(0, sorted[3].HistorySequence);
+        
+        Assert.Equal("2.0.0", sorted[4].Version);
+        Assert.Equal(1, sorted[4].HistorySequence);
+    }
+
+    [Fact]
+    public void Compare_WithDescending_ShouldRespectVersionAndSequence()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        var list = new List<InstanceData>
+        {
+            instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "1.0.0"), // seq=0
+            instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":2}"), "1.0.0"), // seq=1
+            instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":3}"), "2.0.0"), // seq=0
+            instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":4}"), "2.0.0"), // seq=1
+        };
+
+        // Act
+        var sorted = list.OrderByDescending(x => x, _comparer).ToList();
+
+        // Assert - Descending: highest version first, highest sequence within same version
+        Assert.Equal("2.0.0", sorted[0].Version);
+        Assert.Equal(1, sorted[0].HistorySequence);
+        
+        Assert.Equal("2.0.0", sorted[1].Version);
+        Assert.Equal(0, sorted[1].HistorySequence);
+        
+        Assert.Equal("1.0.0", sorted[2].Version);
+        Assert.Equal(1, sorted[2].HistorySequence);
+        
+        Assert.Equal("1.0.0", sorted[3].Version);
+        Assert.Equal(0, sorted[3].HistorySequence);
+    }
+
+    [Theory]
+    [InlineData("1.0.0", "1.0.0", 0)]  // Same version - will compare by auto-generated sequence
+    [InlineData("2.0.0", "1.0.0", 1)]  // Version priority: 2.0.0 > 1.0.0
+    [InlineData("1.0.0", "2.0.0", -1)] // Version priority: 1.0.0 < 2.0.0
+    [InlineData("1.5.0", "1.2.0", 1)]  // 1.5.0 > 1.2.0
+    [InlineData("3.0.0", "3.0.1", -1)] // 3.0.0 < 3.0.1
+    public void Compare_ShouldHandleVersionCombinations(
+        string version1,
+        string version2,
+        int expectedSign)
+    {
+        // Arrange
+        var data1 = CreateInstanceData(version1);
+        var data2 = CreateInstanceData(version2);
+        
+        // Act
+        var result = _comparer.Compare(data1, data2);
+
+        // Assert
+        if (expectedSign < 0)
+            Assert.True(result < 0, $"Expected {version1} < {version2}");
+        else if (expectedSign > 0)
+            Assert.True(result > 0, $"Expected {version1} > {version2}");
+        else
+            Assert.Equal(0, result);
+    }
+
     private InstanceData CreateInstanceData(string version)
     {
         var instance = InstanceFactory.CreateDefault();

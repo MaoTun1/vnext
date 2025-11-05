@@ -1198,4 +1198,163 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
         // Assert
         Assert.Null(latestData);
     }
+
+    [Fact]
+    public void GetNextHistorySequence_ShouldReturnZero_ForFirstDataEntry()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        var data = JsonData.CreateFrom("{\"key\":\"value1\"}");
+
+        // Act
+        var result = instance.AddDataWithVersion(Guid.NewGuid(), data, "1.0.0");
+
+        // Assert
+        Assert.Equal(0, result.HistorySequence);
+    }
+
+    [Fact]
+    public void GetNextHistorySequence_ShouldReturnOne_ForSecondDataWithSameVersion()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        var data1 = JsonData.CreateFrom("{\"key\":\"value1\"}");
+        var data2 = JsonData.CreateFrom("{\"key\":\"value2\"}");
+
+        // Act
+        var result1 = instance.AddDataWithVersion(Guid.NewGuid(), data1, "1.0.0");
+        var result2 = instance.AddDataWithVersion(Guid.NewGuid(), data2, "1.0.0");
+
+        // Assert
+        Assert.Equal(0, result1.HistorySequence);
+        Assert.Equal(1, result2.HistorySequence);
+    }
+
+    [Fact]
+    public void GetNextHistorySequence_ShouldIncrementSequentially_ForMultipleDataWithSameVersion()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+
+        // Act
+        var result0 = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "1.0.0");
+        var result1 = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":2}"), "1.0.0");
+        var result2 = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":3}"), "1.0.0");
+        var result3 = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":4}"), "1.0.0");
+
+        // Assert
+        Assert.Equal(0, result0.HistorySequence);
+        Assert.Equal(1, result1.HistorySequence);
+        Assert.Equal(2, result2.HistorySequence);
+        Assert.Equal(3, result3.HistorySequence);
+    }
+
+    [Fact]
+    public void GetNextHistorySequence_ShouldMaintainSeparateSequences_ForDifferentVersions()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+
+        // Act - Add data for version 1.0.0
+        var v1_0 = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "1.0.0");
+        var v1_1 = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":2}"), "1.0.0");
+
+        // Add data for version 2.0.0
+        var v2_0 = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":3}"), "2.0.0");
+        var v2_1 = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":4}"), "2.0.0");
+
+        // Add more data for version 1.0.0
+        var v1_2 = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":5}"), "1.0.0");
+
+        // Assert - Each version should have its own sequence counter
+        Assert.Equal(0, v1_0.HistorySequence);
+        Assert.Equal(1, v1_1.HistorySequence);
+        Assert.Equal(2, v1_2.HistorySequence);
+        
+        Assert.Equal(0, v2_0.HistorySequence);
+        Assert.Equal(1, v2_1.HistorySequence);
+    }
+
+    [Fact]
+    public void GetNextHistorySequence_ShouldWorkCorrectly_WhenUsedViaAddData()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+
+        // Act - AddData internally uses GetNextHistorySequence when creating new versions
+        var result1 = instance.AddData(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"));
+        var result2 = instance.AddData(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":2}"));
+        var result3 = instance.AddData(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":3}"));
+
+        // Assert
+        Assert.Equal(0, result1.HistorySequence);
+        Assert.Equal(0, result2.HistorySequence); // New version, so resets to 0
+        Assert.Equal(0, result3.HistorySequence); // New version, so resets to 0
+    }
+
+    [Fact]
+    public void GetVersionHistory_ShouldReturnAllEntriesForVersion_OrderedBySequence()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "1.0.0");
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":2}"), "1.0.0");
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":3}"), "2.0.0");
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":4}"), "1.0.0");
+
+        // Act
+        var history = instance.GetVersionHistory("1.0.0").ToList();
+
+        // Assert
+        Assert.Equal(3, history.Count);
+        Assert.Equal(0, history[0].HistorySequence);
+        Assert.Equal(1, history[1].HistorySequence);
+        Assert.Equal(2, history[2].HistorySequence);
+    }
+
+    [Fact]
+    public void GetLatestDataForVersion_ShouldReturnHighestSequence()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "1.0.0");
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":2}"), "1.0.0");
+        var latest = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":3}"), "1.0.0");
+
+        // Act
+        var result = instance.GetLatestDataForVersion("1.0.0");
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(latest.Id, result.Id);
+        Assert.Equal(2, result.HistorySequence);
+    }
+
+    [Fact]
+    public void GetLatestDataForVersion_ShouldReturnNull_WhenVersionNotFound()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "1.0.0");
+
+        // Act
+        var result = instance.GetLatestDataForVersion("2.0.0");
+
+        // Assert
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void GetVersionHistory_ShouldReturnEmptyList_WhenVersionNotFound()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "1.0.0");
+
+        // Act
+        var history = instance.GetVersionHistory("2.0.0").ToList();
+
+        // Assert
+        Assert.Empty(history);
+    }
 }

@@ -21,7 +21,7 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
         Guid id,
         Guid instanceId,
         string version,
-        JsonData data, bool isLatest) : base(id)
+        JsonData data, bool isLatest, int historySequence = 0) : base(id)
     {
         InstanceId = instanceId;
         SetVersion(version);
@@ -30,6 +30,7 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
         EnteredAt = DateTime.UtcNow;
         ETag = Ulid.NewUlid().ToString();
         IsLatest = isLatest;
+        HistorySequence = historySequence;
     }
 
     /// <summary>
@@ -41,6 +42,12 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
     /// Semantic version number. There may be more than one version on the runtime.
     /// </summary>
     public string Version { get; private set; }
+
+    /// <summary>
+    /// History sequence number (for ordering history entries within the same version)
+    /// </summary>
+    public int HistorySequence { get; private set; }
+
     /// <summary>
     /// IsLatest
     /// </summary>
@@ -50,12 +57,12 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
     /// ETag
     /// </summary>
     public string ETag { get; private set; }
-    
+
     /// <summary>
     /// SHA1 hash of the data payload for change detection
     /// </summary>
     public string DataHash { get; private set; }
-    
+
     /// <summary>
     /// <see cref="JsonData"/>
     /// </summary>
@@ -76,7 +83,8 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
     internal InstanceData NewVersion(
         Guid id,
         JsonData jsonData,
-        VersionStrategy versionStrategy
+        VersionStrategy versionStrategy,
+        int historySequence
     )
     {
         var newVersion = IncrementVersion(Version, versionStrategy);
@@ -87,7 +95,8 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
             InstanceId,
             newVersion,
             newData,
-            true
+            true,
+            historySequence
         );
     }
 
@@ -99,7 +108,7 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
     private static string ComputeDataHash(JsonData data)
     {
         using var sha1 = SHA1.Create();
-        
+
         // Use normalized JSON from JsonData for consistent hashing
         var jsonBytes = Encoding.UTF8.GetBytes(data.NormalizedJson);
         var hashBytes = sha1.ComputeHash(jsonBytes);
