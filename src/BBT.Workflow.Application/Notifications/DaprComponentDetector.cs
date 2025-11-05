@@ -8,7 +8,7 @@ namespace BBT.Workflow.Application.Notifications;
 public sealed class DaprComponentDetector(
     DaprClient daprClient,
     IConfiguration configuration,
-    ILogger<DaprComponentDetector> _)
+    ILogger<DaprComponentDetector> logger)
 {
     public async Task<(string ComponentType, NotificationComponentType NotificationType, Dictionary<string, string> Metadata)> DetectAsync(
         string componentName,
@@ -17,7 +17,7 @@ public sealed class DaprComponentDetector(
     {
         // Try to detect component type from Dapr runtime metadata first
         var componentType = await TryResolveComponentTypeFromDaprAsync(componentName, cancellationToken) ?? string.Empty;
-        
+
         NotificationComponentType notificationType = componentType switch
         {
             var t when !string.IsNullOrWhiteSpace(t) && t.StartsWith("pubsub.", StringComparison.OrdinalIgnoreCase)
@@ -82,9 +82,12 @@ public sealed class DaprComponentDetector(
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            throw;
+            logger.LogError(ex,
+                "Failed resolve component type from dapr component");
+
+            return null;
         }
         return null;
     }
@@ -94,7 +97,7 @@ public sealed class DaprComponentDetector(
         foreach (var item in array.EnumerateArray())
         {
             if (item.ValueKind != JsonValueKind.Object) continue;
-            
+
             // Try both lowercase and uppercase property names
             string? name = null;
             if (item.TryGetProperty("name", out var nameEl) && nameEl.ValueKind == JsonValueKind.String)
@@ -122,6 +125,6 @@ public sealed class DaprComponentDetector(
         return null;
     }
 
- 
+
 }
 
