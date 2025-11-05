@@ -1,5 +1,8 @@
 namespace BBT.Workflow.Instances;
 
+/// <summary>
+/// Compares InstanceData first by semantic version, then by history sequence for entries with the same version.
+/// </summary>
 public class InstanceDataVersionComparer : IComparer<InstanceData>
 {
     public static InstanceDataVersionComparer Instance { get; } = new();
@@ -10,7 +13,16 @@ public class InstanceDataVersionComparer : IComparer<InstanceData>
         if (x == null) return -1;
         if (y == null) return 1;
 
-        return CompareVersionStrings(x.Version, y.Version);
+        // First compare by version
+        var versionComparison = CompareVersionStrings(x.Version, y.Version);
+        
+        // If versions are equal, compare by HistorySequence
+        if (versionComparison == 0)
+        {
+            return x.HistorySequence.CompareTo(y.HistorySequence);
+        }
+        
+        return versionComparison;
     }
 
     private static int CompareVersionStrings(string? v1, string? v2)
