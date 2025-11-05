@@ -84,7 +84,7 @@ public sealed class DaprComponentDetector(
         }
         catch
         {
-            return null;
+            throw;
         }
         return null;
     }
