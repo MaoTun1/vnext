@@ -71,7 +71,7 @@ public sealed class CreateTransitionInput
     /// <summary>
     /// View
     /// </summary>
-    public ReferenceInput? View { get; set; }
+    public ViewDefinitionInput? View { get; set; }
 
     /// <summary>
     /// On execution tasks

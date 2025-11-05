@@ -24,6 +24,7 @@ using BBT.Workflow.Execution.Pipeline.Steps;
 using BBT.Workflow.Execution.ReEntry;
 using BBT.Workflow.Execution.Transitions.Factory;
 using BBT.Workflow.Execution.Validation;
+using BBT.Workflow.Application.Notifications;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -106,6 +107,9 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddScoped<ISubflowCompletionService, SubflowCompletionService>();
         
         services.AddScoped<IRuntimeService, RuntimeService>();
+
+        // Notifications
+        services.AddScoped<DaprComponentDetector>();
     }
 
     /// <summary>
@@ -175,6 +179,7 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddScoped<ScriptTaskExecutor>();
         services.AddScoped<ConditionTaskExecutor>();
         services.AddScoped<TimerTaskExecutor>();
+        services.AddScoped<NotificationTaskExecutor>();
         
         // Scripting service
         services.AddScoped<IScriptContextFactory, ScriptContextFactory>();

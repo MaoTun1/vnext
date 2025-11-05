@@ -20,17 +20,15 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
     [JsonConstructor]
     private View(
         ViewType type,
-        ViewTarget target,
         string content,
         string display,
         LanguageLabel[]? labels,
         PlatformOverrides? platformOverrides) : this()
     {
         Type = type;
-        Target = target;
         Content = Check.NotNullOrWhiteSpace(content, nameof(Content));
         Display = display;
-        Labels = labels??=[];
+        Labels = labels ?? [];
         PlatformOverrides = platformOverrides;
     }
 
@@ -60,11 +58,6 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
     public ViewType Type { get; private set; }
 
     /// <summary>
-    /// <see cref="ViewTarget"/>
-    /// </summary>
-    public ViewTarget Target { get; private set; }
-
-    /// <summary>
     /// Semantic Version
     /// </summary>
     public string SemanticVersion => Regex.Match(Version, @"^([^+]+)").Groups[1].Value;
@@ -73,43 +66,18 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
     /// Content
     /// </summary>
     public string Content { get; private set; } = string.Empty;
+    
     /// <summary>
     /// Display
     /// </summary>
     public string Display { get; private set; } = string.Empty;
+    
     /// <summary>
     /// Display
     /// </summary>
     public LanguageLabel[]? Labels { get; private set; } = [];
     public PlatformOverrides? PlatformOverrides { get; private set; }
-
-    /// <summary>
-    /// Json Content
-    /// </summary>
-    public JsonDocument? JsonContent
-    {
-        get
-        {
-            if (Type != ViewType.Json)
-            {
-                string jsonWrapped = JsonSerializer.Serialize(Content);
-                return JsonDocument.Parse(jsonWrapped);
-            }
-
-            // Try to parse as JSON only when type is Json
-            try
-            {
-                return JsonDocument.Parse(Content);
-            }
-            catch (JsonException)
-            {
-                // If content is not valid JSON, return null
-                return null;
-            }
-        }
-        set => Content = value?.RootElement.ToString() ?? string.Empty;
-    }
-
+    
     public string CacheKey => $"{nameof(View)}:{Domain}:{Flow}:{Key}:{Version}";
 
     public static string GenerateCacheKey(

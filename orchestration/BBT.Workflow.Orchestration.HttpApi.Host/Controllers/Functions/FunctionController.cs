@@ -1,7 +1,6 @@
-using System.ComponentModel.DataAnnotations;
-using System.Text.Json;
 using BBT.Workflow.Domain.Shared;
 using BBT.Workflow.Functions;
+using BBT.Workflow.HttpApi.Shared;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Instances.DTOs;
 using BBT.Workflow.Runtime;
@@ -74,7 +73,7 @@ public sealed class FunctionController(
                     Extension = parameters.Extension
                 };
                 var response = await queryAppService.GetInstanceStateAsync(inputLongpooling, cancellationToken);
-                return Ok(response.Data);
+                return response.ToActionResult();
             case Definitions.Functions.FunctionTypeConst.View:
                 var inputView = new GetViewInput
                 {
@@ -83,10 +82,18 @@ public sealed class FunctionController(
                     Instance = instance,
                     Version = parameters.Version
                 };
-                var responseView = await queryAppService.GetPlatformSpecificViewAsync(inputView, parameters.Platform, cancellationToken);
+                var responseView = await queryAppService.GetPlatformSpecificViewAsync(
+                    inputView, 
+                    parameters.Platform,
+                    parameters.TransitionKey,
+                    cancellationToken);
+                if (!responseView.IsSuccess)
+                {
+                    return responseView.ToActionResult();
+                }
 
                 // Return only the content as requested, without Type and Target
-                return Ok(responseView.Data.Content);
+                return Ok(responseView.Value!.Content);
             case Definitions.Functions.FunctionTypeConst.Data:
                 var inputData = new GetInstanceDataInput
                 {
@@ -96,15 +103,14 @@ public sealed class FunctionController(
                     IfNoneMatch = ifNoneMatch
                 };
                 var responseData = await queryAppService.GetInstanceDataAsync(inputData, cancellationToken);
-                if (responseData.IsNotModified)
+                
+                // Handle 304 via ToActionResult, but also set ETag header if present
+                if (responseData.Result.IsSuccess && !string.IsNullOrEmpty(responseData.Result.Value!.Etag))
                 {
-                    return StatusCode(StatusCodes.Status304NotModified);
+                    HttpContext.Response.Headers[HeadersConstants.ETag] = responseData.Result.Value.Etag;
                 }
-                if (!string.IsNullOrEmpty(responseData.Data.Etag))
-                {
-                    HttpContext.Response.Headers[HeadersConstants.ETag] = responseData.Data.Etag;
-                }
-                return Ok(new GetInstanceDataResponseOutput(responseData.Data));
+                
+                return responseData.ToActionResult();
             default:
                 return Ok(
                     await functionAppService.GetFunctionByInstance(function, workflow, domain, instance, cancellationToken)

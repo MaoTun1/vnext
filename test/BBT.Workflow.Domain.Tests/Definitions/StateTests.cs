@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using BBT.Workflow.Definitions;
 using Xunit;
 
 namespace BBT.Workflow.Definitions;
@@ -243,14 +242,15 @@ public class StateTests
     {
         // Arrange
         var state = State.Create("test-state", StateType.Intermediate, "Patch");
-        var viewReference = new Reference("view-1", "domain", "sys-views", "1.0.0");
+        var viewRef = new Reference("view-1", "domain", "sys-views", "1.0.0");
+        var viewDefinition = new ViewDefinition(Array.Empty<string>(), true, viewRef);
 
         // Act
-        state.SetView(viewReference);
+        state.SetView(viewDefinition);
 
         // Assert
         Assert.NotNull(state.View);
-        Assert.Equal("view-1", state.View.Key);
+        Assert.Equal("view-1", state.View.View.Key);
     }
 
     [Fact]
@@ -260,9 +260,13 @@ public class StateTests
         var state = State.Create("test-state", StateType.SubFlow, "Patch");
         var reference = new Reference("sub-flow", "domain", "sys-flows", "1.0.0");
         var mapping = new ScriptCode("location", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("code")));
+        var viewOverrides = new Dictionary<string, Reference>()
+        {
+            {"view-test",  new Reference("view-1", "domain", "sys-views", "1.0.0")}
+        };
 
         // Act
-        state.SetSubFlow("S", reference, mapping);
+        state.SetSubFlow("S", reference, mapping, viewOverrides);
 
         // Assert
         Assert.NotNull(state.SubFlow);
@@ -352,7 +356,7 @@ public class StateTests
 
         // Assert
         Assert.IsAssignableFrom<IHasKey>(state);
-        Assert.Equal("test-state", ((IHasKey)state).Key);
+        Assert.Equal("test-state", state.Key);
     }
 
     [Fact]

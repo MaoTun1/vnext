@@ -29,16 +29,7 @@ public class TransitionValidationService(
         logger.LogDebug("Validating transition {TransitionKey} for instance {InstanceId}",
             context.TransitionKey, context.InstanceId);
 
-        // 1. Validate that the instance can execute this transition (includes authorization check)
-        var policyResult = await ValidateTransitionPolicyAsync(context, context.Actor, cancellationToken);
-        if (!policyResult.IsSuccess)
-        {
-            logger.LogWarning("Transition policy validation failed for {TransitionKey} on instance {InstanceId}: {ErrorCode} - {ErrorMessage}",
-                context.TransitionKey, context.InstanceId, policyResult.Error.Code, policyResult.Error.Message);
-            return policyResult;
-        }
-        
-        // 2. Validate data against schema if present
+        // 1. Validate data against schema if present
         var schemaResult = await ValidateTransitionSchemaAsync(context, cancellationToken);
         if (!schemaResult.IsSuccess)
         {
@@ -49,6 +40,15 @@ public class TransitionValidationService(
 
         logger.LogDebug("Transition validation completed successfully for {TransitionKey} on instance {InstanceId}",
             context.TransitionKey, context.InstanceId);
+        
+        // 2. Validate that the instance can execute this transition (includes authorization check)
+        var policyResult = await ValidateTransitionPolicyAsync(context, context.Actor, cancellationToken);
+        if (!policyResult.IsSuccess)
+        {
+            logger.LogWarning("Transition policy validation failed for {TransitionKey} on instance {InstanceId}: {ErrorCode} - {ErrorMessage}",
+                context.TransitionKey, context.InstanceId, policyResult.Error.Code, policyResult.Error.Message);
+            return policyResult;
+        }
         
         return Result.Ok();
     }

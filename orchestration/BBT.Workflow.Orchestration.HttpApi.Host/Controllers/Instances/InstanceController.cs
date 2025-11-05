@@ -170,13 +170,7 @@ public sealed class InstanceController(
         };
 
         var result = await queryAppService.GetInstanceAsync(input, cancellationToken);
-
-        if (result.IsNotModified)
-        {
-            return StatusCode(StatusCodes.Status304NotModified);
-        }
-
-        return Ok(result.Data);
+        return result.ToActionResult();
     }
 
     [HttpGet("{domain}/workflows/{workflow}/instances")]
@@ -205,7 +199,7 @@ public sealed class InstanceController(
         };
 
         var response = await queryAppService.GetInstanceListAsync(input, cancellationToken);
-        return Ok(response.Data);
+        return response.ToActionResult();
     }
 
     [HttpGet("{domain}/workflows/{workflow}/instances/{instance}/transitions")]
@@ -225,10 +219,11 @@ public sealed class InstanceController(
         };
 
         var response = await queryAppService.GetInstanceHistoryAsync(input, cancellationToken);
-        return Ok(response.Data);
+        return response.ToActionResult();
     }
     [ApiExplorerSettings(IgnoreApi = true)]
       [HttpGet("{domain}/workflows/{workflow}/instances/{instance}/data")]
+    
     public async Task<IActionResult> GetInstanceDataAsync(
         [FromHeader(Name = "If-None-Match")] string? ifNoneMatch,
         [FromRoute] string domain,
@@ -245,34 +240,6 @@ public sealed class InstanceController(
         };
  
         var result = await queryAppService.GetInstanceDataAsync(input, cancellationToken);
- 
-        if (result.IsNotModified)
-        {
-            return StatusCode(StatusCodes.Status304NotModified);
-        }
- 
-        return Ok(result.Data);
+        return result.ToActionResult();
     }
-    [ApiExplorerSettings(IgnoreApi = true)]
-    [HttpGet("{domain}/workflows/{workflow}/instances/{instance}/view")]
-    public async Task<IActionResult> GetViewAsync(
-        [FromRoute] string domain,
-        [FromRoute] string workflow,
-        [FromRoute] string instance,
-        [FromQuery] string? version,
-        CancellationToken cancellationToken = default)
-    {
-        var input = new GetViewInput
-        {
-            Domain = domain,
-            Workflow = workflow,
-            Instance = instance,
-            Version = version
-        };
-
-        var response = await queryAppService.GetViewAsync(input, cancellationToken);
-        return Ok(response.Data);
-    }
-
-
 } 

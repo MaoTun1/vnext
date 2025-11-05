@@ -34,7 +34,7 @@ public sealed class CreateStateInput
     /// <summary>
     /// View
     /// </summary>
-    public ReferenceInput? View { get; set; }
+    public ViewDefinitionInput? View { get; set; }
     
     /// <summary>
     /// Sub Flow

@@ -215,14 +215,15 @@ public class TransitionTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var transition = Transition.Create("submit", "from", "to", TriggerType.Manual, "Patch");
-        var viewReference = new Reference("view-1", "domain", "sys-views", "1.0.0");
+        var viewRef = new Reference("view-1", "domain", "sys-views", "1.0.0");
+        var viewDefinition = new ViewDefinition(Array.Empty<string>(), true, viewRef);
 
         // Act
-        transition.SetView(viewReference);
+        transition.SetView(viewDefinition);
 
         // Assert
         Assert.NotNull(transition.View);
-        Assert.Equal("view-1", transition.View.Key);
+        Assert.Equal("view-1", transition.View.View.Key);
     }
 
     [Fact]

@@ -7,10 +7,11 @@ public class SubFlowInput
 {
     [Required]
     [StringLength(WorkflowConstants.MaxTypeLength)]
-    [AllowedValues("C", "F", "S", "P",
-        ErrorMessage = "The value must be one of the following: C (Core), F (Flow), S (SubFlow), P (SubProcess).")]
+    [AllowedValues("S", "P",
+        ErrorMessage = "The value must be one of the following: S (SubFlow), P (SubProcess).")]
     public string Type { get; set; }
 
     [Required] public ReferenceInput Process { get; set; }
     [Required] public ScriptCodeInput Mapping { get; set; }
+    public Dictionary<string, Reference>? ViewOverrides { get; set; }
 }

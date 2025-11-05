@@ -129,7 +129,28 @@ public sealed class SubflowStarter(
                 RouteValues = inputMappingResult?.RouteValues ?? new Dictionary<string, string?>()
             };
 
-            await remoteInstanceCommandAppService.StartSubAsync(subFlowStartInput, cancellationToken);
+            var startResult = await remoteInstanceCommandAppService.StartSubAsync(subFlowStartInput, cancellationToken);
+            
+            if (!startResult.IsSuccess)
+            {
+                sw.Stop();
+                var error = startResult.Error;
+                
+                logger.LogError(
+                    "{Prefix} SubFlow {SubFlowKey} start failed for instance {InstanceId}: {ErrorCode} - {ErrorMessage}",
+                    TelemetryConstants.Prefixes.Execution,
+                    subFlowConfig.Process.Key,
+                    parentInstance.Id,
+                    error.Code,
+                    error.Message);
+                
+                activity?.SetStatus(ActivityStatusCode.Error, error.Message);
+                activity?.SetTag("error.code", error.Code);
+                
+                throw new InvalidOperationException(
+                    $"Failed to start SubFlow {subFlowConfig.Process.Key}: {error.Message}", 
+                    new Exception(error.Code));
+            }
             
             sw.Stop();
             

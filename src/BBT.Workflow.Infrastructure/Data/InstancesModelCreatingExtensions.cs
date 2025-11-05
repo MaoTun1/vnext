@@ -97,6 +97,10 @@ public static class InstancesModelCreatingExtensions
                 .IsRequired()
                 .HasMaxLength(WorkflowConstants.MaxVersionLength);
 
+            b.Property(p => p.HistorySequence)
+                .IsRequired()
+                .HasDefaultValue(0);
+
             b.Property(p => p.ETag)
                 .IsRequired()
                 .HasMaxLength(WorkflowConstants.MaxETagLength);
@@ -114,7 +118,9 @@ public static class InstancesModelCreatingExtensions
                     .HasColumnName(nameof(InstanceData.Data));
             });
 
-            b.HasIndex(p => new { p.InstanceId, p.Version })
+            b.HasIndex(p => p.InstanceId);
+
+            b.HasIndex(p => new { p.InstanceId, p.Version, p.HistorySequence })
                 .IsUnique();
         });
 

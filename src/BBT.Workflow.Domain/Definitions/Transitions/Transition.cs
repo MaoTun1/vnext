@@ -39,13 +39,13 @@ public sealed class Transition : IHasKey
         VersionStrategy versionStrategy,
         List<LanguageLabel> labels,
         List<OnExecuteTask> onExecutionTasks,
-         Reference view
+        ViewDefinition view
     ) : this(key, from, target, triggerType)
     {
         VersionStrategy = versionStrategy;
         this.labels = labels ?? [];
         this.onExecutionTasks = onExecutionTasks ?? [];
-        this.view = view;
+        this.View = view;
     }
 
     /// <summary>
@@ -77,13 +77,16 @@ public sealed class Transition : IHasKey
     [JsonInclude] public Reference? Schema { get; private set; }
     [JsonInclude] public List<string> AvailableIn { get; private set; }
 
-    [JsonInclude] [JsonPropertyName("labels")]
+    [JsonInclude]
+    [JsonPropertyName("labels")]
     private List<LanguageLabel> labels = new();
 
-    [JsonInclude] [JsonPropertyName("onExecutionTasks")]
+    [JsonInclude]
+    [JsonPropertyName("onExecutionTasks")]
     private List<OnExecuteTask> onExecutionTasks = new();
-        [JsonInclude] [JsonPropertyName("view")]
-    public Reference? view  { get; private set; }
+    [JsonInclude]
+    [JsonPropertyName("view")]
+    public ViewDefinition? View { get; private set; }
 
     /// <summary>
     /// Language
@@ -91,11 +94,11 @@ public sealed class Transition : IHasKey
     [JsonIgnore]
     public IReadOnlyCollection<LanguageLabel> Labels => labels.AsReadOnly();
 
-    /// <summary>
-    /// Transition View
-    /// </summary>
-     [JsonIgnore]
-    public Reference? View { get; private set; }
+    // /// <summary>
+    // /// Transition View
+    // /// </summary>
+    // [JsonIgnore]
+    // public ViewDefinition? View { get; private set; }
 
     /// <summary>
     /// On Execution Tasks
@@ -140,9 +143,9 @@ public sealed class Transition : IHasKey
         }
     }
 
-    public void SetView(IReference reference)
+    public void SetView(ViewDefinition viewDefinition)
     {
-        View = reference.ToReference();
+        View = viewDefinition;
     }
 
     public void AddOnExecutionTask(OnExecuteTask task)
@@ -159,7 +162,7 @@ public sealed class Transition : IHasKey
     {
         Rule = new ScriptCode(location, scriptCode);
     }
-    
+
     public void SetTimer(string location, string code)
     {
         Timer = new ScriptCode(location, code);

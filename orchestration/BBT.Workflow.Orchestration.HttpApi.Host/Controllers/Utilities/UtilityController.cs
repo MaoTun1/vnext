@@ -1,9 +1,7 @@
 using BBT.Workflow.Definitions;
-using BBT.Workflow.Instances;
 using BBT.Workflow.SubFlow;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
-using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Orchestration.Controllers.Utilities;
 
@@ -12,7 +10,6 @@ namespace BBT.Workflow.Orchestration.Controllers.Utilities;
 [Route("api/v{version:apiVersion}")]
 [ServiceFilter(typeof(ResponseHeaderFilter))]
 public sealed class UtilityController(
-    IInstanceQueryAppService queryAppService,
     IAdminAppService adminAppService,
     ISubflowCompletionService subflowCompletionService,
     ILogger<UtilityController> logger) : ControllerBase
@@ -25,91 +22,6 @@ public sealed class UtilityController(
     {
         await adminAppService.InvalidateCacheAsync(input, cancellationToken);
         return Ok(new { result = "ok" });
-    }
-    
-    [ApiExplorerSettings(IgnoreApi = true)]
-    [HttpGet("{domain}/workflows/{workflow}/instances/{instance}/transitions/available")]
-    public async Task<IActionResult> GetAvailableTransitionsAsync(
-        [FromRoute] string domain,
-        [FromRoute] string workflow,
-        [FromRoute] string instance,
-        [FromQuery] string? version,
-        CancellationToken cancellationToken = default)
-    {
-        var input = new GetAvailableTransitionInput
-        {
-            Domain = domain,
-            Workflow = workflow,
-            Instance = instance,
-            Version = version
-        };
-
-        var response = await queryAppService.GetAvailableTransitionsAsync(input, cancellationToken);
-        return Ok(response.Data);
-    }
-    
-    
-    [ApiExplorerSettings(IgnoreApi = true)]
-    [HttpGet("{domain}/workflows/{workflow}/instances/{instance}/transitions/sysGetView")]
-    public async Task<IActionResult> GetAvailableSysGetViewAsync(
-        [FromRoute] string domain,
-        [FromRoute] string workflow,
-        [FromRoute] string instance,
-        [FromQuery] string? version,
-        CancellationToken cancellationToken = default)
-    {
-        var input = new GetAvailableSysGetViewInput
-        {
-            Domain = domain,
-            Workflow = workflow,
-            Instance = instance,
-            Version = version
-        };
-
-        var response = await queryAppService.GetAvailableSysGetViewAsync(input, cancellationToken);
-        return Ok(response.Data);
-    }
-    
-    [ApiExplorerSettings(IgnoreApi = true)]
-    [HttpGet("{domain}/workflows/{workflow}/instances/{instance}/transitions/items")]
-    public async Task<IActionResult> GetTransitionItemsAsync(
-        [FromRoute] string domain,
-        [FromRoute] string workflow,
-        [FromRoute] string instance,
-        [FromQuery] string? version,
-        CancellationToken cancellationToken = default)
-    {
-        var input = new GetTransitionItemsInput
-        {
-            Domain = domain,
-            Workflow = workflow,
-            Instance = instance,
-            Version = version
-        };
-
-        var response = await queryAppService.GetTransitionItemsAsync(input, cancellationToken);
-        return Ok(response.Data);
-    }
-    
-    [ApiExplorerSettings(IgnoreApi = true)]
-    [HttpGet("{domain}/workflows/{workflow}/instances/{instance}/correlations/active")]
-    public async Task<IActionResult> GetActiveCorrelationsAsync(
-        [FromRoute] string domain,
-        [FromRoute] string workflow,
-        [FromRoute] string instance,
-        [FromQuery] string? version,
-        CancellationToken cancellationToken = default)
-    {
-        var input = new GetActiveCorrelationsInput
-        {
-            Domain = domain,
-            Workflow = workflow,
-            Instance = instance,
-            Version = version
-        };
-
-        var response = await queryAppService.GetActiveCorrelationsAsync(input, cancellationToken);
-        return Ok(response.Data);
     }
     
     /// <summary>

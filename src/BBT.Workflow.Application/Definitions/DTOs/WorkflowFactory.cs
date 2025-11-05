@@ -186,7 +186,7 @@ public static class WorkflowFactory
         }
 
         if (transitionInput.View != null)
-            transition.SetView(transitionInput.View);
+            transition.SetView(transitionInput.View.ToViewDefinition());
 
         if (transitionInput.OnExecutionTasks != null)
             foreach (var taskInput in transitionInput.OnExecutionTasks)
@@ -195,7 +195,7 @@ public static class WorkflowFactory
                     OnExecuteTask.Create(
                         taskInput.Order,
                         taskInput.Task,
-                        new ScriptCode(taskInput.Mapping.Location, taskInput.Mapping.Code)
+                        new ScriptCode(taskInput.Mapping.Location, taskInput.Mapping.Code,taskInput.Mapping.Type)
                     )
                 );
             }
@@ -246,7 +246,7 @@ public static class WorkflowFactory
                         OnExecuteTask.Create(
                             taskInput.Order,
                             taskInput.Task,
-                            new ScriptCode(taskInput.Mapping.Location, taskInput.Mapping.Code)
+                            new ScriptCode(taskInput.Mapping.Location, taskInput.Mapping.Code,taskInput.Mapping.Type)
                         )
                     );
                 }
@@ -257,19 +257,23 @@ public static class WorkflowFactory
                     state.AddOnExit(OnExecuteTask.Create(
                             taskInput.Order,
                             taskInput.Task,
-                            new ScriptCode(taskInput.Mapping.Location, taskInput.Mapping.Code)
+                            new ScriptCode(taskInput.Mapping.Location, taskInput.Mapping.Code,taskInput.Mapping.Type)
                         )
                     );
                 }
 
             if (stateInput.View != null)
             {
-                state.SetView(stateInput.View);
+                state.SetView(stateInput.View.ToViewDefinition());
             }
 
             if (stateInput.SubFlow != null)
             {
-                state.SetSubFlow(stateInput.SubFlow.Type, stateInput.SubFlow.Process, new ScriptCode(stateInput.SubFlow.Mapping.Location, stateInput.SubFlow.Mapping.Code));
+                state.SetSubFlow(
+                    stateInput.SubFlow.Type, 
+                    stateInput.SubFlow.Process, 
+                    new ScriptCode(stateInput.SubFlow.Mapping.Location, stateInput.SubFlow.Mapping.Code),
+                    stateInput.SubFlow.ViewOverrides);
             }
 
             workflow.AddState(state);
