@@ -93,7 +93,7 @@ public sealed class FunctionController(
                 }
 
                 // Return only the content as requested, without Type and Target
-                return Ok(responseView.Value!.Content);
+                return Ok(responseView.Value!);
             case Definitions.Functions.FunctionTypeConst.Data:
                 var inputData = new GetInstanceDataInput
                 {

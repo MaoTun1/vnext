@@ -46,11 +46,14 @@ public sealed class CreateTransitionRecordStep(
 
                 var transition = context.Workflow.FindTransition(transitionKey);
 
-                context.Instance.AddData(
-                    guidGenerator.Create(),
-                    new JsonData(context.Data),
-                    transition?.VersionStrategy
-                );
+                if (context.Data != null)
+                {
+                    context.Instance.AddData(
+                        guidGenerator.Create(),
+                        new JsonData(context.Data),
+                        transition?.VersionStrategy
+                    );
+                }
 
                 await instanceRepository.UpdateAsync(context.Instance, true, ct);
 
