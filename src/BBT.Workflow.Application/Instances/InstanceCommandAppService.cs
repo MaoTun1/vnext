@@ -4,9 +4,12 @@ using BBT.Workflow.Caching;
 using BBT.Workflow.Domain;
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Execution.Services;
+using BBT.Workflow.Execution.Transitions.Services;
+using BBT.Workflow.Execution.Validation;
 using BBT.Workflow.Headers;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
+using BBT.Workflow.Validation;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
@@ -22,6 +25,8 @@ public sealed class InstanceCommandAppService(
     IInstanceRepository instanceRepository,
     IGuidGenerator guidGenerator,
     IHeaderService headerService,
+    ITransitionDataMapper transitionDataMapper,
+    ITransitionValidationService transitionValidationService,
     ILogger<InstanceCommandAppService> logger)
     : ApplicationService(serviceProvider), IInstanceCommandAppService
 {
@@ -35,21 +40,17 @@ public sealed class InstanceCommandAppService(
         // Set schema context once at the beginning
         using (currentSchema.Change(input.Workflow))
         {
-            Instance? createdInstance = null;
-            
             return await LoadWorkflowAsync(input, cancellationToken)
                 .OnSuccessAsync(async _ => 
                     await schemaManager.EnsureSchemaAndTablesAsync(currentSchema.Name, cancellationToken))
                 .ThenAsync(workflow => PrepareInstanceAsync(workflow, input, cancellationToken))
                 .OnSuccess(data => 
                 {
-                    createdInstance = data.Instance;
+                    _ = data.Instance;
                     logger.LogDebug("Created new instance {InstanceId} with key {InstanceKey}", 
                         data.Instance.Id, data.Instance.Key);
                 })
                 .ThenAsync(data => ExecuteStartTransitionAsync(data, input, cancellationToken))
-                .OnFailureAsync(async error => 
-                    await HandleValidationFailureAsync(error, createdInstance, cancellationToken))
                 .OnSuccess(output => AddWorkflowHeader(output, input));
         }
     }
@@ -92,18 +93,50 @@ public sealed class InstanceCommandAppService(
 
         var instance = instanceResult.Value!;
         
+        // Validate start transition before persisting instance
+        var validationResult = await transitionValidationService.ValidateStartTransitionAsync(
+            workflow,
+            instance,
+            workflow.StartTransition,
+            input.Instance.Attributes,
+            runtimeInfoProvider,
+            input.Headers,
+            cancellationToken);
+
+        if (!validationResult.IsSuccess)
+        {
+            logger.LogWarning("Start transition validation failed for instance {InstanceId}: {ErrorCode}",
+                instance.Id, validationResult.Error.Code);
+            return Result<(Definitions.Workflow, Instance)>.Fail(validationResult.Error);
+        }
+        
         // Add instance data if provided
         if (input.Instance.Attributes != null)
         {
-            var data = new JsonData(input.Instance.Attributes);
-            instance.AddData(
-                guidGenerator.Create(),
-                data,
-                workflow.StartTransition.VersionStrategy
-            );
+            // Map start transition data using optional mapping script
+            var mappedDataResult = await transitionDataMapper.MapTransitionDataAsync(
+                input.Instance.Attributes,
+                workflow.StartTransition,
+                workflow,
+                instance,
+                runtimeInfoProvider,
+                input.Headers,
+                cancellationToken);
+
+            if (!mappedDataResult.IsSuccess)
+                return Result<(Definitions.Workflow, Instance)>.Fail(mappedDataResult.Error);
+
+            if (mappedDataResult.Value != null)
+            {
+                instance.AddData(
+                    guidGenerator.Create(),
+                    new JsonData(mappedDataResult.Value!),
+                    workflow.StartTransition.VersionStrategy
+                );
+            }
         }
         
-        // Persist instance
+        // Persist instance (only after successful validation)
         var saveResult = await ResultExtensions.TryAsync(
             async ct => await instanceRepository.InsertAsync(instance, true, ct),
             cancellationToken,
@@ -143,75 +176,14 @@ public sealed class InstanceCommandAppService(
     }
     
     /// <summary>
-    /// Handles validation failure by deleting the instance if it's a validation error (schema or policy).
-    /// This allows the user to retry the operation without conflicts.
-    /// </summary>
-    /// <param name="error">The error that occurred during transition execution</param>
-    /// <param name="instance">The instance that was created (may be null if creation failed)</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests</param>
-    private async Task HandleValidationFailureAsync(
-        Error error,
-        Instance? instance,
-        CancellationToken cancellationToken)
-    {
-        // If validation fails (schema or policy), delete the instance to allow retry
-        if (instance != null && IsValidationError(error))
-        {
-            logger.LogWarning(
-                "Validation failed for instance {InstanceId} during start transition. Deleting instance to allow retry. Error: {ErrorCode} - {ErrorMessage}",
-                instance.Id, error.Code, error.Message);
-            
-            try
-            {
-                await instanceRepository.DeleteAsync(instance, true, cancellationToken);
-                logger.LogInformation(
-                    "Successfully deleted instance {InstanceId} after validation failure",
-                    instance.Id);
-            }
-            catch (Exception deleteEx)
-            {
-                // Log the deletion error but don't fail - we still want to return the validation error
-                logger.LogError(deleteEx,
-                    "Failed to delete instance {InstanceId} after validation failure",
-                    instance.Id);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Determines if an error is a validation error (schema or policy) that requires instance deletion.
-    /// </summary>
-    private static bool IsValidationError(Error error)
-    {
-        // Schema validation errors have ValidationErrors collection
-        if (error.ValidationErrors is { Count: > 0 })
-            return true;
-        
-        // Policy validation errors (UnauthorizedTransition)
-        if (error.Code == WorkflowErrorCodes.UnauthorizedTransition)
-            return true;
-        
-        // Schema validation error code
-        if (error.Code == WorkflowErrorCodes.ValidationErrors)
-            return true;
-        
-        // Runtime schema validation error
-        if (error.Code == WorkflowErrorCodes.RuntimeSchemaInvalidState)
-            return true;
-        
-        return false;
-    }
-
-    /// <summary>
     /// Step 5: Adds workflow header to response.
     /// </summary>
-    private StartInstanceOutput AddWorkflowHeader(StartInstanceOutput output, StartInstanceInput input)
+    private void AddWorkflowHeader(StartInstanceOutput output, StartInstanceInput input)
     {
         headerService.AddHeader(
             WorkflowInfo.Name,
             WorkflowInfo.Generate(runtimeInfoProvider.Domain, input.Workflow, input.Version ?? "latest", output.Id)
         );
-        return output;
     }
 
     /// <inheritdoc />
@@ -243,13 +215,12 @@ public sealed class InstanceCommandAppService(
     /// <summary>
     /// Adds workflow header to the transition response.
     /// </summary>
-    private TransitionOutput AddTransitionHeader(TransitionOutput output, TransitionInput input)
+    private void AddTransitionHeader(TransitionOutput output, TransitionInput input)
     {
         headerService.AddHeader(
             WorkflowInfo.Name,
             WorkflowInfo.Generate(runtimeInfoProvider.Domain, input.Workflow, input.Version ?? "latest", output.Id)
         );
-        return output;
     }
 
 

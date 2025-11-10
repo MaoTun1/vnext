@@ -23,6 +23,7 @@ using BBT.Workflow.Execution.Pipeline;
 using BBT.Workflow.Execution.Pipeline.Steps;
 using BBT.Workflow.Execution.ReEntry;
 using BBT.Workflow.Execution.Transitions.Factory;
+using BBT.Workflow.Execution.Transitions.Services;
 using BBT.Workflow.Execution.Validation;
 using BBT.Workflow.Application.Notifications;
 
@@ -212,6 +213,9 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         // Context Factory
         services.AddScoped<ITransitionContextFactory, TransitionContextFactory>();
         services.AddScoped<IContextRefresher, ContextRefresher>();
+
+        // Transition Data Mapping Service
+        services.AddScoped<ITransitionDataMapper, TransitionDataMapper>();
 
         // Validation Services
         services.AddScoped<ITransitionValidationService, TransitionValidationService>();

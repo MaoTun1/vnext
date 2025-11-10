@@ -1,9 +1,14 @@
 using BBT.Workflow.Caching;
+using BBT.Workflow.Definitions;
 using BBT.Workflow.Domain;
+using BBT.Workflow.Execution;
+using BBT.Workflow.Instances;
 using BBT.Workflow.Instances.Policies;
+using BBT.Workflow.Runtime;
 using BBT.Workflow.Shared;
 using BBT.Workflow.Validation;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace BBT.Workflow.Execution.Validation;
 
@@ -114,5 +119,104 @@ public class TransitionValidationService(
 
         logger.LogTrace("Transition schema validation passed for {TransitionKey}", context.TransitionKey);
         return Result.Ok();
+    }
+
+    /// <inheritdoc />
+    public async Task<Result> ValidateStartTransitionAsync(
+        Definitions.Workflow workflow,
+        Instance instance,
+        Transition transition,
+        object? data,
+        IRuntimeInfoProvider runtimeInfoProvider,
+        IReadOnlyDictionary<string, string?>? headers = null,
+        CancellationToken cancellationToken = default)
+    {
+        logger.LogDebug("Validating start transition {TransitionKey} for new instance {InstanceId}",
+            transition.Key, instance.Id);
+
+        // Get initial state for the start transition
+        var initialStateResult = workflow.GetInitialState();
+        if (!initialStateResult.IsSuccess)
+        {
+            logger.LogWarning("Failed to get initial state for workflow {WorkflowKey}: {ErrorCode}",
+                workflow.Key, initialStateResult.Error.Code);
+            return Result.Fail(initialStateResult.Error);
+        }
+
+        var initialState = initialStateResult.Value!;
+
+        // Manually construct TransitionExecutionContext for start transition validation
+        var context = BuildStartTransitionContext(
+            workflow,
+            instance,
+            transition,
+            initialState,
+            data,
+            runtimeInfoProvider,
+            headers);
+
+        // Reuse existing validation logic
+        return await ValidateAsync(context, cancellationToken);
+    }
+
+    /// <summary>
+    /// Builds a TransitionExecutionContext for start transition validation.
+    /// </summary>
+    private TransitionExecutionContext BuildStartTransitionContext(
+        Definitions.Workflow workflow,
+        Instance instance,
+        Transition transition,
+        State initialState,
+        object? data,
+        IRuntimeInfoProvider runtimeInfoProvider,
+        IReadOnlyDictionary<string, string?>? headers)
+    {
+        var (traceId, spanId) = InitializeTelemetry();
+
+        return new TransitionExecutionContext
+        {
+            // Identity
+            Domain = runtimeInfoProvider.Domain,
+            InstanceId = instance.Id,
+            WorkflowKey = workflow.Key,
+            TransitionKey = transition.Key,
+            Trigger = TriggerType.Manual, // Start transitions are always manual
+            Actor = ExecutionActor.User, // Start transitions are always user-initiated
+            CorrelationId = Guid.NewGuid().ToString("N"),
+            CausationId = null,
+            ExecutionChainId = Guid.NewGuid().ToString("N"),
+            ChainDepth = 0,
+            RequestedAt = DateTimeOffset.UtcNow,
+
+            // Definitions
+            Workflow = workflow,
+            Current = initialState,
+            Transition = transition,
+
+            // Instance state
+            Instance = instance,
+            ConcurrencyToken = instance.ConcurrencyStamp,
+            Data = data,
+
+            // Flags
+            IsReentry = false, // Start transitions are never re-entry
+
+            // Telemetry
+            TraceId = traceId,
+            SpanId = spanId,
+            Headers = headers ?? new Dictionary<string, string?>()
+        };
+    }
+
+    /// <summary>
+    /// Initializes telemetry context for distributed tracing.
+    /// </summary>
+    private static (string TraceId, string SpanId) InitializeTelemetry()
+    {
+        var activity = Activity.Current;
+        var traceId = activity?.TraceId.ToString() ?? Guid.NewGuid().ToString("N");
+        var spanId = activity?.SpanId.ToString() ?? Guid.NewGuid().ToString("N")[..16];
+
+        return (traceId, spanId);
     }
 }
