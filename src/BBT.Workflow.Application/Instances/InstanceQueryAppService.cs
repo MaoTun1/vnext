@@ -531,7 +531,7 @@ public sealed class InstanceQueryAppService(
                         currentStateResult.Value);
 
                     // Build data href with extensions
-                    var allExtensions = (input.Extension ?? []).Concat(viewDefinition?.Extensions ?? []).ToArray();
+                    var allExtensions = (input.Extensions ?? []).Concat(viewDefinition?.Extensions ?? []).ToArray();
                     var dataHref = new DataHref
                     {
                         Href = allExtensions.Length > 0
