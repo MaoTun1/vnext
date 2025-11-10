@@ -174,31 +174,7 @@ public sealed class InstanceCommandAppService(
             return Result<StartInstanceOutput>.Fail(ex.Error);
         }
     }
-
-    /// <summary>
-    /// Determines if an error is a validation error (schema or policy) that requires instance deletion.
-    /// </summary>
-    private static bool IsValidationError(Error error)
-    {
-        // Schema validation errors have ValidationErrors collection
-        if (error.ValidationErrors is { Count: > 0 })
-            return true;
-        
-        // Policy validation errors (UnauthorizedTransition)
-        if (error.Code == WorkflowErrorCodes.UnauthorizedTransition)
-            return true;
-        
-        // Schema validation error code
-        if (error.Code == WorkflowErrorCodes.ValidationErrors)
-            return true;
-        
-        // Runtime schema validation error
-        if (error.Code == WorkflowErrorCodes.RuntimeSchemaInvalidState)
-            return true;
-        
-        return false;
-    }
-
+    
     /// <summary>
     /// Step 5: Adds workflow header to response.
     /// </summary>
