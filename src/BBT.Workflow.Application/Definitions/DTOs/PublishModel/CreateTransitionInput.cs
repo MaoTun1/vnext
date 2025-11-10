@@ -62,6 +62,11 @@ public sealed class CreateTransitionInput
     /// Timer
     /// </summary>
     public ScriptCodeInput? Timer { get; set; }
+    
+    /// <summary>
+    /// Input mapping
+    /// </summary>
+    public ScriptCodeInput? Mapping { get; set; }
 
     /// <summary>
     /// It is a content set with multiple language options for the content to be displayed to the user.

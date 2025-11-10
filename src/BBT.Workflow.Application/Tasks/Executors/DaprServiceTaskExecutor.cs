@@ -71,7 +71,7 @@ public sealed class DaprServiceTaskExecutor(
                 
                 Logger.LogDebug("Added request body to DAPR service call for task {TaskKey}", daprTask.Key);
             }
-
+            
             Logger.LogInformation("Invoking DAPR service for task {TaskKey}: {AppId}/{MethodName} via {HttpVerb}", 
                 daprTask.Key, daprTask.AppId, daprTask.MethodName, daprTask.HttpVerb);
 

@@ -184,6 +184,14 @@ public static class WorkflowFactory
                 transitionInput.Timer.Code
             );
         }
+        
+        if (transitionInput.Mapping != null)
+        {
+            transition.SetMapping(
+                transitionInput.Mapping.Location,
+                transitionInput.Mapping.Code
+            );
+        }
 
         if (transitionInput.View != null)
             transition.SetView(transitionInput.View.ToViewDefinition());

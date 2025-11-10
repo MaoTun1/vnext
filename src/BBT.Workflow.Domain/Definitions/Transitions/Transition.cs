@@ -76,6 +76,7 @@ public sealed class Transition : IHasKey
     [JsonInclude] public ScriptCode? Rule { get; private set; }
     [JsonInclude] public Reference? Schema { get; private set; }
     [JsonInclude] public List<string> AvailableIn { get; private set; }
+    [JsonInclude] public ScriptCode? Mapping { get; private set; }
 
     [JsonInclude]
     [JsonPropertyName("labels")]
@@ -166,6 +167,11 @@ public sealed class Transition : IHasKey
     public void SetTimer(string location, string code)
     {
         Timer = new ScriptCode(location, code);
+    }
+    
+    public void SetMapping(string location, string code)
+    {
+        Mapping = new ScriptCode(location, code);
     }
 
     public bool CanExecute(State currentState, StateTransitionPolicy policy)

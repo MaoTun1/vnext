@@ -1,4 +1,7 @@
+using BBT.Workflow.Definitions;
 using BBT.Workflow.Domain;
+using BBT.Workflow.Instances;
+using BBT.Workflow.Runtime;
 using BBT.Workflow.Shared;
 
 namespace BBT.Workflow.Execution.Validation;
@@ -24,5 +27,32 @@ public interface ITransitionValidationService
     /// </remarks>
     Task<Result> ValidateAsync(
         TransitionExecutionContext context,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Validates a start transition for a new instance before persistence using Result Pattern.
+    /// This method is used during instance creation to validate the start transition before the instance is persisted.
+    /// Returns Result.Ok() if all validations pass, or Result.Fail() with detailed error information on failure.
+    /// </summary>
+    /// <param name="workflow">The workflow definition</param>
+    /// <param name="instance">The instance that will be persisted (not yet persisted)</param>
+    /// <param name="transition">The start transition to validate</param>
+    /// <param name="data">The input data/attributes for the transition</param>
+    /// <param name="runtimeInfoProvider">Runtime information provider for domain and version</param>
+    /// <param name="headers">Optional request headers</param>
+    /// <param name="cancellationToken">Cancellation token to cancel the operation</param>
+    /// <returns>Result indicating validation success or failure with detailed error information</returns>
+    /// <remarks>
+    /// This method performs the same validation as ValidateAsync but is specifically designed for start transitions
+    /// where the instance has not yet been persisted. It constructs a TransitionExecutionContext internally and
+    /// reuses the existing validation logic to ensure consistency.
+    /// </remarks>
+    Task<Result> ValidateStartTransitionAsync(
+        Definitions.Workflow workflow,
+        Instance instance,
+        Transition transition,
+        object? data,
+        IRuntimeInfoProvider runtimeInfoProvider,
+        IReadOnlyDictionary<string, string?>? headers = null,
         CancellationToken cancellationToken = default);
 }

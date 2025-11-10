@@ -1,6 +1,8 @@
 using BBT.Aether.Guids;
 using BBT.Workflow.Domain;
+using BBT.Workflow.Execution.Transitions.Services;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Runtime;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
@@ -15,6 +17,8 @@ public sealed class CreateTransitionRecordStep(
     IInstanceTransitionRepository instanceTransitionRepository,
     IInstanceRepository instanceRepository,
     IGuidGenerator guidGenerator,
+    ITransitionDataMapper transitionDataMapper,
+    IRuntimeInfoProvider runtimeInfoProvider,
     ILogger<CreateTransitionRecordStep> logger) : ITransitionStep
 {
     /// <inheritdoc />
@@ -46,15 +50,31 @@ public sealed class CreateTransitionRecordStep(
 
                 var transition = context.Workflow.FindTransition(transitionKey);
 
-                if (context.Data != null)
+                // Map transition data using optional mapping script
+                var mappedDataResult = await transitionDataMapper.MapTransitionDataAsync(
+                    context.Data,
+                    transition,
+                    context.Workflow,
+                    context.Instance,
+                    runtimeInfoProvider,
+                    context.Headers,
+                    ct);
+
+                if (!mappedDataResult.IsSuccess)
+                {
+                    throw new InvalidOperationException(
+                        $"Transition mapping failed: {mappedDataResult.Error.Message}");
+                }
+
+                if (mappedDataResult.Value != null)
                 {
                     context.Instance.AddData(
                         guidGenerator.Create(),
-                        new JsonData(context.Data),
+                        new JsonData(mappedDataResult.Value!),
                         transition?.VersionStrategy
                     );
                 }
-
+                
                 await instanceRepository.UpdateAsync(context.Instance, true, ct);
 
                 // Persist the record
