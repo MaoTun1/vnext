@@ -70,7 +70,7 @@ public sealed class FunctionController(
                     Workflow = workflow,
                     Instance = instance,
                     Version = parameters.Version,
-                    Extension = parameters.Extension
+                    Extensions = parameters.Extensions
                 };
                 var response = await queryAppService.GetInstanceStateAsync(inputLongpooling, cancellationToken);
                 return response.ToActionResult();
@@ -100,7 +100,8 @@ public sealed class FunctionController(
                     Domain = domain,
                     Workflow = workflow,
                     Instance = instance,
-                    IfNoneMatch = ifNoneMatch
+                    IfNoneMatch = ifNoneMatch,
+                    Extensions = parameters.Extensions
                 };
                 var responseData = await queryAppService.GetInstanceDataAsync(inputData, cancellationToken);
                 
