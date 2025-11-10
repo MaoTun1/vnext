@@ -101,7 +101,7 @@ public sealed class FunctionController(
                     Workflow = workflow,
                     Instance = instance,
                     IfNoneMatch = ifNoneMatch,
-                    Extension = parameters.Extensions
+                    Extensions = parameters.Extensions
                 };
                 var responseData = await queryAppService.GetInstanceDataAsync(inputData, cancellationToken);
                 

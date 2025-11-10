@@ -405,7 +405,7 @@ public sealed class InstanceQueryAppService(
                         .BuildAsync(ct);
 
                     result.Extensions = await instanceExtensionService.ProcessExtensionsAsync(
-                        input.Extension,
+                        input.Extensions,
                         scriptContext,
                         flow,
                         ExtensionScope.GetInstance,
