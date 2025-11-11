@@ -191,6 +191,7 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddScoped<StartTriggerStrategy>();
         services.AddScoped<DirectTriggerStrategy>();
         services.AddScoped<SubProcessTriggerStrategy>();
+        services.AddScoped<GetInstanceDataTriggerStrategy>();
         
         // Scripting service
         services.AddScoped<IScriptContextFactory, ScriptContextFactory>();

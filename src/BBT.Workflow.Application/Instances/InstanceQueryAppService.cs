@@ -560,7 +560,7 @@ public sealed class InstanceQueryAppService(
                             SubFlowName = correlation.SubFlowName,
                             SubFlowVersion = correlation.SubFlowVersion,
                             IsCompleted = correlation.IsCompleted,
-                            Href = string.Format(InstanceUrlTemplates.SubFlowData, correlation.SubFlowDomain,
+                            Href = string.Format(InstanceUrlTemplates.Data, correlation.SubFlowDomain,
                                 correlation.SubFlowName, correlation.SubFlowInstanceId)
                         }).ToList();
 

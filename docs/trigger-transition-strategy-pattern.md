@@ -23,7 +23,8 @@ We implemented the Strategy Pattern to separate different trigger transition beh
 ITriggerTransitionStrategy (Domain)
 ├── StartTriggerStrategy (Application) - Creates new workflow instances
 ├── DirectTriggerStrategy (Application) - Triggers transition on current instance
-└── SubProcessTriggerStrategy (Application) - Triggers transition on correlated SubFlow (placeholder)
+├── SubProcessTriggerStrategy (Application) - Triggers transition on correlated SubFlow (placeholder)
+└── GetInstanceDataTriggerStrategy (Application) - Retrieves instance data from workflow instances
 ```
 
 ### Factory Pattern
@@ -53,7 +54,7 @@ TriggerTransitionTaskExecutor
     ↓
 ITriggerTransitionStrategyFactory (resolves strategy based on TriggerTransitionType enum)
     ↓
-ITriggerTransitionStrategy (StartTriggerStrategy, DirectTriggerStrategy, or SubProcessTriggerStrategy)
+ITriggerTransitionStrategy (StartTriggerStrategy, DirectTriggerStrategy, SubProcessTriggerStrategy, or GetInstanceDataTriggerStrategy)
     ↓
 ITriggerTransitionHttpTaskFactory (creates HttpTask)
     ↓
@@ -136,6 +137,37 @@ Placeholder for future implementation of SubProcess trigger type.
 - Currently throws `NotImplementedException`
 - Reserved for future correlation-based SubFlow triggering
 
+#### GetInstanceDataTriggerStrategy
+Location: `src/BBT.Workflow.Application/Tasks/Executors/TriggerTransition/GetInstanceDataTriggerStrategy.cs`
+
+Handles the GetInstanceData trigger type by retrieving instance data from a workflow instance.
+
+- Creates path using `InstanceUrlTemplates.Data` or `InstanceUrlTemplates.DataWithExtensions`
+- Uses HTTP GET method (unlike other strategies that use POST/PATCH)
+- Supports optional `extensions` query parameter for data enrichment
+- Supports `If-None-Match` header for ETag-based conditional requests
+- Delegates to HttpTaskExecutor for execution
+
+**Key Features:**
+- **Read Operation**: This is a query operation, not a mutation
+- **No Body**: GET requests don't send body data
+- **Extensions Support**: Can request specific extensions to enrich the instance data
+- **ETag Support**: Supports conditional requests for efficient caching
+
+**Example Configuration:**
+```json
+{
+  "key": "getSubFlowData",
+  "type": "TriggerTransition",
+  "config": {
+    "domain": "sales",
+    "flow": "order-processing",
+    "type": "GetInstanceData",
+    "extensions": ["pricing", "inventory"]
+  }
+}
+```
+
 #### TriggerTransitionStrategyFactory
 Location: `src/BBT.Workflow.Application/Tasks/Executors/TriggerTransition/TriggerTransitionStrategyFactory.cs`
 
@@ -149,6 +181,7 @@ public ITriggerTransitionStrategy Get(TriggerTransitionType type)
         TriggerTransitionType.Start => _serviceProvider.GetService<StartTriggerStrategy>(),
         TriggerTransitionType.Trigger => _serviceProvider.GetService<DirectTriggerStrategy>(),
         TriggerTransitionType.SubProcess => _serviceProvider.GetService<SubProcessTriggerStrategy>(),
+        TriggerTransitionType.GetInstanceData => _serviceProvider.GetService<GetInstanceDataTriggerStrategy>(),
         _ => null
     };
     
@@ -224,6 +257,7 @@ services.AddScoped<ITriggerTransitionHttpTaskFactory, TriggerTransitionHttpTaskF
 services.AddScoped<StartTriggerStrategy>();
 services.AddScoped<DirectTriggerStrategy>();
 services.AddScoped<SubProcessTriggerStrategy>();
+services.AddScoped<GetInstanceDataTriggerStrategy>();
 ```
 
 ## Benefits

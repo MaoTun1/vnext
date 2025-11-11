@@ -37,6 +37,7 @@ public sealed class TriggerTransitionStrategyFactory : ITriggerTransitionStrateg
             TriggerTransitionType.Start => _serviceProvider.GetService<StartTriggerStrategy>(),
             TriggerTransitionType.Trigger => _serviceProvider.GetService<DirectTriggerStrategy>(),
             TriggerTransitionType.SubProcess => _serviceProvider.GetService<SubProcessTriggerStrategy>(),
+            TriggerTransitionType.GetInstanceData => _serviceProvider.GetService<GetInstanceDataTriggerStrategy>(),
             _ => null
         };
 

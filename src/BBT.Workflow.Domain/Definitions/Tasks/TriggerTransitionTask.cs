@@ -46,7 +46,7 @@ public sealed class TriggerTransitionTask : WorkflowTask, IGlobalTask
     public string TransitionFlow { get; private set; } = string.Empty;
 
     /// <summary>
-    /// Trigger type: Direct, Correlation, or CreateNew
+    /// Trigger type
     /// </summary>
     public TriggerTransitionType TriggerType { get; private set; }
 
@@ -54,6 +54,12 @@ public sealed class TriggerTransitionTask : WorkflowTask, IGlobalTask
     /// SubFlow name for Correlation trigger type (optional)
     /// </summary>
     public string? SubFlowName { get; private set; }
+
+    /// <summary>
+    /// Extensions to request for GetInstanceData trigger type (optional)
+    /// </summary>
+    public string[]? Extensions { get; private set; }
+
     public void SetBody(dynamic body)
     {
         Body = JsonSerializer.SerializeToElement(body);
@@ -68,6 +74,7 @@ public sealed class TriggerTransitionTask : WorkflowTask, IGlobalTask
     internal void SetTransitionFlowInternal(string transitionFlow) => TransitionFlow = transitionFlow;
     internal void SetTriggerTypeInternal(TriggerTransitionType triggerType) => TriggerType = triggerType;
     internal void SetSubFlowNameInternal(string? subFlowName) => SubFlowName = subFlowName;
+    internal void SetExtensionsInternal(string[]? extensions) => Extensions = extensions;
 
     protected override void Configure(JsonElement config)
     {
@@ -99,6 +106,21 @@ public sealed class TriggerTransitionTask : WorkflowTask, IGlobalTask
 
         if (config.TryGetProperty("subFlowName", out var subFlowNameElement))
             SubFlowName = subFlowNameElement.GetString();
+
+        if (config.TryGetProperty("extensions", out var extensionsElement))
+        {
+            if (extensionsElement.ValueKind == JsonValueKind.Array)
+            {
+                var extensionsList = new List<string>();
+                foreach (var item in extensionsElement.EnumerateArray())
+                {
+                    var ext = item.GetString();
+                    if (!string.IsNullOrWhiteSpace(ext))
+                        extensionsList.Add(ext);
+                }
+                Extensions = extensionsList.Count > 0 ? extensionsList.ToArray() : null;
+            }
+        }
     }
 
     public static TriggerTransitionTask Create(
@@ -129,6 +151,7 @@ public sealed class TriggerTransitionTask : WorkflowTask, IGlobalTask
         cloned.TransitionFlow = TransitionFlow;
         cloned.TriggerType = TriggerType;
         cloned.SubFlowName = SubFlowName;
+        cloned.Extensions = Extensions;
 
         return cloned;
     }
@@ -146,6 +169,7 @@ public sealed class TriggerTransitionTask : WorkflowTask, IGlobalTask
         SetTransitionFlowInternal(source.TransitionFlow);
         SetTriggerTypeInternal(source.TriggerType);
         SetSubFlowNameInternal(source.SubFlowName);
+        SetExtensionsInternal(source.Extensions);
     }
 
     /// <summary>
@@ -160,6 +184,7 @@ public sealed class TriggerTransitionTask : WorkflowTask, IGlobalTask
         TransitionFlow = string.Empty;
         TriggerType = TriggerTransitionType.Trigger;
         SubFlowName = null;
+        Extensions = null;
     }
 
     /// <summary>
@@ -180,14 +205,21 @@ public enum TriggerTransitionType
     /// <summary>
     /// Create a new workflow instance
     /// </summary>
-       Start = 1,
+    Start = 1,
 
     /// <summary>
     /// Direct transition on the current instance
     /// </summary>
-
     Trigger = 2,
 
-    SubProcess=3
+    /// <summary>
+    /// Subprocess trigger
+    /// </summary>
+    SubProcess = 3,
+    
+    /// <summary>
+    /// GetInstanceData trigger
+    /// </summary>
+    GetInstanceData = 4
 }
 
