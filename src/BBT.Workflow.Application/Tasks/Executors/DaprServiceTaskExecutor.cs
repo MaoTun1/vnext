@@ -94,10 +94,10 @@ public sealed class DaprServiceTaskExecutor(
                 var headers = daprTask.Headers.Value.Deserialize<Dictionary<string, string>>();
                 if (headers != null)
                 {
-                    Logger.LogDebug("Adding {HeaderCount} headers to HTTP request for task {TaskKey}", 
-                        headers.Count, daprTask.Key);
-                    
-                    foreach (var header in headers)
+                    var filteredHeaders = headers.Where(h => h.Value != null).ToList();
+                    Logger.LogDebug("Adding {HeaderCount} headers to HTTP request for task {TaskKey}",   filteredHeaders.Count, daprTask.Key);
+                   
+                    foreach (var header in filteredHeaders)
                     {
                         request.Headers.TryAddWithoutValidation(header.Key, header.Value);
                         Logger.LogDebug("Added header {HeaderKey}: {HeaderValue} to request", header.Key, header.Value);
