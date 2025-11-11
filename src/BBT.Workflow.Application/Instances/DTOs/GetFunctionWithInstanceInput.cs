@@ -18,13 +18,7 @@ public sealed class GetFunctionWithInstanceInput : IHasDomain
 
     [Required]
     public string Instance { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Function name (e.g., "state", "view", "data")
-    /// </summary>
-    [Required]
-    public string Function { get; set; } = string.Empty;
-
+    
     /// <summary>
     /// Version of the workflow
     /// </summary>
@@ -33,6 +27,6 @@ public sealed class GetFunctionWithInstanceInput : IHasDomain
     /// <summary>
     /// Extensions to be appended to the data href URL
     /// </summary>
-    public string[]? Extension { get; set; }
+    public string[]? Extensions { get; set; }
 }
 

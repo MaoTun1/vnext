@@ -64,14 +64,47 @@ public sealed class DaprServiceTaskExecutor(
                 daprTask.AppId,
                 daprTask.MethodName);
 
-            if (request.Method != HttpMethod.Get && daprTask.Data.HasValue)
+            // Add query string if present
+            if (!string.IsNullOrWhiteSpace(daprTask.QueryString))
             {
-                var requestContent = daprTask.Data.Value.GetRawText();
+                var uriBuilder = new UriBuilder(request.RequestUri!);
+                
+                // Append query string (handle both cases: with or without leading '?')
+                var queryString = daprTask.QueryString.TrimStart('?');
+                uriBuilder.Query = string.IsNullOrEmpty(uriBuilder.Query) 
+                    ? queryString 
+                    : uriBuilder.Query.TrimStart('?') + "&" + queryString;
+                
+                request.RequestUri = uriBuilder.Uri;
+                
+                Logger.LogDebug("Added query string to DAPR service call for task {TaskKey}: {QueryString}", 
+                    daprTask.Key, daprTask.QueryString);
+            }
+
+            if (request.Method != HttpMethod.Get && daprTask.Body.HasValue)
+            {
+                var requestContent = daprTask.Body.Value.GetRawText();
                 request.Content = new StringContent(requestContent, Encoding.UTF8, "application/json");
                 
                 Logger.LogDebug("Added request body to DAPR service call for task {TaskKey}", daprTask.Key);
             }
-
+            
+            if (daprTask.Headers.HasValue)
+            {
+                var headers = daprTask.Headers.Value.Deserialize<Dictionary<string, string>>();
+                if (headers != null)
+                {
+                    var filteredHeaders = headers.Where(h => h.Value != null).ToList();
+                    Logger.LogDebug("Adding {HeaderCount} headers to HTTP request for task {TaskKey}",   filteredHeaders.Count, daprTask.Key);
+                   
+                    foreach (var header in filteredHeaders)
+                    {
+                        request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                        Logger.LogDebug("Added header {HeaderKey}: {HeaderValue} to request", header.Key, header.Value);
+                    }
+                }
+            }
+            
             Logger.LogInformation("Invoking DAPR service for task {TaskKey}: {AppId}/{MethodName} via {HttpVerb}", 
                 daprTask.Key, daprTask.AppId, daprTask.MethodName, daprTask.HttpVerb);
 

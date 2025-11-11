@@ -10,8 +10,8 @@ public class FunctionQueryParemeters
     [JsonPropertyName("version")]
     public string? Version { get; set; } = null;
     
-    [JsonPropertyName("extension")]
-    public string[]? Extension { get; set; } = null;
+    [JsonPropertyName("extensions")]
+    public string[]? Extensions { get; set; } = null;
     
     [JsonPropertyName("transitionKey")]
     public string? TransitionKey { get; set; } = null;

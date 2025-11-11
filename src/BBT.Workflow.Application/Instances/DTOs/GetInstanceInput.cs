@@ -121,5 +121,5 @@ public sealed class GetInstanceDataInput : IHasDomain
     /// <summary>
     /// Extensions requested for data enrichment
     /// </summary>
-    public string[]? Extension { get; set; }
+    public string[]? Extensions { get; set; }
 } 

@@ -27,5 +27,5 @@ public sealed class GetInstanceStateInput : IHasDomain
     /// <summary>
     /// Extensions to be appended to the data href URL
     /// </summary>
-    public string[]? Extension { get; set; }
+    public string[]? Extensions { get; set; }
 }

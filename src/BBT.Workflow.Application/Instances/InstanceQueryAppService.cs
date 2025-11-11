@@ -195,8 +195,7 @@ public sealed class InstanceQueryAppService(
                 Domain = activeSubFlowCorrelation.SubFlowDomain,
                 Workflow = activeSubFlowCorrelation.SubFlowName,
                 Version = activeSubFlowCorrelation.SubFlowVersion,
-                Instance = activeSubFlowCorrelation.SubFlowInstanceId.ToString(),
-                Function = Definitions.Functions.FunctionTypeConst.Longpooling // "state"
+                Instance = activeSubFlowCorrelation.SubFlowInstanceId.ToString()
             };
 
             var subFlowResult = await remoteInstanceQueryAppService.GetFunctionWithStateAsync(
@@ -405,7 +404,7 @@ public sealed class InstanceQueryAppService(
                         .BuildAsync(ct);
 
                     result.Extensions = await instanceExtensionService.ProcessExtensionsAsync(
-                        input.Extension,
+                        input.Extensions,
                         scriptContext,
                         flow,
                         ExtensionScope.GetInstance,
@@ -455,11 +454,11 @@ public sealed class InstanceQueryAppService(
         // If there's exactly one transition, get its view
         if (isWizardState)
         {
-            var transition = currentState?.FindTransition(availableTransitions[0]);
+            var transition = currentState.FindTransition(availableTransitions[0]);
             viewDefinition = transition?.View;
         }
         // If there are multiple transitions or no transitions, get the state view
-        else if (!string.IsNullOrEmpty(instance.CurrentState) && currentState?.View != null)
+        else if (!string.IsNullOrEmpty(instance.CurrentState) && currentState.View != null)
         {
             viewDefinition = currentState.View;
         }
@@ -531,7 +530,7 @@ public sealed class InstanceQueryAppService(
                         currentStateResult.Value);
 
                     // Build data href with extensions
-                    var allExtensions = (input.Extension ?? []).Concat(viewDefinition?.Extensions ?? []).ToArray();
+                    var allExtensions = (input.Extensions ?? []).Concat(viewDefinition?.Extensions ?? []).ToArray();
                     var dataHref = new DataHref
                     {
                         Href = allExtensions.Length > 0
@@ -689,8 +688,7 @@ public sealed class InstanceQueryAppService(
                 Instance = instance.Subflow!.SubFlowInstanceId.ToString(),
                 Domain = instance.Subflow!.SubFlowDomain,
                 Workflow = instance.Subflow!.SubFlowName,
-                Version = instance.Subflow!.SubFlowVersion,
-                Function = "view"
+                Version = instance.Subflow!.SubFlowVersion
             },
             platform?.ToLowerInvariant(),
             transitionKey,
@@ -728,7 +726,7 @@ public sealed class InstanceQueryAppService(
     /// <param name="view">The view to build output from</param>
     /// <param name="platform">Platform identifier (optional)</param>
     /// <returns>GetViewOutput with platform-specific content if available, otherwise default content</returns>
-    private GetViewOutput BuildViewOutput(Definitions.View view, string? platform)
+    private GetViewOutput BuildViewOutput(View view, string? platform)
     {
         var content = GetPlatformSpecificContent(view, platform);
 
@@ -736,7 +734,9 @@ public sealed class InstanceQueryAppService(
         {
             Key = view.Key,
             Content = content,
-            Type = view.Type.ToString()
+            Type = view.Type.ToString(),
+            Display = view.Display,
+            Label = ""
         };
     }
 
@@ -747,7 +747,7 @@ public sealed class InstanceQueryAppService(
     /// <param name="view">The view to extract content from</param>
     /// <param name="platform">Platform identifier (optional)</param>
     /// <returns>Platform-specific content if available, otherwise default view content</returns>
-    private string? GetPlatformSpecificContent(Definitions.View view, string? platform)
+    private string GetPlatformSpecificContent(View view, string? platform)
     {
         // If no platform specified or no platform overrides, return default content
         if (string.IsNullOrEmpty(platform) || view.PlatformOverrides == null)

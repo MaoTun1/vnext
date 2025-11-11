@@ -19,5 +19,15 @@ public sealed class GetViewOutput
     /// The view type
     /// </summary>
     public string Type { get; set; }
+
+    /// <summary>
+    /// Display mode
+    /// </summary>
+    public string Display { get; set; }
+
+    /// <summary>
+    /// Localization label
+    /// </summary>
+    public string Label { get; set; }
 }
 

@@ -36,6 +36,7 @@ public class StateConstants
 {
     public const int MaxKeyLength = WorkflowConstants.MaxKeyLength;
     public const int MaxDescriptionLength = 500;
+    public static readonly string[] ReservedTargetKeys = ["$self"];
 }
 
 public class TransitionConstants
