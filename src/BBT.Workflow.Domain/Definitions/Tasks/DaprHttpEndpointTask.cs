@@ -34,11 +34,6 @@ public sealed class DaprHttpEndpointTask : WorkflowTask
     /// HTTP method to use
     /// </summary>
     public string Method { get; private set; } = "GET";
-
-    /// <summary>
-    /// Additional headers as JSON
-    /// </summary>
-    public JsonElement Headers { get; private set; }
     
     /// <summary>
     /// Body
@@ -51,7 +46,6 @@ public sealed class DaprHttpEndpointTask : WorkflowTask
     internal void SetEndpointNameInternal(string endpointName) => EndpointName = endpointName;
     internal void SetPathInternal(string path) => Path = path;
     internal void SetMethodInternal(string method) => Method = method;
-    internal void SetHeadersInternal(JsonElement headers) => Headers = headers;
     internal void SetBodyInternal(JsonElement? body) => Body = body;
 
     protected override void Configure(JsonElement config)
@@ -66,9 +60,6 @@ public sealed class DaprHttpEndpointTask : WorkflowTask
 
         if (config.TryGetProperty("method", out var method))
             Method = method.GetString() ?? throw new ArgumentNullException(nameof(method));
-
-        if (config.TryGetProperty("headers", out var headers))
-            Headers = headers;
 
         if (config.TryGetProperty("body", out var bodyElement))
         {
@@ -93,7 +84,6 @@ public sealed class DaprHttpEndpointTask : WorkflowTask
         cloned.EndpointName = EndpointName;
         cloned.Path = Path;
         cloned.Method = Method;
-        cloned.Headers = Headers;
         cloned.Body = Body;
         
         return cloned;
@@ -109,7 +99,6 @@ public sealed class DaprHttpEndpointTask : WorkflowTask
         SetEndpointNameInternal(source.EndpointName);
         SetPathInternal(source.Path);
         SetMethodInternal(source.Method);
-        SetHeadersInternal(source.Headers);
         SetBodyInternal(source.Body);
     }
 
@@ -122,7 +111,6 @@ public sealed class DaprHttpEndpointTask : WorkflowTask
         EndpointName = string.Empty;
         Path = string.Empty;
         Method = string.Empty;
-        Headers = default;
         Body = null;
     }
 
