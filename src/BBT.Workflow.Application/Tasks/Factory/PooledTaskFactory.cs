@@ -28,7 +28,7 @@ public sealed class PooledTaskFactory(
     /// Uses object pooling for better performance in high-throughput scenarios.
     /// </summary>
     public async Task<WorkflowTask> CreateExecutionTaskAsync(
-        IReference taskReference, 
+        IReference taskReference,
         CancellationToken cancellationToken = default)
     {
         try
@@ -56,25 +56,25 @@ public sealed class PooledTaskFactory(
         try
         {
             var taskType = cachedTask.GetType();
-            
+
             // Use configuration to determine strategy
             if (ShouldUsePoolingFromConfig(taskType))
             {
                 // Use real object pooling with the new CopyFromInternal methods
                 return CreateFromPool(cachedTask);
             }
-            
+
             // Fall back to direct cloning for non-pooled types
             var directClonedTask = cachedTask.Clone();
-            
-            logger.LogDebug("Successfully cloned task {TaskKey} of type {TaskType}", 
+
+            logger.LogDebug("Successfully cloned task {TaskKey} of type {TaskType}",
                 cachedTask.Key, taskType.Name);
-            
+
             return directClonedTask;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to clone task {TaskKey} of type {TaskType}", 
+            logger.LogError(ex, "Failed to clone task {TaskKey} of type {TaskType}",
                 cachedTask.Key, cachedTask.GetType().Name);
             throw;
         }
@@ -85,21 +85,21 @@ public sealed class PooledTaskFactory(
         var taskType = template.GetType();
         var taskTypeName = taskType.Name;
         var pool = _pools.GetOrAdd(taskType, _ => CreatePoolForType(taskType));
-        
+
         // Record pool rental metric
         workflowMetrics.RecordTaskFactoryPoolRental(taskTypeName);
-        
+
         var pooledTask = pool.Get();
-        
+
         // Update pool state metrics (approximate tracking)
         // Note: These are estimates since DefaultObjectPool doesn't expose exact counts
         UpdatePoolStateMetrics(taskTypeName, isRenting: true);
-        
+
         // Copy properties from template to pooled instance using efficient internal methods
         CopyTaskProperties(template, pooledTask);
-        
+
         logger.LogDebug("Retrieved and configured task from pool for type {TaskType}", taskType.Name);
-        
+
         return pooledTask;
     }
 
@@ -111,14 +111,14 @@ public sealed class PooledTaskFactory(
     {
         // Since DefaultObjectPool doesn't expose internal counts, we use estimated values
         // This is a best-effort tracking mechanism for monitoring purposes
-        
+
         if (isRenting)
         {
             // When renting, we assume available decreases and in-use increases
             // These are estimates for monitoring trends
             logger.LogTrace("Object rented from pool for task type {TaskType}", taskTypeName);
         }
-        
+
         // For more accurate metrics, consider implementing a custom object pool
         // that tracks exact counts or using a third-party pool with metrics support
     }
@@ -133,7 +133,7 @@ public sealed class PooledTaskFactory(
         {
             return;
         }
-        
+
         // Fallback to base copy for unsupported types
         source.CopyBaseToInternal(target);
     }
@@ -143,12 +143,12 @@ public sealed class PooledTaskFactory(
         // Pool creation logic kept for future use
         var policy = new TaskPooledObjectPolicy(taskType, workflowMetrics);
         var pool = new DefaultObjectPool<WorkflowTask>(policy, _options.MaxPoolSize);
-        
+
         // Initialize pool size metric
         workflowMetrics.SetTaskFactoryPoolSize(taskType.Name, _options.MaxPoolSize);
         workflowMetrics.SetTaskFactoryPoolAvailable(taskType.Name, _options.MaxPoolSize);
         workflowMetrics.SetTaskFactoryPoolInUse(taskType.Name, 0);
-        
+
         return pool;
     }
 
@@ -169,14 +169,14 @@ internal sealed class TaskPooledObjectPolicy(Type taskType, IWorkflowMetrics wor
     {
         // Record object creation metric
         workflowMetrics.RecordTaskFactoryPoolCreate(_taskTypeName);
-        
+
         // Try registry-based creation first
         var task = PoolableTaskRegistry.TryCreateEmpty(taskType);
         if (task != null)
         {
             return task;
         }
-        
+
         // Fallback to reflection for non-registered types
         return (WorkflowTask)Activator.CreateInstance(taskType, true)!;
     }
@@ -185,7 +185,7 @@ internal sealed class TaskPooledObjectPolicy(Type taskType, IWorkflowMetrics wor
     {
         // Record object return metric
         workflowMetrics.RecordTaskFactoryPoolReturn(_taskTypeName);
-        
+
         // Reset the object state before returning to pool
         obj.Reset();
         return true;
@@ -206,27 +206,27 @@ public static class PoolableTaskRegistry
         RegisterPoolableTask<DaprServiceTask>(
             DaprServiceTask.CreateEmpty,
             (source, target) => ((DaprServiceTask)target).CopyFromInternal((DaprServiceTask)source));
-            
+
         RegisterPoolableTask<HttpTask>(
             HttpTask.CreateEmpty,
             (source, target) => ((HttpTask)target).CopyFromInternal((HttpTask)source));
-            
+
         RegisterPoolableTask<ScriptTask>(
             ScriptTask.CreateEmpty,
             (source, target) => ((ScriptTask)target).CopyFromInternal((ScriptTask)source));
-            
+
         RegisterPoolableTask<ConditionTask>(
             ConditionTask.CreateEmpty,
             (source, target) => ((ConditionTask)target).CopyFromInternal((ConditionTask)source));
-            
+
         RegisterPoolableTask<DaprBindingTask>(
             DaprBindingTask.CreateEmpty,
             (source, target) => ((DaprBindingTask)target).CopyFromInternal((DaprBindingTask)source));
-            
+
         RegisterPoolableTask<DaprPubSubTask>(
             DaprPubSubTask.CreateEmpty,
             (source, target) => ((DaprPubSubTask)target).CopyFromInternal((DaprPubSubTask)source));
-            
+
         RegisterPoolableTask<DaprHttpEndpointTask>(
             DaprHttpEndpointTask.CreateEmpty,
             (source, target) => ((DaprHttpEndpointTask)target).CopyFromInternal((DaprHttpEndpointTask)source));
@@ -237,7 +237,10 @@ public static class PoolableTaskRegistry
         RegisterPoolableTask<NotificationTask>(
             NotificationTask.CreateEmpty,
             (source, target) => ((NotificationTask)target).CopyFromInternal((NotificationTask)source));
-            
+        RegisterPoolableTask<TriggerTransitionTask>(
+        TriggerTransitionTask.CreateEmpty,
+        (source, target) => ((TriggerTransitionTask)target).CopyFromInternal((TriggerTransitionTask)source));
+
     }
 
     public static void RegisterPoolableTask<T>(
@@ -264,4 +267,4 @@ public static class PoolableTaskRegistry
         }
         return false;
     }
-} 
+}
