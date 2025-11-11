@@ -26,6 +26,8 @@ using BBT.Workflow.Execution.Transitions.Factory;
 using BBT.Workflow.Execution.Transitions.Services;
 using BBT.Workflow.Execution.Validation;
 using BBT.Workflow.Application.Notifications;
+using BBT.Workflow.Execution.TriggerTransition;
+using BBT.Workflow.Tasks.TriggerTransition;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -181,6 +183,14 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddScoped<ConditionTaskExecutor>();
         services.AddScoped<TimerTaskExecutor>();
         services.AddScoped<NotificationTaskExecutor>();
+        services.AddScoped<TriggerTransitionTaskExecutor>();
+
+        // Trigger Transition Strategies
+        services.AddScoped<ITriggerTransitionStrategyFactory, TriggerTransitionStrategyFactory>();
+        services.AddScoped<ITriggerTransitionHttpTaskFactory, TriggerTransitionHttpTaskFactory>();
+        services.AddScoped<StartTriggerStrategy>();
+        services.AddScoped<DirectTriggerStrategy>();
+        services.AddScoped<SubProcessTriggerStrategy>();
         
         // Scripting service
         services.AddScoped<IScriptContextFactory, ScriptContextFactory>();
