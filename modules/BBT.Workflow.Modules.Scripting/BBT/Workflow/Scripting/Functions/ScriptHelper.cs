@@ -232,9 +232,6 @@ public static class ScriptHelper
         if (_logger == null)
             throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
 
-        if (message == null)
-            return;
-
         using (_logger.BeginScope(new Dictionary<string, object?>
         {
             ["ScriptFile"] = file,
@@ -253,10 +250,7 @@ public static class ScriptHelper
     {
         if (_logger == null)
             throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
-
-        if (message == null)
-            return;
-
+        
         using (_logger.BeginScope(new Dictionary<string, object?>
         {
             ["ScriptFile"] = file,
@@ -275,10 +269,7 @@ public static class ScriptHelper
     {
         if (_logger == null)
             throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
-
-        if (message == null)
-            return;
-
+        
         using (_logger.BeginScope(new Dictionary<string, object?>
         {
             ["ScriptFile"] = file,
@@ -298,9 +289,6 @@ public static class ScriptHelper
         if (_logger == null)
             throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
 
-        if (message == null)
-            return;
-
         using (_logger.BeginScope(new Dictionary<string, object?>
         {
             ["ScriptFile"] = file,
@@ -319,10 +307,7 @@ public static class ScriptHelper
     {
         if (_logger == null)
             throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
-
-        if (message == null)
-            return;
-
+        
         using (_logger.BeginScope(new Dictionary<string, object?>
         {
             ["ScriptFile"] = file,
@@ -341,10 +326,7 @@ public static class ScriptHelper
     {
         if (_logger == null)
             throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
-
-        if (message == null)
-            return;
-
+        
         using (_logger.BeginScope(new Dictionary<string, object?>
         {
             ["ScriptFile"] = file,

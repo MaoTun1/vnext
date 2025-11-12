@@ -336,7 +336,7 @@ public abstract class ScriptBase
     /// </summary>
     /// <param name="key">The configuration key to check</param>
     /// <returns>True if the key exists, false otherwise</returns>
-    protected  bool ConfigExists(string key)
+    protected bool ConfigExists(string key)
     {
         return ScriptHelper.ConfigExists(key);
     }
