@@ -178,7 +178,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     public InstanceCorrelation? Subflow =>
         ChildCorrelations.FirstOrDefault(p => !p.IsCompleted && p.SubFlowType.Equals(SubFlowType.SubFlow));
 
-    public Instance CreateSnapshot()
+    public Instance CreateSnapshot(InstanceDataShadow? latestData = null)
     {
         var snapshot = new Instance
         {
@@ -199,6 +199,15 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         foreach (var data in _dataList)
         {
             snapshot._dataList.Add(data.CreateSnapshot());
+        }
+
+        if (latestData != null)
+        {
+            if (snapshot._dataList.All(a => a.Id != latestData.Id))
+            {
+                snapshot._dataList.ForEach(f => f.MarkAsNotLatest());
+                snapshot._dataList.Add(latestData.Map());
+            }
         }
 
         foreach (var correlation in _childCorrelations)
@@ -286,6 +295,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         {
             return;
         }
+
         SetState(transition.Target);
     }
 
@@ -329,8 +339,6 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         lock (_dataListLock)
         {
             var latestData = _dataList.OrderByDescending(x => x, InstanceDataVersionComparer.Instance).FirstOrDefault();
-            //TODO: 
-            // If we have existing data, check if the new data is different
             if (latestData?.HasSameData(inputData) == true)
             {
                 // Data hasn't changed, return the existing latest data
@@ -342,8 +350,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
             {
                 latestData.MarkAsNotLatest();
             }
-
-
+            
             var newData = new InstanceData(
                 id,
                 Id,
@@ -383,22 +390,14 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
             }
             else
             {
-                newData = versionStrategy is null
-                        ? new InstanceData(
-                            id,
-                            Id,
-                            lastData.Version,
-                            inputData,
-                            true,
-                            GetNextHistorySequence(lastData.Version)
-                        )
-                        : lastData.NewVersion(
-                            id,
-                            inputData,
-                            versionStrategy ?? VersionStrategy.IncreaseMinor,
-                            0
-                        );
+                newData = lastData.NewVersion(
+                    id,
+                    inputData,
+                    versionStrategy ?? VersionStrategy.None,
+                    GetNextHistorySequence(lastData.Version)
+                );
             }
+
             _dataList.Add(newData);
             return newData;
         }

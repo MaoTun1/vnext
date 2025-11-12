@@ -195,22 +195,39 @@ public static class ScriptHelper
         return null;
     }
 
+    /// <summary>
+    /// Gets a property value from a dynamic object safely and converts it to a specific type
+    /// </summary>
+    /// <typeparam name="T">The type to convert the value to</typeparam>
+    /// <param name="obj">The dynamic object</param>
+    /// <param name="propertyName">The property name</param>
+    /// <returns>The property value converted to type T or null if not found</returns>
+    public static T? GetPropertyValue<T>(object obj, string propertyName)
+    {
+        var value = GetPropertyValue(obj, propertyName);
+
+        if (value == null)
+            return default;
+
+        if (value is T tValue)
+            return tValue;
+
+        try
+        {
+            return (T)Convert.ChangeType(value, typeof(T));
+        }
+        catch
+        {
+            return default;
+        }
+    }
+
     #region Logging Functions
 
     /// <summary>
     /// Logs a trace message with caller information
     /// </summary>
-    /// <param name="message">The message to log</param>
-    /// <param name="file">The source file path (automatically captured)</param>
-    /// <param name="method">The method name (automatically captured)</param>
-    /// <param name="line">The line number (automatically captured)</param>
-    /// <param name="args">Optional arguments for string formatting</param>
-    public static void LogTrace(
-        object message,
-        [CallerFilePath] string? file = null,
-        [CallerMemberName] string? method = null,
-        [CallerLineNumber] int line = 0,
-        params object[] args)
+    public static void LogTrace(string message, string? file, string? method, int line, params object[] args)
     {
         if (_logger == null)
             throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
@@ -218,28 +235,21 @@ public static class ScriptHelper
         if (message == null)
             return;
 
-        var enrichedMessage = $"Class: {{File}} Method: {{Method}} Line: {{Line}} Message: {message}";
-        var logArgs = new List<object> { file ?? "Unknown", method ?? "Unknown", line };
-        if (args != null && args.Length > 0)
-            logArgs.AddRange(args);
-
-        _logger.LogTrace(enrichedMessage, logArgs.ToArray());
+        using (_logger.BeginScope(new Dictionary<string, object?>
+        {
+            ["ScriptFile"] = file,
+            ["ScriptMethod"] = method,
+            ["ScriptLine"] = line
+        }))
+        {
+            _logger.LogTrace(message, args);
+        }
     }
 
     /// <summary>
     /// Logs a debug message with caller information
     /// </summary>
-    /// <param name="message">The message to log</param>
-    /// <param name="file">The source file path (automatically captured)</param>
-    /// <param name="method">The method name (automatically captured)</param>
-    /// <param name="line">The line number (automatically captured)</param>
-    /// <param name="args">Optional arguments for string formatting</param>
-    public static void LogDebug(
-        object message,
-        [CallerFilePath] string? file = null,
-        [CallerMemberName] string? method = null,
-        [CallerLineNumber] int line = 0,
-        params object[] args)
+    public static void LogDebug(string message, string? file, string? method, int line, params object[] args)
     {
         if (_logger == null)
             throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
@@ -247,28 +257,21 @@ public static class ScriptHelper
         if (message == null)
             return;
 
-        var enrichedMessage = $"Class: {{File}} Method: {{Method}} Line: {{Line}} Message: {message}";
-        var logArgs = new List<object> { file ?? "Unknown", method ?? "Unknown", line };
-        if (args != null && args.Length > 0)
-            logArgs.AddRange(args);
-
-        _logger.LogDebug(enrichedMessage, logArgs.ToArray());
+        using (_logger.BeginScope(new Dictionary<string, object?>
+        {
+            ["ScriptFile"] = file,
+            ["ScriptMethod"] = method,
+            ["ScriptLine"] = line
+        }))
+        {
+            _logger.LogDebug(message, args);
+        }
     }
 
     /// <summary>
     /// Logs an informational message with caller information
     /// </summary>
-    /// <param name="message">The message to log</param>
-    /// <param name="file">The source file path (automatically captured)</param>
-    /// <param name="method">The method name (automatically captured)</param>
-    /// <param name="line">The line number (automatically captured)</param>
-    /// <param name="args">Optional arguments for string formatting</param>
-    public static void LogInformation(
-        object message,
-        [CallerFilePath] string? file = null,
-        [CallerMemberName] string? method = null,
-        [CallerLineNumber] int line = 0,
-        params object[] args)
+    public static void LogInformation(string message, string? file, string? method, int line, params object[] args)
     {
         if (_logger == null)
             throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
@@ -276,28 +279,21 @@ public static class ScriptHelper
         if (message == null)
             return;
 
-        var enrichedMessage = $"Class: {{File}} Method: {{Method}} Line: {{Line}} Message: {message}";
-        var logArgs = new List<object> { file ?? "Unknown", method ?? "Unknown", line };
-        if (args != null && args.Length > 0)
-            logArgs.AddRange(args);
-
-        _logger.LogInformation(enrichedMessage, logArgs.ToArray());
+        using (_logger.BeginScope(new Dictionary<string, object?>
+        {
+            ["ScriptFile"] = file,
+            ["ScriptMethod"] = method,
+            ["ScriptLine"] = line
+        }))
+        {
+            _logger.LogInformation(message, args);
+        }
     }
 
     /// <summary>
     /// Logs a warning message with caller information
     /// </summary>
-    /// <param name="message">The message to log</param>
-    /// <param name="file">The source file path (automatically captured)</param>
-    /// <param name="method">The method name (automatically captured)</param>
-    /// <param name="line">The line number (automatically captured)</param>
-    /// <param name="args">Optional arguments for string formatting</param>
-    public static void LogWarning(
-        object message,
-        [CallerFilePath] string? file = null,
-        [CallerMemberName] string? method = null,
-        [CallerLineNumber] int line = 0,
-        params object[] args)
+    public static void LogWarning(string message, string? file, string? method, int line, params object[] args)
     {
         if (_logger == null)
             throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
@@ -305,28 +301,21 @@ public static class ScriptHelper
         if (message == null)
             return;
 
-        var enrichedMessage = $"Class: {{File}} Method: {{Method}} Line: {{Line}} Message: {message}";
-        var logArgs = new List<object> { file ?? "Unknown", method ?? "Unknown", line };
-        if (args != null && args.Length > 0)
-            logArgs.AddRange(args);
-
-        _logger.LogWarning(enrichedMessage, logArgs.ToArray());
+        using (_logger.BeginScope(new Dictionary<string, object?>
+        {
+            ["ScriptFile"] = file,
+            ["ScriptMethod"] = method,
+            ["ScriptLine"] = line
+        }))
+        {
+            _logger.LogWarning(message, args);
+        }
     }
 
     /// <summary>
     /// Logs an error message with caller information
     /// </summary>
-    /// <param name="message">The message to log</param>
-    /// <param name="file">The source file path (automatically captured)</param>
-    /// <param name="method">The method name (automatically captured)</param>
-    /// <param name="line">The line number (automatically captured)</param>
-    /// <param name="args">Optional arguments for string formatting</param>
-    public static void LogError(
-        object message,
-        [CallerFilePath] string? file = null,
-        [CallerMemberName] string? method = null,
-        [CallerLineNumber] int line = 0,
-        params object[] args)
+    public static void LogError(string message, string? file, string? method, int line, params object[] args)
     {
         if (_logger == null)
             throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
@@ -334,28 +323,21 @@ public static class ScriptHelper
         if (message == null)
             return;
 
-        var enrichedMessage = $"Class: {{File}} Method: {{Method}} Line: {{Line}} Message: {message}";
-        var logArgs = new List<object> { file ?? "Unknown", method ?? "Unknown", line };
-        if (args != null && args.Length > 0)
-            logArgs.AddRange(args);
-
-        _logger.LogError(enrichedMessage, logArgs.ToArray());
+        using (_logger.BeginScope(new Dictionary<string, object?>
+        {
+            ["ScriptFile"] = file,
+            ["ScriptMethod"] = method,
+            ["ScriptLine"] = line
+        }))
+        {
+            _logger.LogError(message, args);
+        }
     }
 
     /// <summary>
     /// Logs a critical message with caller information
     /// </summary>
-    /// <param name="message">The message to log</param>
-    /// <param name="file">The source file path (automatically captured)</param>
-    /// <param name="method">The method name (automatically captured)</param>
-    /// <param name="line">The line number (automatically captured)</param>
-    /// <param name="args">Optional arguments for string formatting</param>
-    public static void LogCritical(
-        object message,
-        [CallerFilePath] string? file = null,
-        [CallerMemberName] string? method = null,
-        [CallerLineNumber] int line = 0,
-        params object[] args)
+    public static void LogCritical(string message, string? file, string? method, int line, params object[] args)
     {
         if (_logger == null)
             throw new InvalidOperationException("Logger is not initialized. Call SetLogger first.");
@@ -363,12 +345,15 @@ public static class ScriptHelper
         if (message == null)
             return;
 
-        var enrichedMessage = $"Class: {{File}} Method: {{Method}} Line: {{Line}} Message: {message}";
-        var logArgs = new List<object> { file ?? "Unknown", method ?? "Unknown", line };
-        if (args != null && args.Length > 0)
-            logArgs.AddRange(args);
-
-        _logger.LogCritical(enrichedMessage, logArgs.ToArray());
+        using (_logger.BeginScope(new Dictionary<string, object?>
+        {
+            ["ScriptFile"] = file,
+            ["ScriptMethod"] = method,
+            ["ScriptLine"] = line
+        }))
+        {
+            _logger.LogCritical(message, args);
+        }
     }
 
     #endregion

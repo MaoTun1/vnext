@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Instances;
+using BBT.Workflow.Scripting;
 using BBT.Workflow.Shared;
 
 namespace BBT.Workflow.Tasks;
@@ -35,6 +37,11 @@ public class TaskScriptContextModel
     /// Request body data
     /// </summary>
     public object? Body { get; set; }
+    
+    /// <summary>
+    /// Instance latest data
+    /// </summary>
+    public InstanceDataShadow? LatestData { get; set; }
 
     /// <summary>
     /// Request headers
