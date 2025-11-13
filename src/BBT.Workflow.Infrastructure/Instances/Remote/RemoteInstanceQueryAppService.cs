@@ -190,14 +190,14 @@ public sealed class RemoteInstanceQueryAppService(
                 var queryParams = new List<string>();
                 if (!string.IsNullOrEmpty(input.Version))
                 {
-                    queryParams.Add($"version={Uri.EscapeDataString(input.Version)}");
+                    queryParams.Add($"{nameof(input.Version).ToLowerInvariant()}={Uri.EscapeDataString(input.Version)}");
                 }
 
-                if (input.Extension?.Length > 0)
+                if (input.Extensions?.Length > 0)
                 {
-                    foreach (var ext in input.Extension)
+                    foreach (var ext in input.Extensions)
                     {
-                        queryParams.Add($"extension={Uri.EscapeDataString(ext)}");
+                        queryParams.Add($"{nameof(input.Extensions).ToLowerInvariant()}={Uri.EscapeDataString(ext)}");
                     }
                 }
 
@@ -240,7 +240,7 @@ public sealed class RemoteInstanceQueryAppService(
                 var queryParams = new List<string>();
                 if (!string.IsNullOrEmpty(input.Version))
                 {
-                    queryParams.Add($"version={Uri.EscapeDataString(input.Version)}");
+                    queryParams.Add($"{nameof(input.Version).ToLowerInvariant()}={Uri.EscapeDataString(input.Version)}");
                 }
 
                 if (!string.IsNullOrEmpty(platform))
@@ -253,11 +253,11 @@ public sealed class RemoteInstanceQueryAppService(
                     queryParams.Add($"{nameof(transitionKey)}={Uri.EscapeDataString(transitionKey)}");
                 }
 
-                if (input.Extension?.Length > 0)
+                if (input.Extensions?.Length > 0)
                 {
-                    foreach (var ext in input.Extension)
+                    foreach (var ext in input.Extensions)
                     {
-                        queryParams.Add($"extension={Uri.EscapeDataString(ext)}");
+                        queryParams.Add($"{nameof(input.Extensions).ToLowerInvariant()}={Uri.EscapeDataString(ext)}");
                     }
                 }
 

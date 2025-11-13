@@ -282,6 +282,10 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
 
     public void ChangeState(Transition transition)
     {
+        if (StateConstants.ReservedTargetKeys.Contains(transition.Target))
+        {
+            return;
+        }
         SetState(transition.Target);
     }
 
