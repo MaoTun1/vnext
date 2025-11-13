@@ -22,8 +22,16 @@ public sealed class ChangeStateStep(
     /// <inheritdoc />
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
+        // Skip for SubFlow resume - state already changed
+        if (context.Directives.IsSubFlowResume || context.Transition == null)
+        {
+            logger.LogDebug("Skipping state change for SubFlow resume on instance {InstanceId}",
+                context.InstanceId);
+            return Result<StepOutcome>.Ok(StepOutcome.Continue());
+        }
+        
         var fromState = context.Instance.GetCurrentState;
-        var toState = context.Transition!.Target;
+        var toState = context.Transition.Target;
         
         logger.LogDebug("Changing state from {FromState} to {ToState} for instance {InstanceId}",
             fromState, toState, context.InstanceId);

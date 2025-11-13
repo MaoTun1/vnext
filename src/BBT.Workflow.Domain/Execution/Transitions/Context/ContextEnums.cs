@@ -9,7 +9,10 @@ public enum ExecMode
     Sync = 0,
     
     /// <summary>Asynchronous execution via background jobs.</summary>
-    Async = 1
+    Async = 1,
+    
+    /// <summary>Resume execution from a specific pipeline step (e.g., SubFlow completion).</summary>
+    Resume = 2
 }
 
 /// <summary>

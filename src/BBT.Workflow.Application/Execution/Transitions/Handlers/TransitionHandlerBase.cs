@@ -35,6 +35,13 @@ public abstract class TransitionHandlerBase : ITransitionHandler
     /// <inheritdoc />
     public async Task PreHandleAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
+        // Skip all PreHandle operations for Resume mode - validations already done
+        if (context.Directives.IsSubFlowResume)
+        {
+            Logger.LogDebug("Skipping PreHandle for Resume mode on instance {InstanceId}", context.InstanceId);
+            return;
+        }
+        
         var sw = Stopwatch.StartNew();
         var handlerName = GetType().Name;
         
