@@ -42,7 +42,7 @@ public sealed class GetInstanceDataTriggerStrategy : ITriggerTransitionStrategy
 
         // Build path with or without extensions
         string path;
-        if (task.Extensions != null && task.Extensions.Length > 0)
+        if (task.Extensions?.Length > 0)
         {
             var extensionsParam = string.Join(",", task.Extensions);
             path = string.Format(InstanceUrlTemplates.DataWithExtensions,
