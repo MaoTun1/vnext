@@ -17,7 +17,8 @@ public enum TaskType
     Script = 7,
     Condition = 8,
     Timer = 9,
-    Notification = 10
+    Notification = 10,
+    TriggerTransition = 11
 }
 
 /// <summary>

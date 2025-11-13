@@ -48,18 +48,53 @@ public sealed class HttpTaskExecutor(
         CancellationToken cancellationToken = default)
     {
         var httpTask = (task as HttpTask)!;
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         
         Logger.LogInformation("Starting HTTP task execution for task {TaskKey} - URL: {Url}, Method: {Method}", 
             httpTask.Key, httpTask.Url, httpTask.Method);
-            
-        StandardTaskResponse standardResponse;
 
         try
         {
             Logger.LogDebug("Preparing input for HTTP task {TaskKey}", httpTask.Key);
             await PrepareInputAsync(httpTask, scriptCode, context, cancellationToken);
             
+            await CallAsync(httpTask, context, cancellationToken);
+            
+            Logger.LogDebug("Processing output for HTTP task {TaskKey}", httpTask.Key);
+            var outputResponse = await ProcessOutputAsync(scriptCode, context, cancellationToken);
+            
+            Logger.LogInformation("HTTP task {TaskKey} execution completed, returning processed output", httpTask.Key);
+            return outputResponse;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error occurred during HTTP task {TaskKey} execution", httpTask.Key);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Executes an HTTP call without script processing. Used for internal workflow operations.
+    /// This method makes the HTTP request and sets the response in the context.
+    /// </summary>
+    /// <param name="task">The HTTP workflow task to execute.</param>
+    /// <param name="context">The script context for storing the response.</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests during execution.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
+    public async Task CallAsync(
+        WorkflowTask task,
+        ScriptContext context,
+        CancellationToken cancellationToken = default)
+    {
+        var httpTask = (task as HttpTask)!;
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        
+        Logger.LogInformation("Calling HTTP endpoint for task {TaskKey} - URL: {Url}, Method: {Method}", 
+            httpTask.Key, httpTask.Url, httpTask.Method);
+            
+        StandardTaskResponse standardResponse;
+
+        try
+        {
             var httpClient = CreateHttpClient(httpTask);
             
             var request = new HttpRequestMessage(new HttpMethod(httpTask.Method), httpTask.Url);
@@ -164,6 +199,12 @@ public sealed class HttpTaskExecutor(
                         ["ResponseContent"] = content
                     });
             }
+            
+            Logger.LogDebug("Setting standard response in context for HTTP task {TaskKey}", httpTask.Key);
+            context.SetStandardResponse(standardResponse);
+            
+            Logger.LogDebug("Setting response body in context for HTTP task {TaskKey}", httpTask.Key);
+            context.SetBody(responseData);
         }
         catch (TaskCanceledException ex) when (ex.CancellationToken.IsCancellationRequested)
         {
@@ -182,6 +223,9 @@ public sealed class HttpTaskExecutor(
                     ["Method"] = httpTask.Method,
                     ["Cancelled"] = true
                 });
+            
+            context.SetStandardResponse(standardResponse);
+            throw;
         }
         catch (HttpRequestException ex)
         {
@@ -199,6 +243,9 @@ public sealed class HttpTaskExecutor(
                     ["Url"] = httpTask.Url,
                     ["Method"] = httpTask.Method
                 });
+            
+            context.SetStandardResponse(standardResponse);
+            throw;
         }
         catch (Exception ex)
         {
@@ -216,16 +263,10 @@ public sealed class HttpTaskExecutor(
                     ["Url"] = httpTask.Url,
                     ["Method"] = httpTask.Method
                 });
+            
+            context.SetStandardResponse(standardResponse);
+            throw;
         }
-
-        Logger.LogDebug("Setting standard response in context for HTTP task {TaskKey}", httpTask.Key);
-        context.SetStandardResponse(standardResponse);
-        
-        Logger.LogDebug("Processing output for HTTP task {TaskKey}", httpTask.Key);
-        var outputResponse = await ProcessOutputAsync(scriptCode, context, cancellationToken);
-        
-        Logger.LogInformation("HTTP task {TaskKey} execution completed, returning processed output", httpTask.Key);
-        return outputResponse;
     }
 
     /// <summary>

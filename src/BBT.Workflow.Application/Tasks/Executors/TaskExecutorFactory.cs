@@ -56,6 +56,8 @@ public sealed class TaskExecutorFactory(IServiceProvider serviceProvider) : ITas
                 return serviceProvider.GetRequiredService<TimerTaskExecutor>();
             case TaskType.Notification:
                 return serviceProvider.GetRequiredService<NotificationTaskExecutor>();
+            case TaskType.TriggerTransition:
+                return serviceProvider.GetRequiredService<TriggerTransitionTaskExecutor>();
             default:
                 throw new ArgumentOutOfRangeException(nameof(type), type, null);
         }

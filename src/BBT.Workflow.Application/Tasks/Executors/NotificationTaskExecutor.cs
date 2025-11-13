@@ -210,7 +210,7 @@ public sealed class NotificationTaskExecutor(
             SubFlowName = correlation.SubFlowName,
             SubFlowVersion = correlation.SubFlowVersion,
             IsCompleted = correlation.IsCompleted,
-            Href = string.Format(InstanceUrlTemplates.SubFlowData, correlation.SubFlowDomain, correlation.SubFlowName, correlation.SubFlowInstanceId)
+            Href = string.Format(InstanceUrlTemplates.Data, correlation.SubFlowDomain, correlation.SubFlowName, correlation.SubFlowInstanceId)
         }).ToList();
 
         return new GetInstanceStateOutput
