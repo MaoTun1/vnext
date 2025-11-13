@@ -2,7 +2,6 @@ using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Scripting;
@@ -19,6 +18,7 @@ internal sealed class ScriptContextBuilder(
     private IRuntimeInfoProvider? _runtimeInfoProvider;
     private Definitions.Workflow? _workflow;
     private Instance? _instance;
+    private InstanceDataShadow? _latestData;
     private Transition? _transition;
     private object? _body;
     private Dictionary<string, string?>? _headers;
@@ -77,6 +77,12 @@ internal sealed class ScriptContextBuilder(
         _instanceId = instanceId;
         _noTracking = noTracking;
         _instance = null; // Clear direct instance if set
+        return this;
+    }
+    
+    public IScriptContextBuilder WithLatestData(InstanceDataShadow? latestData)
+    {
+        _latestData = latestData;
         return this;
     }
 
@@ -207,7 +213,7 @@ internal sealed class ScriptContextBuilder(
             if (instance == null)
                 throw new InvalidOperationException($"Instance with ID {_instanceId.Value} not found.");
             
-            _instance = instance.CreateSnapshot();
+            _instance = instance.CreateSnapshot(_latestData);
             return _instance;
         }
 

@@ -36,6 +36,11 @@ public interface IScriptContextBuilder
     IScriptContextBuilder WithInstance(Guid instanceId, bool noTracking = false);
     
     /// <summary>
+    /// Sets the instance latest data.
+    /// </summary>
+    IScriptContextBuilder WithLatestData(InstanceDataShadow? latestData);
+    
+    /// <summary>
     /// Sets the instance directly from an existing Instance object.
     /// </summary>
     IScriptContextBuilder WithInstance(Instance? instance);

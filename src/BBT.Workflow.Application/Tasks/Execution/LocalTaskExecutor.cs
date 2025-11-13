@@ -111,7 +111,7 @@ public sealed class LocalTaskExecutor(
             {
                 // Determine script code to use based on mapping type
                 string scriptCode;
-                if (onExecuteTask.Mapping.Type.Code == "G" && task is IGlobalTask globalTask)
+                if (onExecuteTask.Mapping.Type.Equals(MappingType.Global) && task is IGlobalTask globalTask)
                 {
                     // For global tasks, serialize the IMapping instance type name
                     if (globalTask.Mapping == null)
@@ -125,7 +125,6 @@ public sealed class LocalTaskExecutor(
                         var bytes = System.Text.Encoding.UTF8.GetBytes(mappingTypeName);
                         scriptCode = Convert.ToBase64String(bytes);
                     }
-
                 }
                 else
                 {
