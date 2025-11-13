@@ -38,7 +38,7 @@ public sealed class GetInstanceDataTriggerStrategy : ITriggerTransitionStrategy
         CancellationToken cancellationToken)
     {
         _logger.LogInformation("Handling GetInstanceData trigger for task {TaskKey} - Domain: {Domain}, Flow: {Flow}, InstanceId: {InstanceId}",
-            task.Key, task.TransitionDomain, task.TransitionFlow, context.Instance.Id);
+            task.Key, task.TriggerDomain, task.TriggerFlow, context.Instance.Id);
 
         // Build path with or without extensions
         string path;
@@ -46,16 +46,16 @@ public sealed class GetInstanceDataTriggerStrategy : ITriggerTransitionStrategy
         {
             var extensionsParam = string.Join(",", task.Extensions);
             path = string.Format(InstanceUrlTemplates.DataWithExtensions,
-                task.TransitionDomain,
-                task.TransitionFlow,
+                task.TriggerDomain,
+                task.TriggerFlow,
                 context.Instance.Id,
                 extensionsParam);
         }
         else
         {
             path = string.Format(InstanceUrlTemplates.Data,
-                task.TransitionDomain,
-                task.TransitionFlow,
+                task.TriggerDomain,
+                task.TriggerFlow,
                 context.Instance.Id);
         }
 

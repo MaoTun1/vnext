@@ -38,13 +38,13 @@ public sealed class StartTriggerStrategy : ITriggerTransitionStrategy
         CancellationToken cancellationToken)
     {
         _logger.LogInformation("Handling Start trigger for task {TaskKey} - Domain: {Domain}, Flow: {Flow}",
-            task.Key, task.TransitionDomain, task.TransitionFlow);
+            task.Key, task.TriggerDomain, task.TriggerFlow);
 
         // Create path using format: /{domain}/workflows/{workflow}/instances/start
         var path = string.Format("/{0}/workflows/{1}/instances/start",
-            task.TransitionDomain,
-            task.TransitionFlow);
-
+            task.TriggerDomain,
+            task.TriggerFlow);
+        
         var httpTask = _httpTaskFactory.CreateHttpTask(task, context, path, "POST");
 
         var httpExecutor = _taskExecutorFactory.GetExecutor(TaskType.Http) as HttpTaskExecutor;

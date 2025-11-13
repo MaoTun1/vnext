@@ -7,7 +7,7 @@ namespace BBT.Workflow.Definitions;
 /// <summary>
 /// Trigger Transition Task Definition
 /// </summary>
-public sealed class TriggerTransitionTask : WorkflowTask, IGlobalTask
+public sealed class TriggerTransitionTask : WorkflowTask
 {
     private TriggerTransitionTask()
     {
@@ -19,11 +19,6 @@ public sealed class TriggerTransitionTask : WorkflowTask, IGlobalTask
     {
         Type = ((int)TaskType.TriggerTransition).ToString();
     }
-
-    /// <summary>
-    /// Gets the mapping instance for this task. Returns null as TriggerTransitionTask uses script-based mapping.
-    /// </summary>
-    public IMapping? Mapping => null;
 
     /// <summary>
     /// Transition name to execute (required for Direct and Correlation trigger types)
@@ -38,22 +33,31 @@ public sealed class TriggerTransitionTask : WorkflowTask, IGlobalTask
     /// <summary>
     /// Domain of the target workflow
     /// </summary>
-    public string TransitionDomain { get; private set; } = string.Empty;
+    public string TriggerDomain { get; private set; } = string.Empty;
 
     /// <summary>
     /// Flow name of the target workflow
     /// </summary>
-    public string TransitionFlow { get; private set; } = string.Empty;
+    public string TriggerFlow { get; private set; } = string.Empty;
+    /// <summary>
+    /// Flow key of the target workflow
+    /// </summary>
+    public string? TriggerKey { get; private set; } = string.Empty;
+    /// <summary>
+    /// InstanceId of the target workflow
+    /// </summary>
+    public string? TriggerInstanceId { get; private set; } = string.Empty;
 
     /// <summary>
     /// Trigger type
     /// </summary>
     public TriggerTransitionType TriggerType { get; private set; }
 
+
     /// <summary>
-    /// SubFlow name for Correlation trigger type (optional)
+    /// SubFlow version for SubProcess trigger type (optional)
     /// </summary>
-    public string? SubFlowName { get; private set; }
+    public string? TriggerVersion { get; private set; }
 
     /// <summary>
     /// Extensions to request for GetInstanceData trigger type (optional)
@@ -64,16 +68,41 @@ public sealed class TriggerTransitionTask : WorkflowTask, IGlobalTask
     {
         Body = JsonSerializer.SerializeToElement(body);
     }
+    public void SetInstance(string instanceId)
+    {
+        TriggerInstanceId = instanceId;
+    }
+    public void SetKey(string key)
+    {
+        TriggerKey = key;
+    }
+    public void SetDomain(string domain)
+    {
+        TriggerDomain = domain;
+    }
+    public void SetFlow(string flow)
+    {
+        TriggerFlow = flow;
+    }
+    public void SetTriggerType(string type)
+    {
+        if (!string.IsNullOrWhiteSpace(type))
+        {
+            TriggerType = Enum.Parse<TriggerTransitionType>(type, ignoreCase: true);
+        }
+    }
 
     /// <summary>
     /// Internal property setters for object pooling
     /// </summary>
     internal void SetTransitionNameInternal(string? transitionName) => TransitionName = transitionName;
     internal void SetBodyInternal(JsonElement? body) => Body = body;
-    internal void SetTransitionDomainInternal(string transitionDomain) => TransitionDomain = transitionDomain;
-    internal void SetTransitionFlowInternal(string transitionFlow) => TransitionFlow = transitionFlow;
+    internal void SetTriggerDomainInternal(string triggerDomain) => TriggerDomain = triggerDomain;
+    internal void SetTriggerFlowInternal(string triggerFlow) => TriggerFlow = triggerFlow;
+    internal void SetTriggerKeyInternal(string? triggerKey) => TriggerKey = triggerKey;
+    internal void SetTriggerInstanceIdInternal(string? triggerInstanceId) => TriggerInstanceId = triggerInstanceId;
     internal void SetTriggerTypeInternal(TriggerTransitionType triggerType) => TriggerType = triggerType;
-    internal void SetSubFlowNameInternal(string? subFlowName) => SubFlowName = subFlowName;
+    internal void SetTriggerVersionInternal(string? triggerVersion) => TriggerVersion = triggerVersion;
     internal void SetExtensionsInternal(string[]? extensions) => Extensions = extensions;
 
     protected override void Configure(JsonElement config)
@@ -89,11 +118,11 @@ public sealed class TriggerTransitionTask : WorkflowTask, IGlobalTask
             Body = string.IsNullOrWhiteSpace(body) ? null : bodyElement;
         }
 
-        if (config.TryGetProperty("domain", out var transitionDomainElement))
-            TransitionDomain = transitionDomainElement.GetString() ?? throw new ArgumentNullException(nameof(transitionDomainElement));
+        if (config.TryGetProperty("domain", out var TriggerDomainElement))
+            TriggerDomain = TriggerDomainElement.GetString() ?? throw new ArgumentNullException(nameof(TriggerDomainElement));
 
-        if (config.TryGetProperty("flow", out var transitionFlowElement))
-            TransitionFlow = transitionFlowElement.GetString() ?? throw new ArgumentNullException(nameof(transitionFlowElement));
+        if (config.TryGetProperty("flow", out var TriggerFlowElement))
+            TriggerFlow = TriggerFlowElement.GetString() ?? throw new ArgumentNullException(nameof(TriggerFlowElement));
 
         if (config.TryGetProperty("type", out var triggerTypeElement))
         {
@@ -104,8 +133,16 @@ public sealed class TriggerTransitionTask : WorkflowTask, IGlobalTask
             }
         }
 
-        if (config.TryGetProperty("subFlowName", out var subFlowNameElement))
-            SubFlowName = subFlowNameElement.GetString();
+
+
+        if (config.TryGetProperty("version", out var TriggerVersionElement))
+            TriggerVersion = TriggerVersionElement.GetString();
+
+        if (config.TryGetProperty("key", out var keyElement))
+            TriggerKey = keyElement.GetString();
+
+        if (config.TryGetProperty("instanceId", out var instanceIdElement))
+            TriggerInstanceId = instanceIdElement.GetString();
 
         if (config.TryGetProperty("extensions", out var extensionsElement))
         {
@@ -147,10 +184,12 @@ public sealed class TriggerTransitionTask : WorkflowTask, IGlobalTask
 
         cloned.TransitionName = TransitionName;
         cloned.Body = Body;
-        cloned.TransitionDomain = TransitionDomain;
-        cloned.TransitionFlow = TransitionFlow;
+        cloned.TriggerDomain = TriggerDomain;
+        cloned.TriggerFlow = TriggerFlow;
+        cloned.TriggerKey = TriggerKey;
+        cloned.TriggerInstanceId = TriggerInstanceId;
         cloned.TriggerType = TriggerType;
-        cloned.SubFlowName = SubFlowName;
+        cloned.TriggerVersion = TriggerVersion;
         cloned.Extensions = Extensions;
 
         return cloned;
@@ -165,10 +204,12 @@ public sealed class TriggerTransitionTask : WorkflowTask, IGlobalTask
         source.CopyBaseToInternal(this);
         SetTransitionNameInternal(source.TransitionName);
         SetBodyInternal(source.Body);
-        SetTransitionDomainInternal(source.TransitionDomain);
-        SetTransitionFlowInternal(source.TransitionFlow);
+        SetTriggerDomainInternal(source.TriggerDomain);
+        SetTriggerFlowInternal(source.TriggerFlow);
+        SetTriggerKeyInternal(source.TriggerKey);
+        SetTriggerInstanceIdInternal(source.TriggerInstanceId);
         SetTriggerTypeInternal(source.TriggerType);
-        SetSubFlowNameInternal(source.SubFlowName);
+        SetTriggerVersionInternal(source.TriggerVersion);
         SetExtensionsInternal(source.Extensions);
     }
 
@@ -180,10 +221,12 @@ public sealed class TriggerTransitionTask : WorkflowTask, IGlobalTask
         base.Reset();
         TransitionName = null;
         Body = null;
-        TransitionDomain = string.Empty;
-        TransitionFlow = string.Empty;
+        TriggerDomain = string.Empty;
+        TriggerFlow = string.Empty;
+        TriggerKey = null;
+        TriggerInstanceId = null;
         TriggerType = TriggerTransitionType.Trigger;
-        SubFlowName = null;
+        TriggerVersion = null;
         Extensions = null;
     }
 
@@ -216,7 +259,7 @@ public enum TriggerTransitionType
     /// Subprocess trigger
     /// </summary>
     SubProcess = 3,
-    
+
     /// <summary>
     /// GetInstanceData trigger
     /// </summary>

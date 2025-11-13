@@ -42,7 +42,7 @@ public sealed class TriggerTransitionTaskExecutor(
         var triggerTask = (task as TriggerTransitionTask)!;
 
         Logger.LogInformation("Starting trigger transition task execution for task {TaskKey} - TriggerType: {TriggerType}, Domain: {Domain}, Flow: {Flow}",
-            triggerTask.Key, triggerTask.TriggerType, triggerTask.TransitionDomain, triggerTask.TransitionFlow);
+            triggerTask.Key, triggerTask.TriggerType, triggerTask.TriggerDomain, triggerTask.TriggerKey);
 
         try
         {
@@ -65,7 +65,7 @@ public sealed class TriggerTransitionTaskExecutor(
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error occurred during trigger transition task {TaskKey} execution - TriggerType: {TriggerType}, Domain: {Domain}, Flow: {Flow}",
-                triggerTask.Key, triggerTask.TriggerType, triggerTask.TransitionDomain, triggerTask.TransitionFlow);
+                triggerTask.Key, triggerTask.TriggerType, triggerTask.TriggerDomain, triggerTask.TriggerFlow);
 
             StandardTaskResponse standardResponse = CreateErrorResponse(
                 errorMessage: ex.Message,
@@ -76,8 +76,8 @@ public sealed class TriggerTransitionTaskExecutor(
                 {
                     ["TaskKey"] = triggerTask.Key,
                     ["TriggerType"] = triggerTask.TriggerType.ToString(),
-                    ["Domain"] = triggerTask.TransitionDomain,
-                    ["Flow"] = triggerTask.TransitionFlow
+                    ["Domain"] = triggerTask.TriggerDomain,
+                    ["Flow"] = triggerTask.TriggerFlow
                 });
             context.SetStandardResponse(standardResponse);
             throw;
