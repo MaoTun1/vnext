@@ -136,7 +136,6 @@ public sealed class DirectTriggerStrategy : ITriggerTransitionStrategy
                         {
 
                             string idValue = instanceOutput.Id?.ToString() ?? "null";
-                            // Use GetValueOrDefault() to safely access Nullable<Guid>
                             Guid resolvedGuid = Guid.TryParse(idValue, out var instanceId)?instanceId:Guid.Empty;
                             
                             if (resolvedGuid != Guid.Empty)

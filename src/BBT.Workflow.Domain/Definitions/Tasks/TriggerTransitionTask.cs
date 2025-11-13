@@ -118,11 +118,17 @@ public sealed class TriggerTransitionTask : WorkflowTask
             Body = string.IsNullOrWhiteSpace(body) ? null : bodyElement;
         }
 
-        if (config.TryGetProperty("domain", out var TriggerDomainElement))
-            TriggerDomain = TriggerDomainElement.GetString() ?? throw new ArgumentNullException(nameof(TriggerDomainElement));
+        if (config.TryGetProperty("domain", out var triggerDomainElement))
+            TriggerDomain = triggerDomainElement.GetString() ?? string.Empty;
 
-        if (config.TryGetProperty("flow", out var TriggerFlowElement))
-            TriggerFlow = TriggerFlowElement.GetString() ?? throw new ArgumentNullException(nameof(TriggerFlowElement));
+        if (string.IsNullOrWhiteSpace(TriggerDomain))
+            throw new ArgumentException("Property 'domain' is required for TriggerTransitionTask.", nameof(config));
+
+        if (config.TryGetProperty("flow", out var triggerFlowElement))
+            TriggerFlow = triggerFlowElement.GetString() ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(TriggerFlow))
+            throw new ArgumentException("Property 'flow' is required for TriggerTransitionTask.", nameof(config));
 
         if (config.TryGetProperty("type", out var triggerTypeElement))
         {

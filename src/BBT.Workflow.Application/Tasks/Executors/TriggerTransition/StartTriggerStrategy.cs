@@ -40,8 +40,8 @@ public sealed class StartTriggerStrategy : ITriggerTransitionStrategy
         _logger.LogInformation("Handling Start trigger for task {TaskKey} - Domain: {Domain}, Flow: {Flow}",
             task.Key, task.TriggerDomain, task.TriggerFlow);
 
-        // Create path using format: /{domain}/workflows/{workflow}/instances/start
-        var path = string.Format("/{0}/workflows/{1}/instances/start",
+        // Create path using InstanceUrlTemplates.Start format
+        var path = string.Format(InstanceUrlTemplates.Start,
             task.TriggerDomain,
             task.TriggerFlow);
         
