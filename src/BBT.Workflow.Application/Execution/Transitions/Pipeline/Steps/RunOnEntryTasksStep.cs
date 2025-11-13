@@ -72,13 +72,16 @@ public sealed class RunOnEntryTasksStep(
     /// </summary>
     private ScriptContext CreateScriptContext(TransitionExecutionContext context)
     {
-        return scriptContextFactory.NewBuilder()
+        var builder = scriptContextFactory.NewBuilder()
             .WithWorkflow(context.Workflow)
             .WithInstance(context.Instance)
-            .WithTransition(context.Transition)
             .WithBody(context.Data)
-            .WithHeaders(context.Headers.ToDictionary(kvp => kvp.Key, kvp => (string?)kvp.Value))
-            .BuildAsync(CancellationToken.None)
+            .WithHeaders(context.Headers.ToDictionary(kvp => kvp.Key, kvp => (string?)kvp.Value));
+        
+        if (context.Transition != null)
+            builder.WithTransition(context.Transition);
+        
+        return builder.BuildAsync(CancellationToken.None)
             .GetAwaiter()
             .GetResult();
     }

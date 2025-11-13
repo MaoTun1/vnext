@@ -47,9 +47,10 @@ public sealed class HandleSubFlowStep(
     /// </summary>
     private bool IsApplicable(TransitionExecutionContext context)
     {
-        if (context.Target == null)
+        if (context.Target == null || context.Transition == null)
         {
-            logger.LogWarning("Target state is null for instance {InstanceId}", context.InstanceId);
+            logger.LogTrace("Target state or transition is null for instance {InstanceId}, skipping SubFlow handling", 
+                context.InstanceId);
             return false;
         }
 

@@ -341,8 +341,9 @@ public sealed class SubflowCompletionService(
                 WorkflowKey = parentWorkflow.Key,
                 WorkflowVersion = parentWorkflow.Version,
                 InstanceId = parentInstance.Id,
-                TransitionKey = transition.Key,
+                TransitionKey = transition.Key, // For logging purposes only
                 TriggerType = transition.TriggerType,
+                Mode = ExecMode.Resume, // Use Resume mode for SubFlow completion
                 Headers = new Dictionary<string, string?>(),
                 Actor = ExecutionActor.System,
                 RequestedAt = DateTimeOffset.UtcNow,
