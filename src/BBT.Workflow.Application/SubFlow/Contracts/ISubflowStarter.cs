@@ -43,4 +43,25 @@ public interface ISubflowStarter
         InstanceCorrelation correlation,
         ScriptContext context,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Starts a SubProcess workflow without requiring a target state or mapping.
+    /// Used for triggering SubProcess workflows from tasks.
+    /// </summary>
+    /// <param name="workflow">The parent workflow.</param>
+    /// <param name="parentInstance">The parent instance.</param>
+    /// <param name="subFlowReference">Reference to the SubFlow/SubProcess to start.</param>
+    /// <param name="transition">The transition triggering the SubProcess.</param>
+    /// <param name="correlation">Correlation information for tracking.</param>
+    /// <param name="subFlowType">Type code of the SubFlow ("S" or "P").</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task representing the asynchronous sub-flow initiation operation.</returns>
+    Task SubStartAsync(
+        Definitions.Workflow workflow,
+        Instance parentInstance,
+        Reference subFlowReference,
+        Transition transition,
+        InstanceCorrelation correlation,
+        string subFlowType,
+        CancellationToken cancellationToken = default);
 }

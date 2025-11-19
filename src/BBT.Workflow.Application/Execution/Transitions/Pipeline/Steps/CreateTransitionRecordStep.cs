@@ -28,6 +28,14 @@ public sealed class CreateTransitionRecordStep(
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context,
         CancellationToken cancellationToken)
     {
+        // Skip for SubFlow resume - transition record already exists
+        if (context.Directives.IsSubFlowResume)
+        {
+            logger.LogDebug("Skipping transition record creation for SubFlow resume on instance {InstanceId}",
+                context.InstanceId);
+            return Result<StepOutcome>.Ok(StepOutcome.Continue());
+        }
+        
         logger.LogDebug("Creating transition record for {TransitionKey} on instance {InstanceId}",
             context.TransitionKey, context.InstanceId);
 

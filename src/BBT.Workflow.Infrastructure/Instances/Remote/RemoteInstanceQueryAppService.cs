@@ -35,7 +35,7 @@ public sealed class RemoteInstanceQueryAppService(
     {
         try
         {
-            var url = $"/api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances/{input.Instance}";
+            var url = $"api/v{_options.ApiVersion}" + string.Format(InstanceUrlTemplates.Instance, input.Domain, input.Workflow, input.Instance);
 
             var queryParams = new List<string>();
             if (input.Extension?.Length > 0)
@@ -95,7 +95,7 @@ public sealed class RemoteInstanceQueryAppService(
         return await ResultExtensions.TryAsync(
             async ct =>
             {
-                var url = $"/api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances";
+                var url = $"api/v{_options.ApiVersion}" + string.Format(InstanceUrlTemplates.InstanceList, input.Domain, input.Workflow);
 
                 var queryParams = new List<string>
                 {
@@ -142,8 +142,7 @@ public sealed class RemoteInstanceQueryAppService(
         return await ResultExtensions.TryAsync(
             async ct =>
             {
-                var url =
-                    $"/api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances/{input.Instance}/transitions";
+                 var url = $"api/v{_options.ApiVersion}" + string.Format(InstanceUrlTemplates.InstanceHistory, input.Domain, input.Workflow, input.Instance);
 
                 var queryParams = new List<string>();
                 if (input.Extension?.Length > 0)
@@ -186,8 +185,7 @@ public sealed class RemoteInstanceQueryAppService(
         return await ResultExtensions.TryAsync(
             async ct =>
             {
-                var url =
-                    $"/api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances/{input.Instance}/functions/{Definitions.Functions.FunctionTypeConst.Longpooling}";
+                var url = $"api/v{_options.ApiVersion}" + string.Format(InstanceUrlTemplates.State, input.Domain, input.Workflow, input.Instance);
 
                 var queryParams = new List<string>();
                 if (!string.IsNullOrEmpty(input.Version))
@@ -237,8 +235,7 @@ public sealed class RemoteInstanceQueryAppService(
         return await ResultExtensions.TryAsync(
             async ct =>
             {
-                var url =
-                    $"/api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances/{input.Instance}/functions/{Definitions.Functions.FunctionTypeConst.View}";
+                var url = $"api/v{_options.ApiVersion}" + string.Format(InstanceUrlTemplates.View, input.Domain, input.Workflow, input.Instance);
 
                 var queryParams = new List<string>();
                 if (!string.IsNullOrEmpty(input.Version))

@@ -170,4 +170,16 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
             _ => currentVersion
         };
     }
+
+    public InstanceDataShadow Shadow()
+    {
+        return new InstanceDataShadow
+        {
+            Id = Id,
+            Version = Version,
+            HistorySequence = HistorySequence,
+            InstanceId = InstanceId,
+            Data = Attributes
+        };
+    }
 }

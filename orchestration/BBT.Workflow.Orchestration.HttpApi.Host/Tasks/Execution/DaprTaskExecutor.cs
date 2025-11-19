@@ -229,6 +229,7 @@ public sealed class DaprTaskExecutor(
                     Key = context.Workflow.Key,
                     Version = context.Workflow.Version
                 },
+                LatestData = context.Instance.LatestData?.Shadow(),
                 Body = context.Body,
                 Headers = context.Headers,
                 RouteValues = context.RouteValues,

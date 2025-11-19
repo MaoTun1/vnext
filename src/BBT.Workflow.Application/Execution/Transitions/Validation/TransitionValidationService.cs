@@ -68,6 +68,13 @@ public class TransitionValidationService(
     {
         logger.LogTrace("Validating transition policy for {TransitionKey}", context.TransitionKey);
         
+        // Skip validation for SubFlow resume scenarios or when transition is null
+        if (context.Directives.IsSubFlowResume || context.Transition == null)
+        {
+            logger.LogTrace("Skipping transition policy validation - SubFlow resume or no transition");
+            return Task.FromResult(Result.Ok());
+        }
+        
         if (context.Instance.HasActiveSubFlow)
         {
             logger.LogTrace("Skipping transition policy validation for {TransitionKey} - instance has active subflow", 
@@ -76,7 +83,7 @@ public class TransitionValidationService(
         }
 
         var result = context.Instance.CanExecuteTransition(
-            context.Transition!, 
+            context.Transition, 
             context.Current, 
             stateTransitionPolicy, 
             executionActor);

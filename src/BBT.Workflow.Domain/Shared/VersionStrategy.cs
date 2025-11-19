@@ -3,8 +3,9 @@ using System.Text.Json.Serialization;
 namespace BBT.Workflow;
 
 [JsonConverter(typeof(IEquatableJsonConverter<VersionStrategy>))]
-public class VersionStrategy: IEquatable<VersionStrategy>
+public sealed class VersionStrategy: IEquatable<VersionStrategy>
 {
+    public static readonly VersionStrategy None = new VersionStrategy("None", "None");
     public static readonly VersionStrategy IncreaseMinor = new VersionStrategy("Minor", "Increase Minor");
     public static readonly VersionStrategy IncreaseMajor = new VersionStrategy("Major", "Increase Minor");
     public static readonly VersionStrategy IncreasePatch = new VersionStrategy("Patch", "Increase Patch");
@@ -26,6 +27,7 @@ public class VersionStrategy: IEquatable<VersionStrategy>
     {
         return code switch
         {
+            "None" => None,
             "Minor" => IncreaseMinor,
             "Major" => IncreaseMajor,
             "Patch" => IncreasePatch,

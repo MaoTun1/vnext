@@ -21,6 +21,7 @@ public sealed class ExecutionStrategyFactory(
         {
             ExecMode.Sync => serviceProvider.GetService<SyncTransitionStrategy>(),
             ExecMode.Async => serviceProvider.GetService<AsyncTransitionStrategy>(),
+            ExecMode.Resume => serviceProvider.GetService<SyncTransitionStrategy>(), // Resume mode uses Sync strategy
             _ => null
         };
 

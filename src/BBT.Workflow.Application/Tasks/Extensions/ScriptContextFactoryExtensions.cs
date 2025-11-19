@@ -27,6 +27,7 @@ public static class ScriptContextFactoryExtensions
             .WithRuntime(runtimeInfoProvider)
             .WithWorkflow(input.Context.Workflow)
             .WithInstance(input.Context.InstanceId, true)
+            .WithLatestData(input.Context.LatestData)
             .WithTransition(input.Context.TransitionKey)
             .WithBody(input.Context.Body)
             .WithHeaders(input.Context.Headers)

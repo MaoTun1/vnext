@@ -66,7 +66,11 @@ public sealed class TransitionContextFactory(
                 Result<(Definitions.Workflow, Instance, State, Transition?)>.Fail(currentStateResult.Error));
 
         var currentState = currentStateResult.Value!;
-        var transition = ResolveTransition(data.Workflow, currentState, input.TransitionKey);
+        
+        // In Resume mode, transition is optional (e.g., SubFlow completion scenarios)
+        var transition = input.Mode == ExecMode.Resume 
+            ? null 
+            : ResolveTransition(data.Workflow, currentState, input.TransitionKey);
 
         return Task.FromResult(
             Result<(Definitions.Workflow, Instance, State, Transition?)>.Ok(

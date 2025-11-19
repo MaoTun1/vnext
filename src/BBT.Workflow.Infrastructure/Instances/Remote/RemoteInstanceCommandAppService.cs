@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using BBT.Aether.Http;
+using BBT.Workflow.Definitions;
 using BBT.Workflow.Domain;
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Remote.Configuration;
@@ -35,7 +36,7 @@ public sealed class RemoteInstanceCommandAppService(
         return await ResultExtensions.TryAsync(
             async ct =>
             {
-                var url = $"api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances/start";
+                var url = $"api/v{_options.ApiVersion}" + string.Format(InstanceUrlTemplates.Start, input.Domain, input.Workflow);
 
                 var queryParams = new List<string>();
                 if (!string.IsNullOrEmpty(input.Version))
@@ -99,7 +100,7 @@ public sealed class RemoteInstanceCommandAppService(
         return await ResultExtensions.TryAsync(
             async ct =>
             {
-                var url = $"api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/sub/instances/start";
+                var url = $"api/v{_options.ApiVersion}" + string.Format(InstanceUrlTemplates.StartSub, input.Domain, input.Workflow);
 
                 var queryParams = new List<string>();
                 if (!string.IsNullOrEmpty(input.Version))
@@ -168,8 +169,7 @@ public sealed class RemoteInstanceCommandAppService(
         return await ResultExtensions.TryAsync(
             async ct =>
             {
-                var url =
-                    $"api/v{_options.ApiVersion}/{input.Domain}/workflows/{input.Workflow}/instances/{instanceId}/transitions/{transitionKey}";
+                var url = $"api/v{_options.ApiVersion}" + string.Format(InstanceUrlTemplates.Transition, input.Domain, input.Workflow, instanceId, transitionKey);
 
                 var queryParams = new List<string>();
                 if (!string.IsNullOrEmpty(input.Version))
