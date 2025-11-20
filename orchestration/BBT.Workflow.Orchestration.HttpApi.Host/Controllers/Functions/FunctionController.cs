@@ -57,7 +57,7 @@ public sealed class FunctionController(IFunctionAppService functionAppService,
             Domain = domain,
             Page = parameters.Page,
             PageSize = parameters.PageSize,
-            PageUrl = $"{domain}/workflows/{workflow}/functions/{function}",
+            PageUrl = string.Format(InstanceUrlTemplates.FunctionList, domain, workflow, function),
             Sort = parameters.Sort,
             Workflow = workflow,
             Filter = function.ToLowerInvariant() == Definitions.Functions.FunctionTypeConst.Data ? parameters.Filter : Array.Empty<string>()
