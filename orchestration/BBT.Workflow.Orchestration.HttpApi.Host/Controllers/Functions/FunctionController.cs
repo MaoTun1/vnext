@@ -60,7 +60,7 @@ public sealed class FunctionController(IFunctionAppService functionAppService,
             PageUrl = $"{domain}/workflows/{workflow}/functions/{function}",
             Sort = parameters.Sort,
             Workflow = workflow,
-            Filter = function.ToLowerInvariant() == Definitions.Functions.FunctionTypeConst.Data ? parameters.filter : []
+            Filter = function.ToLowerInvariant() == Definitions.Functions.FunctionTypeConst.Data ? parameters.Filter : Array.Empty<string>()
         };
         
         var instanceListResult = await queryAppService.GetInstanceListAsync(getInstanceListInput, cancellationToken);
