@@ -10,7 +10,7 @@ public class FunctionListQueryParameters
 {
 
     [JsonPropertyName("filter")]
-    public string[]? filter { get; set; } =[];
+    public string[]? Filter { get; set; } =[];
 
     [JsonPropertyName("page")]
     public int Page { get; set; } = 1;
