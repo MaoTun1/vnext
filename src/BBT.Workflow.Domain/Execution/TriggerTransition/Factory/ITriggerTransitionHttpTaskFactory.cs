@@ -5,6 +5,7 @@ namespace BBT.Workflow.Execution.TriggerTransition;
 
 /// <summary>
 /// Factory for creating HTTP tasks used in trigger transition strategies.
+/// Also provides utilities for resolving instance IDs.
 /// </summary>
 public interface ITriggerTransitionHttpTaskFactory
 {
@@ -21,5 +22,23 @@ public interface ITriggerTransitionHttpTaskFactory
         ScriptContext context,
         string path,
         string method);
+
+    /// <summary>
+    /// Resolves the instance ID for a trigger task based on its configuration.
+    /// </summary>
+    /// <param name="task">The trigger transition task.</param>
+    /// <param name="context">The script context.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The resolved instance ID as a string.</returns>
+    /// <remarks>
+    /// Resolution priority:
+    /// 1. If TriggerInstanceId is provided, uses it directly
+    /// 2. If TriggerKey is provided, queries the instance by key to get the ID
+    /// 3. Otherwise, uses the current instance ID from context
+    /// </remarks>
+    Task<string> ResolveInstanceIdAsync(
+        TriggerTransitionTask task,
+        ScriptContext context,
+        CancellationToken cancellationToken);
 }
 

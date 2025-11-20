@@ -40,6 +40,9 @@ public sealed class GetInstanceDataTriggerStrategy : ITriggerTransitionStrategy
         _logger.LogInformation("Handling GetInstanceData trigger for task {TaskKey} - Domain: {Domain}, Flow: {Flow}, InstanceId: {InstanceId}",
             task.Key, task.TriggerDomain, task.TriggerFlow, context.Instance.Id);
 
+        // Resolve instance ID using the factory's ResolveInstanceIdAsync method
+        var instanceId = await _httpTaskFactory.ResolveInstanceIdAsync(task, context, cancellationToken);
+
         // Build path with or without extensions
         string path;
         if (task.Extensions?.Length > 0)
@@ -48,7 +51,7 @@ public sealed class GetInstanceDataTriggerStrategy : ITriggerTransitionStrategy
             path = string.Format(InstanceUrlTemplates.DataWithExtensions,
                 task.TriggerDomain,
                 task.TriggerFlow,
-                context.Instance.Id,
+                instanceId,
                 extensionsParam);
         }
         else
@@ -56,7 +59,7 @@ public sealed class GetInstanceDataTriggerStrategy : ITriggerTransitionStrategy
             path = string.Format(InstanceUrlTemplates.Data,
                 task.TriggerDomain,
                 task.TriggerFlow,
-                context.Instance.Id);
+                instanceId);
         }
 
         var httpTask = _httpTaskFactory.CreateHttpTask(task, context, path, "GET");
