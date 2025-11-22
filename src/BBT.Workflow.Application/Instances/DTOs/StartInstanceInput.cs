@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
+using BBT.Aether;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Execution;
 using BBT.Workflow.Shared;
@@ -47,7 +48,7 @@ public sealed class StartInstanceInput(
     }
 }
 
-public sealed class CreateInstanceInput
+public sealed class CreateInstanceInput: IHasExtraProperties
 {
     public Guid? Id { get; set; }
 
@@ -58,7 +59,7 @@ public sealed class CreateInstanceInput
     public string[]? Tags { get; set; }
     public JsonElement? Attributes { get; set; }
     public string? Callback { get; set; }
-    public ObjectDictionary MetaData { get; set; } = new();
+    public ExtraPropertyDictionary ExtraProperties { get; set; } = new();
 }
 
 public sealed class StartInstanceOutput

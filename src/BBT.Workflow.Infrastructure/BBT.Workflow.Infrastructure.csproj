@@ -7,7 +7,6 @@
     <RootNamespace>BBT.Workflow</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="BBT.Aether.Infrastructure" Version="$(AetherPackageVersion)" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="$(MicrosoftPackageVersion)" />
     <PackageReference Include="Microsoft.Extensions.Http.Polly" Version="$(MicrosoftPackageVersion)" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="$(MicrosoftPackageVersion)" />
@@ -17,6 +16,7 @@
     </PackageReference>
     <PackageReference Include="Polly.Extensions.Http" Version="3.0.0" />
     <PackageReference Include="prometheus-net" Version="$(PrometheusVersion)" />
+    <ProjectReference Include="../../../aether/framework/src/BBT.Aether.Infrastructure/BBT.Aether.Infrastructure.csproj" />
     <ProjectReference Include="..\BBT.Workflow.Application\BBT.Workflow.Application.csproj" />
   </ItemGroup>
   <ItemGroup>

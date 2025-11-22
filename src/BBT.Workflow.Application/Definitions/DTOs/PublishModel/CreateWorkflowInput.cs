@@ -57,6 +57,12 @@ public sealed class CreateWorkflowInput
     /// </summary>
     [Required]
     public CreateTransitionInput StartTransition { get; set; }
+    
+    /// <summary>
+    /// Defines the cancellation configuration for this workflow.
+    /// When configured, allows the workflow to be canceled via the cancel transition.
+    /// </summary>
+    public CreateTransitionInput? Cancel { get; private set; }
 
     /// <summary>
     /// It is in the possible statuses found in the flow.

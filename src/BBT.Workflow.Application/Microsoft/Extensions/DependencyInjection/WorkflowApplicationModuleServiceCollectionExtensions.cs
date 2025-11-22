@@ -28,6 +28,7 @@ using BBT.Workflow.Execution.Validation;
 using BBT.Workflow.Application.Notifications;
 using BBT.Workflow.Execution.TriggerTransition;
 using BBT.Workflow.Tasks.TriggerTransition;
+using BBT.Workflow.Tasks.Execution;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -130,6 +131,9 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddScoped<ITransitionStrategy, SyncTransitionStrategy>();
         services.AddScoped<ITransitionStrategy, AsyncTransitionStrategy>();
 
+        // Default Task Orchestrator - Null Object Pattern (replaced by specific implementations in host projects)
+        services.AddScoped<ITaskOrchestrator, NullTaskExecutor>();
+        
         // State machine and orchestration services
         services.AddScoped<ITaskOrchestrationService, TaskOrchestrationService>();
         services.AddScoped<ITaskConditionService, TaskOrchestrationService>();
@@ -231,6 +235,9 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         // Validation Services
         services.AddScoped<ITransitionValidationService, TransitionValidationService>();
 
+        // Evaluation Services
+        services.AddScoped<IAutoConditionEvaluator, AutoConditionEvaluator>();
+
         // Trigger Handlers
         services.AddScoped<ITransitionHandler, ManualTransitionHandler>();
         services.AddScoped<ITransitionHandler, AutomaticTransitionHandler>();
@@ -244,6 +251,7 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddScoped<IExecutionStrategyFactory, ExecutionStrategyFactory>();
 
         // Pipeline Steps (registered in execution order)
+        services.AddScoped<ITransitionStep, HandleCancelPreflightStep>();
         services.AddScoped<ITransitionStep, ForwardToActiveSubflowStep>();
         services.AddScoped<ITransitionStep, CreateTransitionRecordStep>();
         services.AddScoped<ITransitionStep, RunOnExecuteTasksStep>();

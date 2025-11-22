@@ -20,8 +20,8 @@ namespace BBT.Workflow.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.EnsureSchema(
-                name: _schema.SchemaName);
+            // migrationBuilder.EnsureSchema(
+            //     name: _schema.SchemaName);
 
             migrationBuilder.CreateTable(
                 name: "Instances",

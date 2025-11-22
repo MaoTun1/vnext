@@ -16,7 +16,5 @@ public class InstanceActionConstants
 
 public class InstanceJobConstants
 {
-    public const int MaxJobIdLength = 400;
-    public const int MaxJobNameLength = 125;
-    public const int MaxExpressionValueLength = 500;
+    public const int MaxJobNameLength = 500;
 }

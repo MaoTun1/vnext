@@ -1,3 +1,4 @@
+using BBT.Aether.BackgroundJob;
 using BBT.Workflow.BackgroundJobs;
 using BBT.Workflow.Data;
 using BBT.Workflow.Infrastructure.DataSink;
@@ -25,13 +26,9 @@ public static class WorkflowInfrastructureModuleServiceCollectionExtensions
     {
         services.AddApplicationModule();
         services.AddAetherInfrastructure();
-
+        
         // Schemas
         services.AddScoped<ISchemaManager, PostgresSchemaManager>();
-        
-        // Background Jobs
-        services.AddScoped<IBackgroundJobService, DaprBackgroundJobService>();
-        services.AddScoped<IJobStore, EfCoreJobStore>();
         
         // DbContext
         // services.AddAetherDbContextFactory<WorkflowDbContext, WorkflowDbContextFactory>(_ => { });

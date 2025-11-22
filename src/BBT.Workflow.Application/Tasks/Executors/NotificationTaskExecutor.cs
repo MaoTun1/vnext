@@ -1,13 +1,9 @@
-using System.Text;
 using System.Text.Json;
-using BBT.Workflow.DataSink;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
-using BBT.Workflow.Instances.DTOs;
 using BBT.Workflow.Notifications;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
-using BBT.Workflow.Shared;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using BBT.Workflow.Application.Notifications;
@@ -34,7 +30,6 @@ public sealed class NotificationTaskExecutor(
     ITaskExecutorFactory taskExecutorFactory,
     ILogger<NotificationTaskExecutor> logger) : TaskExecutor(scriptEngine, logger), ITaskExecutor
 {
-
     /// <summary>
     /// Executes a notification task by building the instance state output and sending it through the notification sender.
     /// </summary>
@@ -55,11 +50,8 @@ public sealed class NotificationTaskExecutor(
     {
         var notificationTask = (task as NotificationTask)!;
 
-        Logger.LogInformation("Starting notification task execution for task {TaskKey}", notificationTask.Key);
-
         try
         {
-
             // Check runtime domain
             runtimeInfoProvider.Check(context.Runtime.Domain);
 
@@ -71,14 +63,13 @@ public sealed class NotificationTaskExecutor(
                 id: context.Instance.Id.ToString(),
                 data: instanceOutput);
 
-            Logger.LogDebug("Detecting DAPR component and sending for task {TaskKey}", notificationTask.Key);
-
             // Determine component name precedence: task metadata -> configuration
             var componentName = TryGetFromMetadata(notificationTask, "componentName")
-                ?? configuration["DaprNotification:ComponentName"];
+                                ?? configuration["DaprNotification:ComponentName"];
 
             if (string.IsNullOrWhiteSpace(componentName))
-                throw new InvalidOperationException("ComponentName must be provided in task metadata or configuration.");
+                throw new InvalidOperationException(
+                    "ComponentName must be provided in task metadata or configuration.");
 
             // Prepare metadata (without headers)
             var metadata = new Dictionary<string, string>();
@@ -90,52 +81,45 @@ public sealed class NotificationTaskExecutor(
                     metadata[kv.Key] = kv.Value;
             }
 
-            var (componentType, notificationType, updatedMetadata) = await componentDetector.DetectAsync(componentName!, metadata, cancellationToken);
+            var (_, notificationType, updatedMetadata) =
+                await componentDetector.DetectAsync(componentName!, metadata, cancellationToken);
 
 
             // Route to appropriate executor based on notification component type
             if (notificationType == NotificationComponentType.HttpBinding)
             {
                 // Create DaprBindingTask and call DaprBindingTaskExecutor
-                var daprBindingTask = CreateDaprBindingTask(notificationTask, componentName!, notificationMessage, updatedMetadata);
+                var daprBindingTask = CreateDaprBindingTask(notificationTask, componentName!, notificationMessage,
+                    updatedMetadata);
                 var bindingExecutor = taskExecutorFactory.GetExecutor(TaskType.DaprBinding) as DaprBindingTaskExecutor;
-                
+
                 if (bindingExecutor == null)
                     throw new InvalidOperationException("DaprBindingTaskExecutor not found");
 
-                Logger.LogDebug("Preparing input for DAPR binding task {TaskKey}", notificationTask.Key);
-               
-
-                Logger.LogDebug("Calling DaprBindingTaskExecutor.CallAsync for notification task {TaskKey}", notificationTask.Key);
                 await bindingExecutor.CallAsync(daprBindingTask, context, cancellationToken);
             }
             else if (notificationType == NotificationComponentType.PubSub)
             {
                 // Create DaprPubSubTask and call DaprPubSubTaskExecutor
-                var daprPubSubTask = CreateDaprPubSubTask(notificationTask, componentName!, notificationMessage, updatedMetadata);
+                var daprPubSubTask = CreateDaprPubSubTask(notificationTask, componentName!, notificationMessage,
+                    updatedMetadata);
                 var pubSubExecutor = taskExecutorFactory.GetExecutor(TaskType.DaprPubSub) as DaprPubSubTaskExecutor;
-                
+
                 if (pubSubExecutor == null)
                     throw new InvalidOperationException("DaprPubSubTaskExecutor not found");
 
-                Logger.LogDebug("Preparing input for DAPR pub/sub task {TaskKey}", notificationTask.Key);
-               
-                Logger.LogDebug("Calling DaprPubSubTaskExecutor.CallAsync for notification task {TaskKey}", notificationTask.Key);
                 await pubSubExecutor.CallAsync(daprPubSubTask, context, cancellationToken);
             }
             else if (notificationType == NotificationComponentType.MqttBinding)
             {
                 // Create DaprBindingTask and call DaprBindingTaskExecutor for MQTT
-                var daprBindingTask = CreateDaprBindingTask(notificationTask, componentName!, notificationMessage, updatedMetadata);
+                var daprBindingTask = CreateDaprBindingTask(notificationTask, componentName!, notificationMessage,
+                    updatedMetadata);
                 var bindingExecutor = taskExecutorFactory.GetExecutor(TaskType.DaprBinding) as DaprBindingTaskExecutor;
-                
+
                 if (bindingExecutor == null)
                     throw new InvalidOperationException("DaprBindingTaskExecutor not found");
 
-                Logger.LogDebug("Preparing input for DAPR MQTT binding task {TaskKey}", notificationTask.Key);
-              
-
-                Logger.LogDebug("Calling DaprBindingTaskExecutor.CallAsync for MQTT notification task {TaskKey}", notificationTask.Key);
                 await bindingExecutor.CallAsync(daprBindingTask, context, cancellationToken);
             }
         }
@@ -155,12 +139,9 @@ public sealed class NotificationTaskExecutor(
             context.SetStandardResponse(standardResponse);
         }
 
-
-
-        Logger.LogInformation("Notification task {TaskKey} execution completed, returning processed output", notificationTask.Key);
         return new ScriptResponse()
         {
-            Headers=context.Headers,
+            Headers = context.Headers,
             Data = context.Body
         };
     }
@@ -183,7 +164,8 @@ public sealed class NotificationTaskExecutor(
         var transitionItems = availableTransitions.Select(transitionKey => new TransitionItem
         {
             Name = transitionKey,
-            Href = string.Format(InstanceUrlTemplates.Transition, context.Runtime.Domain, workflow.Key, instance.Id, transitionKey)
+            Href = string.Format(InstanceUrlTemplates.Transition, context.Runtime.Domain, workflow.Key, instance.Id,
+                transitionKey)
         }).ToList();
 
         // Build data href
@@ -210,7 +192,8 @@ public sealed class NotificationTaskExecutor(
             SubFlowName = correlation.SubFlowName,
             SubFlowVersion = correlation.SubFlowVersion,
             IsCompleted = correlation.IsCompleted,
-            Href = string.Format(InstanceUrlTemplates.Data, correlation.SubFlowDomain, correlation.SubFlowName, correlation.SubFlowInstanceId)
+            Href = string.Format(InstanceUrlTemplates.Data, correlation.SubFlowDomain, correlation.SubFlowName,
+                correlation.SubFlowInstanceId)
         }).ToList();
 
         return new GetInstanceStateOutput
@@ -225,7 +208,8 @@ public sealed class NotificationTaskExecutor(
         };
     }
 
-    private async Task<(InstanceStatus Status, string? CurrentState, List<InstanceCorrelationInfo> ActiveCorrelations)> BuildInstanceTransitionInfoAsync(Instance instance, CancellationToken cancellationToken)
+    private async Task<(InstanceStatus Status, string? CurrentState, List<InstanceCorrelationInfo> ActiveCorrelations)>
+        BuildInstanceTransitionInfoAsync(Instance instance, CancellationToken cancellationToken)
     {
         var correlations = await instanceCorrelationRepository.GetActiveByParentAsync(instance.Id, cancellationToken);
 
@@ -270,11 +254,13 @@ public sealed class NotificationTaskExecutor(
         if (notificationTask.Metadata.HasValue)
         {
             var el = notificationTask.Metadata.Value;
-            if (el.ValueKind == JsonValueKind.Object && el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String)
+            if (el.ValueKind == JsonValueKind.Object && el.TryGetProperty(key, out var v) &&
+                v.ValueKind == JsonValueKind.String)
             {
                 return v.GetString();
             }
         }
+
         return null;
     }
 
@@ -294,6 +280,7 @@ public sealed class NotificationTaskExecutor(
                 dict[prop.Name] = val;
             }
         }
+
         return dict;
     }
 
@@ -331,7 +318,7 @@ public sealed class NotificationTaskExecutor(
         var configElement = JsonDocument.Parse(configJson).RootElement;
 
         var daprBindingTask = DaprBindingTask.Create(configElement);
-        
+
         // Copy base properties from notificationTask
         notificationTask.CopyBaseToInternal(daprBindingTask);
 
@@ -366,7 +353,7 @@ public sealed class NotificationTaskExecutor(
         var configElement = JsonDocument.Parse(configJson).RootElement;
 
         var daprPubSubTask = DaprPubSubTask.Create(configElement);
-        
+
         // Copy base properties from notificationTask
         notificationTask.CopyBaseToInternal(daprPubSubTask);
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Domain;
 using BBT.Workflow.Execution;
@@ -525,7 +526,6 @@ public class TransitionPipelineTests
             Current = state,
             Transition = transition,
             Instance = instance,
-            ConcurrencyToken = instance.ConcurrencyStamp,
             Data = null,
             TraceId = Guid.NewGuid().ToString("N"),
             SpanId = Guid.NewGuid().ToString("N")[..16]

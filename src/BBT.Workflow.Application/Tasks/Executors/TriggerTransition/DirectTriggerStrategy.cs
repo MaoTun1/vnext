@@ -41,10 +41,7 @@ public sealed class DirectTriggerStrategy : ITriggerTransitionStrategy
     {
         if (string.IsNullOrWhiteSpace(task.TransitionName))
             throw new InvalidOperationException("TransitionName is required for Trigger (Direct) trigger type");
-
-        _logger.LogInformation("Handling Direct trigger for task {TaskKey} - InstanceId: {InstanceId}, Transition: {Transition}",
-            task.Key, context.Instance.Id, task.TransitionName);
-
+        
         // Resolve instance ID
         var instanceId = await GetInstanceIdAsync(task, context, cancellationToken);
 
@@ -61,8 +58,7 @@ public sealed class DirectTriggerStrategy : ITriggerTransitionStrategy
 
         if (httpExecutor == null)
             throw new InvalidOperationException("HttpTaskExecutor not found");
-
-        _logger.LogDebug("Calling HttpTaskExecutor.CallAsync for Direct trigger task {TaskKey}", task.Key);
+        
         await httpExecutor.CallAsync(httpTask, context, cancellationToken);
     }
 
@@ -81,7 +77,6 @@ public sealed class DirectTriggerStrategy : ITriggerTransitionStrategy
         // If TriggerInstanceId is provided, use it
         if (!string.IsNullOrWhiteSpace(task.TriggerInstanceId))
         {
-            _logger.LogDebug("Using provided TriggerInstanceId: {InstanceId}", task.TriggerInstanceId);
             return task.TriggerInstanceId;
         }
 
@@ -102,8 +97,6 @@ public sealed class DirectTriggerStrategy : ITriggerTransitionStrategy
             if (httpExecutor == null)
                 throw new InvalidOperationException("HttpTaskExecutor not found");
 
-            _logger.LogDebug("Calling HttpTaskExecutor.CallAsync to get instance by key {Key}", task.TriggerKey);
-            
             // Store original body to restore after the call
             object? originalBody = context.Body;
             
@@ -171,9 +164,7 @@ public sealed class DirectTriggerStrategy : ITriggerTransitionStrategy
 
             throw new InvalidOperationException($"No response received when querying instance by key '{task.TriggerKey}'");
         }
-
-        // Default to current instance ID
-        _logger.LogDebug("Using current instance ID: {InstanceId}", context.Instance.Id);
+        
         return context.Instance.Id.ToString();
     }
 }

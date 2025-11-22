@@ -1,9 +1,8 @@
 using System.Text;
 using System.Text.Json;
 using BBT.Aether.Http;
+using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
-using BBT.Workflow.Domain;
-using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Remote.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -118,7 +117,7 @@ public sealed class RemoteInstanceCommandAppService(
                     Tags = input.Instance.Tags,
                     Attributes = input.Instance.Attributes,
                     Callback = input.Instance.Callback,
-                    MetaData = input.Instance.MetaData
+                    ExtraProperties = input.Instance.ExtraProperties
                 };
 
                 var jsonContent = JsonSerializer.Serialize(requestBody, JsonOptions);

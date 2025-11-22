@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Domain;
 using BBT.Workflow.Execution;
@@ -37,8 +38,6 @@ public class AutomaticTransitionHandlerTests
         _mockLogger = new Mock<ILogger<AutomaticTransitionHandler>>();
 
         _handler = new AutomaticTransitionHandler(
-            _mockConditionService.Object,
-            _mockScriptContextFactory.Object,
             _mockValidationService.Object,
             _mockLogger.Object);
     }
@@ -387,7 +386,6 @@ public class AutomaticTransitionHandlerTests
             Current = state,
             Transition = transition,
             Instance = instance,
-            ConcurrencyToken = instance.ConcurrencyStamp,
             Data = new { test = "data" },
             TraceId = Guid.NewGuid().ToString("N"),
             SpanId = Guid.NewGuid().ToString("N")[..16]

@@ -1,8 +1,14 @@
-using BBT.Workflow.BackgroundJobs;
+using System.Diagnostics;
+using BBT.Aether.Aspects;
+using BBT.Aether.BackgroundJob;
+using BBT.Aether.Results;
+using BBT.Workflow.BackgroundJobs.Handlers;
+using BBT.Workflow.BackgroundJobs.Payloads;
 using BBT.Workflow.Definitions;
-using BBT.Workflow.Domain;
+using BBT.Workflow.Instances;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks;
+using BBT.Workflow.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Execution.Pipeline.Steps;
@@ -16,49 +22,36 @@ public sealed class ScheduleTransitionsStep(
     IBackgroundJobService backgroundJobService,
     ITaskTimerService taskTimerService,
     IScriptContextFactory scriptContextFactory,
+    IInstanceJobRepository jobRepository,
     ILogger<ScheduleTransitionsStep> logger) : ITransitionStep
 {
     /// <inheritdoc />
     public int Order => LifecycleOrder.Schedule;
 
     /// <inheritdoc />
-    public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    [Log]
+    [Trace]
+    public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context,
+        CancellationToken cancellationToken)
     {
+        Activity.Current?.SetDisplayName($"[{Order}] {nameof(ScheduleTransitionsStep)}");
+
         if (context.Target?.ScheduledTransitions == null || !context.Target.ScheduledTransitions.Any())
         {
-            logger.LogTrace("No scheduled transitions for state {StateName}", context.Target?.Key ?? "Unknown");
             return Result<StepOutcome>.Ok(StepOutcome.Continue());
         }
 
-        logger.LogDebug("Scheduling {Count} transitions for state {StateName} on instance {InstanceId}",
-            context.Target.ScheduledTransitions.Count(), context.Target.Key, context.InstanceId);
-        
         return await ResultExtensions.TryAsync<StepOutcome>(async ct =>
-        {
-            foreach (var scheduledTransition in context.Target.ScheduledTransitions)
             {
-                try
+                foreach (var scheduledTransition in context.Target.ScheduledTransitions)
                 {
+                    // Let outer Try wrapper handle all exceptions
                     await ScheduleTransitionAsync(context, scheduledTransition, ct);
                 }
-                catch (Exception ex)
-                {
-                    logger.LogError(ex, "Failed to schedule transition {TransitionKey} for instance {InstanceId}",
-                        scheduledTransition.Key, context.InstanceId);
-                    // Continue with other scheduled transitions
-                }
-            }
-            
-            // context.SkipImmediateExecution = true;
 
-            logger.LogDebug("Completed scheduling transitions for state {StateName}", context.Target.Key);
-            return StepOutcome.Continue();
-        },
-        cancellationToken,
-        ex => Error.Failure(
-            WorkflowErrorCodes.ExecutionStepFailed,
-            $"Failed to schedule transitions: {ex.Message}",
-            ex.GetType().Name));
+                return StepOutcome.Continue();
+            },
+            cancellationToken);
     }
 
     /// <summary>
@@ -69,9 +62,6 @@ public sealed class ScheduleTransitionsStep(
         Transition scheduledTransition,
         CancellationToken cancellationToken)
     {
-        logger.LogTrace("Scheduling transition {TransitionKey} for instance {InstanceId}",
-            scheduledTransition.Key, context.InstanceId);
-
         if (scheduledTransition.Timer == null)
         {
             logger.LogWarning("Transition {TransitionKey} has no timer defined, skipping scheduling",
@@ -79,45 +69,58 @@ public sealed class ScheduleTransitionsStep(
             return;
         }
 
-        try
+        // Build script context for timer evaluation
+        var scriptContext = await scriptContextFactory
+            .NewBuilder()
+            .WithWorkflow(context.Workflow)
+            .WithInstance(context.Instance)
+            .WithTransition(scheduledTransition)
+            .WithHeaders(context.Headers.ToDictionary(kvp => kvp.Key, kvp => kvp.Value))
+            .WithRouteValues(context.RouteValues.ToDictionary(kvp => kvp.Key, kvp => kvp.Value))
+            .BuildAsync(cancellationToken);
+
+        // Evaluate timer to get the schedule
+        var timerSchedule = await taskTimerService.ExecuteTimerAsync(
+            scheduledTransition.Timer,
+            scriptContext,
+            cancellationToken);
+
+        var jobName = $"trans-{context.InstanceId}-{context.TransitionKey}";
+        var payload = new TransitionTimerPayload
         {
-            // Build script context for timer evaluation
-            var scriptContext = await scriptContextFactory
-                .NewBuilder()
-                .WithWorkflow(context.Workflow)
-                .WithInstance(context.Instance)
-                .WithTransition(scheduledTransition)
-                .WithHeaders(context.Headers.ToDictionary(kvp => kvp.Key, kvp => kvp.Value))
-                .WithRouteValues(context.RouteValues.ToDictionary(kvp => kvp.Key, kvp => kvp.Value))
-                .BuildAsync(cancellationToken);
+            JobName = jobName,
+            Domain = context.Domain,
+            FlowName = context.WorkflowKey,
+            Version = context.Workflow.Version,
+            TransitionKey = scheduledTransition.Key,
+            InstanceId = context.InstanceId
+        };
 
-            // Evaluate timer to get the schedule
-            var timerSchedule = await taskTimerService.ExecuteTimerAsync(
-                scheduledTransition.Timer,
-                scriptContext,
-                cancellationToken);
+        var metadata = new Dictionary<string, object>
+        {
+            ["domain"] = context.Domain,
+            ["flowName"] = context.WorkflowKey,
+            ["instanceId"] = context.InstanceId.ToString()
+        };
 
-            logger.LogDebug("Timer evaluation for transition {TransitionKey} resulted in schedule: {ScheduleType}",
-                scheduledTransition.Key, timerSchedule.ScheduleType);
+        // Enqueue the transition timer job
+        var jobId = await backgroundJobService.EnqueueAsync(
+            TransitionTimerJobHandler.HandlerName,
+            jobName,
+            payload,
+            timerSchedule.ToDaprJobSchedule().ExpressionValue,
+            metadata: metadata,
+            cancellationToken);
 
-            // Enqueue the transition timer job
-            await backgroundJobService.EnqueueTransitionTimerAsync(
-                context.InstanceId,
-                context.WorkflowKey,
+        await jobRepository.InsertAsync(
+            InstanceJob.Create(
+                jobId,
+                jobName,
+                jobId,
                 context.Domain,
-                context.Workflow.Version,
-                scheduledTransition.Key,
-                timerSchedule,
-                cancellationToken);
-
-            logger.LogTrace("Scheduled transition {TransitionKey} for instance {InstanceId} with timer schedule",
-                scheduledTransition.Key, context.InstanceId);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to evaluate timer for transition {TransitionKey} on instance {InstanceId}",
-                scheduledTransition.Key, context.InstanceId);
-            throw;
-        }
+                context.WorkflowKey,
+                context.InstanceId),
+            true,
+            cancellationToken);
     }
 }

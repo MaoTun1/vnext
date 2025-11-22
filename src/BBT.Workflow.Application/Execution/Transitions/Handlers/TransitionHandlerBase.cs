@@ -1,10 +1,8 @@
 using BBT.Workflow.Definitions;
-using BBT.Workflow.Domain;
-using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Execution.Validation;
-using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Logging;
-using System.Diagnostics;
+using BBT.Aether.Results;
+using BBT.Aether.Validation;
 
 namespace BBT.Workflow.Execution.Handlers;
 
@@ -42,128 +40,15 @@ public abstract class TransitionHandlerBase : ITransitionHandler
             return;
         }
         
-        var sw = Stopwatch.StartNew();
-        var handlerName = GetType().Name;
-        
-        Logger.HandlerPreHandleStarted(
-            TelemetryConstants.Prefixes.Execution,
-            handlerName,
-            context.Trigger.ToString(),
-            context.TransitionKey);
-
-        // Create span for PreHandle
-        using var activity = WorkflowActivitySource.Instance.StartActivity(
-            TelemetryConstants.SpanNames.HandlerPreHandle,
-            ActivityKind.Internal);
-        
-        activity?.SetTag(TelemetryConstants.TagNames.HandlerName, handlerName);
-        activity?.SetTag(TelemetryConstants.TagNames.TriggerType, context.Trigger.ToString());
-
-        // Check if derived handler supports Result-based validation (e.g., AutomaticTransitionHandler)
-        var internalValidationResult = await PreValidateInternalAsync(context, cancellationToken);
-        if (!internalValidationResult.IsSuccess)
-        {
-            sw.Stop();
-            activity?.SetStatus(ActivityStatusCode.Error, internalValidationResult.Error.Message);
-            activity?.AddTag("error.code", internalValidationResult.Error.Code);
-            
-            Logger.HandlerPreHandleFailed(
-                new Exception(internalValidationResult.Error.Message ?? internalValidationResult.Error.Code),
-                TelemetryConstants.Prefixes.Execution,
-                handlerName,
-                context.Trigger.ToString(),
-                context.TransitionKey);
-            
-            // For auto-transition condition not met, throw special exception that can be handled upstream
-            throw new AutoTransitionConditionNotMetException();
-        }
-
-        try
-        {
-            await PreValidateAsync(context, cancellationToken);
-            await PreProcessAsync(context, cancellationToken);
-            
-            sw.Stop();
-            Logger.HandlerPreHandleCompleted(
-                TelemetryConstants.Prefixes.Execution,
-                handlerName,
-                context.Trigger.ToString(),
-                sw.ElapsedMilliseconds);
-        }
-        catch (Exception ex)
-        {
-                sw.Stop();
-                activity?.RecordExceptionWithStatus(ex);
-                
-                Logger.HandlerPreHandleFailed(
-                ex,
-                TelemetryConstants.Prefixes.Execution,
-                handlerName,
-                context.Trigger.ToString(),
-                context.TransitionKey);
-            throw;
-        }
+        await PreValidateAsync(context, cancellationToken);
+        await PreProcessAsync(context, cancellationToken);
     }
 
     /// <inheritdoc />
     public async Task PostHandleAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
-        var sw = Stopwatch.StartNew();
-        var handlerName = GetType().Name;
-        
-        Logger.HandlerPostHandleStarted(
-            TelemetryConstants.Prefixes.Execution,
-            handlerName,
-            context.Trigger.ToString(),
-            context.TransitionKey);
-
-        // Create span for PostHandle
-        using var activity = WorkflowActivitySource.Instance.StartActivity(
-            TelemetryConstants.SpanNames.HandlerPostHandle,
-            ActivityKind.Internal);
-        
-        activity?.SetTag(TelemetryConstants.TagNames.HandlerName, handlerName);
-        activity?.SetTag(TelemetryConstants.TagNames.TriggerType, context.Trigger.ToString());
-
-        try
-        {
-            await PostProcessAsync(context, cancellationToken);
-            await PostValidateAsync(context, cancellationToken);
-            
-            sw.Stop();
-            Logger.HandlerPostHandleCompleted(
-                TelemetryConstants.Prefixes.Execution,
-                handlerName,
-                context.Trigger.ToString(),
-                sw.ElapsedMilliseconds);
-        }
-        catch (Exception ex)
-        {
-                sw.Stop();
-                activity?.RecordExceptionWithStatus(ex);
-                
-                Logger.HandlerPostHandleFailed(
-                ex,
-                TelemetryConstants.Prefixes.Execution,
-                handlerName,
-                context.Trigger.ToString(),
-                context.TransitionKey);
-            throw;
-        }
-    }
-
-    /// <summary>
-    /// Performs Result-based pre-validation logic for handlers that support it (e.g., AutomaticTransitionHandler).
-    /// Override in derived classes to implement Result-based validation.
-    /// Default implementation returns Ok, allowing the handler to use exception-based validation if needed.
-    /// </summary>
-    /// <param name="context">The transition execution context.</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>Result indicating validation success or failure.</returns>
-    protected virtual Task<Result> PreValidateInternalAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
-    {
-        // Default: no Result-based validation, proceed with exception-based validation
-        return Task.FromResult(Result.Ok());
+        await PostProcessAsync(context, cancellationToken);
+        await PostValidateAsync(context, cancellationToken);
     }
 
     /// <summary>
@@ -174,24 +59,13 @@ public abstract class TransitionHandlerBase : ITransitionHandler
     /// <param name="context">The transition execution context.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    /// <exception cref="WorkflowValidationException">Thrown when validation fails with detailed error information</exception>
-    protected virtual async Task PreValidateAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    /// <exception cref="AetherValidationException">Thrown when validation fails with detailed error information</exception>
+    protected virtual async Task PreValidateAsync(TransitionExecutionContext context,
+        CancellationToken cancellationToken)
     {
-        Logger.LogTrace("Performing common pre-validation for transition {TransitionKey}", context.TransitionKey);
-
         // Perform common validation using the validation service (Result pattern)
         var validationResult = await ValidationService.ValidateAsync(context, cancellationToken);
-        
-        if (!validationResult.IsSuccess)
-        {
-            Logger.LogTrace("Common pre-validation failed for transition {TransitionKey}: {ErrorCode} - {ErrorMessage}",
-                context.TransitionKey, validationResult.Error.Code, validationResult.Error.Message);
-            
-            // Convert Result to exception for pipeline compatibility
-            throw new WorkflowValidationException(validationResult.Error);
-        }
-
-        Logger.LogTrace("Common pre-validation completed for transition {TransitionKey}", context.TransitionKey);
+        validationResult.ThrowIfFailure();
     }
 
     /// <summary>

@@ -8,8 +8,6 @@ public sealed class WorkflowDbContextDesignFactory : IDesignTimeDbContextFactory
 {
     public WorkflowDbContext CreateDbContext(string[] args)
     {
-        AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
-
         var optionsBuilder = new DbContextOptionsBuilder<WorkflowDbContext>();
 
         optionsBuilder.UseNpgsql(

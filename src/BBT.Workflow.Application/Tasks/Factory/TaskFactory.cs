@@ -50,10 +50,6 @@ public sealed class TaskFactory(
         {
             // Use the task's own optimized Clone method
             var clonedTask = cachedTask.Clone();
-            
-            logger.LogDebug("Successfully cloned task {TaskKey} of type {TaskType}", 
-                cachedTask.Key, cachedTask.GetType().Name);
-            
             return clonedTask;
         }
         catch (Exception ex)

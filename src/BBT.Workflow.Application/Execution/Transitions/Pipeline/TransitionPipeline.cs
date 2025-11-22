@@ -1,7 +1,6 @@
-using BBT.Workflow.Domain;
-using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Logging;
-using System.Diagnostics;
+using BBT.Aether.Aspects;
+using BBT.Aether.Results;
 
 namespace BBT.Workflow.Execution.Pipeline;
 
@@ -29,113 +28,56 @@ public class TransitionPipeline
     /// <summary>
     /// Executes all pipeline steps in order for the given transition context.
     /// Returns Result to indicate success or failure without throwing exceptions.
+    /// Uses Railway Programming pattern for declarative error handling and step composition.
     /// </summary>
     /// <param name="context">The transition execution context.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>A Result indicating success or failure of the pipeline execution.</returns>
+    [Log]
+    [Trace]
     public async Task<Result> RunAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
-        // Note: ForTransition scope is already created at Strategy level
-        _logger.TransitionStarted(
-            TelemetryConstants.Prefixes.Execution,
-            context.TransitionKey,
-            context.InstanceId,
-            context.WorkflowKey);
-
-        // Create span for pipeline execution
-        using var pipelineActivity = WorkflowActivitySource.Instance.StartActivity(
-            TelemetryConstants.SpanNames.PipelineExecution);
-
-        // Add relevant attributes to the activity
-        if (pipelineActivity != null)
-        {
-            pipelineActivity.SetTag(TelemetryConstants.TagNames.TransitionKey, context.TransitionKey);
-            pipelineActivity.SetTag(TelemetryConstants.TagNames.InstanceId, context.InstanceId);
-            pipelineActivity.SetTag(TelemetryConstants.TagNames.Flow, context.WorkflowKey);
-        }
-
         var plan = BuildExecutionPlan(context);
-        var i = 0;
+        var state = new PipelineState(plan, 0);
 
-        while (i < plan.Count)
+        while (state.HasMoreSteps())
         {
-            if (context.SkipImmediateExecution) break;
+            if (context.SkipImmediateExecution)
+                return Result.Ok();
 
-            var step = plan[i];
-            var stepName = step.GetType().Name;
-            var stepOrder = step.Order;
-            var sw = Stopwatch.StartNew();
+            var step = state.CurrentStep;
 
-            // Create span for each step
-            using var stepActivity = WorkflowActivitySource.Instance.StartActivity(
-                TelemetryConstants.SpanNames.PipelineStep,
-                ActivityKind.Internal);
-
-            stepActivity?.SetTag(TelemetryConstants.TagNames.StepName, stepName);
-            stepActivity?.SetTag(TelemetryConstants.TagNames.StepOrder, stepOrder);
-            stepActivity?.SetDisplayName($"[{stepOrder}] {stepName}");
-
-            _logger.PipelineStepStarted(TelemetryConstants.Prefixes.Execution, stepOrder, stepName, context.InstanceId);
-
-            // Execute step and handle Result
-            var outcomeResult = await step.ExecuteAsync(context, cancellationToken);
-            sw.Stop();
+            // Railway Programming: Execute step → Log on failure → Handle outcome
+            var outcomeResult = await ExecuteStepAsync(step, context, cancellationToken);
 
             if (!outcomeResult.IsSuccess)
             {
-                stepActivity?.RecordExceptionWithStatus(new Exception(outcomeResult.Error.Message ?? outcomeResult.Error.Code));
-                stepActivity?.AddTag("error.code", outcomeResult.Error.Code);
-
-                _logger.PipelineStepFailed(
-                    new Exception(outcomeResult.Error.Message ?? outcomeResult.Error.Code),
-                    TelemetryConstants.Prefixes.Execution,
-                    stepOrder,
-                    stepName,
-                    context.InstanceId);
-
                 return Result.Fail(outcomeResult.Error);
             }
 
-            var outcome = outcomeResult.Value!;
-            _logger.PipelineStepCompleted(TelemetryConstants.Prefixes.Execution, stepOrder, stepName, context.InstanceId, sw.ElapsedMilliseconds);
+            var flowControlResult = await HandleStepOutcomeAsync(outcomeResult.Value!, step, context, state);
 
-            // Apply if step changed directives
-            outcome.MutateDirectives?.Invoke(context.Directives);
+            if (!flowControlResult.IsSuccess)
+                return flowControlResult.ToResult();
 
-            // 1) Stop?
-            if (outcome.StopPipeline) break;
-
-            // 2) SkipTo? (e.g. start over from CreateTransition after inline auto)
-            if (outcome.SkipToOrder is { } skipTo)
+            // Check if we need to replan and restart
+            var flowControl = flowControlResult.Value!;
+            if (flowControl.ShouldReplan)
             {
-                // Create a plan from scratch based on a new beginning
-                context.Directives.RequestResumeFrom(skipTo);
-                plan = BuildExecutionPlan(context);
-                i = 0;
+                state = new PipelineState(BuildExecutionPlan(context), 0);
                 continue;
             }
 
-            // 3) If the directive changes (e.g., epilogue becomes RUN→SKIP, subflow starts),
-            // update the plan immediately.
-            if (NeedsReplan(plan, context.Directives))
-            {
-                context.Directives.RequestResumeFrom(step.Order + 1);
-                plan = BuildExecutionPlan(context);
-                i = 0;
-                continue;
-            }
+            if (flowControl.ShouldStop)
+                break;
 
-            i++; // go to next step
+            state = state.MoveNext();
         }
 
-        pipelineActivity?.SetStatus(ActivityStatusCode.Ok);
-        _logger.LogDebug("Completed transition pipeline for {WorkflowKey}.{TransitionKey} on instance {InstanceId}",
-            context.WorkflowKey, context.TransitionKey, context.InstanceId);
-        
         return Result.Ok();
     }
 
-     /// <summary>
+    /// <summary>
     /// Builds an execution plan by filtering and ordering steps based on context directives.
     /// Handles resume points, epilogue modes, and terminal states.
     /// </summary>
@@ -168,7 +110,56 @@ public class TransitionPipeline
 
         return ordered;
     }
-    
+
+    /// <summary>
+    /// Executes a single step.
+    /// Returns Result containing step outcome, following Railway Programming pattern.
+    /// </summary>
+    private async Task<Result<StepOutcome>> ExecuteStepAsync(
+        ITransitionStep step,
+        TransitionExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        // Execute step and track result in telemetry
+        return await step.ExecuteAsync(context, cancellationToken);
+    }
+
+    /// <summary>
+    /// Handles step outcome and determines flow control.
+    /// Applies directive mutations and determines if pipeline should stop, skip, or replan.
+    /// Returns flow control decision wrapped in Result.
+    /// </summary>
+    private Task<Result<FlowControl>> HandleStepOutcomeAsync(
+        StepOutcome outcome,
+        ITransitionStep step,
+        TransitionExecutionContext context,
+        PipelineState state)
+    {
+        // Apply directive mutations from outcome
+        outcome.MutateDirectives?.Invoke(context.Directives);
+
+        // 1) Stop pipeline?
+        if (outcome.StopPipeline)
+            return Task.FromResult(Result<FlowControl>.Ok(FlowControl.Stop()));
+
+        // 2) Skip to specific order? (e.g., restart from CreateTransition after inline auto)
+        if (outcome.SkipToOrder is { } skipTo)
+        {
+            context.Directives.RequestResumeFrom(skipTo);
+            return Task.FromResult(Result<FlowControl>.Ok(FlowControl.Replan()));
+        }
+
+        // 3) Directives changed requiring replan?
+        if (NeedsReplan(state.Plan, context.Directives))
+        {
+            context.Directives.RequestResumeFrom(step.Order + 1);
+            return Task.FromResult(Result<FlowControl>.Ok(FlowControl.Replan()));
+        }
+
+        // Continue to next step
+        return Task.FromResult(Result<FlowControl>.Ok(FlowControl.Continue()));
+    }
+
     private static bool NeedsReplan(IReadOnlyList<ITransitionStep> currentPlan, PipelineDirectives d)
     {
         // A simple heuristic: replan if terminal is reached or epilogue mode is switched to SKIP.
@@ -178,5 +169,27 @@ public class TransitionPipeline
             return true;
         if (d.ResumeFromOrder is not null) return true;
         return false;
+    }
+
+    /// <summary>
+    /// Represents the current execution state of the pipeline.
+    /// Encapsulates plan and current position for Railway Programming pattern.
+    /// </summary>
+    private readonly record struct PipelineState(IReadOnlyList<ITransitionStep> Plan, int Index)
+    {
+        public ITransitionStep CurrentStep => Plan[Index];
+        public bool HasMoreSteps() => Index < Plan.Count;
+        public PipelineState MoveNext() => this with { Index = Index + 1 };
+    }
+
+    /// <summary>
+    /// Represents flow control decision after step execution.
+    /// Used in Railway Programming to determine next action in pipeline.
+    /// </summary>
+    private readonly record struct FlowControl(bool ShouldStop, bool ShouldReplan)
+    {
+        public static FlowControl Stop() => new(ShouldStop: true, ShouldReplan: false);
+        public static FlowControl Replan() => new(ShouldStop: false, ShouldReplan: true);
+        public static FlowControl Continue() => new(ShouldStop: false, ShouldReplan: false);
     }
 }

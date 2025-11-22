@@ -1,6 +1,7 @@
+using BBT.Aether.AspNetCore.Controllers;
+using BBT.Aether.AspNetCore.Results;
 using BBT.Workflow.Domain.Shared;
 using BBT.Workflow.Functions;
-using BBT.Workflow.HttpApi.Shared;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Instances.DTOs;
 using BBT.Workflow.Runtime;
@@ -15,7 +16,7 @@ namespace BBT.Workflow.Controllers.Instances;
 [ServiceFilter(typeof(ResponseHeaderFilter))]
 public sealed class FunctionController(
     IFunctionAppService functionAppService,
-    IInstanceQueryAppService queryAppService) : ControllerBase
+    IInstanceQueryAppService queryAppService) : AetherControllerBase
 {
     [HttpPatch("{domain}/functions")]
     public async Task<IActionResult> GetDomainFunctions(
@@ -73,7 +74,7 @@ public sealed class FunctionController(
                     Extensions = parameters.Extensions
                 };
                 var response = await queryAppService.GetInstanceStateAsync(inputLongpooling, cancellationToken);
-                return response.ToActionResult();
+                return response.ToActionResult(HttpContext);
             case Definitions.Functions.FunctionTypeConst.View:
                 var inputView = new GetViewInput
                 {
@@ -89,7 +90,7 @@ public sealed class FunctionController(
                     cancellationToken);
                 if (!responseView.IsSuccess)
                 {
-                    return responseView.ToActionResult();
+                    return responseView.ToActionResult(HttpContext);
                 }
 
                 // Return only the content as requested, without Type and Target
@@ -110,8 +111,7 @@ public sealed class FunctionController(
                 {
                     HttpContext.Response.Headers[HeadersConstants.ETag] = responseData.Result.Value.Etag;
                 }
-                
-                return responseData.ToActionResult();
+                return FromResult(responseData.Result);
             default:
                 return Ok(
                     await functionAppService.GetFunctionByInstance(function, workflow, domain, instance, cancellationToken)

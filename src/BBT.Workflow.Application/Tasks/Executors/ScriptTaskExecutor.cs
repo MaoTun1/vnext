@@ -32,24 +32,17 @@ public sealed class ScriptTaskExecutor(
         CancellationToken cancellationToken = default)
     {
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        
-        Logger.LogInformation("Starting script task execution for task {TaskKey}", task.Key);
-        
         try
         {
-            Logger.LogDebug("Compiling script code for task {TaskKey}", task.Key);
             var scriptRunner = await ScriptEngine.CompileToInstanceAsync<IMapping>(
                 scriptCode, 
                 cancellationToken: cancellationToken);
-            Logger.LogDebug("Script compiled successfully, executing output handler for task {TaskKey}", task.Key);
             
             await scriptRunner.InputHandler((task as ScriptTask)!, context);
             
             var upResponse = await scriptRunner.OutputHandler(context);
             
             stopwatch.Stop();
-            Logger.LogInformation("Script task {TaskKey} completed successfully in {Duration}ms", 
-                task.Key, stopwatch.ElapsedMilliseconds);
             
             return upResponse;
         }

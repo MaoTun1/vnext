@@ -7,6 +7,7 @@ namespace BBT.Workflow.BackgroundJobs.Payloads;
 /// </summary>
 public sealed class WorkflowTimeoutPayload
 {
+    public string JobName { get; set; }
     /// <summary>
     /// Gets or sets the domain context for the workflow instance.
     /// </summary>

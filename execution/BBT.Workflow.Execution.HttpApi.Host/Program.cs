@@ -18,21 +18,9 @@ if(builder.Configuration.GetValue<bool>("Vault:Enabled", false)){
 }
 
 builder.WebHost.ConfigureKestrel(option => option.AddServerHeader = false);
-
 builder.Services.AddExecutionApiModule();
 
 var app = builder.Build();
-
-// 🔥 TEST: OpenTelemetry Logging Test
-var logger = app.Services.GetRequiredService<ILogger<Program>>();
-logger.LogInformation("🔥 vNext Execution başlatıldı - OpenTelemetry aktif!");
-logger.LogWarning("⚠️ TEST: Bu WARNING log görünmeli");
-logger.LogError("❌ TEST: Bu ERROR log görünmeli");
-Console.WriteLine("=== CONSOLE TEST: Program başlatıldı ===");
-
 app.UseExecutionApiModule();
-
-logger.LogInformation("✅ Execution API hazır, port 4202");
-Console.WriteLine("=== CONSOLE: API hazır ===");
 
 await app.RunAsync();

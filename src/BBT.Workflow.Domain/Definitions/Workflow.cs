@@ -2,7 +2,10 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using BBT.Aether;
 using BBT.Aether.Auditing;
+using BBT.Aether.Results;
 using BBT.Workflow.Domain;
+using BBT.Workflow.ExceptionHandling;
+using BBT.Workflow.Logging;
 using BBT.Workflow.Runtime;
 
 namespace BBT.Workflow.Definitions;
@@ -27,9 +30,10 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     private Workflow(
         WorkflowType type,
         WorkflowTimeout timeout,
+        Transition cancel,
         List<LanguageLabel> labels,
-        List<IReference> functions,
-        List<IReference> features,
+        List<Reference> functions,
+        List<Reference> features,
         List<State> states,
         List<Transition> sharedTransitions,
         List<Reference> extensions,
@@ -38,10 +42,11 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     {
         Type = type;
         Timeout = timeout;
+        Cancel = cancel;
         this.labels = labels;
         this.functions = functions;
         this.features = features;
-        this.states = states ;
+        this.states = states;
         this.extensions = extensions;
         this.sharedTransitions = sharedTransitions;
         StartTransition = startTransition;
@@ -73,7 +78,7 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     public WorkflowType Type { get; private set; }
 
     public bool IsSub => Type.Equals(WorkflowType.SubFlow) || Type.Equals(WorkflowType.SubProcess);
- 
+
     /// <summary>
     /// Created at
     /// </summary>
@@ -82,7 +87,8 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     /// <summary>
     /// Semantic version
     /// </summary>
-    public string SemanticVersion => Version.Contains('+') ? Regex.Match(Version, @"^([^+]+)").Groups[1].Value : Version;
+    public string SemanticVersion =>
+        Version.Contains('+') ? Regex.Match(Version, @"^([^+]+)").Groups[1].Value : Version;
 
     public string CacheKey => $"{nameof(Workflow)}:{Domain}:{Flow}:{Key}:{Version}";
 
@@ -102,14 +108,20 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     /// </summary>
     public WorkflowTimeout? Timeout { get; private set; }
 
+    /// <summary>
+    /// Defines the cancellation configuration for this workflow.
+    /// When configured, allows the workflow to be canceled via the cancel transition.
+    /// </summary>
+    public Transition? Cancel { get; private set; }
+
     [JsonInclude] [JsonPropertyName("labels")]
     private List<LanguageLabel> labels = new();
 
     [JsonInclude] [JsonPropertyName("functions")]
-    private List<IReference> functions = new();
+    private List<Reference> functions = new();
 
     [JsonInclude] [JsonPropertyName("features")]
-    private List<IReference> features = new();
+    private List<Reference> features = new();
 
     [JsonInclude] [JsonPropertyName("sharedTransitions")]
     private List<Transition> sharedTransitions = new();
@@ -217,14 +229,19 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
         Timeout = timeout;
     }
 
+    public void SetCancel(Transition cancel)
+    {
+        Cancel = cancel;
+    }
+
     public void AddFunction(IReference reference)
     {
-        functions.Add(reference);
+        functions.Add(reference.ToReference());
     }
 
     public void AddFeature(IReference reference)
     {
-        features.Add(reference);
+        features.Add(reference.ToReference());
     }
 
     public void AddExtension(IReference reference)
@@ -250,7 +267,7 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     public Result<State> GetInitialState()
     {
         var state = States.FirstOrDefault(s => s.StateType == StateType.Initial);
-        return state is not null 
+        return state is not null
             ? Result<State>.Ok(state)
             : Result<State>.Fail(WorkflowErrors.StateNotFound(Key, "initial"));
     }
@@ -276,12 +293,32 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     public Transition? FindTransition(string key)
     {
         return FindSharedTransition(key)
-               ?? (StartTransition.Key == key ? StartTransition : null);
+               ?? (StartTransition.Key == key ? StartTransition : null)
+               ?? (Cancel?.Key == key ? Cancel : null);
     }
 
     public Transition? ResolveTransition(string key, State currentState)
     {
-        return currentState.FindTransition(key) ?? FindTransition(key);
+        var requestedKey = ResolveWellKnownKey(key);
+        return currentState.FindTransition(requestedKey) ?? FindTransition(requestedKey);
+    }
+
+    /// <summary>
+    /// Resolves well-known transition keys to their configured transition keys.
+    /// </summary>
+    /// <param name="requestedKey">The requested transition key</param>
+    /// <returns>The resolved transition key</returns>
+    /// <exception cref="BusinessException">Thrown when a well-known key is requested but not configured</exception>
+    private string ResolveWellKnownKey(string requestedKey)
+    {
+        if (!string.Equals(requestedKey, WellKnownTransitionKeys.Cancel, StringComparison.OrdinalIgnoreCase))
+            return requestedKey;
+
+        // If this flow does not have cancel configuration, "cancel" is not supported
+        if (Cancel is null)
+            throw new CancelNotConfiguredForWorkflowException(Key);
+
+        return Cancel.Key;
     }
 
     public Transition? FindTransitionInContext(string key)
@@ -302,14 +339,14 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
             .Where(t => t.TriggerType == TriggerType.Manual || t.TriggerType == TriggerType.Event)
             .Select(t => t.Key)
             .ToList();
-        
+
         // Get manual shared transitions
         var manualSharedTransitions = SharedTransitions
-            .Where(t => t.AvailableIn.Contains(currentState.Key) && 
+            .Where(t => t.AvailableIn.Contains(currentState.Key) &&
                         (t.TriggerType == TriggerType.Manual || t.TriggerType == TriggerType.Event))
             .Select(t => t.Key)
             .ToList();
-        
+
         manualTransitions.AddRange(manualSharedTransitions);
         return manualTransitions;
     }
@@ -318,6 +355,4 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     {
         return new Workflow();
     }
-
-    
 }

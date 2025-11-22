@@ -1,5 +1,6 @@
 using BBT.Aether.Application;
 using BBT.Aether.Domain.Entities;
+using BBT.Aether.Results;
 using BBT.Aether.Validation;
 using BBT.Workflow.Domain;
 using BBT.Workflow.ExceptionHandling;

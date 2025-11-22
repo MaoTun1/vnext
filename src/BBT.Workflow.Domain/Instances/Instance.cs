@@ -3,16 +3,17 @@ using BBT.Aether;
 using BBT.Aether.Auditing;
 using BBT.Aether.Domain.Entities;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Instances.Events;
 using BBT.Workflow.Instances.Policies;
 using BBT.Workflow.Shared;
-using DomainResult = BBT.Workflow.Domain.Result;
+using DomainResult = BBT.Aether.Results.Result;
 
 namespace BBT.Workflow.Instances;
 
 /// <summary>
 /// Instance
 /// </summary>
-public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTime, IObjectDictionary
+public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTime, IHasExtraProperties
 {
     private Instance()
     {
@@ -32,7 +33,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
 
         Tags = [];
 
-        MetaData = new ObjectDictionary();
+        ExtraProperties = new ExtraPropertyDictionary();
 
         _dataList = [];
     }
@@ -80,10 +81,12 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     public bool IsCompleted =>
         Status.Equals(InstanceStatus.Completed)
         || Status.Equals(InstanceStatus.Faulted)
-        || Status.Equals(InstanceStatus.Passive);
+        || Status.Equals(InstanceStatus.Passive)
+        || Status.Equals(InstanceStatus.Canceled);
 
     public bool IsBusy => Status.Equals(InstanceStatus.Busy);
     public bool IsActive => Status.Equals(InstanceStatus.Active);
+    public bool IsCanceled => Status.Equals(InstanceStatus.Canceled);
     public bool IsSubFlow => this.ToFlowType() == WorkflowType.SubFlow;
 
     public bool IsSubItem => this.ToFlowType() == WorkflowType.SubFlow ||
@@ -107,11 +110,11 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
 
     public bool IsTransient { get; private set; }
 
-    public ObjectDictionary MetaData { get; set; }
+    public ExtraPropertyDictionary ExtraProperties { get; private set; }
 
-    public void SetMetaData(ObjectDictionary data)
+    public void SetMetaData(ExtraPropertyDictionary data)
     {
-        MetaData = data;
+        ExtraProperties = data;
     }
 
     /// <summary>
@@ -122,9 +125,9 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// <param name="callback">Callback URL for the instance</param>
     /// <param name="flowType">The workflow type code</param>
     /// <param name="userMetadata">Optional user-provided metadata to merge</param>
-    public void SetInfoMetadata(bool isSync, string? callback, string flowType, ObjectDictionary? userMetadata = null)
+    public void SetInfoMetadata(bool isSync, string? callback, string flowType, ExtraPropertyDictionary? userMetadata = null)
     {
-        var metadata = userMetadata ?? new ObjectDictionary();
+        var metadata = userMetadata ?? new ExtraPropertyDictionary();
 
         // Set system metadata - these are always set by the system
         metadata.TryAdd(DomainConsts.MetaDataKeys.Sync, isSync.ToString().ToLower());
@@ -175,6 +178,9 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// </summary>
     public IReadOnlyCollection<InstanceCorrelation> ChildCorrelations => _childCorrelations.AsReadOnly();
 
+    public IReadOnlyCollection<InstanceCorrelation> ActiveCorrelations =>
+        _childCorrelations.Where(p => !p.IsCompleted).ToList();
+
     public InstanceCorrelation? Subflow =>
         ChildCorrelations.FirstOrDefault(p => !p.IsCompleted && p.SubFlowType.Equals(SubFlowType.SubFlow));
 
@@ -193,7 +199,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
             CurrentState = CurrentState,
             Duration = Duration,
             Tags = [.. Tags],
-            MetaData = new ObjectDictionary(MetaData)
+            ExtraProperties = new ExtraPropertyDictionary(ExtraProperties)
         };
 
         foreach (var data in _dataList)
@@ -223,6 +229,25 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         Status = InstanceStatus.Completed;
         CompletedAt = DateTime.UtcNow;
         Duration = CompletedAt - CreatedAt;
+
+        // Publish completion event for SubItems (SubFlow)
+        if (IsSubFlow)
+        {
+            var latestData = LatestData;
+            var contractInfo = ExtraProperties.ToSubFlowContractInfo();
+            AddDistributedEvent(new InstanceSubCompletedEvent
+            {
+                SubInstanceId = Id,
+                InstanceId = contractInfo.Id,
+                Domain = contractInfo.Domain,
+                Flow = contractInfo.Flow,
+                Version = contractInfo.Version,
+                CompletedState = GetCurrentState,
+                InstanceData = latestData?.Data.JsonElement,
+                CompletedAt = CompletedAt.Value,
+                Duration = Duration
+            });
+        }
     }
 
     public void Fault()
@@ -230,6 +255,41 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         Status = InstanceStatus.Faulted;
         CompletedAt = DateTime.UtcNow;
         Duration = CompletedAt - CreatedAt;
+    }
+
+    /// <summary>
+    /// Cancels the instance and publishes a cancellation event.
+    /// Sets the instance status to Canceled and records the completion time.
+    /// </summary>
+    public void Cancel()
+    {
+        Status = InstanceStatus.Canceled;
+        CompletedAt = DateTime.UtcNow;
+        Duration = CompletedAt - CreatedAt;
+
+        // Publish cancellation event - event handler will handle cleanup (jobs, correlations)
+        AddDistributedEvent(new InstanceCanceledEvent
+        {
+            InstanceId = Id,
+            Flow = Flow,
+            CanceledState = GetCurrentState,
+            CanceledAt = CompletedAt.Value,
+            Duration = Duration
+        });
+
+        foreach (var correlation in ActiveCorrelations)
+        {
+            correlation.Completed();
+            AddDistributedEvent(new ChildSubflowCancelRequestedEvent
+            {
+                ParentInstanceId = correlation.ParentInstanceId,
+                InstanceId = correlation.SubFlowInstanceId,
+                Domain = correlation.SubFlowDomain,
+                Flow = correlation.SubFlowName,
+                CompletedAt = correlation.CompletedAt!.Value,
+                Version = correlation.SubFlowVersion
+            });
+        }
     }
 
     /// <summary>
@@ -243,6 +303,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
 
         Status = InstanceStatus.Busy;
     }
+
 
     /// <summary>
     /// Sets the instance status to Active.
@@ -272,6 +333,42 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         {
             Busy();
         }
+    }
+
+    /// <summary>
+    /// Finds a correlation by SubFlow instance ID.
+    /// </summary>
+    /// <param name="subInstanceId">The SubFlow instance ID to find</param>
+    /// <returns>The correlation if found, otherwise null</returns>
+    public InstanceCorrelation? FindCorrelationBySubInstanceId(Guid subInstanceId)
+    {
+        return _childCorrelations.FirstOrDefault(c => c.SubFlowInstanceId == subInstanceId);
+    }
+
+    /// <summary>
+    /// Completes a correlation for the given SubFlow instance ID.
+    /// Marks the correlation as completed and returns it.
+    /// If the correlation is a SubFlow type, sets the instance to Active status.
+    /// </summary>
+    /// <param name="subInstanceId">The SubFlow instance ID to complete</param>
+    /// <returns>The completed correlation if found and not already completed, otherwise null</returns>
+    public InstanceCorrelation? CompleteCorrelation(Guid subInstanceId)
+    {
+        var correlation = FindCorrelationBySubInstanceId(subInstanceId);
+        if (correlation == null || correlation.IsCompleted)
+        {
+            return null;
+        }
+
+        correlation.Completed();
+        
+        // If this is a SubFlow (blocking), set instance to Active
+        if (correlation.SubFlowType.Equals(SubFlowType.SubFlow))
+        {
+            Active();
+        }
+
+        return correlation;
     }
 
     public void SetKey(string key)
@@ -350,7 +447,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
             {
                 latestData.MarkAsNotLatest();
             }
-            
+
             var newData = new InstanceData(
                 id,
                 Id,

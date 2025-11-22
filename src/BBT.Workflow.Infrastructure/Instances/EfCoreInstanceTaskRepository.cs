@@ -1,5 +1,6 @@
 using BBT.Aether.Domain.EntityFrameworkCore;
 using BBT.Aether.Domain.Services;
+using BBT.Aether.Uow;
 using BBT.Workflow.Data;
 using BBT.Workflow.DataSink;
 
@@ -8,9 +9,8 @@ namespace BBT.Workflow.Instances;
 public class EfCoreInstanceTaskRepository(
     WorkflowDbContext dbContext,
     IServiceProvider serviceProvider,
-    ITransactionService transactionService,
     IDataSinkManager dataSinkManager)
-    : EfCoreRepository<WorkflowDbContext, InstanceTask, Guid>(dbContext, serviceProvider, transactionService),
+    : EfCoreRepository<WorkflowDbContext, InstanceTask, Guid>(dbContext, serviceProvider),
         IInstanceTaskRepository
 {
     /// <summary>

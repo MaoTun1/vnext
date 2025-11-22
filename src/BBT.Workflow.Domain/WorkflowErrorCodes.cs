@@ -11,8 +11,11 @@ public static class WorkflowErrorCodes
     
     #region Application Errors (900xxx)
 
+    public const string Dependency = "App:900000";
     public const string Locked = "App:900001";
     public const string ValidationErrors = "App:900002";
+    public const string ExecutionStrategyNotSupported = "App:900003";
+    public const string TransitionHandlerNotSupported = "App:900004";
 
     #endregion
     
@@ -24,6 +27,7 @@ public static class WorkflowErrorCodes
     public const string ConfigInvalid = "Instance:100012";
     public const string NotFoundInstanceData = "Instance:100013";
     public const string NotFoundWorkflow = "Instance:100015";
+    public const string CancelNotConfiguredForWorkflow = "Instance:100016";
     
     #endregion
     

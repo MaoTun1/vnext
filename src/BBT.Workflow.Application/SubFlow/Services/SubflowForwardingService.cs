@@ -1,4 +1,3 @@
-using BBT.Workflow.Domain;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Instances.Remote;
 

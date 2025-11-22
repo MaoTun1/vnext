@@ -1,7 +1,6 @@
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Execution.TriggerTransition;
 using BBT.Workflow.Scripting;
-using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Tasks.TriggerTransition;
 
@@ -13,22 +12,18 @@ public sealed class StartTriggerStrategy : ITriggerTransitionStrategy
 {
     private readonly ITaskExecutorFactory _taskExecutorFactory;
     private readonly ITriggerTransitionHttpTaskFactory _httpTaskFactory;
-    private readonly ILogger<StartTriggerStrategy> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StartTriggerStrategy"/> class.
     /// </summary>
     /// <param name="taskExecutorFactory">Factory for creating task executors.</param>
     /// <param name="httpTaskFactory">Factory for creating HTTP tasks for trigger transitions.</param>
-    /// <param name="logger">The logger instance.</param>
     public StartTriggerStrategy(
         ITaskExecutorFactory taskExecutorFactory,
-        ITriggerTransitionHttpTaskFactory httpTaskFactory,
-        ILogger<StartTriggerStrategy> logger)
+        ITriggerTransitionHttpTaskFactory httpTaskFactory)
     {
         _taskExecutorFactory = taskExecutorFactory;
         _httpTaskFactory = httpTaskFactory;
-        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -37,9 +32,6 @@ public sealed class StartTriggerStrategy : ITriggerTransitionStrategy
         ScriptContext context,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Handling Start trigger for task {TaskKey} - Domain: {Domain}, Flow: {Flow}",
-            task.Key, task.TriggerDomain, task.TriggerFlow);
-
         // Create path using InstanceUrlTemplates.Start format
         var path = string.Format(InstanceUrlTemplates.Start,
             task.TriggerDomain,
@@ -51,8 +43,7 @@ public sealed class StartTriggerStrategy : ITriggerTransitionStrategy
 
         if (httpExecutor == null)
             throw new InvalidOperationException("HttpTaskExecutor not found");
-
-        _logger.LogDebug("Calling HttpTaskExecutor.CallAsync for Start trigger task {TaskKey}", task.Key);
+        
         await httpExecutor.CallAsync(httpTask, context, cancellationToken);
     }
 }

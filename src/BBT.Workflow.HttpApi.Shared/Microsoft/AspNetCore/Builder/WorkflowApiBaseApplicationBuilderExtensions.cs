@@ -1,7 +1,6 @@
 using BBT.Aether.Domain.Services;
 using BBT.Aether.Threading;
 using BBT.Workflow.Data;
-using BBT.Workflow.HttpApi.Shared;
 using BBT.Workflow.Middlewares;
 using BBT.Workflow.Runtime;
 using Microsoft.EntityFrameworkCore;
@@ -23,10 +22,7 @@ public static class WorkflowApiBaseApplicationBuilderExtensions
     /// <returns>The web application for chaining</returns>
     public static WebApplication UseWorkflowApiBase(this WebApplication app)
     {
-        // Configure ProblemDetailsMapper with the registered factory from DI
-        var problemDetailsFactory = app.Services.GetRequiredService<ProblemDetailsFactory>();
-        ProblemDetailsMapper.Configure(problemDetailsFactory);
-        
+        app.UseAetherAmbientServiceProvider();
         if (app.Environment.IsDevelopment())
         {
             app.UseDeveloperExceptionPage();
@@ -42,18 +38,18 @@ public static class WorkflowApiBaseApplicationBuilderExtensions
         app.UseHttpsRedirection();
         app.UseRuntime();
         app.UseCorrelationId();
-        app.UseTraceContext(); // Add OpenTelemetry trace context to response headers
         app.UseSecurityHeaders();
         app.UseCurrentUser();
         app.UseStaticFiles();
         app.UseAetherApiVersioning();
+        app.UseAetherUnitOfWork();
         app.UseRouting();
         app.UseWorkflowHttpMetrics(); // Track comprehensive HTTP metrics automatically
         app.UseHttpMetrics(); // Track basic Prometheus HTTP metrics
         app.MapMetrics(); // Expose /metrics endpoint for Prometheus scraping
         app.MapControllers();
         app.UseExceptionHandler();
-
+        app.UseDaprScheduledJobHandler();
         return app;
     }
 

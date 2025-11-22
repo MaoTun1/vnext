@@ -162,11 +162,11 @@ public sealed class InstanceExtensionService(
             if (extension.Task != null && extension.ShouldExecute(null, currentScope))
             {
                 await taskExecutionService.ExecuteAsync(
-         new List<OnExecuteTask>() { extension.Task },
-         null,
-         TaskTrigger.Extension,
-         scriptContext,
-         cancellationToken);
+                    new List<OnExecuteTask>() { extension.Task },
+                    null,
+                    TaskTrigger.Extension,
+                    scriptContext,
+                    cancellationToken);
                 var variableKeyExtension = extension.Key.ToVariableName();
                 var variableKeyTask = extension.Task.Task.Key.ToVariableName();
                 if (scriptContext.TaskResponse.TryGetValue(variableKeyTask, out var value))
@@ -175,15 +175,18 @@ public sealed class InstanceExtensionService(
                     try
                     {
                         // Try to extract data property from JsonElement
-                         responseExtension[variableKeyExtension] = value is JsonElement jsonElement && jsonElement.TryGetProperty("data", out var dataProperty) 
-                        ? dataProperty 
-                        : value!;
+                        responseExtension[variableKeyExtension] = value is JsonElement jsonElement &&
+                                                                  jsonElement.TryGetProperty("data",
+                                                                      out var dataProperty)
+                            ? dataProperty
+                            : value!;
                     }
                     catch
                     {
                         // If extraction fails, use the original value
                         responseExtension[variableKeyExtension] = value!;
                     }
+
                     executedExtensionKeys.Add(extension.Key); // Track executed extension
                 }
             }
@@ -252,8 +255,9 @@ public sealed class InstanceExtensionService(
                 try
                 {
                     // Try to extract data property from JsonElement
-                    responseExtension[variableKeyExtension] = value is JsonElement jsonElement && jsonElement.TryGetProperty("data", out var dataProperty) 
-                        ? dataProperty 
+                    responseExtension[variableKeyExtension] = value is JsonElement jsonElement &&
+                                                              jsonElement.TryGetProperty("data", out var dataProperty)
+                        ? dataProperty
                         : value!;
                 }
                 catch
@@ -261,6 +265,7 @@ public sealed class InstanceExtensionService(
                     // If extraction fails, use the original value
                     responseExtension[variableKeyExtension] = value!;
                 }
+
                 executedExtensionKeys.Add(extension.Key); // Track executed extension
             }
         }

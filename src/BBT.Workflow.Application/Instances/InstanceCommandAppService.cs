@@ -1,15 +1,22 @@
+using BBT.Aether;
 using BBT.Aether.Application.Services;
+using BBT.Aether.BackgroundJob;
+using BBT.Aether.DistributedLock;
 using BBT.Aether.Guids;
+using BBT.Aether.Results;
+using BBT.Aether.Validation;
+using BBT.Workflow.BackgroundJobs.Handlers;
+using BBT.Workflow.BackgroundJobs.Payloads;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Domain;
-using BBT.Workflow.ExceptionHandling;
+using BBT.Workflow.Logging;
 using BBT.Workflow.Execution.Services;
 using BBT.Workflow.Execution.Transitions.Services;
 using BBT.Workflow.Execution.Validation;
 using BBT.Workflow.Headers;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
-using BBT.Workflow.Validation;
+using Dapr.Jobs.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
@@ -23,10 +30,13 @@ public sealed class InstanceCommandAppService(
     IComponentCacheStore componentCacheStore,
     ISchemaManager schemaManager,
     IInstanceRepository instanceRepository,
+    IInstanceJobRepository instanceJobRepository,
+    IBackgroundJobService backgroundJobService,
     IGuidGenerator guidGenerator,
     IHeaderService headerService,
     ITransitionDataMapper transitionDataMapper,
     ITransitionValidationService transitionValidationService,
+    IDistributedLockService distributedLockService,
     ILogger<InstanceCommandAppService> logger)
     : ApplicationService(serviceProvider), IInstanceCommandAppService
 {
@@ -44,11 +54,10 @@ public sealed class InstanceCommandAppService(
                 .OnSuccessAsync(async _ => 
                     await schemaManager.EnsureSchemaAndTablesAsync(currentSchema.Name, cancellationToken))
                 .ThenAsync(workflow => PrepareInstanceAsync(workflow, input, cancellationToken))
-                .OnSuccess(data => 
+                .ThenAsync(async data => 
                 {
-                    _ = data.Instance;
-                    logger.LogDebug("Created new instance {InstanceId} with key {InstanceKey}", 
-                        data.Instance.Id, data.Instance.Key);
+                    await ScheduleWorkflowTimeoutIfConfiguredAsync(data.Workflow, data.Instance, cancellationToken);
+                    return Result<(Definitions.Workflow Workflow, Instance Instance)>.Ok(data);
                 })
                 .ThenAsync(data => ExecuteStartTransitionAsync(data, input, cancellationToken))
                 .OnSuccess(output => AddWorkflowHeader(output, input));
@@ -83,7 +92,7 @@ public sealed class InstanceCommandAppService(
             input.Instance.Id ?? guidGenerator.Create(),
             input.Instance.Key,
             input.Instance.Tags?.ToList(),
-            input.Instance.MetaData,
+            input.Instance.ExtraProperties,
             input.Sync,
             input.Instance.Callback,
             cancellationToken);
@@ -140,7 +149,7 @@ public sealed class InstanceCommandAppService(
         var saveResult = await ResultExtensions.TryAsync(
             async ct => await instanceRepository.InsertAsync(instance, true, ct),
             cancellationToken,
-            ex => Error.Dependency("db.insert", $"Failed to save instance: {ex.Message}"));
+            ex => Error.Dependency(WorkflowErrorCodes.Dependency, $"Failed to save instance: {ex.Message}"));
         
         return saveResult.IsSuccess 
             ? Result<(Definitions.Workflow, Instance)>.Ok((workflow, instance))
@@ -148,7 +157,7 @@ public sealed class InstanceCommandAppService(
     }
 
     /// <summary>
-    /// Step 4: Executes the start transition.
+    /// Step 4: Executes the start transition with distributed lock.
     /// Catches exceptions and converts them to Result pattern for OnFailureAsync handling.
     /// </summary>
     private async Task<Result<StartInstanceOutput>> ExecuteStartTransitionAsync(
@@ -157,24 +166,119 @@ public sealed class InstanceCommandAppService(
         CancellationToken cancellationToken)
     {
         var context = input.ToExecutionContext(data.Instance.Id, data.Workflow.StartTransition.Key);
-        
+        var resourceId = $"instance:{data.Instance.Id}";
+
         try
         {
-            return await workflowExecutionService
-                .ExecuteTransitionAsync(context, cancellationToken)
-                .MapAsync(transitionOutput => new StartInstanceOutput
-                {
-                    Id = data.Instance.Id,
-                    Status = transitionOutput.Status
-                });
+            // Execute transition with distributed lock
+            var lockOutcome = await distributedLockService.ExecuteWithLockAsync(
+                resourceId,
+                async () => await workflowExecutionService
+                    .ExecuteTransitionAsync(context, cancellationToken)
+                    .MapAsync(transitionOutput => new StartInstanceOutput
+                    {
+                        Id = data.Instance.Id,
+                        Status = transitionOutput.Status
+                    }),
+                InstanceConstants.TransitionLockExpiryInSeconds,
+                cancellationToken);
+
+            // Validate lock acquisition
+            if (!lockOutcome.Acquired)
+            {
+                logger.LogWarning("Failed to acquire lock for instance {InstanceId}", data.Instance.Id);
+                return Result<StartInstanceOutput>.Fail(
+                    Error.Conflict(
+                        WorkflowErrorCodes.ConflictWorkflow,
+                        "Failed to acquire lock for instance",
+                        data.Instance.Id.ToString()));
+            }
+
+            return lockOutcome.Result;
         }
-        catch (WorkflowValidationException ex)
+        catch (AetherValidationException ex)
         {
-            // Convert WorkflowValidationException to Result for OnFailureAsync handling
-            return Result<StartInstanceOutput>.Fail(ex.Error);
+            return Result<StartInstanceOutput>.Fail(
+                Error.Validation(ErrorCodes.Validation.InvalidFormat, ex.Message, ex.ValidationErrors));
         }
     }
     
+    /// <summary>
+    /// Schedules a workflow timeout job if the workflow has a timeout configuration.
+    /// </summary>
+    private async Task ScheduleWorkflowTimeoutIfConfiguredAsync(
+        Definitions.Workflow workflow,
+        Instance instance,
+        CancellationToken cancellationToken)
+    {
+        // Check if workflow has timeout configuration
+        if (workflow.Timeout == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var jobName = $"timeout-{instance.Id}";
+            var payload = new WorkflowTimeoutPayload
+            {
+                JobName = jobName,
+                Domain = workflow.Domain,
+                InstanceId = instance.Id,
+                FlowName = workflow.Key,
+                Version = workflow.Version
+            };
+
+            // Parse ISO 8601 duration string to TimeSpan
+            var timeoutDuration = System.Xml.XmlConvert.ToTimeSpan(workflow.Timeout.Timer.Duration);
+            
+            // Calculate timeout schedule - workflow timeout should be evaluated from creation time
+            var timeoutDateTime = DateTime.UtcNow.Add(timeoutDuration);
+            var schedule = DaprJobSchedule.FromDateTime(timeoutDateTime).ExpressionValue;
+
+            var metadata = new Dictionary<string, object>
+            {
+                ["domain"] = workflow.Domain,
+                ["flowName"] = workflow.Key,
+                ["instanceId"] = instance.Id.ToString(),
+                ["timeoutAt"] = timeoutDateTime.ToString("O")
+            };
+
+            // Enqueue the timeout job
+            var jobId = await backgroundJobService.EnqueueAsync(
+                FlowTimeoutJobHandler.HandlerName,
+                jobName,
+                payload,
+                schedule,
+                metadata,
+                cancellationToken);
+
+            // Track the job in the database
+            await instanceJobRepository.InsertAsync(
+                InstanceJob.Create(
+                    jobId,
+                    jobName,
+                    jobId,
+                    workflow.Domain,
+                    workflow.Key,
+                    instance.Id
+                ),
+                true,
+                cancellationToken);
+
+            logger.LogInformation(
+                "Successfully scheduled workflow timeout job for instance {InstanceId} with timeout duration {Duration}. Job will execute at {TimeoutAt}",
+                instance.Id, workflow.Timeout.Timer.Duration, timeoutDateTime);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Failed to schedule workflow timeout job for instance {InstanceId}",
+                instance.Id);
+            // Don't throw - timeout scheduling failure should not prevent workflow start
+        }
+    }
+
     /// <summary>
     /// Step 5: Adds workflow header to response.
     /// </summary>
@@ -200,7 +304,7 @@ public sealed class InstanceCommandAppService(
     }
 
     /// <summary>
-    /// Executes the transition and returns the output.
+    /// Executes the transition with distributed lock and returns the output.
     /// </summary>
     private async Task<Result<TransitionOutput>> ExecuteTransitionAsync(
         Guid instanceId,
@@ -209,7 +313,27 @@ public sealed class InstanceCommandAppService(
         CancellationToken cancellationToken)
     {
         var context = input.ToExecutionContext(instanceId, transitionKey);
-        return await workflowExecutionService.ExecuteTransitionAsync(context, cancellationToken);
+        var resourceId = $"instance:{instanceId}";
+
+        // Execute transition with distributed lock
+        var lockOutcome = await distributedLockService.ExecuteWithLockAsync(
+            resourceId,
+            async () => await workflowExecutionService.ExecuteTransitionAsync(context, cancellationToken),
+            InstanceConstants.TransitionLockExpiryInSeconds,
+            cancellationToken);
+
+        // Validate lock acquisition
+        if (!lockOutcome.Acquired)
+        {
+            logger.LogWarning("Failed to acquire lock for instance {InstanceId}", instanceId);
+            return Result<TransitionOutput>.Fail(
+                Error.Conflict(
+                    WorkflowErrorCodes.ConflictWorkflow,
+                    "Failed to acquire lock for instance",
+                    instanceId.ToString()));
+        }
+
+        return lockOutcome.Result;
     }
 
     /// <summary>
@@ -232,7 +356,7 @@ public sealed class InstanceCommandAppService(
         Guid instanceId,
         string instanceKey,
         List<string>? tags,
-        ObjectDictionary metadata,
+        ExtraPropertyDictionary metadata,
         bool isSync,
         string? callback,
         CancellationToken cancellationToken = default)

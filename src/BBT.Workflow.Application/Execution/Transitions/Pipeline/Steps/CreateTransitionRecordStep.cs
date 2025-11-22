@@ -1,10 +1,13 @@
+using System.Diagnostics;
 using BBT.Aether.Guids;
-using BBT.Workflow.Domain;
 using BBT.Workflow.Execution.Transitions.Services;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using BBT.Aether.Aspects;
+using BBT.Aether.Results;
+using BBT.Workflow.Logging;
 
 namespace BBT.Workflow.Execution.Pipeline.Steps;
 
@@ -25,9 +28,13 @@ public sealed class CreateTransitionRecordStep(
     public int Order => LifecycleOrder.CreateTransition;
 
     /// <inheritdoc />
+    [Log]
+    [Trace]
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context,
         CancellationToken cancellationToken)
     {
+        Activity.Current?.SetDisplayName($"[{Order}] {nameof(CreateTransitionRecordStep)}");
+
         // Skip for SubFlow resume - transition record already exists
         if (context.Directives.IsSubFlowResume)
         {
@@ -35,18 +42,47 @@ public sealed class CreateTransitionRecordStep(
                 context.InstanceId);
             return Result<StepOutcome>.Ok(StepOutcome.Continue());
         }
-        
-        logger.LogDebug("Creating transition record for {TransitionKey} on instance {InstanceId}",
-            context.TransitionKey, context.InstanceId);
 
-        return await ResultExtensions.TryAsync<StepOutcome>(async ct =>
+        // Railway Oriented Programming: Chain operations, each wrapped in Try
+        return await GetTransitionKey(context)
+            .ThenAsync(key => CreateInstanceTransition(context, key))
+            .ThenAsync(info => MapTransitionData(context, info, cancellationToken))
+            .ThenAsync(info => AddMappedDataToInstance(context, info))
+            .ThenAsync(info => UpdateInstanceInRepository(context, info, cancellationToken))
+            .ThenAsync(info => PersistTransitionRecord(info, cancellationToken))
+            .OnSuccess(info => UpdateContextItems(context, info))
+            .ThenAsync(_ => Task.FromResult(Result<StepOutcome>.Ok(StepOutcome.Continue())));
+    }
+
+    /// <summary>
+    /// Gets the transition key from context items or uses the default transition key.
+    /// </summary>
+    private Task<Result<string>> GetTransitionKey(TransitionExecutionContext context)
+    {
+        return Task.FromResult(
+            ResultExtensions.Try(() =>
             {
-                var transitionKey = context.Items.TryGetValue("NextTransitionKey", out var v) && v is string next &&
+                var transitionKey = context.Items.TryGetValue("NextTransitionKey", out var v) &&
+                                    v is string next &&
                                     !string.IsNullOrEmpty(next)
                     ? next
                     : context.TransitionKey;
 
-                // Create the transition record
+                return transitionKey;
+            })
+        );
+    }
+
+    /// <summary>
+    /// Creates the instance transition record and finds the transition definition.
+    /// </summary>
+    private Task<Result<TransitionRecordInfo>> CreateInstanceTransition(
+        TransitionExecutionContext context,
+        string transitionKey)
+    {
+        return Task.FromResult(
+            ResultExtensions.Try(() =>
+            {
                 var instanceTransition = InstanceTransition.Create(
                     guidGenerator.Create(),
                     context.InstanceId,
@@ -58,49 +94,110 @@ public sealed class CreateTransitionRecordStep(
 
                 var transition = context.Workflow.FindTransition(transitionKey);
 
-                // Map transition data using optional mapping script
-                var mappedDataResult = await transitionDataMapper.MapTransitionDataAsync(
-                    context.Data,
+                return new TransitionRecordInfo(
+                    instanceTransition,
                     transition,
-                    context.Workflow,
-                    context.Instance,
-                    runtimeInfoProvider,
-                    context.Headers,
-                    ct);
+                    null);
+            })
+        );
+    }
 
-                if (!mappedDataResult.IsSuccess)
-                {
-                    throw new InvalidOperationException(
-                        $"Transition mapping failed: {mappedDataResult.Error.Message}");
-                }
+    /// <summary>
+    /// Maps transition data using optional mapping script.
+    /// </summary>
+    private async Task<Result<TransitionRecordInfo>> MapTransitionData(
+        TransitionExecutionContext context,
+        TransitionRecordInfo info,
+        CancellationToken cancellationToken)
+    {
+        var mappedDataResult = await transitionDataMapper.MapTransitionDataAsync(
+            context.Data,
+            info.Transition,
+            context.Workflow,
+            context.Instance,
+            runtimeInfoProvider,
+            context.Headers,
+            cancellationToken);
 
-                if (mappedDataResult.Value != null)
+        if (!mappedDataResult.IsSuccess)
+        {
+            return Result<TransitionRecordInfo>.Fail(mappedDataResult.Error);
+        }
+
+        return Result<TransitionRecordInfo>.Ok(info with { MappedData = mappedDataResult.Value });
+    }
+
+    /// <summary>
+    /// Adds mapped data to instance if mapping result is not null.
+    /// </summary>
+    private Task<Result<TransitionRecordInfo>> AddMappedDataToInstance(
+        TransitionExecutionContext context,
+        TransitionRecordInfo info)
+    {
+        return Task.FromResult(
+            ResultExtensions.Try(() =>
+            {
+                if (info.MappedData != null)
                 {
                     context.Instance.AddData(
                         guidGenerator.Create(),
-                        new JsonData(mappedDataResult.Value!),
-                        transition?.VersionStrategy
+                        new JsonData(info.MappedData),
+                        info.Transition?.VersionStrategy
                     );
                 }
-                
-                await instanceRepository.UpdateAsync(context.Instance, true, ct);
 
-                // Persist the record
-                await instanceTransitionRepository.InsertAsync(instanceTransition, saveChanges: true, ct);
-
-                // Store in context for other steps to use
-                context.Items["TransitionRecordId"] = instanceTransition.Id;
-                context.Items.Remove("NextTransitionKey");
-
-                logger.LogDebug("Created transition record {TransitionId} for {TransitionKey}",
-                    instanceTransition.Id, context.TransitionKey);
-
-                return StepOutcome.Continue();
-            },
-            cancellationToken,
-            ex => Error.Failure(
-                WorkflowErrorCodes.ExecutionStepFailed,
-                $"Failed to create transition record: {ex.Message}",
-                ex.GetType().Name));
+                return info;
+            })
+        );
     }
+
+    /// <summary>
+    /// Updates the instance in repository.
+    /// </summary>
+    private async Task<Result<TransitionRecordInfo>> UpdateInstanceInRepository(
+        TransitionExecutionContext context,
+        TransitionRecordInfo info,
+        CancellationToken cancellationToken)
+    {
+        var updateResult = await ResultExtensions.TryAsync(
+            async ct => await instanceRepository.UpdateAsync(context.Instance, true, ct),
+            cancellationToken);
+
+        return updateResult.IsSuccess
+            ? Result<TransitionRecordInfo>.Ok(info)
+            : Result<TransitionRecordInfo>.Fail(updateResult.Error);
+    }
+
+    /// <summary>
+    /// Persists the transition record to repository.
+    /// </summary>
+    private async Task<Result<TransitionRecordInfo>> PersistTransitionRecord(
+        TransitionRecordInfo info,
+        CancellationToken cancellationToken)
+    {
+        var insertResult = await ResultExtensions.TryAsync(
+            async ct => await instanceTransitionRepository.InsertAsync(info.InstanceTransition, saveChanges: true, ct),
+            cancellationToken);
+
+        return insertResult.IsSuccess
+            ? Result<TransitionRecordInfo>.Ok(info)
+            : Result<TransitionRecordInfo>.Fail(insertResult.Error);
+    }
+
+    /// <summary>
+    /// Updates context items with transition record ID and removes next transition key.
+    /// </summary>
+    private void UpdateContextItems(TransitionExecutionContext context, TransitionRecordInfo info)
+    {
+        context.Items["TransitionRecordId"] = info.InstanceTransition.Id;
+        context.Items.Remove("NextTransitionKey");
+    }
+    
+    /// <summary>
+    /// Encapsulates transition record creation information.
+    /// </summary>
+    private sealed record TransitionRecordInfo(
+        InstanceTransition InstanceTransition,
+        Definitions.Transition? Transition,
+        object? MappedData);
 }

@@ -1,5 +1,6 @@
 using BBT.Aether.Domain.EntityFrameworkCore;
 using BBT.Aether.Domain.Services;
+using BBT.Aether.Uow;
 using BBT.Workflow.Data;
 using BBT.Workflow.DataSink;
 using BBT.Workflow.Definitions;
@@ -14,12 +15,11 @@ namespace BBT.Workflow.Instances;
 public sealed class EfCoreInstanceRepository(
     WorkflowDbContext dbContext,
     IServiceProvider serviceProvider,
-    ITransactionService transactionService,
     IConfiguration configuration,
     IWorkflowMetrics workflowMetrics,
     IRuntimeInfoProvider runtimeInfoProvider,
     IDataSinkManager dataSinkManager)
-    : EfCoreRepository<WorkflowDbContext, Instance, Guid>(dbContext, serviceProvider, transactionService),
+    : EfCoreRepository<WorkflowDbContext, Instance, Guid>(dbContext, serviceProvider),
         IInstanceRepository
 {
     private readonly WorkflowDbContext _dbContext = dbContext;

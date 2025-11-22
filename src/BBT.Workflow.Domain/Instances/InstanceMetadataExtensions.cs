@@ -1,4 +1,5 @@
 using System.Globalization;
+using BBT.Aether;
 using BBT.Workflow.Definitions;
 
 namespace BBT.Workflow.Instances;
@@ -10,7 +11,7 @@ public static class InstanceMetadataExtensions
         if (instance is null)
             throw new ArgumentNullException(nameof(instance));
 
-        var md = instance.MetaData;
+        var md = instance.ExtraProperties;
 
         return new SubFlowContractInfo
         {
@@ -26,7 +27,7 @@ public static class InstanceMetadataExtensions
         };
     }
     
-    public static SubFlowContractInfo ToSubFlowContractInfo(this ObjectDictionary metaData)
+    public static SubFlowContractInfo ToSubFlowContractInfo(this ExtraPropertyDictionary metaData)
     {
         return new SubFlowContractInfo
         {
@@ -43,14 +44,14 @@ public static class InstanceMetadataExtensions
 
     public static WorkflowType? ToFlowType(this Instance instance)
     {
-        var md = instance.MetaData;
+        var md = instance.ExtraProperties;
         var type = GetString(md, DomainConsts.MetaDataKeys.FlowType);
         return !string.IsNullOrEmpty(type) 
             ? WorkflowType.FromCode(type)
             : null;
     }
     
-    private static string? GetString(ObjectDictionary md, string key)
+    private static string? GetString(ExtraPropertyDictionary md, string key)
     {
         if (!md.TryGetValue(key, out var raw) || raw is null)
             return null;
@@ -63,7 +64,7 @@ public static class InstanceMetadataExtensions
         };
     }
 
-    private static Guid GetGuid(ObjectDictionary md, string key)
+    private static Guid GetGuid(ExtraPropertyDictionary md, string key)
     {
         if (!md.TryGetValue(key, out var raw) || raw is null)
             return Guid.Empty;
@@ -74,10 +75,10 @@ public static class InstanceMetadataExtensions
 
     public static T? GetValue<T>(this Instance instance, string key)
     {
-        if (instance.MetaData == null)
+        if (instance.ExtraProperties == null)
             return default;
 
-        if (instance.MetaData.TryGetValue(key, out var value) && value is T typed)
+        if (instance.ExtraProperties.TryGetValue(key, out var value) && value is T typed)
             return typed;
 
         return default;

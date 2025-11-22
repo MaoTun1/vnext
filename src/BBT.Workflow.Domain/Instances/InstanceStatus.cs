@@ -10,6 +10,7 @@ public sealed class InstanceStatus : IEquatable<InstanceStatus>
     public static readonly InstanceStatus Passive = new InstanceStatus("P", "Passive");
     public static readonly InstanceStatus Completed = new InstanceStatus("C", "Completed");
     public static readonly InstanceStatus Faulted = new InstanceStatus("F", "Faulted");
+    public static readonly InstanceStatus Canceled = new InstanceStatus("X", "Canceled");
 
     public string Code { get; }
     public string Description { get; }
@@ -33,6 +34,7 @@ public sealed class InstanceStatus : IEquatable<InstanceStatus>
             "P" => Passive,
             "C" => Completed,
             "F" => Faulted,
+            "X" => Canceled,
             _ => throw new ArgumentException($"Unknown status code: {code}")
         };
     }

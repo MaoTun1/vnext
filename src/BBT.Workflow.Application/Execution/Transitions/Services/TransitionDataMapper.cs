@@ -1,11 +1,8 @@
 using BBT.Workflow.Definitions;
-using BBT.Workflow.Domain;
-using BBT.Workflow.Execution.Transitions.Services;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
-using Microsoft.Extensions.Logging;
-using System.Text.Json;
+using BBT.Aether.Results;
 
 namespace BBT.Workflow.Execution.Transitions.Services;
 
@@ -15,8 +12,7 @@ namespace BBT.Workflow.Execution.Transitions.Services;
 /// </summary>
 public sealed class TransitionDataMapper(
     IScriptEngine scriptEngine,
-    IScriptContextFactory scriptContextFactory,
-    ILogger<TransitionDataMapper> logger) : ITransitionDataMapper
+    IScriptContextFactory scriptContextFactory) : ITransitionDataMapper
 {
     /// <inheritdoc />
     public async Task<Result<object?>> MapTransitionDataAsync(
@@ -31,15 +27,11 @@ public sealed class TransitionDataMapper(
         // If no mapping is defined, return payload as-is converted to JsonData
         if (transition?.Mapping == null)
         {
-            logger.LogDebug("No mapping defined for transition {TransitionKey}, using payload as-is",
-                transition?.Key ?? "start");
             return Result<object?>.Ok(payload);
         }
 
         try
         {
-            logger.LogDebug("Applying mapping script for transition {TransitionKey}", transition.Key);
-
             // Compile the mapping script to ITransitionMapping interface
             var mappingInstance = await scriptEngine.CompileToInstanceAsync<ITransitionMapping>(
                 transition.Mapping.DecodedCode,
@@ -57,17 +49,10 @@ public sealed class TransitionDataMapper(
 
             // Execute the mapping handler
             var mappedData = await mappingInstance.Handler(scriptContext);
-            
-            logger.LogDebug("Mapping script executed successfully for transition {TransitionKey}", transition.Key);
-
             return Result<object?>.Ok(mappedData);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex,
-                "Failed to execute mapping script for transition {TransitionKey}: {ErrorMessage}",
-                transition.Key, ex.Message);
-
             return Result<object?>.Fail(Error.Failure(
                 WorkflowErrorCodes.ExecutionStepFailed,
                 $"Failed to execute transition mapping: {ex.Message}",

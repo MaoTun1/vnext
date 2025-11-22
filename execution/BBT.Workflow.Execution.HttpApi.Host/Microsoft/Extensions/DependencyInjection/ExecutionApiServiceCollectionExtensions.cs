@@ -39,7 +39,8 @@ public static class ExecutionApiServiceCollectionExtensions
             .BindConfiguration(RuntimeOptions.SectionName)
             .ValidateOnStart();
 
-        // Add IWorkflowTaskExecutor implementation for local task execution
+        // Replace default NullTaskExecutor with LocalTaskExecutor for direct task execution
+        // LocalTaskExecutor executes tasks directly within this service without remote calls
         services.AddScoped<ITaskOrchestrator, LocalTaskExecutor>();
         
         // Add any Execution-specific hosted services

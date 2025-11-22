@@ -1,31 +1,39 @@
-using BBT.Workflow.Domain;
+using BBT.Aether.Results;
 using BBT.Workflow.Instances;
 
 namespace BBT.Workflow.Execution;
 
 public sealed class ContextRefresher(
     IInstanceRepository instanceRepository
-    ): IContextRefresher
+) : IContextRefresher
 {
     public async Task<Result> RefreshAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
-        // 1. Get fresh instance
-        var fresh = await instanceRepository.GetAsync(context.InstanceId, true, cancellationToken);
-        
-        // 2. Update instance data
-        context.Instance = fresh;
-        context.ConcurrencyToken = fresh.ConcurrencyStamp;
-        context.Data = fresh.Data;
-        
-        // 3. Get current state using Result Pattern
-        var currentStateResult = context.Workflow.GetState(fresh.GetCurrentState);
+        return await ReloadInstanceAsync(context, cancellationToken)
+            .ThenAsync(SyncStateAsync);
+    }
+
+    private async Task<Result<TransitionExecutionContext>> ReloadInstanceAsync(
+        TransitionExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        return await ResultExtensions.TryAsync(async ct =>
+        {
+            var fresh = await instanceRepository.GetAsync(context.InstanceId, true, ct);
+            context.Instance = fresh;
+            context.Data = fresh.Data;
+            return context;
+        }, cancellationToken);
+    }
+
+    private Task<Result> SyncStateAsync(TransitionExecutionContext context)
+    {
+        var currentStateResult = context.Workflow.GetState(context.Instance.GetCurrentState);
         if (!currentStateResult.IsSuccess)
-            return Result.Fail(currentStateResult.Error);
-        
-        // 4. Update state
+            return Task.FromResult(Result.Fail(currentStateResult.Error));
+
         context.Current = currentStateResult.Value!;
         context.Target = null;
-        
-        return Result.Ok();
+        return Task.FromResult(Result.Ok());
     }
 }

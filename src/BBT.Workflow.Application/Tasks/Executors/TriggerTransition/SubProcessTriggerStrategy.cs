@@ -5,7 +5,6 @@ using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.SubFlow;
-using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Tasks.TriggerTransition;
 
@@ -17,23 +16,19 @@ public sealed class SubProcessTriggerStrategy : ITriggerTransitionStrategy
 {
     private readonly ISubflowStarter _subflowStarter;
     private readonly IGuidGenerator _guidGenerator;
-    private readonly ILogger<SubProcessTriggerStrategy> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SubProcessTriggerStrategy"/> class.
     /// </summary>
     /// <param name="subflowStarter">Service for starting SubFlow workflows.</param>
     /// <param name="guidGenerator">Generator for creating unique identifiers.</param>
-    /// <param name="logger">The logger instance.</param>
     public SubProcessTriggerStrategy(
         ISubflowStarter subflowStarter,
-        IGuidGenerator guidGenerator,
-        ILogger<SubProcessTriggerStrategy> logger
+        IGuidGenerator guidGenerator
         )
     {
         _subflowStarter = subflowStarter;
         _guidGenerator = guidGenerator;
-        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -42,10 +37,6 @@ public sealed class SubProcessTriggerStrategy : ITriggerTransitionStrategy
         ScriptContext context,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation(
-            "Executing SubProcess trigger for task {TaskKey} - Domain: {Domain}, Key: {Key}, Version: {Version}",
-            task.Key, task.TriggerDomain, task.TriggerKey, task.TriggerVersion);
-
         // Create correlation for SubProcess
         var correlation = InstanceCorrelation.Create(
             _guidGenerator.Create(),
@@ -70,14 +61,10 @@ public sealed class SubProcessTriggerStrategy : ITriggerTransitionStrategy
             context.Workflow,
             context.Instance,
             subFlowReference,
-            context.Transition!,
+            context.Transition,
             correlation,
             SubFlowType.SubProcess.Code,
             cancellationToken);
-
-        _logger.LogInformation(
-            "SubProcess trigger completed for task {TaskKey} with correlation {CorrelationId}",
-            task.Key, correlation.Id);
     }
 }
 

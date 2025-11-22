@@ -9,11 +9,12 @@ namespace BBT.Workflow.Migrations
     public partial class InstanceData_HistorySequence : Migration
     {
         private readonly IDbContextSchema _schema;
-
+        
         public InstanceData_HistorySequence(IDbContextSchema schema)
         {
             _schema = schema;
         }
+        
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {

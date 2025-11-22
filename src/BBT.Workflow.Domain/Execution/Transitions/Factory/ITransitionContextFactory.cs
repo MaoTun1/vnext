@@ -1,4 +1,4 @@
-using BBT.Workflow.Domain;
+using BBT.Aether.Results;
 
 namespace BBT.Workflow.Execution;
 
@@ -14,6 +14,5 @@ public interface ITransitionContextFactory
     /// <param name="context">The workflow execution context containing the request details.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>A fully populated TransitionExecutionContext ready for execution.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when the transition is invalid for the trigger type.</exception>
     Task<Result<TransitionExecutionContext>> CreateAsync(WorkflowExecutionContext context, CancellationToken cancellationToken);
 }

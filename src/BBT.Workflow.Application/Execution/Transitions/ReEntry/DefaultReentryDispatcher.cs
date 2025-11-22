@@ -1,4 +1,3 @@
-using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Execution.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -48,9 +47,6 @@ public sealed class DefaultReentryDispatcher(
     /// </summary>
     private async Task<bool> InvokeInNewScopeAsync(ReentryCommand command, CancellationToken cancellationToken)
     {
-        logger.LogTrace("Executing inline re-entry for transition {TransitionKey} on instance {InstanceId}",
-            command.TransitionKey, command.InstanceId);
-
         try
         {
             using var scope = serviceScopeFactory.CreateScope();
@@ -58,40 +54,10 @@ public sealed class DefaultReentryDispatcher(
 
             var input = WorkflowExecutionContext.From(command);
             var result = await executionService.ExecuteTransitionAsync(input, cancellationToken);
-
-            if (!result.IsSuccess)
-            {
-                // Check if this is an auto-transition condition not met error
-                if (result.Error.Code == WorkflowErrorCodes.AutoTransitionConditionNotMet)
-                {
-                    logger.LogDebug(
-                        "Inline re-entry for auto-transition {TransitionKey} on instance {InstanceId} - condition not met, this is normal in multi-auto-transition scenarios",
-                        command.TransitionKey, command.InstanceId);
-                    return false; // Not an error, just condition not met
-                }
-
-                // For other errors, log and return false
-                logger.LogWarning(
-                    "Inline re-entry failed for transition {TransitionKey} on instance {InstanceId}: {ErrorCode} - {ErrorMessage}",
-                    command.TransitionKey, command.InstanceId, result.Error.Code, result.Error.Message);
-                return false;
-            }
-
-            logger.LogTrace("Completed inline re-entry for transition {TransitionKey} on instance {InstanceId}",
-                command.TransitionKey, command.InstanceId);
-            return true; // Success
-        }
-        catch (AutoTransitionConditionNotMetException)
-        {
-            logger.LogDebug(
-                "Inline re-entry for auto-transition {TransitionKey} on instance {InstanceId} - condition not met, this is normal in multi-auto-transition scenarios",
-                command.TransitionKey, command.InstanceId);
-            return false; // Not an error, just condition not met
+            return result.IsSuccess;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            logger.LogDebug("Inline re-entry cancelled for transition {TransitionKey} on instance {InstanceId}",
-                command.TransitionKey, command.InstanceId);
             throw;
         }
         catch (Exception ex)

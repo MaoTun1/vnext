@@ -1,4 +1,3 @@
-using BBT.Workflow.BackgroundJobs;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Definitions.Validators;
 using BBT.Workflow.Instances.Policies;
@@ -38,13 +37,11 @@ public static class WorkflowDomainModuleServiceCollectionExtensions
         services.AddSingleton<IRuntimeInfoProvider, RuntimeInfoProvider>();
         services.AddSingleton<WorkflowValidator>();
         services.AddSingleton<ISchemaAccessor>(AsyncLocalSchemaAccessor.Instance);
-        services.AddScoped<ICurrentSchema, CurrentSchema>();
+        services.AddSingleton<ICurrentSchema, CurrentSchema>();
         services.AddScoped<IResultRuleEngine<State>, ResultRuleEngine<State>>();
         services.AddScoped<StateTransitionPolicy>();
         services.AddScoped<IScriptContextFactory, ScriptContextFactory>();
         services.AddSingleton<IJsonSchemaValidator, JsonSchemaValidator>();
-        
-        services.AddScoped<JobDispatcher>();
         return services;
     }
 }

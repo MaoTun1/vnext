@@ -1,4 +1,5 @@
 using System.Text.Json;
+using BBT.Aether.Aspects;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Execution.ReEntry;
 using BBT.Workflow.Shared;
@@ -12,18 +13,23 @@ namespace BBT.Workflow.Execution;
 public sealed class WorkflowExecutionContext
 {
     /// <summary>Gets or sets the domain/tenant identifier.</summary>
+    [Enrich(Name = "vnext.domain")]
     public string Domain { get; set; } = default!;
     
     /// <summary>Gets or sets the workflow instance identifier.</summary>
+    [Enrich(Name = "vnext.instanceid")]
     public Guid InstanceId { get; set; }
     
     /// <summary>Gets or sets the workflow key.</summary>
+    [Enrich(Name = "vnext.flow.key")]
     public string WorkflowKey { get; set; } = default!;
     
     /// <summary>Gets or sets the workflow version (optional, uses latest if not specified).</summary>
+    [Enrich(Name = "vnext.flow.version")]
     public string? WorkflowVersion { get; set; }
     
     /// <summary>Gets or sets the transition key to execute.</summary>
+    [Enrich(Name = "vnext.flow.transition")]
     public string TransitionKey { get; set; } = default!;
     
     /// <summary>Gets or sets the trigger type for this execution.</summary>

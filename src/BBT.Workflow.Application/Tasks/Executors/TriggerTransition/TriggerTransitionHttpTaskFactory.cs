@@ -3,7 +3,6 @@ using BBT.Workflow.Definitions;
 using BBT.Workflow.Execution.TriggerTransition;
 using BBT.Workflow.Scripting;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Tasks.TriggerTransition;
 
@@ -13,19 +12,15 @@ namespace BBT.Workflow.Tasks.TriggerTransition;
 public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTaskFactory
 {
     private readonly IConfiguration _configuration;
-    private readonly ILogger<TriggerTransitionHttpTaskFactory> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TriggerTransitionHttpTaskFactory"/> class.
     /// </summary>
     /// <param name="configuration">The configuration instance for reading vNextApi settings.</param>
-    /// <param name="logger">The logger instance.</param>
     public TriggerTransitionHttpTaskFactory(
-        IConfiguration configuration,
-        ILogger<TriggerTransitionHttpTaskFactory> logger)
+        IConfiguration configuration)
     {
         _configuration = configuration;
-        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -39,9 +34,7 @@ public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTas
         var baseUrl = _configuration["vNextApi:BaseUrl"]?.TrimEnd('/') ?? string.Empty;
         var apiVersion = _configuration["vNextApi:ApiVersion"] ?? "1";
         var fullUrl = $"{baseUrl}/api/v{apiVersion}{path}";
-
-        _logger.LogDebug("Creating HttpTask with URL: {Url}", fullUrl);
-
+        
         // Prepare body from triggerTask.Body or context.Body
         JsonElement? body = triggerTask.Body;
         if (!body.HasValue && context.Body != null)
@@ -65,7 +58,7 @@ public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTas
         }
 
         // Get timeout from configuration
-        var timeoutSeconds = _configuration.GetValue<int>("vNextApi:TimeoutSeconds", 30);
+        var timeoutSeconds = _configuration.GetValue("vNextApi:TimeoutSeconds", 30);
 
         // Create task config JSON
         var configBuilder = new Dictionary<string, object>

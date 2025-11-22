@@ -1,7 +1,6 @@
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Execution.TriggerTransition;
 using BBT.Workflow.Scripting;
-using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Tasks.TriggerTransition;
 
@@ -13,22 +12,18 @@ public sealed class GetInstanceDataTriggerStrategy : ITriggerTransitionStrategy
 {
     private readonly ITaskExecutorFactory _taskExecutorFactory;
     private readonly ITriggerTransitionHttpTaskFactory _httpTaskFactory;
-    private readonly ILogger<GetInstanceDataTriggerStrategy> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GetInstanceDataTriggerStrategy"/> class.
     /// </summary>
     /// <param name="taskExecutorFactory">Factory for creating task executors.</param>
     /// <param name="httpTaskFactory">Factory for creating HTTP tasks for trigger transitions.</param>
-    /// <param name="logger">The logger instance.</param>
     public GetInstanceDataTriggerStrategy(
         ITaskExecutorFactory taskExecutorFactory,
-        ITriggerTransitionHttpTaskFactory httpTaskFactory,
-        ILogger<GetInstanceDataTriggerStrategy> logger)
+        ITriggerTransitionHttpTaskFactory httpTaskFactory)
     {
         _taskExecutorFactory = taskExecutorFactory;
         _httpTaskFactory = httpTaskFactory;
-        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -37,9 +32,6 @@ public sealed class GetInstanceDataTriggerStrategy : ITriggerTransitionStrategy
         ScriptContext context,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Handling GetInstanceData trigger for task {TaskKey} - Domain: {Domain}, Flow: {Flow}, InstanceId: {InstanceId}",
-            task.Key, task.TriggerDomain, task.TriggerFlow, context.Instance.Id);
-
         // Build path with or without extensions
         string path;
         if (task.Extensions?.Length > 0)
@@ -65,8 +57,7 @@ public sealed class GetInstanceDataTriggerStrategy : ITriggerTransitionStrategy
 
         if (httpExecutor == null)
             throw new InvalidOperationException("HttpTaskExecutor not found");
-
-        _logger.LogDebug("Calling HttpTaskExecutor.CallAsync for GetInstanceData trigger task {TaskKey}", task.Key);
+        
         await httpExecutor.CallAsync(httpTask, context, cancellationToken);
     }
 }

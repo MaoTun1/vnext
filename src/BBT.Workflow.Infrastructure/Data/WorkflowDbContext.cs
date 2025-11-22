@@ -1,4 +1,8 @@
+using BBT.Aether.Domain.Entities;
 using BBT.Aether.Domain.EntityFrameworkCore;
+using BBT.Aether.Domain.EntityFrameworkCore.Modeling;
+using BBT.Aether.Domain.Events;
+using BBT.Aether.Persistence;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Schemas;
 using Microsoft.EntityFrameworkCore;
@@ -12,8 +16,10 @@ namespace BBT.Workflow.Data;
 /// </summary>
 public class WorkflowDbContext(
     DbContextOptions<WorkflowDbContext> options,
-    ICurrentSchema currentSchema)
-    : AetherDbContext<WorkflowDbContext>(options), IDbContextSchema
+    ICurrentSchema currentSchema,
+    IServiceProvider? serviceProvider = null)
+    : AetherDbContext<WorkflowDbContext>(options), 
+        IDbContextSchema, IHasEfCoreInbox, IHasEfCoreOutbox, IHasEfCoreBackgroundJobs
 {
     /// <inheritdoc />
     public string? SchemaName => currentSchema?.Name;
@@ -52,6 +58,21 @@ public class WorkflowDbContext(
     /// Gets or sets the instance background jobs.
     /// </summary>
     public virtual DbSet<InstanceJob> InstanceJobs { get; set; }
+    
+    /// <summary>
+    /// Gets or sets the inbox messages
+    /// </summary>
+    public virtual DbSet<InboxMessage> InboxMessages { get; set; }
+    
+    /// <summary>
+    /// Gets or sets the outbox messages
+    /// </summary>
+    public virtual DbSet<OutboxMessage> OutboxMessages { get; set; }
+    
+    /// <summary>
+    /// Gets or sets the background jobs
+    /// </summary>
+    public virtual DbSet<BackgroundJobInfo> BackgroundJobs { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -60,5 +81,10 @@ public class WorkflowDbContext(
         base.OnModelCreating(builder);
 
         builder.ConfigureWorkflow(SchemaName);
+        builder.ConfigureInbox(SchemaName);
+        builder.ConfigureOutbox(SchemaName);
+        builder.ConfigureBackgroundJob(SchemaName);
     }
+
+    
 }

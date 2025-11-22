@@ -1,4 +1,4 @@
-using BBT.Workflow.Domain;
+using BBT.Aether.Results;
 
 namespace BBT.Workflow.Rules;
 

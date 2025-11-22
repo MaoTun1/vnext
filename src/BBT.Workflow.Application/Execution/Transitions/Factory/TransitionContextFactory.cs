@@ -1,41 +1,30 @@
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
-using BBT.Workflow.Domain;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
-using Microsoft.Extensions.Logging;
 using System.Diagnostics;
+using BBT.Aether.Results;
 
 namespace BBT.Workflow.Execution.Transitions.Factory;
 
-/// <summary>
-/// Factory implementation for creating TransitionExecutionContext instances.
-/// Handles rehydration of workflow definitions, instances, and validation.
-/// </summary>
+/// <inheritdoc />
 public sealed class TransitionContextFactory(
     IInstanceRepository instanceRepository,
     IComponentCacheStore componentCacheStore,
-    IRuntimeInfoProvider runtimeInfoProvider,
-    ILogger<TransitionContextFactory> logger) : ITransitionContextFactory
+    IRuntimeInfoProvider runtimeInfoProvider) : ITransitionContextFactory
 {
     /// <inheritdoc />
     public async Task<Result<TransitionExecutionContext>> CreateAsync(
         WorkflowExecutionContext input,
         CancellationToken cancellationToken)
     {
-        logger.LogDebug("Creating transition context for instance {InstanceId}, transition {TransitionKey}",
-            input.InstanceId, input.TransitionKey);
-
         // Step 1: Validate domain first
         runtimeInfoProvider.Check(input.Domain);
 
         // Load workflow, rehydrate instance, resolve state/transition, build context
         return await RehydrateInstanceAsync(input, cancellationToken)
             .ThenAsync(data => ResolveStateAndTransitionAsync(data, input))
-            .MapAsync(data => BuildExecutionContext(data, input))
-            .OnSuccess(ctx =>
-                logger.LogDebug("Created transition context for {WorkflowKey}.{TransitionKey} on instance {InstanceId}",
-                    ctx.WorkflowKey, ctx.TransitionKey, ctx.InstanceId));
+            .MapAsync(data => BuildExecutionContext(data, input));
     }
 
     /// <summary>
@@ -45,11 +34,13 @@ public sealed class TransitionContextFactory(
         WorkflowExecutionContext input,
         CancellationToken cancellationToken)
     {
-        var workflow = await componentCacheStore.GetFlowAsync(
-            input.Domain, input.WorkflowKey, input.WorkflowVersion, cancellationToken);
-        var instance = await instanceRepository.GetActiveAsync(input.InstanceId, cancellationToken);
-        
-        return Result<(Definitions.Workflow Workflow, Instance Instance)>.Ok((workflow, instance));
+        return await ResultExtensions.TryAsync(async ct =>
+        {
+            var workflow = await componentCacheStore.GetFlowAsync(
+                input.Domain, input.WorkflowKey, input.WorkflowVersion, ct);
+            var instance = await instanceRepository.GetActiveAsync(input.InstanceId, ct);
+            return (workflow, instance);
+        }, cancellationToken);
     }
 
     /// <summary>
@@ -60,21 +51,23 @@ public sealed class TransitionContextFactory(
             (Definitions.Workflow Workflow, Instance Instance) data,
             WorkflowExecutionContext input)
     {
-        var currentStateResult = data.Workflow.GetState(data.Instance.GetCurrentState);
-        if (!currentStateResult.IsSuccess)
-            return Task.FromResult(
-                Result<(Definitions.Workflow, Instance, State, Transition?)>.Fail(currentStateResult.Error));
+        var result = ResultExtensions.Try(() =>
+        {
+            var currentStateResult = data.Workflow.GetState(data.Instance.GetCurrentState);
+            if (!currentStateResult.IsSuccess)
+                throw new InvalidOperationException(currentStateResult.Error.Message);
+                    
+            var currentState = currentStateResult.Value!;
 
-        var currentState = currentStateResult.Value!;
+            // In Resume mode, transition is optional (e.g., SubFlow completion scenarios)
+            var transition = input.Mode == ExecMode.Resume
+                ? null
+                : ResolveTransition(data.Workflow, currentState, input.TransitionKey);
+            
+            return (data.Workflow, data.Instance, currentState, transition);
+        });
         
-        // In Resume mode, transition is optional (e.g., SubFlow completion scenarios)
-        var transition = input.Mode == ExecMode.Resume 
-            ? null 
-            : ResolveTransition(data.Workflow, currentState, input.TransitionKey);
-
-        return Task.FromResult(
-            Result<(Definitions.Workflow, Instance, State, Transition?)>.Ok(
-                (data.Workflow, data.Instance, currentState, transition)));
+        return Task.FromResult(result);
     }
 
     /// <summary>
@@ -108,7 +101,6 @@ public sealed class TransitionContextFactory(
 
             // Instance state
             Instance = data.Instance,
-            ConcurrencyToken = data.Instance.ConcurrencyStamp,
             Data = input.Data,
 
             // Flags

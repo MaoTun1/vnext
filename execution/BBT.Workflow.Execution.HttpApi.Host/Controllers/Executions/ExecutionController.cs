@@ -1,7 +1,6 @@
-using BBT.Workflow.Domain;
-using BBT.Workflow.HttpApi.Shared;
+using BBT.Aether.AspNetCore.Controllers;
 using BBT.Workflow.Tasks;
-using BBT.Workflow.Telemetry;
+using BBT.Workflow.Logging;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BBT.Workflow.Execution.Controllers.Executions;
@@ -16,7 +15,7 @@ namespace BBT.Workflow.Execution.Controllers.Executions;
 public sealed class ExecutionController(
     ITaskCommandAppService taskCommandAppService,
     ILogger<ExecutionController> logger)
-    : ControllerBase
+    : AetherControllerBase
 {
     /// <summary>
     /// Executes a single workflow task directly without orchestration logic.
@@ -56,12 +55,13 @@ public sealed class ExecutionController(
             // Execute task and capture context updates for synchronization
             var result = await taskCommandAppService.ExecuteTaskAsync(input, cancellationToken);
             
-            // Use Result Pattern to automatically handle errors
-            if (!result.IsSuccess)
-                return new ObjectResult(result.ToProblemDetails()) 
-                { 
-                    StatusCode = result.ToProblemDetails().Status 
-                };
+            // // Use Result Pattern to automatically handle errors
+            // TODO:
+            // if (!result.IsSuccess)
+            //     return new ObjectResult(result.ToProblemDetails()) 
+            //     { 
+            //         StatusCode = result.ToProblemDetails().Status 
+            //     };
             
             logger.LogInformation("Successfully executed task {TaskKey} for instance {InstanceId}. Context updates: TaskResponse={TaskResponseCount}, InstanceData={InstanceDataCount}", 
                 input.OnExecuteTask.Task.Key, 

@@ -35,11 +35,9 @@ public sealed class RuntimeService(
         var cachedValue = await distributedCache.GetAsync<string>(cacheKey, cancellationToken);
         if (!string.IsNullOrEmpty(cachedValue) && bool.TryParse(cachedValue, out bool cachedResult) && cachedResult)
         {
-            logger.LogDebug("Schema existence check cache hit for schema: {Schema} - schema exists", schemaName);
             return true;
         }
-
-        logger.LogDebug("Schema existence check cache miss for schema: {Schema}. Querying database.", schemaName);
+        
         var exists = await schemaManager.SchemaExistsAsync(schemaName, cancellationToken);
 
         // Only cache positive results (schema exists = true)
@@ -52,11 +50,6 @@ public sealed class RuntimeService(
             };
 
             await distributedCache.SetAsync(cacheKey, "true", cacheOptions, cancellationToken);
-            logger.LogDebug("Cached positive schema existence result for schema: {Schema}", schemaName);
-        }
-        else
-        {
-            logger.LogDebug("Schema '{Schema}' does not exist - not caching negative result", schemaName);
         }
 
         return exists;

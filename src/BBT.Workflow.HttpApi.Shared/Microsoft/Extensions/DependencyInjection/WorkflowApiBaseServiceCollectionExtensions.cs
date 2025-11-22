@@ -1,25 +1,25 @@
 using System.Net;
 using System.Text.Json.Serialization;
 using BBT.Aether.AspNetCore.ExceptionHandling;
+using BBT.Aether.BackgroundJob;
 using BBT.Aether.Domain.Services;
-using BBT.Aether.ExceptionHandling;
+using BBT.Aether.Events;
 using BBT.Workflow;
+using BBT.Workflow.BackgroundJob;
+using BBT.Workflow.BackgroundJobs.Handlers;
 using BBT.Workflow.Data;
-using BBT.Workflow.Events.Distributed;
-using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Headers;
-using BBT.Workflow.HttpApi.Shared;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
 using BBT.Workflow.Tasks;
 using Dapr.Jobs.Extensions;
-using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -36,18 +36,22 @@ public static class WorkflowApiBaseServiceCollectionExtensions
     public static IServiceCollection AddWorkflowApiBase(this IServiceCollection services)
     {
         var configuration = services.GetConfiguration();
-        
+
         ConfigureBaseModules(services, configuration);
+        ConfigureEventBus(services, configuration);
         ConfigureDbContext(services, configuration);
         ConfigureMapper(services);
         ConfigureTelemetry(services, configuration);
         ConfigureRedis(services);
         ConfigureDistributedCache(services, configuration);
         ConfigureDistributedLock(services, configuration);
+        ConfigureBackgroundJob(services, configuration);
         ConfigureRoute(services);
         ConfigureExceptionHandling(services);
         ConfigureBaseHost(services);
-        
+
+        services.AddAetherAmbientServiceProvider();
+
         return services;
     }
 
@@ -72,29 +76,29 @@ public static class WorkflowApiBaseServiceCollectionExtensions
     {
         // Default HTTP client with SSL validation enabled
         services.AddHttpClient(HttpTaskExecutor.DefaultHttpClientName, client =>
-        {
-            // Default timeout - will be overridden per request
-            client.Timeout = TimeSpan.FromSeconds(30);
-        })
-        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-        {
-            MaxConnectionsPerServer = 10,
-            UseCookies = false
-        });
+            {
+                // Default timeout - will be overridden per request
+                client.Timeout = TimeSpan.FromSeconds(30);
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                MaxConnectionsPerServer = 10,
+                UseCookies = false
+            });
 
         // HTTP client with SSL validation disabled
         services.AddHttpClient(HttpTaskExecutor.NoSslValidationHttpClientName, client =>
-        {
-            // Default timeout - will be overridden per request
-            client.Timeout = TimeSpan.FromSeconds(30);
-        })
-        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-        {
-            MaxConnectionsPerServer = 10,
-            UseCookies = false,
-            ServerCertificateCustomValidationCallback = (_, _, _, _) => true
-        });
-        
+            {
+                // Default timeout - will be overridden per request
+                client.Timeout = TimeSpan.FromSeconds(30);
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                MaxConnectionsPerServer = 10,
+                UseCookies = false,
+                ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+            });
+
         return services;
     }
 
@@ -113,25 +117,24 @@ public static class WorkflowApiBaseServiceCollectionExtensions
     {
         services.AddAetherDbContext<WorkflowDbContext>(options =>
         {
-            options.UseNpgsql(configuration.GetConnectionString("Default"), npgsqlOptions =>
-            {
-                npgsqlOptions.MigrationsHistoryTable("__Workflow_Migrations");
-                // Enable retrying failed database operations
-                npgsqlOptions.EnableRetryOnFailure(
-                    maxRetryCount: 3,
-                    maxRetryDelay: TimeSpan.FromSeconds(30),
-                    errorCodesToAdd: null);
-            }).ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
+            options.UseNpgsql(configuration.GetConnectionString("Default"),
+                    npgsqlOptions => { npgsqlOptions.MigrationsHistoryTable("__Workflow_Migrations"); })
+                .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
 
             options.ReplaceService<IModelCacheKeyFactory, DynamicSchemaModelCacheKeyFactory>();
             options.ReplaceService<IMigrationsAssembly, DbSchemaAwareMigrationAssembly>();
         });
-        
-        services.Configure<DaprEventPublisherOptions>(
-            configuration.GetSection(DaprEventPublisherOptions.SectionName));
-        
-        services.AddDistributedDomainEventPublisher<DaprDistributedDomainEventPublisher>();
-        
+
+        services.AddAetherUnitOfWorkMiddleware();
+
+        services.AddAetherDomainEvents<WorkflowDbContext>(options =>
+        {
+            options.DispatchStrategy = DomainEventDispatchStrategy.AlwaysUseOutbox;
+        });
+
+        services.AddAetherOutbox<WorkflowDbContext>();
+        services.AddAetherInbox<WorkflowDbContext>();
+
         services.AddSingleton<IDataSeedService, WorkflowDataSeedService>();
     }
 
@@ -147,19 +150,42 @@ public static class WorkflowApiBaseServiceCollectionExtensions
 
     private static void ConfigureTelemetry(IServiceCollection services, IConfiguration configuration)
     {
-        // Use vNext custom OpenTelemetry configuration instead of Aether framework telemetry
-        //services.AddFrameworkTelemetry(configuration);
-         services.AddVNextTelemetry(configuration);
+        services.AddAetherTelemetry(configuration);
     }
 
     private static void ConfigureDistributedCache(IServiceCollection services, IConfiguration configuration)
     {
         services.AddDaprDistributedCache(configuration["DAPR_STATE_STORE_NAME"]!);
     }
-    
+
     private static void ConfigureDistributedLock(IServiceCollection services, IConfiguration configuration)
     {
         services.AddDaprDistributedLock(configuration["DAPR_LOCK_STORE_NAME"]!);
+    }
+
+    private static void ConfigureEventBus(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddAetherEventBus(options =>
+            {
+                options.DefaultSource =
+                    $"urn:vnext:{configuration.GetValue<string?>("ApplicationName")?.ToLowerInvariant()}";
+                options.PrefixEnvironmentToTopic = true;
+                options.PubSubName = configuration["DAPR_PUBSUB_STORE_NAME"]!;
+            }
+        );
+    }
+
+    private static void ConfigureBackgroundJob(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddAetherBackgroundJob<WorkflowDbContext>(options =>
+        {
+            options.AddHandler<FlowTimeoutJobHandler>(FlowTimeoutJobHandler.HandlerName);
+            options.AddHandler<TransitionJobHandler>(TransitionJobHandler.HandlerName);
+            options.AddHandler<TransitionTimerJobHandler>(TransitionTimerJobHandler.HandlerName);
+        });
+
+        services.Replace(ServiceDescriptor.Scoped<IJobDispatcher, AppJobDispatcher>());
+        services.AddDaprJobScheduler();
     }
 
     private static void ConfigureRedis(IServiceCollection services)
@@ -190,7 +216,7 @@ public static class WorkflowApiBaseServiceCollectionExtensions
             // General errors
             opt.Map(WorkflowErrorCodes.Locked, HttpStatusCode.Conflict);
             opt.Map(WorkflowErrorCodes.ValidationErrors, HttpStatusCode.BadRequest);
-            
+
             // Instance errors
             opt.Map(WorkflowErrorCodes.NotFoundDomain, HttpStatusCode.BadRequest);
             opt.Map(WorkflowErrorCodes.ConflictWorkflow, HttpStatusCode.Conflict);
@@ -202,24 +228,16 @@ public static class WorkflowApiBaseServiceCollectionExtensions
             opt.Map(WorkflowErrorCodes.NotFoundTransition, HttpStatusCode.NotFound);
             opt.Map(WorkflowErrorCodes.NotFoundInitialState, HttpStatusCode.NotFound);
             opt.Map(WorkflowErrorCodes.NotFoundWorkflow, HttpStatusCode.NotFound);
-            
+
             // Execution errors
             opt.Map(WorkflowErrorCodes.ExecutionStepFailed, HttpStatusCode.BadRequest);
-            
+
             // Task errors
             opt.Map(WorkflowErrorCodes.TaskContextCreation, HttpStatusCode.InternalServerError);
             opt.Map(WorkflowErrorCodes.TaskExecution, HttpStatusCode.InternalServerError);
         });
-        
-        services.AddSingleton<ProblemDetailsFactory>();
-        
-        // Replace Aether's default exception converter with our custom one
-        services.Remove<IExceptionToErrorInfoConverter>();
-        services.AddTransient<IExceptionToErrorInfoConverter, WorkflowExceptionToErrorInfoConverter>();
-        
-        // Replace Aether's default exception handler with our ProblemDetails handler
-        services.Remove<IExceptionHandler>();
-        services.AddExceptionHandler<ProblemDetailsExceptionHandler>();
+
+       
     }
 
     private static void ConfigureBaseHost(IServiceCollection services)
@@ -228,4 +246,4 @@ public static class WorkflowApiBaseServiceCollectionExtensions
         services.AddScoped<ResponseHeaderFilter>();
         services.AddScoped<IHeaderService, HttpContextHeaderService>();
     }
-} 
+}

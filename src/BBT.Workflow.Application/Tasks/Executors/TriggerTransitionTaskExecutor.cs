@@ -40,26 +40,18 @@ public sealed class TriggerTransitionTaskExecutor(
         CancellationToken cancellationToken = default)
     {
         var triggerTask = (task as TriggerTransitionTask)!;
-
-        Logger.LogInformation("Starting trigger transition task execution for task {TaskKey} - TriggerType: {TriggerType}, Domain: {Domain}, Flow: {Flow}",
-            triggerTask.Key, triggerTask.TriggerType, triggerTask.TriggerDomain, triggerTask.TriggerKey);
-
         try
         {
             // Check runtime domain
             runtimeInfoProvider.Check(context.Runtime.Domain);
-
-            Logger.LogDebug("Preparing input for trigger transition task {TaskKey}", triggerTask.Key);
+            
             await PrepareInputAsync(triggerTask, scriptCode, context, cancellationToken);
 
             // Get appropriate strategy and execute
             var strategy = strategyFactory.Get(triggerTask.TriggerType);
             await strategy.ExecuteAsync(triggerTask, context, cancellationToken);
-
-            Logger.LogDebug("Processing output for trigger transition task {TaskKey}", triggerTask.Key);
+            
             var outputResponse = await ProcessOutputAsync(scriptCode, context, cancellationToken);
-
-            Logger.LogInformation("Trigger transition task {TaskKey} execution completed, returning processed output", triggerTask.Key);
             return outputResponse;
         }
         catch (Exception ex)

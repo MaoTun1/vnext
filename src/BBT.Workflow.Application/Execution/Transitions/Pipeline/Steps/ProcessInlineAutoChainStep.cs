@@ -1,4 +1,7 @@
-using BBT.Workflow.Domain;
+using System.Diagnostics;
+using BBT.Aether.Aspects;
+using BBT.Aether.Results;
+using BBT.Workflow.Logging;
 using BBT.Workflow.Execution.ReEntry;
 
 namespace BBT.Workflow.Execution.Pipeline.Steps;
@@ -14,8 +17,12 @@ public sealed class ProcessInlineAutoChainStep(IReentryDispatcher dispatcher, IC
     private const int MaxInlineHops = 10;
 
     /// <inheritdoc />
+    [Log]
+    [Trace]
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext ctx, CancellationToken ct)
     {
+        Activity.Current?.SetDisplayName($"[{Order}] {nameof(ProcessInlineAutoChainStep)}");
+
         if (ctx.Directives.InlineAutoQueue.Count == 0) 
             return Result<StepOutcome>.Ok(StepOutcome.Continue());
         

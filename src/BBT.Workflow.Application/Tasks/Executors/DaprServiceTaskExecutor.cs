@@ -46,19 +46,12 @@ public sealed class DaprServiceTaskExecutor(
         var daprTask = (task as DaprServiceTask)!;
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         
-        Logger.LogInformation("Starting DAPR service task execution for task {TaskKey} - AppId: {AppId}, Method: {MethodName}, Verb: {HttpVerb}", 
-            daprTask.Key, daprTask.AppId, daprTask.MethodName, daprTask.HttpVerb);
-            
         StandardTaskResponse standardResponse;
 
         try
         {
-            Logger.LogDebug("Preparing input for DAPR service task {TaskKey}", daprTask.Key);
             await PrepareInputAsync(daprTask, scriptCode, context, cancellationToken);
-
-            Logger.LogDebug("Creating DAPR service invocation request for AppId: {AppId}, Method: {MethodName}", 
-                daprTask.AppId, daprTask.MethodName);
-                
+            
             var request = daprClient.CreateInvokeMethodRequest(
                 new HttpMethod(daprTask.HttpVerb),
                 daprTask.AppId,
@@ -76,17 +69,12 @@ public sealed class DaprServiceTaskExecutor(
                     : uriBuilder.Query.TrimStart('?') + "&" + queryString;
                 
                 request.RequestUri = uriBuilder.Uri;
-                
-                Logger.LogDebug("Added query string to DAPR service call for task {TaskKey}: {QueryString}", 
-                    daprTask.Key, daprTask.QueryString);
             }
 
             if (request.Method != HttpMethod.Get && daprTask.Body.HasValue)
             {
                 var requestContent = daprTask.Body.Value.GetRawText();
                 request.Content = new StringContent(requestContent, Encoding.UTF8, "application/json");
-                
-                Logger.LogDebug("Added request body to DAPR service call for task {TaskKey}", daprTask.Key);
             }
             
             if (daprTask.Headers.HasValue)
@@ -95,19 +83,13 @@ public sealed class DaprServiceTaskExecutor(
                 if (headers != null)
                 {
                     var filteredHeaders = headers.Where(h => h.Value != null).ToList();
-                    Logger.LogDebug("Adding {HeaderCount} headers to HTTP request for task {TaskKey}",   filteredHeaders.Count, daprTask.Key);
-                   
                     foreach (var header in filteredHeaders)
                     {
                         request.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                        Logger.LogDebug("Added header {HeaderKey}: {HeaderValue} to request", header.Key, header.Value);
                     }
                 }
             }
             
-            Logger.LogInformation("Invoking DAPR service for task {TaskKey}: {AppId}/{MethodName} via {HttpVerb}", 
-                daprTask.Key, daprTask.AppId, daprTask.MethodName, daprTask.HttpVerb);
-
             var response = await daprClient.InvokeMethodAsync<object?>(
                 request,
                 cancellationToken: cancellationToken);
@@ -116,10 +98,7 @@ public sealed class DaprServiceTaskExecutor(
 
             // Record successful DAPR service invocation
             workflowMetrics.RecordDaprServiceInvocation(daprTask.AppId, daprTask.MethodName, "success");
-
-            Logger.LogInformation("DAPR service task {TaskKey} completed successfully in {Duration}ms", 
-                daprTask.Key, stopwatch.ElapsedMilliseconds);
-
+            
             standardResponse = CreateSuccessResponse(
                 data: response,
                 taskType: "DaprServiceTask",
@@ -160,9 +139,6 @@ public sealed class DaprServiceTaskExecutor(
             // Record cancelled DAPR service invocation
             workflowMetrics.RecordDaprServiceInvocation(daprTask.AppId, daprTask.MethodName, "cancelled");
             
-            Logger.LogWarning("DAPR service task {TaskKey} was cancelled after {Duration}ms", 
-                daprTask.Key, stopwatch.ElapsedMilliseconds);
-                
             standardResponse = CreateErrorResponse(
                 errorMessage: "DAPR service invocation was cancelled",
                 taskType: nameof(TaskType.DaprService),
@@ -199,13 +175,8 @@ public sealed class DaprServiceTaskExecutor(
                 });
         }
 
-        Logger.LogDebug("Setting standard response in context for DAPR service task {TaskKey}", daprTask.Key);
         context.SetStandardResponse(standardResponse);
-        
-        Logger.LogDebug("Processing output for DAPR service task {TaskKey}", daprTask.Key);
         var outputResponse = await ProcessOutputAsync(scriptCode, context, cancellationToken);
-        
-        Logger.LogInformation("DAPR service task {TaskKey} execution completed, returning processed output", daprTask.Key);
         return outputResponse;
     }
 }

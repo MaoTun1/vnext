@@ -16,7 +16,6 @@ public class WorkflowDbContextFactory(
 {
     public WorkflowDbContext CreateDbContext()
     {
-        AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
         var builder = new DbContextOptionsBuilder<WorkflowDbContext>(options);
 
         builder.UseNpgsql(
@@ -24,11 +23,6 @@ public class WorkflowDbContextFactory(
             npgsqlOptions =>
             {
                 npgsqlOptions.MigrationsHistoryTable("__Workflow_Migrations", currentSchema.Name);
-                // Enable retrying failed database operations
-                npgsqlOptions.EnableRetryOnFailure(
-                    maxRetryCount: 3,
-                    maxRetryDelay: TimeSpan.FromSeconds(30),
-                    errorCodesToAdd: null);
             });
 
         builder.ReplaceService<IModelCacheKeyFactory, DynamicSchemaModelCacheKeyFactory>();
