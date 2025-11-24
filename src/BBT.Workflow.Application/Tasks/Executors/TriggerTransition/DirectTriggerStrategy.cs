@@ -1,4 +1,5 @@
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Domain;
 using BBT.Workflow.Execution.TriggerTransition;
 using BBT.Workflow.Scripting;
 using Microsoft.Extensions.Logging;
@@ -32,36 +33,60 @@ public sealed class DirectTriggerStrategy : ITriggerTransitionStrategy
     }
 
     /// <inheritdoc />
-    public async Task ExecuteAsync(
+    public async Task<Result> ExecuteAsync(
         TriggerTransitionTask task,
         ScriptContext context,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(task.TransitionName))
-            throw new InvalidOperationException("TransitionName is required for Trigger (Direct) trigger type");
+        return await ResultExtensions.TryAsync(
+            async ct =>
+            {
+                // Validate TransitionName
+                if (string.IsNullOrWhiteSpace(task.TransitionName))
+                {
+                    throw new InvalidOperationException("TransitionName is required for Trigger (Direct) trigger type");
+                }
 
-        _logger.LogInformation("Handling Direct trigger for task {TaskKey} - InstanceId: {InstanceId}, Transition: {Transition}",
-            task.Key, context.Instance.Id, task.TransitionName);
+                _logger.LogInformation("Handling Direct trigger for task {TaskKey} - InstanceId: {InstanceId}, Transition: {Transition}",
+                    task.Key, context.Instance.Id, task.TransitionName);
 
-        // Resolve instance ID using the factory's ResolveInstanceIdAsync method
-        var instanceId = await _httpTaskFactory.ResolveInstanceIdAsync(task, context, cancellationToken);
+                // Resolve instance ID using the factory's ResolveInstanceIdAsync method
+                var instanceIdResult = await _httpTaskFactory.ResolveInstanceIdAsync(task, context, ct);
+                if (!instanceIdResult.IsSuccess)
+                {
+                    _logger.LogError("Failed to resolve instance ID for Direct trigger: {Error}", instanceIdResult.Error.Code);
+                    throw new InvalidOperationException($"Failed to resolve instance ID: {instanceIdResult.Error.Message}");
+                }
 
-        // Create path using InstanceUrlTemplates.Transition format
-        var path = string.Format(InstanceUrlTemplates.Transition,
-            task.TriggerDomain,
-            task.TriggerFlow,
-            instanceId,
-            task.TransitionName);
+                var instanceId = instanceIdResult.Value!;
 
-        var httpTask = _httpTaskFactory.CreateHttpTask(task, context, path, "PATCH");
+                // Create path using InstanceUrlTemplates.Transition format
+                var path = string.Format(InstanceUrlTemplates.Transition,
+                    task.TriggerDomain,
+                    task.TriggerFlow,
+                    instanceId,
+                    task.TransitionName);
 
-        var httpExecutor = _taskExecutorFactory.GetExecutor(TaskType.Http) as HttpTaskExecutor;
+                var httpTaskResult = _httpTaskFactory.CreateHttpTask(task, context, path, "PATCH");
+                if (!httpTaskResult.IsSuccess)
+                {
+                    _logger.LogError("Failed to create HTTP task for Direct trigger: {Error}", httpTaskResult.Error.Code);
+                    throw new InvalidOperationException($"Failed to create HTTP task: {httpTaskResult.Error.Message}");
+                }
 
-        if (httpExecutor == null)
-            throw new InvalidOperationException("HttpTaskExecutor not found");
+                var httpTask = httpTaskResult.Value!;
 
-        _logger.LogDebug("Calling HttpTaskExecutor.CallAsync for Direct trigger task {TaskKey}", task.Key);
-        await httpExecutor.CallAsync(httpTask, context, cancellationToken);
+                var httpExecutor = _taskExecutorFactory.GetExecutor(TaskType.Http) as HttpTaskExecutor;
+
+                if (httpExecutor == null)
+                    throw new InvalidOperationException("HttpTaskExecutor not found");
+
+                _logger.LogDebug("Calling HttpTaskExecutor.CallAsync for Direct trigger task {TaskKey}", task.Key);
+                await httpExecutor.CallAsync(httpTask, context, ct);
+            },
+            cancellationToken,
+            ex => Error.Failure(WorkflowErrorCodes.TriggerDirectExecutionFailed, 
+                $"Failed to execute Direct trigger for task '{task.Key}': {ex.Message}"));
     }
 }
 

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Domain;
 using BBT.Workflow.Execution.TriggerTransition;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Scripting;
@@ -35,77 +36,81 @@ public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTas
     }
 
     /// <inheritdoc />
-    public HttpTask CreateHttpTask(
+    public Result<HttpTask> CreateHttpTask(
         TriggerTransitionTask triggerTask,
         ScriptContext context,
         string path,
         string method)
     {
-        // Build full URL using configuration
-        var baseUrl = _configuration["vNextApi:BaseUrl"]?.TrimEnd('/') ?? string.Empty;
-        var apiVersion = _configuration["vNextApi:ApiVersion"] ?? "1";
-        var fullUrl = $"{baseUrl}/api/v{apiVersion}{path}";
-
-        _logger.LogDebug("Creating HttpTask with URL: {Url}", fullUrl);
-
-        // Prepare body from triggerTask.Body or context.Body
-        JsonElement? body = triggerTask.Body;
-        if (!body.HasValue && context.Body != null)
+        return ResultExtensions.Try(() =>
         {
-            body = JsonSerializer.SerializeToElement(context.Body);
-        }
+            // Build full URL using configuration
+            var baseUrl = _configuration["vNextApi:BaseUrl"]?.TrimEnd('/') ?? string.Empty;
+            var apiVersion = _configuration["vNextApi:ApiVersion"] ?? "1";
+            var fullUrl = $"{baseUrl}/api/v{apiVersion}{path}";
 
-        // Prepare headers from context.Headers
-        var headersDict = new Dictionary<string, string>();
-        if (context.Headers != null)
-        {
-            foreach (var header in context.Headers)
+            _logger.LogDebug("Creating HttpTask with URL: {Url}", fullUrl);
+
+            // Prepare body from triggerTask.Body or context.Body
+            JsonElement? body = triggerTask.Body;
+            if (!body.HasValue && context.Body != null)
             {
-                var key = header.Key?.ToString() ?? string.Empty;
-                var value = header.Value?.ToString() ?? string.Empty;
-                if (!string.IsNullOrWhiteSpace(key))
+                body = JsonSerializer.SerializeToElement(context.Body);
+            }
+
+            // Prepare headers from context.Headers
+            var headersDict = new Dictionary<string, string>();
+            if (context.Headers != null)
+            {
+                foreach (var header in context.Headers)
                 {
-                    headersDict[key] = value;
+                    var key = header.Key?.ToString() ?? string.Empty;
+                    var value = header.Value?.ToString() ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(key))
+                    {
+                        headersDict[key] = value;
+                    }
                 }
             }
-        }
 
-        // Get timeout from configuration
-        var timeoutSeconds = _configuration.GetValue<int>("vNextApi:TimeoutSeconds", 30);
+            // Get timeout from configuration
+            var timeoutSeconds = _configuration.GetValue<int>("vNextApi:TimeoutSeconds", 30);
 
-        // Create task config JSON
-        var configBuilder = new Dictionary<string, object>
-        {
-            ["key"] = triggerTask.Key,
-            ["url"] = fullUrl,
-            ["method"] = method,
-            ["timeoutSeconds"] = timeoutSeconds,
-            ["validateSSL"] = true
-        };
+            // Create task config JSON
+            var configBuilder = new Dictionary<string, object>
+            {
+                ["key"] = triggerTask.Key,
+                ["url"] = fullUrl,
+                ["method"] = method,
+                ["timeoutSeconds"] = timeoutSeconds,
+                ["validateSSL"] = true
+            };
 
-        if (headersDict.Count > 0)
-        {
-            configBuilder["headers"] = headersDict;
-        }
+            if (headersDict.Count > 0)
+            {
+                configBuilder["headers"] = headersDict;
+            }
 
-        if (body.HasValue)
-        {
-            configBuilder["body"] = body.Value;
-        }
+            if (body.HasValue)
+            {
+                configBuilder["body"] = body.Value;
+            }
 
-        var configJson = JsonSerializer.Serialize(configBuilder);
-        var configElement = JsonDocument.Parse(configJson).RootElement;
+            var configJson = JsonSerializer.Serialize(configBuilder);
+            var configElement = JsonDocument.Parse(configJson).RootElement;
 
-        var httpTask = HttpTask.Create(configElement);
+            var httpTask = HttpTask.Create(configElement);
 
-        // Copy base properties from triggerTask
-        triggerTask.CopyBaseToInternal(httpTask);
+            // Copy base properties from triggerTask
+            triggerTask.CopyBaseToInternal(httpTask);
 
-        return httpTask;
+            return httpTask;
+        },
+        ex => Error.Failure(WorkflowErrorCodes.TriggerCreateHttpTaskFailed, $"Failed to create HTTP task: {ex.Message}"));
     }
 
     /// <inheritdoc />
-    public async Task<string> ResolveInstanceIdAsync(
+    public async Task<Result<string>> ResolveInstanceIdAsync(
         TriggerTransitionTask task,
         ScriptContext context,
         CancellationToken cancellationToken)
@@ -114,7 +119,7 @@ public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTas
         if (!string.IsNullOrWhiteSpace(task.TriggerInstanceId))
         {
             _logger.LogDebug("Using provided TriggerInstanceId: {InstanceId}", task.TriggerInstanceId);
-            return task.TriggerInstanceId;
+            return Result<string>.Ok(task.TriggerInstanceId);
         }
 
         // Priority 2: If TriggerKey is provided but TriggerInstanceId is not, query the instance
@@ -124,14 +129,14 @@ public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTas
                 task.TriggerKey);
             if(task.TriggerType==TriggerTransitionType.GetInstanceData)
             {
-                return task.TriggerKey;
+                return Result<string>.Ok(task.TriggerKey);
             }
             return await ResolveInstanceIdByKeyAsync(task, context, cancellationToken);
         }
 
         // Priority 3: Default to current instance ID
         _logger.LogDebug("Using current instance ID: {InstanceId}", context.Instance.Id);
-        return context.Instance.Id.ToString();
+        return Result<string>.Ok(context.Instance.Id.ToString());
     }
 
     /// <summary>
@@ -140,56 +145,68 @@ public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTas
     /// <param name="task">The trigger transition task.</param>
     /// <param name="context">The script context.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The resolved instance ID.</returns>
-    private async Task<string> ResolveInstanceIdByKeyAsync(
+    /// <returns>A Result containing the resolved instance ID or an error.</returns>
+    private async Task<Result<string>> ResolveInstanceIdByKeyAsync(
         TriggerTransitionTask task,
         ScriptContext context,
         CancellationToken cancellationToken)
     {
-        var path = string.Format(InstanceUrlTemplates.Instance,
-            task.TriggerDomain,
-            task.TriggerFlow,
-            task.TriggerKey);
-
-        var httpTask = CreateHttpTask(task, context, path, "GET");
-
-        var httpExecutor = _taskExecutorFactory.GetExecutor(TaskType.Http) as HttpTaskExecutor;
-        if (httpExecutor == null)
-            throw new InvalidOperationException("HttpTaskExecutor not found");
-
-        _logger.LogDebug("Calling HttpTaskExecutor.CallAsync to get instance by key {Key}", task.TriggerKey);
-
-        // Store original body to restore after the call
-        object? originalBody = context.Body;
-
-        await httpExecutor.CallAsync(httpTask, context, cancellationToken);
-
-        try
-        {
-            // Parse the response and extract the Id
-            // After CallAsync, context.Body contains StandardTaskResponse merged data
-            // The actual response data is in context.Body.data property (camelCase)
-            if (context.Body == null)
+        return await ResultExtensions.TryAsync(
+            async ct =>
             {
-                throw new InvalidOperationException($"No response received when querying instance by key '{task.TriggerKey}'");
-            }
+                var path = string.Format(InstanceUrlTemplates.Instance,
+                    task.TriggerDomain,
+                    task.TriggerFlow,
+                    task.TriggerKey);
 
-            string instanceId = ExtractInstanceIdFromResponse(context.Body, task.TriggerKey!);
+                var httpTaskResult = CreateHttpTask(task, context, path, "GET");
+                if (!httpTaskResult.IsSuccess)
+                {
+                    _logger.LogError("Failed to create HTTP task for key resolution: {Error}", httpTaskResult.Error.Code);
+                    throw new InvalidOperationException($"Failed to create HTTP task: {httpTaskResult.Error.Message}");
+                }
 
-            // Restore original body
-            context.SetBody(originalBody);
+                var httpTask = httpTaskResult.Value!;
 
-            string key = task.TriggerKey!;
-            _logger.LogInformation("Resolved instance ID from key {Key}: {InstanceId}",
-                key, instanceId);
+                var httpExecutor = _taskExecutorFactory.GetExecutor(TaskType.Http) as HttpTaskExecutor;
+                if (httpExecutor == null)
+                    throw new InvalidOperationException("HttpTaskExecutor not found");
 
-            return instanceId;
-        }
-        catch (Exception ex) when (ex is not InvalidOperationException)
-        {
-            _logger.LogError(ex, "Failed to resolve instance ID for key {Key}", task.TriggerKey);
-            throw new InvalidOperationException($"Failed to resolve instance ID for key '{task.TriggerKey}'", ex);
-        }
+                _logger.LogDebug("Calling HttpTaskExecutor.CallAsync to get instance by key {Key}", task.TriggerKey);
+
+                // Store original body to restore after the call
+                object? originalBody = context.Body;
+
+                await httpExecutor.CallAsync(httpTask, context, ct);
+
+                // Parse the response and extract the Id
+                // After CallAsync, context.Body contains StandardTaskResponse merged data
+                // The actual response data is in context.Body.data property (camelCase)
+                if (context.Body == null)
+                {
+                    throw new InvalidOperationException($"No response received when querying instance by key '{task.TriggerKey}'");
+                }
+
+                var instanceIdResult = ExtractInstanceIdFromResponse(context.Body, task.TriggerKey!);
+                if (!instanceIdResult.IsSuccess)
+                {
+                    throw new InvalidOperationException(instanceIdResult.Error.Message ?? "Failed to extract instance ID");
+                }
+
+                string instanceId = instanceIdResult.Value!;
+
+                // Restore original body
+                context.SetBody(originalBody);
+
+                string key = task.TriggerKey!;
+                _logger.LogInformation("Resolved instance ID from key {Key}: {InstanceId}",
+                    key, instanceId);
+
+                return instanceId;
+            },
+            cancellationToken,
+            ex => Error.Dependency(WorkflowErrorCodes.TriggerResolveInstanceFailed, 
+                $"Failed to resolve instance ID for key '{task.TriggerKey}': {ex.Message}"));
     }
 
     /// <summary>
@@ -197,10 +214,10 @@ public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTas
     /// </summary>
     /// <param name="responseBody">The response body containing the instance data.</param>
     /// <param name="triggerKey">The trigger key used for error messages.</param>
-    /// <returns>The extracted instance ID.</returns>
-    private string ExtractInstanceIdFromResponse(object responseBody, string triggerKey)
+    /// <returns>A Result containing the extracted instance ID or an error.</returns>
+    private Result<string> ExtractInstanceIdFromResponse(object responseBody, string triggerKey)
     {
-        try
+        return ResultExtensions.Try(() =>
         {
             // Access the 'data' property from StandardTaskResponse
             dynamic bodyData = responseBody;
@@ -235,17 +252,16 @@ public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTas
             }
 
             return resolvedGuid.ToString();
-        }
-        catch (JsonException ex)
+        },
+        ex => ex switch
         {
-            _logger.LogError(ex, "Failed to deserialize GetInstanceOutput for key {Key}", triggerKey);
-            throw new InvalidOperationException($"Failed to parse instance response for key '{triggerKey}'", ex);
-        }
-        catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException ex)
-        {
-            _logger.LogError(ex, "Failed to access response data property for key {Key}", triggerKey);
-            throw new InvalidOperationException($"Invalid response structure when querying instance by key '{triggerKey}'", ex);
-        }
+            JsonException jsonEx => Error.Validation(WorkflowErrorCodes.TriggerInvalidResponseFormat, 
+                $"Failed to parse instance response for key '{triggerKey}': {jsonEx.Message}"),
+            Microsoft.CSharp.RuntimeBinder.RuntimeBinderException binderEx => Error.Validation(WorkflowErrorCodes.TriggerInvalidResponseStructure,
+                $"Invalid response structure when querying instance by key '{triggerKey}': {binderEx.Message}"),
+            _ => Error.Failure(WorkflowErrorCodes.TriggerExtractInstanceIdFailed, 
+                $"Failed to extract instance ID for key '{triggerKey}': {ex.Message}")
+        });
     }
 }
 
