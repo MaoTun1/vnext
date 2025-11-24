@@ -66,4 +66,10 @@ public static class InstanceUrlTemplates
     /// Format: /{domain}/workflows/{workflow}/sub/instances/start
     /// </summary>
     public const string StartSub = "/{0}/workflows/{1}/sub/instances/start";
+
+    /// <summary>
+    /// URL template for function list endpoints.
+    /// Format: /{domain}/workflows/{workflow}/functions/{function}
+    /// </summary>
+    public const string FunctionList = "/{0}/workflows/{1}/functions/{2}";
 }
