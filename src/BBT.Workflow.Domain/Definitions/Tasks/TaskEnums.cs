@@ -18,7 +18,10 @@ public enum TaskType
     Condition = 8,
     Timer = 9,
     Notification = 10,
-    TriggerTransition = 11
+    StartTrigger = 11,
+    DirectTrigger = 12,
+    GetInstanceData = 13,
+    SubProcess = 14
 }
 
 /// <summary>

@@ -37,7 +37,7 @@ public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTas
 
     /// <inheritdoc />
     public Result<HttpTask> CreateHttpTask(
-        TriggerTransitionTask triggerTask,
+        WorkflowTask task,
         ScriptContext context,
         string path,
         string method)
@@ -51,8 +51,8 @@ public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTas
 
             _logger.LogDebug("Creating HttpTask with URL: {Url}", fullUrl);
 
-            // Prepare body from triggerTask.Body or context.Body
-            JsonElement? body = triggerTask.Body;
+            // Prepare body from task.Body or context.Body
+            JsonElement? body = GetBodyFromTask(task);
             if (!body.HasValue && context.Body != null)
             {
                 body = JsonSerializer.SerializeToElement(context.Body);
@@ -79,7 +79,7 @@ public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTas
             // Create task config JSON
             var configBuilder = new Dictionary<string, object>
             {
-                ["key"] = triggerTask.Key,
+                ["key"] = task.Key,
                 ["url"] = fullUrl,
                 ["method"] = method,
                 ["timeoutSeconds"] = timeoutSeconds,
@@ -101,37 +101,55 @@ public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTas
 
             var httpTask = HttpTask.Create(configElement);
 
-            // Copy base properties from triggerTask
-            triggerTask.CopyBaseToInternal(httpTask);
+            // Copy base properties from task
+            task.CopyBaseToInternal(httpTask);
 
             return httpTask;
         },
         ex => Error.Failure(WorkflowErrorCodes.TriggerCreateHttpTaskFailed, $"Failed to create HTTP task: {ex.Message}"));
     }
 
+    /// <summary>
+    /// Extracts body from task if it has a Body property.
+    /// </summary>
+    private static JsonElement? GetBodyFromTask(WorkflowTask task)
+    {
+        return task switch
+        {
+            StartTask startTask => startTask.Body,
+            DirectTriggerTask directTask => directTask.Body,
+            SubProcessTask subProcessTask => subProcessTask.Body,
+            _ => null
+        };
+    }
+
     /// <inheritdoc />
     public async Task<Result<string>> ResolveInstanceIdAsync(
-        TriggerTransitionTask task,
+        WorkflowTask task,
         ScriptContext context,
         CancellationToken cancellationToken)
     {
+        // Extract instance ID and key from task
+        var (instanceId, key, domain, flow) = ExtractInstanceProperties(task);
+
         // Priority 1: If TriggerInstanceId is provided, use it
-        if (!string.IsNullOrWhiteSpace(task.TriggerInstanceId))
+        if (!string.IsNullOrWhiteSpace(instanceId))
         {
-            _logger.LogDebug("Using provided TriggerInstanceId: {InstanceId}", task.TriggerInstanceId);
-            return Result<string>.Ok(task.TriggerInstanceId);
+            _logger.LogDebug("Using provided TriggerInstanceId: {InstanceId}", instanceId);
+            return Result<string>.Ok(instanceId);
         }
 
         // Priority 2: If TriggerKey is provided but TriggerInstanceId is not, query the instance
-        if (!string.IsNullOrWhiteSpace(task.TriggerKey))
+        if (!string.IsNullOrWhiteSpace(key))
         {
             _logger.LogInformation("TriggerInstanceId not provided but TriggerKey exists: {Key}. Querying instance by key.",
-                task.TriggerKey);
-            if(task.TriggerType==TriggerTransitionType.GetInstanceData)
+                key);
+            // For GetInstanceDataTask, use the key directly
+            if (task is GetInstanceDataTask)
             {
-                return Result<string>.Ok(task.TriggerKey);
+                return Result<string>.Ok(key);
             }
-            return await ResolveInstanceIdByKeyAsync(task, context, cancellationToken);
+            return await ResolveInstanceIdByKeyAsync(task, key, domain, flow, context, cancellationToken);
         }
 
         // Priority 3: Default to current instance ID
@@ -140,14 +158,33 @@ public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTas
     }
 
     /// <summary>
+    /// Extracts instance-related properties from task.
+    /// </summary>
+    private static (string? instanceId, string? key, string domain, string flow) ExtractInstanceProperties(WorkflowTask task)
+    {
+        return task switch
+        {
+            DirectTriggerTask directTask => (directTask.TriggerInstanceId, directTask.TriggerKey, directTask.TriggerDomain, directTask.TriggerFlow),
+            GetInstanceDataTask getDataTask => (getDataTask.TriggerInstanceId, getDataTask.TriggerKey, getDataTask.TriggerDomain, getDataTask.TriggerFlow),
+            _ => (null, null, string.Empty, string.Empty)
+        };
+    }
+
+    /// <summary>
     /// Resolves the instance ID by querying the instance using the TriggerKey.
     /// </summary>
     /// <param name="task">The trigger transition task.</param>
+    /// <param name="key">The instance key to resolve.</param>
+    /// <param name="domain">The workflow domain.</param>
+    /// <param name="flow">The workflow flow name.</param>
     /// <param name="context">The script context.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A Result containing the resolved instance ID or an error.</returns>
     private async Task<Result<string>> ResolveInstanceIdByKeyAsync(
-        TriggerTransitionTask task,
+        WorkflowTask task,
+        string key,
+        string domain,
+        string flow,
         ScriptContext context,
         CancellationToken cancellationToken)
     {
@@ -155,9 +192,9 @@ public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTas
             async ct =>
             {
                 var path = string.Format(InstanceUrlTemplates.Instance,
-                    task.TriggerDomain,
-                    task.TriggerFlow,
-                    task.TriggerKey);
+                    domain,
+                    flow,
+                    key);
 
                 var httpTaskResult = CreateHttpTask(task, context, path, "GET");
                 if (!httpTaskResult.IsSuccess)
@@ -172,7 +209,7 @@ public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTas
                 if (httpExecutor == null)
                     throw new InvalidOperationException("HttpTaskExecutor not found");
 
-                _logger.LogDebug("Calling HttpTaskExecutor.CallAsync to get instance by key {Key}", task.TriggerKey);
+                _logger.LogDebug("Calling HttpTaskExecutor.CallAsync to get instance by key {Key}", key);
 
                 // Store original body to restore after the call
                 object? originalBody = context.Body;
@@ -184,10 +221,10 @@ public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTas
                 // The actual response data is in context.Body.data property (camelCase)
                 if (context.Body == null)
                 {
-                    throw new InvalidOperationException($"No response received when querying instance by key '{task.TriggerKey}'");
+                    throw new InvalidOperationException($"No response received when querying instance by key '{key}'");
                 }
 
-                var instanceIdResult = ExtractInstanceIdFromResponse(context.Body, task.TriggerKey!);
+                var instanceIdResult = ExtractInstanceIdFromResponse(context.Body, key);
                 if (!instanceIdResult.IsSuccess)
                 {
                     throw new InvalidOperationException(instanceIdResult.Error.Message ?? "Failed to extract instance ID");
@@ -198,7 +235,6 @@ public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTas
                 // Restore original body
                 context.SetBody(originalBody);
 
-                string key = task.TriggerKey!;
                 _logger.LogInformation("Resolved instance ID from key {Key}: {InstanceId}",
                     key, instanceId);
 
@@ -206,7 +242,7 @@ public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTas
             },
             cancellationToken,
             ex => Error.Dependency(WorkflowErrorCodes.TriggerResolveInstanceFailed, 
-                $"Failed to resolve instance ID for key '{task.TriggerKey}': {ex.Message}"));
+                $"Failed to resolve instance ID for key '{key}': {ex.Message}"));
     }
 
     /// <summary>
