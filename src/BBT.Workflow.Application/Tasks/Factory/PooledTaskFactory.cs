@@ -237,9 +237,18 @@ public static class PoolableTaskRegistry
         RegisterPoolableTask<NotificationTask>(
             NotificationTask.CreateEmpty,
             (source, target) => ((NotificationTask)target).CopyFromInternal((NotificationTask)source));
-        RegisterPoolableTask<TriggerTransitionTask>(
-        TriggerTransitionTask.CreateEmpty,
-        (source, target) => ((TriggerTransitionTask)target).CopyFromInternal((TriggerTransitionTask)source));
+        RegisterPoolableTask<StartTask>(
+            StartTask.CreateEmpty,
+            (source, target) => ((StartTask)target).CopyFromInternal((StartTask)source));
+        RegisterPoolableTask<DirectTriggerTask>(
+            DirectTriggerTask.CreateEmpty,
+            (source, target) => ((DirectTriggerTask)target).CopyFromInternal((DirectTriggerTask)source));
+        RegisterPoolableTask<GetInstanceDataTask>(
+            GetInstanceDataTask.CreateEmpty,
+            (source, target) => ((GetInstanceDataTask)target).CopyFromInternal((GetInstanceDataTask)source));
+        RegisterPoolableTask<SubProcessTask>(
+            SubProcessTask.CreateEmpty,
+            (source, target) => ((SubProcessTask)target).CopyFromInternal((SubProcessTask)source));
 
     }
 
