@@ -100,10 +100,8 @@ public sealed class GetInstanceDataTask : WorkflowTask
         if (config.TryGetProperty("instanceId", out var instanceIdElement))
             TriggerInstanceId = instanceIdElement.GetString();
 
-        if (config.TryGetProperty("extensions", out var extensionsElement))
+        if (config.TryGetProperty("extensions", out var extensionsElement)&&extensionsElement.ValueKind== JsonValueKind.Array)
         {
-            if (extensionsElement.ValueKind == JsonValueKind.Array)
-            {
                 var extensionsList = new List<string>();
                 foreach (var item in extensionsElement.EnumerateArray())
                 {
@@ -112,7 +110,6 @@ public sealed class GetInstanceDataTask : WorkflowTask
                         extensionsList.Add(ext);
                 }
                 Extensions = extensionsList.Count > 0 ? extensionsList.ToArray() : null;
-            }
         }
     }
 
