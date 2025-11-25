@@ -229,6 +229,21 @@ public class ScriptContext(ILogger<ScriptContext> logger) : IDisposable
     public dynamic? RouteValues { get; private set; }
     
     /// <summary>
+    /// Contains query string parameters extracted from the HTTP request.
+    /// These values are derived from URL query string parameters.
+    /// </summary>
+    /// <value>
+    /// A dynamic object containing query parameter key-value pairs:
+    /// - Query string parameters (e.g., ?filter=value&sort=asc)
+    /// - Can be null if no query parameters are available
+    /// </value>
+    /// <remarks>
+    /// Query parameters provide a way to pass filtering, sorting, pagination,
+    /// and other request-specific data through the URL query string.
+    /// </remarks>
+    public dynamic? QueryParameters { get; private set; }
+    
+    /// <summary>
     /// The active workflow instance that is currently being processed or executed.
     /// This represents the live instance with its current state, data, and execution history.
     /// </summary>
@@ -449,6 +464,12 @@ public class ScriptContext(ILogger<ScriptContext> logger) : IDisposable
         public Builder SetRouteValues(object? routeValues)
         {
             _context.RouteValues = routeValues;
+            return this;
+        }
+
+        public Builder SetQueryParameters(object? queryParameters)
+        {
+            _context.QueryParameters = queryParameters;
             return this;
         }
 

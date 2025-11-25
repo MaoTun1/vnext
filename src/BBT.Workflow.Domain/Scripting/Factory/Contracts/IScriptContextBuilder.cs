@@ -76,6 +76,16 @@ public interface IScriptContextBuilder
     IScriptContextBuilder WithRouteValues(Dictionary<string, string?>? routeValues);
     
     /// <summary>
+    /// Sets the query parameters for the ScriptContext.
+    /// </summary>
+    IScriptContextBuilder WithQueryParameters(Dictionary<string, object?>? queryParameters);
+    
+    /// <summary>
+    /// Sets the query parameters for the ScriptContext.
+    /// </summary>
+    IScriptContextBuilder WithQueryParameters(Dictionary<string, string?>? queryParameters);
+    
+    /// <summary>
     /// Sets the task response data for the ScriptContext.
     /// </summary>
     IScriptContextBuilder WithTaskResponse(Dictionary<string, object?> taskResponse);
