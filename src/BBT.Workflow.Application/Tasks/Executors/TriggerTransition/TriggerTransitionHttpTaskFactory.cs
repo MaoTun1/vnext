@@ -145,10 +145,7 @@ public sealed class TriggerTransitionHttpTaskFactory : ITriggerTransitionHttpTas
             _logger.LogInformation("TriggerInstanceId not provided but TriggerKey exists: {Key}. Querying instance by key.",
                 key);
             // For GetInstanceDataTask, use the key directly
-            if (task is GetInstanceDataTask)
-            {
-                return Result<string>.Ok(key);
-            }
+            return Result<string>.Ok(key);
         }
 
         // Priority 3: Default to current instance ID
