@@ -38,8 +38,16 @@ public sealed class FunctionController(IFunctionAppService functionAppService,
         [FromQuery] bool? async = false,
         CancellationToken cancellationToken = default)
     {
-            var response = await functionAppService.GetFunctionByFunctionKey(function, RuntimeSysSchemaInfo.Functions,
-            domain, cancellationToken);
+            var headers = HttpContext.Request.Headers.ToDictionary(h => h.Key, h => (string?)h.Value.ToString());
+            var queryParams = HttpContext.Request.Query.ToDictionary(q => q.Key, q => (string?)q.Value.ToString());
+            
+            var response = await functionAppService.GetFunctionByFunctionKey(
+                function, 
+                RuntimeSysSchemaInfo.Functions,
+                domain, 
+                headers, 
+                queryParams, 
+                cancellationToken);
         return Ok(response);
     }
 
@@ -94,6 +102,9 @@ public sealed class FunctionController(IFunctionAppService functionAppService,
         [FromHeader(Name = "If-None-Match")] string? ifNoneMatch,
         CancellationToken cancellationToken = default)
     {
+        var headers = HttpContext.Request.Headers.ToDictionary(h => h.Key, h => (string?)h.Value.ToString());
+        var queryParams = HttpContext.Request.Query.ToDictionary(q => q.Key, q => (string?)q.Value.ToString());
+        
         return function.ToLowerInvariant() switch
         {
             Definitions.Functions.FunctionTypeConst.Longpooling =>
@@ -103,7 +114,7 @@ public sealed class FunctionController(IFunctionAppService functionAppService,
             Definitions.Functions.FunctionTypeConst.Data =>
                 await ProcessDataFunction(domain, workflow, instance, ifNoneMatch, parameters.Extensions, cancellationToken),
             _ =>
-                Ok(await functionAppService.GetFunctionByInstance(function, workflow, domain, instance, cancellationToken))
+                Ok(await functionAppService.GetFunctionByInstance(function, workflow, domain, instance, headers, queryParams, cancellationToken))
         };
     }
 
@@ -289,6 +300,9 @@ public sealed class FunctionController(IFunctionAppService functionAppService,
         PaginationResult<GetInstanceOutput> instanceListResult,
         CancellationToken cancellationToken)
     {
+        var headers = HttpContext.Request.Headers.ToDictionary(h => h.Key, h => (string?)h.Value.ToString());
+        var queryParams = HttpContext.Request.Query.ToDictionary(q => q.Key, q => (string?)q.Value.ToString());
+        
         var outputs = new PaginationResult<Dictionary<string, dynamic?>>
         {
             Pagination = instanceListResult.Pagination,
@@ -298,7 +312,7 @@ public sealed class FunctionController(IFunctionAppService functionAppService,
         foreach (var instance in instanceListResult.Data)
         {
             outputs.Data.Add(
-                await functionAppService.GetFunctionByInstance(function, workflow, domain, instance.Key!.ToString(), cancellationToken)
+                await functionAppService.GetFunctionByInstance(function, workflow, domain, instance.Key!.ToString(), headers, queryParams, cancellationToken)
             );
         }
 
@@ -307,3 +321,4 @@ public sealed class FunctionController(IFunctionAppService functionAppService,
 
     #endregion
 }
+
