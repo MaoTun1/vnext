@@ -1,4 +1,5 @@
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Domain;
 using BBT.Workflow.Execution.TriggerTransition;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
@@ -54,7 +55,15 @@ public sealed class TriggerTransitionTaskExecutor(
 
             // Get appropriate strategy and execute
             var strategy = strategyFactory.Get(triggerTask.TriggerType);
-            await strategy.ExecuteAsync(triggerTask, context, cancellationToken);
+            var executionResult = await strategy.ExecuteAsync(triggerTask, context, cancellationToken);
+            
+            // If strategy execution failed, throw exception to maintain existing error handling behavior
+            if (!executionResult.IsSuccess)
+            {
+                Logger.LogError("Strategy execution failed for task {TaskKey}: {ErrorCode} - {ErrorMessage}",
+                    triggerTask.Key, executionResult.Error.Code, executionResult.Error.Message);
+                throw new InvalidOperationException($"Strategy execution failed: {executionResult.Error.Message}");
+            }
 
             Logger.LogDebug("Processing output for trigger transition task {TaskKey}", triggerTask.Key);
             var outputResponse = await ProcessOutputAsync(scriptCode, context, cancellationToken);

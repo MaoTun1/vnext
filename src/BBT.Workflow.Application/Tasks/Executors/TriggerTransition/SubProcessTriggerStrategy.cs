@@ -1,5 +1,6 @@
 using BBT.Aether.Guids;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Domain;
 using BBT.Workflow.Execution.TriggerTransition;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
@@ -37,47 +38,54 @@ public sealed class SubProcessTriggerStrategy : ITriggerTransitionStrategy
     }
 
     /// <inheritdoc />
-    public async Task ExecuteAsync(
+    public async Task<Result> ExecuteAsync(
         TriggerTransitionTask task,
         ScriptContext context,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation(
-            "Executing SubProcess trigger for task {TaskKey} - Domain: {Domain}, Key: {Key}, Version: {Version}",
-            task.Key, task.TriggerDomain, task.TriggerKey, task.TriggerVersion);
+        return await ResultExtensions.TryAsync(
+            async ct =>
+            {
+                _logger.LogInformation(
+                    "Executing SubProcess trigger for task {TaskKey} - Domain: {Domain}, Key: {Key}, Version: {Version}",
+                    task.Key, task.TriggerDomain, task.TriggerKey, task.TriggerVersion);
 
-        // Create correlation for SubProcess
-        var correlation = InstanceCorrelation.Create(
-            _guidGenerator.Create(),
-            context.Instance.Id,
-            context.Instance.GetCurrentState,
-            _guidGenerator.Create(),
-            SubFlowType.SubProcess.Code,
-            task.TriggerDomain,
-            task.TriggerKey!,
-            task.TriggerVersion);
-        context.Instance.AddCorrelation(correlation);
+                // Create correlation for SubProcess
+                var correlation = InstanceCorrelation.Create(
+                    _guidGenerator.Create(),
+                    context.Instance.Id,
+                    context.Instance.GetCurrentState,
+                    _guidGenerator.Create(),
+                    SubFlowType.SubProcess.Code,
+                    task.TriggerDomain,
+                    task.TriggerKey!,
+                    task.TriggerVersion);
+                context.Instance.AddCorrelation(correlation);
 
-        // Create a SubFlow reference for the subprocess
-        var subFlowReference = new Reference(
-            task.TriggerKey!,
-            task.TriggerDomain,
-            RuntimeSysSchemaInfo.Flows,
-            task.TriggerVersion ?? string.Empty);
+                // Create a SubFlow reference for the subprocess
+                var subFlowReference = new Reference(
+                    task.TriggerKey!,
+                    task.TriggerDomain,
+                    RuntimeSysSchemaInfo.Flows,
+                    task.TriggerVersion ?? string.Empty);
 
-        // Start the SubProcess using simplified SubStartAsync method
-        await _subflowStarter.SubStartAsync(
-            context.Workflow,
-            context.Instance,
-            subFlowReference,
-            context.Transition!,
-            correlation,
-            SubFlowType.SubProcess.Code,
-            cancellationToken);
+                // Start the SubProcess using simplified SubStartAsync method
+                await _subflowStarter.SubStartAsync(
+                    context.Workflow,
+                    context.Instance,
+                    subFlowReference,
+                    context.Transition!,
+                    correlation,
+                    SubFlowType.SubProcess.Code,
+                    ct);
 
-        _logger.LogInformation(
-            "SubProcess trigger completed for task {TaskKey} with correlation {CorrelationId}",
-            task.Key, correlation.Id);
+                _logger.LogInformation(
+                    "SubProcess trigger completed for task {TaskKey} with correlation {CorrelationId}",
+                    task.Key, correlation.Id);
+            },
+            cancellationToken,
+            ex => Error.Failure(WorkflowErrorCodes.TriggerSubProcessExecutionFailed, 
+                $"Failed to execute SubProcess trigger for task '{task.Key}': {ex.Message}"));
     }
 }
 
