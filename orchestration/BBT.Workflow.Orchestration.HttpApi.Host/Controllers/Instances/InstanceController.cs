@@ -101,7 +101,7 @@ public sealed class InstanceController(
     /// <response code="404">Instance, workflow, or transition not found</response>
     /// <response code="409">Transition already in progress (locked) or SubFlow blocking</response>
     /// <response code="503">Service temporarily unavailable</response>
-    [HttpPatch("{domain}/workflows/{workflow}/instances/{instanceId}/transitions/{transitionKey}")]
+    [HttpPatch("{domain}/workflows/{workflow}/instances/{instance}/transitions/{transitionKey}")]
     [ProducesResponseType(typeof(TransitionOutput), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
@@ -111,7 +111,7 @@ public sealed class InstanceController(
     public async Task<IActionResult> TransitionAsync(
         [FromRoute] string domain,
         [FromRoute] string workflow,
-        [FromRoute] Guid instanceId,
+        [FromRoute] string instance,
         [FromRoute] string transitionKey,
         [FromBody] JsonElement? attributes,
         [FromQuery] string? version = null,
@@ -134,7 +134,7 @@ public sealed class InstanceController(
         }
 
         var result = await commandAppService.TransitionAsync(
-            instanceId,
+            instance,
             transitionKey,
             input,
             cancellationToken);
