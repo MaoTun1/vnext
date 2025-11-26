@@ -1,3 +1,4 @@
+using System.Text.Json;
 using BBT.Aether.Guids;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Domain;
@@ -129,6 +130,24 @@ public sealed class SubProcessTaskExecutor(
                     RuntimeSysSchemaInfo.Flows,
                     task.TriggerVersion ?? string.Empty);
 
+                // Prepare input mapping result with task data
+                // Convert JsonElement to a normal object so it can be serialized again in SubflowStarter
+                // object? bodyData = null;
+                // if (task.Body.HasValue)
+                // {
+                //     bodyData = JsonSerializer.Deserialize<object>(task.Body.Value.GetRawText());
+                // }
+
+                // Convert dynamic Headers to Dictionary<string, string?>
+                Dictionary<string, string?> headersDict = ConvertHeadersToDictionary(context.Headers);
+
+                var inputMappingResult = new ScriptResponse
+                {
+                    Data = task.Body,
+                    Headers = headersDict,
+                    Key = Guid.NewGuid().ToString()
+                };
+
                 // Start the SubProcess using simplified SubStartAsync method
                 await subflowStarter.SubStartAsync(
                     context.Workflow,
@@ -137,6 +156,7 @@ public sealed class SubProcessTaskExecutor(
                     context.Transition!,
                     correlation,
                     SubFlowType.SubProcess.Code,
+                    inputMappingResult,
                     ct);
 
                 Logger.LogInformation(
@@ -146,6 +166,41 @@ public sealed class SubProcessTaskExecutor(
             cancellationToken,
             ex => Error.Failure(WorkflowErrorCodes.TriggerSubProcessExecutionFailed, 
                 $"Failed to execute SubProcess trigger for task '{task.Key}': {ex.Message}"));
+    }
+
+    /// <summary>
+    /// Converts dynamic Headers to Dictionary&lt;string, string?&gt;.
+    /// Handles ExpandoObject, Dictionary, and other dynamic types.
+    /// </summary>
+    /// <param name="dynamicHeaders">The dynamic headers object to convert.</param>
+    /// <returns>A Dictionary&lt;string, string?&gt; or empty dictionary if conversion fails.</returns>
+    private static Dictionary<string, string?> ConvertHeadersToDictionary(dynamic? dynamicHeaders)
+    {
+        if (dynamicHeaders == null)
+            return new Dictionary<string, string?>();
+
+        if (dynamicHeaders is Dictionary<string, string?> dict)
+            return dict;
+
+        if (dynamicHeaders is IDictionary<string, object?> expandoDict)
+        {
+            return expandoDict.ToDictionary(
+                kvp => kvp.Key,
+                kvp => kvp.Value?.ToString());
+        }
+
+        try
+        {
+            // Try to serialize and deserialize as a fallback
+            var json = JsonSerializer.Serialize(dynamicHeaders);
+            var result = JsonSerializer.Deserialize<Dictionary<string, string?>>(json);
+            return result ?? new Dictionary<string, string?>();
+        }
+        catch
+        {
+            // If all else fails, return empty dictionary
+            return new Dictionary<string, string?>();
+        }
     }
 }
 
