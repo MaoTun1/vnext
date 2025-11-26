@@ -139,7 +139,20 @@ public sealed class SubProcessTaskExecutor(
                 // }
 
                 // Convert dynamic Headers to Dictionary<string, string?>
-                Dictionary<string, string?> headersDict = ConvertHeadersToDictionary(context.Headers);
+                var headersResult = ConvertHeadersToDictionary(context.Headers, task.Key);
+                Dictionary<string, string?> headersDict;
+
+                if (!headersResult.IsSuccess)
+                {
+                    Logger.LogWarning(
+                        "Failed to convert headers for task {TaskKey}: {ErrorMessage}. Using empty dictionary.",
+                        (object)task.Key, (object?)headersResult.Error.Message);
+                    headersDict = new Dictionary<string, string?>();
+                }
+                else
+                {
+                    headersDict = headersResult.Value;
+                }
 
                 var inputMappingResult = new ScriptResponse
                 {
@@ -169,38 +182,39 @@ public sealed class SubProcessTaskExecutor(
     }
 
     /// <summary>
-    /// Converts dynamic Headers to Dictionary&lt;string, string?&gt;.
+    /// Converts dynamic Headers to Dictionary&lt;string, string?&gt; using Result pattern.
     /// Handles ExpandoObject, Dictionary, and other dynamic types.
     /// </summary>
     /// <param name="dynamicHeaders">The dynamic headers object to convert.</param>
-    /// <returns>A Dictionary&lt;string, string?&gt; or empty dictionary if conversion fails.</returns>
-    private static Dictionary<string, string?> ConvertHeadersToDictionary(dynamic? dynamicHeaders)
+    /// <param name="taskKey">The task key for error reporting.</param>
+    /// <returns>A Result containing Dictionary&lt;string, string?&gt; or an error.</returns>
+    private static Result<Dictionary<string, string?>> ConvertHeadersToDictionary(
+        dynamic? dynamicHeaders,
+        string taskKey)
     {
         if (dynamicHeaders == null)
-            return new Dictionary<string, string?>();
+            return Result<Dictionary<string, string?>>.Ok(new Dictionary<string, string?>());
 
         if (dynamicHeaders is Dictionary<string, string?> dict)
-            return dict;
+            return Result<Dictionary<string, string?>>.Ok(dict);
 
         if (dynamicHeaders is IDictionary<string, object?> expandoDict)
         {
-            return expandoDict.ToDictionary(
-                kvp => kvp.Key,
-                kvp => kvp.Value?.ToString());
+            return ResultExtensions.Try<Dictionary<string, string?>>(
+                () => expandoDict.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => kvp.Value?.ToString()),
+                ex => WorkflowErrors.TaskHeadersConversionFailed(taskKey, ex.Message));
         }
 
-        try
-        {
-            // Try to serialize and deserialize as a fallback
-            var json = JsonSerializer.Serialize(dynamicHeaders);
-            var result = JsonSerializer.Deserialize<Dictionary<string, string?>>(json);
-            return result ?? new Dictionary<string, string?>();
-        }
-        catch
-        {
-            // If all else fails, return empty dictionary
-            return new Dictionary<string, string?>();
-        }
+        return ResultExtensions.Try<Dictionary<string, string?>>(
+            () =>
+            {
+                var json = JsonSerializer.Serialize(dynamicHeaders);
+                var result = JsonSerializer.Deserialize<Dictionary<string, string?>>(json);
+                return result ?? new Dictionary<string, string?>();
+            },
+            ex => WorkflowErrors.TaskHeadersConversionFailed(taskKey, ex.Message));
     }
 }
 
