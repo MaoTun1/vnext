@@ -10,7 +10,7 @@ public interface IInstanceCommandAppService : IApplicationService
         CancellationToken cancellationToken = default);
 
     Task<Result<TransitionOutput>> TransitionAsync(
-        Guid instanceId,
+        string instance,
         string transitionKey,
         TransitionInput input,
         CancellationToken cancellationToken = default);

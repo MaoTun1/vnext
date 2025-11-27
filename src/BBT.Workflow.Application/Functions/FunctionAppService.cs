@@ -24,13 +24,15 @@ public sealed class FunctionAppService(IServiceProvider serviceProvider,
      string key,
      string flow,
      string domain,
+     Dictionary<string, string?>? headers = null,
+     Dictionary<string, string?>? queryParameters = null,
      CancellationToken cancellationToken = default)
     {
         runtimeInfoProvider.Check(domain);
         using (currentSchema.Change(flow))
         {
             Instance? instance = await instanceRepository.FindByKeyAsync(key, cancellationToken);
-            return await BuildFunctionResponse(instance, key, flow, domain, cancellationToken);
+            return await BuildFunctionResponse(instance, key, flow, domain, headers, queryParameters, cancellationToken);
         }
 
     }
@@ -39,6 +41,8 @@ public sealed class FunctionAppService(IServiceProvider serviceProvider,
        string flow,
        string domain,
        string instanceKey,
+       Dictionary<string, string?>? headers = null,
+       Dictionary<string, string?>? queryParameters = null,
        CancellationToken cancellationToken = default)
     {
         runtimeInfoProvider.Check(domain);
@@ -48,7 +52,7 @@ public sealed class FunctionAppService(IServiceProvider serviceProvider,
             Instance? instance = Guid.TryParse(instanceKey, out var instanceId)
             ? await instanceRepository.FindAsync(instanceId, true, cancellationToken)
             : await instanceRepository.FindByKeyAsync(instanceKey, cancellationToken);
-            return await BuildFunctionResponse(instance, key, flow, domain, cancellationToken);
+            return await BuildFunctionResponse(instance, key, flow, domain, headers, queryParameters, cancellationToken);
         }
     }
     public async Task<List<InstanceAndDataModel>> GetDomainFunctions(
@@ -64,7 +68,10 @@ public sealed class FunctionAppService(IServiceProvider serviceProvider,
     }
     private async Task<dynamic> BuildFunctionResponse(Instance? instance, string key,
        string flow,
-       string domain, CancellationToken cancellationToken = default)
+       string domain,
+       Dictionary<string, string?>? headers = null,
+       Dictionary<string, string?>? queryParameters = null,
+       CancellationToken cancellationToken = default)
     {
         Dictionary<string, object> response = new Dictionary<string, object>();
         using (currentSchema.Change(flow))
@@ -85,6 +92,8 @@ public sealed class FunctionAppService(IServiceProvider serviceProvider,
 .WithInstance(instance)
 .WithRuntime(runtimeInfoProvider)
 .WithBody(instance?.LatestData?.Data ?? new JsonData("{}"))
+.WithHeaders(headers)
+.WithQueryParameters(queryParameters)
 .BuildAsync(cancellationToken);
             await taskExecutionService.ExecuteAsync(
                     function.GetExecuteTasks(),

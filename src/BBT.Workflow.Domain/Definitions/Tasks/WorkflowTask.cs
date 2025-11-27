@@ -17,7 +17,10 @@ namespace BBT.Workflow.Definitions;
 [JsonDerivedType(typeof(HttpTask), typeDiscriminator: "6")]
 [JsonDerivedType(typeof(ScriptTask), typeDiscriminator: "7")]
 [JsonDerivedType(typeof(NotificationTask), typeDiscriminator: "10")]
-[JsonDerivedType(typeof(TriggerTransitionTask), typeDiscriminator: "11")]
+[JsonDerivedType(typeof(StartTask), typeDiscriminator: "11")]
+[JsonDerivedType(typeof(DirectTriggerTask), typeDiscriminator: "12")]
+[JsonDerivedType(typeof(GetInstanceDataTask), typeDiscriminator: "13")]
+[JsonDerivedType(typeof(SubProcessTask), typeDiscriminator: "14")]
 public abstract class WorkflowTask : IDomainEntity, ITaskReference, IReferenceSetter, ITaskClonable
 {
     protected WorkflowTask()

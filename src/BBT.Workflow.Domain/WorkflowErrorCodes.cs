@@ -50,6 +50,21 @@ public static class WorkflowErrorCodes
     
     public const string TaskContextCreation = "Task:400001";
     public const string TaskExecution = "Task:400002";
+    public const string TaskHeadersConversionFailed = "Task:400003";
+    
+    #endregion
+    
+    #region Trigger Errors (500xxx)
+    
+    public const string TriggerCreateHttpTaskFailed = "Trigger:500001";
+    public const string TriggerResolveInstanceFailed = "Trigger:500002";
+    public const string TriggerExtractInstanceIdFailed = "Trigger:500003";
+    public const string TriggerDirectExecutionFailed = "Trigger:500004";
+    public const string TriggerGetInstanceDataFailed = "Trigger:500005";
+    public const string TriggerStartExecutionFailed = "Trigger:500006";
+    public const string TriggerSubProcessExecutionFailed = "Trigger:500007";
+    public const string TriggerInvalidResponseFormat = "Trigger:500008";
+    public const string TriggerInvalidResponseStructure = "Trigger:500009";
     
     #endregion
 }
