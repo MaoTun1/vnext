@@ -50,6 +50,7 @@ public static class WorkflowErrorCodes
     
     public const string TaskContextCreation = "Task:400001";
     public const string TaskExecution = "Task:400002";
+    public const string TaskHeadersConversionFailed = "Task:400003";
     
     #endregion
     

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using BBT.Aether.Guids;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Domain;
@@ -129,6 +130,37 @@ public sealed class SubProcessTaskExecutor(
                     RuntimeSysSchemaInfo.Flows,
                     task.TriggerVersion ?? string.Empty);
 
+                // Prepare input mapping result with task data
+                // Convert JsonElement to a normal object so it can be serialized again in SubflowStarter
+                // object? bodyData = null;
+                // if (task.Body.HasValue)
+                // {
+                //     bodyData = JsonSerializer.Deserialize<object>(task.Body.Value.GetRawText());
+                // }
+
+                // Convert dynamic Headers to Dictionary<string, string?>
+                var headersResult = ConvertHeadersToDictionary(context.Headers, task.Key);
+                Dictionary<string, string?> headersDict;
+
+                if (!headersResult.IsSuccess)
+                {
+                    Logger.LogWarning(
+                        "Failed to convert headers for task {TaskKey}: {ErrorMessage}. Using empty dictionary.",
+                        (object)task.Key, (object?)headersResult.Error.Message);
+                    headersDict = new Dictionary<string, string?>();
+                }
+                else
+                {
+                    headersDict = headersResult.Value;
+                }
+
+                var inputMappingResult = new ScriptResponse
+                {
+                    Data = task.Body,
+                    Headers = headersDict,
+                    Key = Guid.NewGuid().ToString()
+                };
+
                 // Start the SubProcess using simplified SubStartAsync method
                 await subflowStarter.SubStartAsync(
                     context.Workflow,
@@ -137,6 +169,7 @@ public sealed class SubProcessTaskExecutor(
                     context.Transition!,
                     correlation,
                     SubFlowType.SubProcess.Code,
+                    inputMappingResult,
                     ct);
 
                 Logger.LogInformation(
@@ -146,6 +179,42 @@ public sealed class SubProcessTaskExecutor(
             cancellationToken,
             ex => Error.Failure(WorkflowErrorCodes.TriggerSubProcessExecutionFailed, 
                 $"Failed to execute SubProcess trigger for task '{task.Key}': {ex.Message}"));
+    }
+
+    /// <summary>
+    /// Converts dynamic Headers to Dictionary&lt;string, string?&gt; using Result pattern.
+    /// Handles ExpandoObject, Dictionary, and other dynamic types.
+    /// </summary>
+    /// <param name="dynamicHeaders">The dynamic headers object to convert.</param>
+    /// <param name="taskKey">The task key for error reporting.</param>
+    /// <returns>A Result containing Dictionary&lt;string, string?&gt; or an error.</returns>
+    private static Result<Dictionary<string, string?>> ConvertHeadersToDictionary(
+        dynamic? dynamicHeaders,
+        string taskKey)
+    {
+        if (dynamicHeaders == null)
+            return Result<Dictionary<string, string?>>.Ok(new Dictionary<string, string?>());
+
+        if (dynamicHeaders is Dictionary<string, string?> dict)
+            return Result<Dictionary<string, string?>>.Ok(dict);
+
+        if (dynamicHeaders is IDictionary<string, object?> expandoDict)
+        {
+            return ResultExtensions.Try<Dictionary<string, string?>>(
+                () => expandoDict.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => kvp.Value?.ToString()),
+                ex => WorkflowErrors.TaskHeadersConversionFailed(taskKey, ex.Message));
+        }
+
+        return ResultExtensions.Try<Dictionary<string, string?>>(
+            () =>
+            {
+                var json = JsonSerializer.Serialize(dynamicHeaders);
+                var result = JsonSerializer.Deserialize<Dictionary<string, string?>>(json);
+                return result ?? new Dictionary<string, string?>();
+            },
+            ex => WorkflowErrors.TaskHeadersConversionFailed(taskKey, ex.Message));
     }
 }
 

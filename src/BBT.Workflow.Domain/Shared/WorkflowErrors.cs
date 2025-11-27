@@ -124,6 +124,19 @@ public static class WorkflowErrors
 
     #endregion
 
+    #region Task Errors
+
+    /// <summary>
+    /// Task headers conversion to dictionary failed.
+    /// </summary>
+    public static Error TaskHeadersConversionFailed(string taskKey, string reason)
+        => Error.Validation(
+            WorkflowErrorCodes.TaskHeadersConversionFailed,
+            $"Failed to convert headers to dictionary for task '{taskKey}': {reason}",
+            target: taskKey);
+
+    #endregion
+
     #region Configuration Errors
 
     /// <summary>
