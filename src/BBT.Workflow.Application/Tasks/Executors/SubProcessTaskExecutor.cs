@@ -16,12 +16,14 @@ namespace BBT.Workflow.Tasks;
 /// <param name="scriptEngine">The script engine used for compiling input/output mapping scripts.</param>
 /// <param name="runtimeInfoProvider">The runtime information provider for domain checks.</param>
 /// <param name="subflowStarter">Service for starting SubFlow workflows.</param>
+/// <param name="instanceRepository">InstanceRepository for update instance correlation</param>
 /// <param name="guidGenerator">Generator for creating unique identifiers.</param>
 /// <param name="logger">The logger instance for logging subprocess task execution details.</param>
 public sealed class SubProcessTaskExecutor(
     IScriptEngine scriptEngine,
     IRuntimeInfoProvider runtimeInfoProvider,
     ISubflowStarter subflowStarter,
+    IInstanceRepository instanceRepository,
     IGuidGenerator guidGenerator,
     ILogger<SubProcessTaskExecutor> logger) : TaskExecutor(scriptEngine, logger), ITaskExecutor
 {
@@ -59,7 +61,7 @@ public sealed class SubProcessTaskExecutor(
 
             // Execute subprocess logic
             var executionResult = await ExecuteSubProcessAsync(subProcessTask, context, cancellationToken);
-            
+
             // If execution failed, throw exception to maintain existing error handling behavior
             if (!executionResult.IsSuccess)
             {
@@ -110,19 +112,20 @@ public sealed class SubProcessTaskExecutor(
                 Logger.LogInformation(
                     "Executing SubProcess trigger for task {TaskKey} - Domain: {Domain}, Key: {Key}, Version: {Version}",
                     task.Key, task.TriggerDomain, task.TriggerKey, task.TriggerVersion);
-
+                Guid subFlowInstanceId = guidGenerator.Create();
                 // Create correlation for SubProcess
                 var correlation = InstanceCorrelation.Create(
                     guidGenerator.Create(),
                     context.Instance.Id,
                     context.Instance.GetCurrentState,
-                    guidGenerator.Create(),
+                    subFlowInstanceId,
                     SubFlowType.SubProcess.Code,
                     task.TriggerDomain,
                     task.TriggerKey!,
                     task.TriggerVersion);
-                context.Instance.AddCorrelation(correlation);
-
+                var trackedInstance = await instanceRepository.GetAsync(context.Instance.Id, true, ct);
+                trackedInstance.AddCorrelation(correlation);
+                await instanceRepository.UpdateAsync(trackedInstance, true, ct);
                 // Create a SubFlow reference for the subprocess
                 var subFlowReference = new Reference(
                     task.TriggerKey!,
@@ -158,26 +161,26 @@ public sealed class SubProcessTaskExecutor(
                 {
                     Data = task.Body,
                     Headers = headersDict,
-                    Key = Guid.NewGuid().ToString()
+                    Key = subFlowInstanceId.ToString()
                 };
 
                 // Start the SubProcess using simplified SubStartAsync method
                 await subflowStarter.SubStartAsync(
                     context.Workflow,
-                    context.Instance,
+                    trackedInstance,
                     subFlowReference,
                     context.Transition!,
                     correlation,
                     SubFlowType.SubProcess.Code,
                     inputMappingResult,
                     ct);
-
+                context.SetBody(inputMappingResult);
                 Logger.LogInformation(
                     "SubProcess trigger completed for task {TaskKey} with correlation {CorrelationId}",
                     task.Key, correlation.Id);
             },
             cancellationToken,
-            ex => Error.Failure(WorkflowErrorCodes.TriggerSubProcessExecutionFailed, 
+            ex => Error.Failure(WorkflowErrorCodes.TriggerSubProcessExecutionFailed,
                 $"Failed to execute SubProcess trigger for task '{task.Key}': {ex.Message}"));
     }
 
