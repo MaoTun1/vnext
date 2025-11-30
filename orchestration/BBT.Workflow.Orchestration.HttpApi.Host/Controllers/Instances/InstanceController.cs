@@ -4,6 +4,7 @@ using BBT.Aether;
 using BBT.Aether.AspNetCore.Controllers;
 using BBT.Aether.AspNetCore.Results;
 using BBT.Workflow.Instances;
+using BBT.Workflow.SubFlow;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
@@ -16,7 +17,8 @@ namespace BBT.Workflow.Orchestration.Controllers.Instances;
 public sealed class InstanceController(
     IInstanceCommandAppService commandAppService,
     IInstanceQueryAppService queryAppService,
-    IHttpContextAccessor httpContextAccessor) : AetherControllerBase
+    IHttpContextAccessor httpContextAccessor,
+    ISubflowCompletionService subflowCompletionService) : AetherControllerBase
 {
     /// <summary>
     /// Starts a new workflow instance.
@@ -91,6 +93,20 @@ public sealed class InstanceController(
 
         var result = await commandAppService.StartAsync(input, cancellationToken);
         return FromResult(result);
+    }
+
+    [ApiExplorerSettings(IgnoreApi = true)]
+    [HttpPost("{domain}/workflows/{workflow}/instances/{instance}/complete")]
+    public async Task<IActionResult> CompleteSubAsync(
+        [FromRoute] string domain,
+        [FromRoute] string workflow,
+        [FromRoute] string instance,
+        [FromBody] FlowCompletedInput request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await subflowCompletionService.CompletionAsync(request, cancellationToken);
+        return Ok();
     }
 
     /// <summary>

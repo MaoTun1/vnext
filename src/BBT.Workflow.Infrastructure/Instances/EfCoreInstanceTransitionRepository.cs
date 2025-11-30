@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace BBT.Workflow.Instances;
 
 public class EfCoreInstanceTransitionRepository(
-    WorkflowDbContext dbContext,
+    IDbContextProvider<WorkflowDbContext> dbContext,
     IServiceProvider serviceProvider,
     IDataSinkManager dataSinkManager)
     : EfCoreRepository<WorkflowDbContext, InstanceTransition, Guid>(dbContext, serviceProvider),

@@ -1,4 +1,5 @@
 using BBT.Aether.Domain.Repositories;
+using BBT.Aether.Results;
 using Microsoft.AspNetCore.Http;
 
 namespace BBT.Workflow.Instances;
@@ -14,7 +15,7 @@ public interface IInstanceRepository : IRepository<Instance, Guid>
     Task<Instance?> FindByIdAsReadOnlyAsync(Guid id,
         CancellationToken cancellationToken = default);
 
-    Task<Instance> GetActiveAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<Result<Instance>> GetActiveAsync(Guid id, CancellationToken cancellationToken = default);
     Task<List<InstanceAndDataModel>> GetActiveDataListAsync(CancellationToken cancellationToken = default);
 
     Task<InstanceAndDataModel?> FindActiveDataAsync(string key, string version,
@@ -48,8 +49,7 @@ public interface IInstanceRepository : IRepository<Instance, Guid>
         IQueryCollection? queryParams = null,
         IQueryable<Instance>? instance = null,
         CancellationToken cancellationToken = default);
-    
-    Task UpdateStatusAsync(
-        Instance instance, 
+
+    Task<Result<Instance>> GetResultAsync(Guid id, bool includeDetails = true,
         CancellationToken cancellationToken = default);
 }

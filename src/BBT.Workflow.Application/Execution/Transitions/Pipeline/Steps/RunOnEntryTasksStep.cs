@@ -29,39 +29,62 @@ public sealed class RunOnEntryTasksStep(
     {
         Activity.Current?.SetDisplayName($"[{Order}] {nameof(RunOnEntryTasksStep)}");
 
-        if (context.Target?.OnEntries == null || !context.Target.OnEntries.Any())
+        // Skip if no OnEntry tasks
+        if (!HasOnEntryTasks(context))
         {
             return Result<StepOutcome>.Ok(StepOutcome.Continue());
         }
-        
-        // Use ResultExtensions.TryAsync to wrap potentially throwing operations
-        return await ResultExtensions.TryAsync<StepOutcome>(async ct =>
-        {
-            // Get or build script context
-            var scriptContext = await context.GetOrBuildScriptContextAsync(
-                _ => CreateScriptContextAsync(context, ct),
-                ct);
 
-            // Get the transition record from previous step
-            var instanceTransitionId = context.Items.TryGetValue("TransitionRecordId", out var record) 
-                ? record as Guid?
-                : null;
-
-            // Execute the tasks
-            await taskOrchestrationService.ExecuteAsync(
-                context.Target.OnEntries,
-                instanceTransitionId,
-                TaskTrigger.OnEntry,
-                scriptContext,
-                ct);
-
-            context.ApplyScriptContextChanges(scriptContext);
-
-            await instanceRepository.UpdateAsync(context.Instance, true, ct);
-            return StepOutcome.Continue();
-        }, 
-        cancellationToken);
+        // Railway chain: Build context -> Execute tasks -> Apply changes -> Persist
+        return await Result.Ok(context)
+            .MapAsync(ctx => BuildScriptContextAsync(ctx, cancellationToken))
+            .TapAsync(scriptContext => ExecuteTasksAsync(context, scriptContext, cancellationToken))
+            .Tap(context.ApplyScriptContextChanges)
+            .TapAsync(_ => instanceRepository.UpdateAsync(context.Instance, true, cancellationToken))
+            .Map(_ => StepOutcome.Continue());
     }
+
+    /// <summary>
+    /// Checks if context has OnEntry tasks.
+    /// </summary>
+    private static bool HasOnEntryTasks(TransitionExecutionContext context)
+        => context.Target?.OnEntries != null && context.Target.OnEntries.Any();
+
+    /// <summary>
+    /// Builds or retrieves script context.
+    /// </summary>
+    private async Task<ScriptContext> BuildScriptContextAsync(
+        TransitionExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        return await context.GetOrBuildScriptContextAsync(
+            ct => CreateScriptContextAsync(context, ct),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Executes the OnEntry tasks.
+    /// </summary>
+    private async Task ExecuteTasksAsync(
+        TransitionExecutionContext context,
+        ScriptContext scriptContext,
+        CancellationToken cancellationToken)
+    {
+        var instanceTransitionId = GetTransitionRecordId(context);
+
+        await taskOrchestrationService.ExecuteAsync(
+            context.Target!.OnEntries,
+            instanceTransitionId,
+            TaskTrigger.OnEntry,
+            scriptContext,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets transition record ID from context items.
+    /// </summary>
+    private static Guid? GetTransitionRecordId(TransitionExecutionContext context)
+        => context.Items.TryGetValue("TransitionRecordId", out var record) ? record as Guid? : null;
 
     /// <summary>
     /// Creates a script context for task execution.

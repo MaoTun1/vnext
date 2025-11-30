@@ -1,11 +1,9 @@
-using System.Diagnostics;
 using System.Text.Json;
 using BBT.Aether;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Instances.Remote;
 using BBT.Workflow.Scripting;
-using BBT.Workflow.Logging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -103,8 +101,6 @@ public sealed class SubflowStarter(
         ScriptResponse? inputMappingResult,
         CancellationToken cancellationToken)
     {
-        var sw = Stopwatch.StartNew();
-
         try
         {
             // Prepare instance creation input
@@ -167,12 +163,10 @@ public sealed class SubflowStarter(
 
             if (!startResult.IsSuccess)
             {
-                sw.Stop();
                 var error = startResult.Error;
 
                 logger.LogError(
-                    "{Prefix} SubFlow {SubFlowKey} start failed for instance {InstanceId}: {ErrorCode} - {ErrorMessage}",
-                    TelemetryConstants.Prefixes.Execution,
+                    "SubFlow {SubFlowKey} start failed for instance {InstanceId}: {ErrorCode} - {ErrorMessage}",
                     subFlowReference.Key,
                     parentInstance.Id,
                     error.Code,
@@ -183,22 +177,15 @@ public sealed class SubflowStarter(
                     new Exception(error.Code));
             }
 
-            sw.Stop();
-
             logger.LogInformation(
-                "{Prefix} SubFlow {SubFlowKey} started successfully for instance {InstanceId} in {ElapsedMs}ms",
-                TelemetryConstants.Prefixes.Execution,
+                "SubFlow {SubFlowKey} started successfully for instance {InstanceId}",
                 subFlowReference.Key,
-                parentInstance.Id,
-                sw.ElapsedMilliseconds);
+                parentInstance.Id);
         }
         catch (Exception ex)
         {
-            sw.Stop();
-
             logger.LogError(ex,
-                "{Prefix} SubFlow {SubFlowKey} start failed for instance {InstanceId}",
-                TelemetryConstants.Prefixes.Execution,
+                "SubFlow {SubFlowKey} start failed for instance {InstanceId}",
                 subFlowReference.Key,
                 parentInstance.Id);
 

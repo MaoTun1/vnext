@@ -25,46 +25,29 @@ public class ForwardToActiveSubflowStep(
     {
         Activity.Current?.SetDisplayName($"[{Order}] {nameof(ForwardToActiveSubflowStep)}");
 
-        // Skip if no active subflow
-        if (context.Instance is { HasActiveSubFlow: false, Subflow: null })
+        // Skip if no active subflow - early return for non-applicable case
+        if (!HasActiveSubflow(context))
         {
             return Result<StepOutcome>.Ok(StepOutcome.Continue());
         }
 
-        // Railway Oriented Programming: Chain operations, each wrapped in Try
-        return await ForwardTransitionToSubflow(context, cancellationToken)
-            .ThenAsync(result => UpdateContextIfForwarded(context, result));
+        // Railway chain: Forward -> Update context -> Create outcome
+        return await Result.Ok(context)
+            .Map(CreateTransitionInput)
+            .BindAsync(input => ForwardToSubflowAsync(context, input, cancellationToken))
+            .Map(result => CreateStepOutcome(context, result));
     }
 
     /// <summary>
-    /// Forwards the transition to the active subflow instance.
+    /// Checks if context has an active subflow.
     /// </summary>
-    private async Task<Result<SubflowForwardingResult>> ForwardTransitionToSubflow(
-        TransitionExecutionContext context,
-        CancellationToken cancellationToken)
-    {
-        var transitionInput = CreateTransitionInput(context);
-
-        var forwardResult = await ResultExtensions.TryAsync(
-            async ct =>
-            {
-                var (forwarded, status) = await subflowForwardingService.TryForwardTransitionAsync(
-                    context.Instance.Subflow!.SubFlowInstanceId,
-                    context.TransitionKey,
-                    transitionInput,
-                    ct);
-
-                return new SubflowForwardingResult(forwarded, status);
-            },
-            cancellationToken);
-
-        return forwardResult;
-    }
+    private static bool HasActiveSubflow(TransitionExecutionContext context)
+        => context.Instance.HasActiveSubFlow || context.Instance.Subflow != null;
 
     /// <summary>
     /// Creates the transition input for subflow forwarding.
     /// </summary>
-    private TransitionInput CreateTransitionInput(TransitionExecutionContext context)
+    private static TransitionInput CreateTransitionInput(TransitionExecutionContext context)
     {
         return new TransitionInput(
             context.Instance.Subflow!.SubFlowDomain,
@@ -80,15 +63,32 @@ public class ForwardToActiveSubflowStep(
     }
 
     /// <summary>
-    /// Updates context if transition was forwarded and determines the step outcome.
+    /// Forwards transition to subflow and returns forwarding result.
     /// </summary>
-    private Task<Result<StepOutcome>> UpdateContextIfForwarded(
+    private async Task<Result<SubflowForwardingResult>> ForwardToSubflowAsync(
+        TransitionExecutionContext context,
+        TransitionInput input,
+        CancellationToken cancellationToken)
+    {
+        var (forwarded, status) = await subflowForwardingService.TryForwardTransitionAsync(
+            context.Instance.Subflow!.SubFlowInstanceId,
+            context.TransitionKey,
+            input,
+            cancellationToken);
+
+        return Result<SubflowForwardingResult>.Ok(new SubflowForwardingResult(forwarded, status));
+    }
+
+    /// <summary>
+    /// Creates step outcome based on forwarding result.
+    /// </summary>
+    private static StepOutcome CreateStepOutcome(
         TransitionExecutionContext context,
         SubflowForwardingResult result)
     {
         if (!result.Forwarded)
         {
-            return Task.FromResult(Result<StepOutcome>.Ok(StepOutcome.Continue()));
+            return StepOutcome.Continue();
         }
 
         context.ClientResponse = new ClientResponse
@@ -97,7 +97,7 @@ public class ForwardToActiveSubflowStep(
             Status = result.Status ?? context.Instance.Status
         };
 
-        return Task.FromResult(Result<StepOutcome>.Ok(StepOutcome.Stop()));
+        return StepOutcome.Stop();
     }
 
     /// <summary>

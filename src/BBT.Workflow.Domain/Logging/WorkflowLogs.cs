@@ -11,60 +11,98 @@ public static partial class WorkflowLogs
     #region Transition Execution
 
     /// <summary>
-    /// Logs when a transition starts executing.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 10001,
-        Level = LogLevel.Information,
-        Message = "{Prefix} Transition {TransitionKey} started for instance {InstanceId} in workflow {WorkflowKey}")]
-    public static partial void TransitionStarted(
-        this ILogger logger,
-        string prefix,
-        string transitionKey,
-        Guid instanceId,
-        string workflowKey);
-
-    /// <summary>
-    /// Logs when a transition completes successfully.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 10002,
-        Level = LogLevel.Information,
-        Message = "{Prefix} Transition {TransitionKey} completed for instance {InstanceId} in {ElapsedMs}ms")]
-    public static partial void TransitionCompleted(
-        this ILogger logger,
-        string prefix,
-        string transitionKey,
-        Guid instanceId,
-        long elapsedMs);
-
-    /// <summary>
     /// Logs when a state change occurs.
     /// </summary>
     [LoggerMessage(
         EventId = 10003,
         Level = LogLevel.Information,
-        Message = "{Prefix} State changed from {FromState} to {ToState} for instance {InstanceId}")]
+        Message = "State changed from {FromState} to {ToState} for instance {InstanceId}")]
     public static partial void StateChanged(
         this ILogger logger,
-        string prefix,
         string fromState,
         string toState,
         Guid instanceId);
 
     /// <summary>
-    /// Logs when a transition is scheduled for later execution.
+    /// Logs when a transition is successfully enqueued.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10004,
+        Level = LogLevel.Information,
+        Message = "Successfully enqueued transition {TransitionKey} for instance {InstanceId} with job {JobName}")]
+    public static partial void TransitionEnqueued(
+        this ILogger logger,
+        string transitionKey,
+        Guid instanceId,
+        string jobName);
+
+    /// <summary>
+    /// Logs when a cancel transition is detected.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10005,
+        Level = LogLevel.Information,
+        Message = "Cancel transition detected for instance {InstanceId}")]
+    public static partial void CancelTransitionDetected(
+        this ILogger logger,
+        Guid instanceId);
+
+    /// <summary>
+    /// Logs when skipping to finish step for cancel transition.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10006,
+        Level = LogLevel.Information,
+        Message = "Skipping normal pipeline steps for cancel transition, jumping to Finish step for instance {InstanceId}")]
+    public static partial void CancelSkipToFinish(
+        this ILogger logger,
+        Guid instanceId);
+
+    /// <summary>
+    /// Logs when an instance is being canceled.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10007,
+        Level = LogLevel.Information,
+        Message = "Canceling instance {InstanceId}")]
+    public static partial void InstanceCanceling(
+        this ILogger logger,
+        Guid instanceId);
+
+    /// <summary>
+    /// Logs when an instance is being completed.
     /// </summary>
     [LoggerMessage(
         EventId = 10008,
         Level = LogLevel.Information,
-        Message = "{Prefix} Transition {TransitionKey} scheduled for instance {InstanceId} at {ScheduledTime}")]
-    public static partial void TransitionScheduled(
+        Message = "Completing instance {InstanceId}")]
+    public static partial void InstanceCompleting(
         this ILogger logger,
-        string prefix,
+        Guid instanceId);
+
+    /// <summary>
+    /// Logs when an automatic transition is selected for execution.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10009,
+        Level = LogLevel.Information,
+        Message = "Automatic transition selected for execution. TransitionKey={TransitionKey}, StateKey={StateKey}, InstanceId={InstanceId}")]
+    public static partial void AutoTransitionSelected(
+        this ILogger logger,
         string transitionKey,
-        Guid instanceId,
-        DateTimeOffset scheduledTime);
+        string stateKey,
+        Guid instanceId);
+
+    /// <summary>
+    /// Logs when a transition timer is skipped due to missing configuration.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10010,
+        Level = LogLevel.Warning,
+        Message = "Transition {TransitionKey} has no timer defined, skipping scheduling")]
+    public static partial void TransitionTimerSkipped(
+        this ILogger logger,
+        string transitionKey);
 
     /// <summary>
     /// Logs when a transition rule validation fails.
@@ -72,10 +110,9 @@ public static partial class WorkflowLogs
     [LoggerMessage(
         EventId = 10040,
         Level = LogLevel.Warning,
-        Message = "{Prefix} Transition rule failed for {TransitionKey} on instance {InstanceId}: {Reason}")]
+        Message = "Transition rule failed for {TransitionKey} on instance {InstanceId}: {Reason}")]
     public static partial void TransitionRuleFailed(
         this ILogger logger,
-        string prefix,
         string transitionKey,
         Guid instanceId,
         string reason);
@@ -86,255 +123,75 @@ public static partial class WorkflowLogs
     [LoggerMessage(
         EventId = 10044,
         Level = LogLevel.Warning,
-        Message = "{Prefix} Auto-transition {TransitionKey} has no rule defined")]
+        Message = "Auto-transition {TransitionKey} has no rule defined")]
     public static partial void AutoTransitionNoRule(
         this ILogger logger,
-        string prefix,
         string transitionKey);
 
     /// <summary>
-    /// Logs when a transition fails with an error.
+    /// Logs when maximum automatic transition hops are exceeded.
     /// </summary>
     [LoggerMessage(
-        EventId = 10070,
-        Level = LogLevel.Error,
-        Message = "{Prefix} Transition {TransitionKey} failed for instance {InstanceId}")]
-    public static partial void TransitionFailed(
+        EventId = 10045,
+        Level = LogLevel.Warning,
+        Message = "Maximum auto transition hops ({MaxHops}) exceeded for instance {InstanceId}, chain {ExecutionChainId}")]
+    public static partial void MaxAutoHopsExceeded(
         this ILogger logger,
-        Exception exception,
-        string prefix,
-        string transitionKey,
-        Guid instanceId);
-
-    #endregion
-
-    #region Pipeline Steps
-
-    /// <summary>
-    /// Logs when a pipeline step starts executing.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 10006,
-        Level = LogLevel.Debug,
-        Message = "{Prefix} Pipeline step [{StepOrder}] {StepName} started for instance {InstanceId}")]
-    public static partial void PipelineStepStarted(
-        this ILogger logger,
-        string prefix,
-        int stepOrder,
-        string stepName,
-        Guid instanceId);
-
-    /// <summary>
-    /// Logs when a pipeline step completes.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 10007,
-        Level = LogLevel.Debug,
-        Message = "{Prefix} Pipeline step [{StepOrder}] {StepName} completed for instance {InstanceId} in {ElapsedMs}ms")]
-    public static partial void PipelineStepCompleted(
-        this ILogger logger,
-        string prefix,
-        int stepOrder,
-        string stepName,
+        int maxHops,
         Guid instanceId,
-        long elapsedMs);
+        string? executionChainId);
 
     /// <summary>
-    /// Logs when a pipeline step fails.
+    /// Logs when asynchronous transition enqueue fails.
     /// </summary>
     [LoggerMessage(
-        EventId = 10072,
+        EventId = 10046,
         Level = LogLevel.Error,
-        Message = "{Prefix} Pipeline step [{StepOrder}] {StepName} failed for instance {InstanceId}")]
-    public static partial void PipelineStepFailed(
+        Message = "Asynchronous transition execution failed for {TransitionKey} on instance {InstanceId}")]
+    public static partial void TransitionEnqueueFailed(
         this ILogger logger,
-        Exception exception,
-        string prefix,
-        int stepOrder,
-        string stepName,
-        Guid instanceId);
-
-    #endregion
-
-    #region Strategy Execution
-
-    /// <summary>
-    /// Logs when a transition execution strategy starts.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 10200,
-        Level = LogLevel.Debug,
-        Message = "{Prefix} Strategy {StrategyName} started for transition {TransitionKey} on instance {InstanceId}")]
-    public static partial void StrategyExecutionStarted(
-        this ILogger logger,
-        string prefix,
-        string strategyName,
         string transitionKey,
         Guid instanceId);
 
     /// <summary>
-    /// Logs when a transition execution strategy completes successfully.
+    /// Logs when attempting to cancel an already completed instance.
     /// </summary>
     [LoggerMessage(
-        EventId = 10201,
-        Level = LogLevel.Debug,
-        Message = "{Prefix} Strategy {StrategyName} completed for transition {TransitionKey} in {ElapsedMs}ms")]
-    public static partial void StrategyExecutionCompleted(
+        EventId = 10047,
+        Level = LogLevel.Warning,
+        Message = "Cannot cancel instance {InstanceId}: already in {Status} state")]
+    public static partial void CancelInstanceAlreadyCompleted(
         this ILogger logger,
-        string prefix,
-        string strategyName,
-        string transitionKey,
-        long elapsedMs);
+        Guid instanceId,
+        string status);
 
     /// <summary>
-    /// Logs when context is created by the strategy.
+    /// Logs when target state is null during finish processing.
     /// </summary>
     [LoggerMessage(
-        EventId = 10202,
-        Level = LogLevel.Debug,
-        Message = "{Prefix} TransitionExecutionContext created for {TransitionKey} with handler {HandlerType}")]
-    public static partial void ContextCreated(
+        EventId = 10048,
+        Level = LogLevel.Warning,
+        Message = "Target state is null for instance {InstanceId}")]
+    public static partial void TargetStateNull(
         this ILogger logger,
-        string prefix,
-        string transitionKey,
-        string handlerType);
-
-    #endregion
-
-    #region Handler Execution
+        Guid instanceId);
 
     /// <summary>
-    /// Logs when a transition handler's pre-handling starts.
+    /// Logs when no automatic transition condition is satisfied.
     /// </summary>
     [LoggerMessage(
-        EventId = 10250,
-        Level = LogLevel.Debug,
-        Message = "{Prefix} Handler {HandlerName} pre-handling started for {TriggerType} transition {TransitionKey}")]
-    public static partial void HandlerPreHandleStarted(
+        EventId = 10049,
+        Level = LogLevel.Warning,
+        Message = "No automatic transition condition is satisfied for current state. StateKey={StateKey}, InstanceId={InstanceId}, EvaluatedTransitions={TransitionKeys}")]
+    public static partial void AutoTransitionConditionNotSatisfied(
         this ILogger logger,
-        string prefix,
-        string handlerName,
-        string triggerType,
-        string transitionKey);
-
-    /// <summary>
-    /// Logs when a transition handler's pre-handling completes.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 10251,
-        Level = LogLevel.Debug,
-        Message = "{Prefix} Handler {HandlerName} pre-handling completed for {TriggerType} transition in {ElapsedMs}ms")]
-    public static partial void HandlerPreHandleCompleted(
-        this ILogger logger,
-        string prefix,
-        string handlerName,
-        string triggerType,
-        long elapsedMs);
-
-    /// <summary>
-    /// Logs when a transition handler's post-handling starts.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 10252,
-        Level = LogLevel.Debug,
-        Message = "{Prefix} Handler {HandlerName} post-handling started for {TriggerType} transition {TransitionKey}")]
-    public static partial void HandlerPostHandleStarted(
-        this ILogger logger,
-        string prefix,
-        string handlerName,
-        string triggerType,
-        string transitionKey);
-
-    /// <summary>
-    /// Logs when a transition handler's post-handling completes.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 10253,
-        Level = LogLevel.Debug,
-        Message = "{Prefix} Handler {HandlerName} post-handling completed for {TriggerType} transition in {ElapsedMs}ms")]
-    public static partial void HandlerPostHandleCompleted(
-        this ILogger logger,
-        string prefix,
-        string handlerName,
-        string triggerType,
-        long elapsedMs);
-
-    /// <summary>
-    /// Logs when a transition handler pre-handling fails.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 10280,
-        Level = LogLevel.Error,
-        Message = "{Prefix} Handler {HandlerName} pre-handling failed for {TriggerType} transition {TransitionKey}")]
-    public static partial void HandlerPreHandleFailed(
-        this ILogger logger,
-        Exception exception,
-        string prefix,
-        string handlerName,
-        string triggerType,
-        string transitionKey);
-
-    /// <summary>
-    /// Logs when a transition handler post-handling fails.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 10281,
-        Level = LogLevel.Error,
-        Message = "{Prefix} Handler {HandlerName} post-handling failed for {TriggerType} transition {TransitionKey}")]
-    public static partial void HandlerPostHandleFailed(
-        this ILogger logger,
-        Exception exception,
-        string prefix,
-        string handlerName,
-        string triggerType,
-        string transitionKey);
+        string stateKey,
+        Guid instanceId,
+        string transitionKeys);
 
     #endregion
 
     #region Task Execution
-
-    /// <summary>
-    /// Logs when a task starts executing.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 10004,
-        Level = LogLevel.Information,
-        Message = "{Prefix} Task {TaskKey} ({TaskType}) started for instance {InstanceId}")]
-    public static partial void TaskExecutionStarted(
-        this ILogger logger,
-        string prefix,
-        string taskKey,
-        string taskType,
-        Guid instanceId);
-
-    /// <summary>
-    /// Logs when a task completes successfully.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 10005,
-        Level = LogLevel.Information,
-        Message = "{Prefix} Task {TaskKey} ({TaskType}) completed for instance {InstanceId} in {ElapsedMs}ms")]
-    public static partial void TaskExecutionCompleted(
-        this ILogger logger,
-        string prefix,
-        string taskKey,
-        string taskType,
-        Guid instanceId,
-        long elapsedMs);
-
-    /// <summary>
-    /// Logs when a task execution encounters a warning.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 10041,
-        Level = LogLevel.Warning,
-        Message = "{Prefix} Task {TaskKey} warning for instance {InstanceId}: {Message}")]
-    public static partial void TaskExecutionWarning(
-        this ILogger logger,
-        string prefix,
-        string taskKey,
-        Guid instanceId,
-        string message);
 
     /// <summary>
     /// Logs when a task execution fails.
@@ -342,11 +199,10 @@ public static partial class WorkflowLogs
     [LoggerMessage(
         EventId = 10071,
         Level = LogLevel.Error,
-        Message = "{Prefix} Task {TaskKey} ({TaskType}) failed for instance {InstanceId}")]
+        Message = "Task {TaskKey} ({TaskType}) failed for instance {InstanceId}")]
     public static partial void TaskExecutionFailed(
         this ILogger logger,
         Exception exception,
-        string prefix,
         string taskKey,
         string taskType,
         Guid instanceId);
@@ -356,43 +212,14 @@ public static partial class WorkflowLogs
     #region SubFlow
 
     /// <summary>
-    /// Logs when a subflow starts.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 10009,
-        Level = LogLevel.Information,
-        Message = "{Prefix} SubFlow {SubFlowKey} started with instance {SubFlowInstanceId} from parent {ParentInstanceId}")]
-    public static partial void SubFlowStarted(
-        this ILogger logger,
-        string prefix,
-        string subFlowKey,
-        Guid subFlowInstanceId,
-        Guid parentInstanceId);
-
-    /// <summary>
-    /// Logs when a subflow completes.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 10010,
-        Level = LogLevel.Information,
-        Message = "{Prefix} SubFlow {SubFlowKey} completed for instance {SubFlowInstanceId} in {ElapsedMs}ms")]
-    public static partial void SubFlowCompleted(
-        this ILogger logger,
-        string prefix,
-        string subFlowKey,
-        Guid subFlowInstanceId,
-        long elapsedMs);
-
-    /// <summary>
     /// Logs when SubFlow configuration is missing or invalid.
     /// </summary>
     [LoggerMessage(
         EventId = 10074,
         Level = LogLevel.Error,
-        Message = "{Prefix} SubFlow configuration invalid for state {StateName} on instance {InstanceId}")]
+        Message = "SubFlow configuration invalid for state {StateName} on instance {InstanceId}")]
     public static partial void SubFlowConfigInvalid(
         this ILogger logger,
-        string prefix,
         string stateName,
         Guid instanceId);
 
@@ -402,10 +229,9 @@ public static partial class WorkflowLogs
     [LoggerMessage(
         EventId = 40011,
         Level = LogLevel.Information,
-        Message = "{Prefix} SubFlow completion event received for SubInstance {SubInstanceId}, Parent {ParentInstanceId} in {Domain}/{Flow}")]
+        Message = "SubFlow completion event received for SubInstance {SubInstanceId}, Parent {ParentInstanceId} in {Domain}/{Flow}")]
     public static partial void SubFlowEventReceived(
         this ILogger logger,
-        string prefix,
         Guid subInstanceId,
         Guid parentInstanceId,
         string domain,
@@ -417,10 +243,9 @@ public static partial class WorkflowLogs
     [LoggerMessage(
         EventId = 40043,
         Level = LogLevel.Warning,
-        Message = "{Prefix} Correlation not found for SubFlow instance {SubInstanceId}")]
+        Message = "Correlation not found for SubFlow instance {SubInstanceId}")]
     public static partial void SubFlowCorrelationNotFound(
         this ILogger logger,
-        string prefix,
         Guid subInstanceId);
 
     /// <summary>
@@ -429,10 +254,9 @@ public static partial class WorkflowLogs
     [LoggerMessage(
         EventId = 40012,
         Level = LogLevel.Information,
-        Message = "{Prefix} SubFlow correlation completed for SubInstance {SubInstanceId}, Parent {ParentInstanceId}")]
+        Message = "SubFlow correlation completed for SubInstance {SubInstanceId}, Parent {ParentInstanceId}")]
     public static partial void SubFlowCorrelationCompleted(
         this ILogger logger,
-        string prefix,
         Guid subInstanceId,
         Guid parentInstanceId);
 
@@ -442,10 +266,9 @@ public static partial class WorkflowLogs
     [LoggerMessage(
         EventId = 40013,
         Level = LogLevel.Information,
-        Message = "{Prefix} Parent workflow continuation started for instance {ParentInstanceId} in state {CurrentState}")]
+        Message = "Parent workflow continuation started for instance {ParentInstanceId} in state {CurrentState}")]
     public static partial void SubFlowParentContinuationStarted(
         this ILogger logger,
-        string prefix,
         Guid parentInstanceId,
         string currentState);
 
@@ -455,10 +278,9 @@ public static partial class WorkflowLogs
     [LoggerMessage(
         EventId = 40014,
         Level = LogLevel.Information,
-        Message = "{Prefix} SubFlow output mapping started for parent instance {ParentInstanceId}")]
+        Message = "SubFlow output mapping started for parent instance {ParentInstanceId}")]
     public static partial void SubFlowOutputMappingStarted(
         this ILogger logger,
-        string prefix,
         Guid parentInstanceId);
 
     /// <summary>
@@ -467,10 +289,9 @@ public static partial class WorkflowLogs
     [LoggerMessage(
         EventId = 40015,
         Level = LogLevel.Information,
-        Message = "{Prefix} Resuming pipeline for parent instance {ParentInstanceId} after SubFlow completion")]
+        Message = "Resuming pipeline for parent instance {ParentInstanceId} after SubFlow completion")]
     public static partial void SubFlowPipelineResumed(
         this ILogger logger,
-        string prefix,
         Guid parentInstanceId);
 
     /// <summary>
@@ -479,11 +300,10 @@ public static partial class WorkflowLogs
     [LoggerMessage(
         EventId = 40073,
         Level = LogLevel.Error,
-        Message = "{Prefix} SubFlow completion failed for SubInstance {SubInstanceId}, Parent {ParentInstanceId}")]
+        Message = "SubFlow completion failed for SubInstance {SubInstanceId}, Parent {ParentInstanceId}")]
     public static partial void SubFlowCompletionFailed(
         this ILogger logger,
         Exception exception,
-        string prefix,
         Guid subInstanceId,
         Guid parentInstanceId);
 
@@ -492,113 +312,257 @@ public static partial class WorkflowLogs
     #region Instance Management
 
     /// <summary>
-    /// Logs when a workflow instance is created.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 20001,
-        Level = LogLevel.Information,
-        Message = "{Prefix} Instance {InstanceId} created for workflow {WorkflowKey} with initial state {InitialState}")]
-    public static partial void InstanceCreated(
-        this ILogger logger,
-        string prefix,
-        Guid instanceId,
-        string workflowKey,
-        string initialState);
-
-    /// <summary>
-    /// Logs when a workflow instance is updated.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 20002,
-        Level = LogLevel.Debug,
-        Message = "{Prefix} Instance {InstanceId} updated")]
-    public static partial void InstanceUpdated(
-        this ILogger logger,
-        string prefix,
-        Guid instanceId);
-
-    /// <summary>
     /// Logs when an instance is not found.
     /// </summary>
     [LoggerMessage(
         EventId = 20040,
         Level = LogLevel.Warning,
-        Message = "{Prefix} Instance {InstanceId} not found for workflow {WorkflowKey}")]
+        Message = "Instance {InstanceId} not found for workflow {WorkflowKey}")]
     public static partial void InstanceNotFound(
         this ILogger logger,
-        string prefix,
         Guid instanceId,
         string workflowKey);
 
     /// <summary>
-    /// Logs when instance creation fails.
+    /// Logs when failed to acquire distributed lock for instance.
     /// </summary>
     [LoggerMessage(
-        EventId = 20070,
+        EventId = 40044,
+        Level = LogLevel.Warning,
+        Message = "Failed to acquire lock for instance {InstanceId}")]
+    public static partial void InstanceLockFailed(
+        this ILogger logger,
+        Guid instanceId);
+
+    /// <summary>
+    /// Logs when start transition validation fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40045,
+        Level = LogLevel.Warning,
+        Message = "Start transition validation failed for instance {InstanceId}: {ErrorCode}")]
+    public static partial void StartTransitionValidationFailed(
+        this ILogger logger,
+        Guid instanceId,
+        string errorCode);
+
+    /// <summary>
+    /// Logs when workflow timeout is scheduled.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40016,
+        Level = LogLevel.Information,
+        Message = "Scheduled workflow timeout for instance {InstanceId} with duration {Duration}, executing at {TimeoutAt}")]
+    public static partial void WorkflowTimeoutScheduled(
+        this ILogger logger,
+        Guid instanceId,
+        string duration,
+        DateTime timeoutAt);
+
+    /// <summary>
+    /// Logs when workflow timeout scheduling fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40074,
         Level = LogLevel.Error,
-        Message = "{Prefix} Failed to create instance for workflow {WorkflowKey}")]
-    public static partial void InstanceCreationFailed(
+        Message = "Failed to schedule workflow timeout for instance {InstanceId}")]
+    public static partial void WorkflowTimeoutSchedulingFailed(
         this ILogger logger,
         Exception exception,
-        string prefix,
+        Guid instanceId);
+
+    /// <summary>
+    /// Logs when workflow definition is not found.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40046,
+        Level = LogLevel.Warning,
+        Message = "Workflow {WorkflowKey} not found: {ErrorCode}")]
+    public static partial void WorkflowNotFoundWarning(
+        this ILogger logger,
+        string workflowKey,
+        string errorCode);
+
+    /// <summary>
+    /// Logs when timeout configuration is missing for workflow.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40047,
+        Level = LogLevel.Warning,
+        Message = "Timeout configuration missing for workflow {WorkflowKey}")]
+    public static partial void TimeoutConfigMissing(
+        this ILogger logger,
         string workflowKey);
+
+    #endregion
+
+    #region Instance Cancellation
+
+    /// <summary>
+    /// Logs when an InstanceCanceledEvent is received.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40018,
+        Level = LogLevel.Information,
+        Message = "InstanceCanceledEvent received for instance {InstanceId} in {Flow}")]
+    public static partial void InstanceCanceledEventReceived(
+        this ILogger logger,
+        Guid instanceId,
+        string flow);
+
+    /// <summary>
+    /// Logs when instance jobs are processed during cancellation.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40019,
+        Level = LogLevel.Information,
+        Message = "Instance cancellation jobs processed for instance {InstanceId}, {JobCount} jobs canceled")]
+    public static partial void InstanceCanceledJobsProcessed(
+        this ILogger logger,
+        Guid instanceId,
+        int jobCount);
+
+    /// <summary>
+    /// Logs when instance cancellation processing fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40077,
+        Level = LogLevel.Error,
+        Message = "Instance cancellation processing failed for instance {InstanceId}")]
+    public static partial void InstanceCanceledProcessingFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid instanceId);
+
+    #endregion
+
+    #region Child Subflow Cancellation
+
+    /// <summary>
+    /// Logs when a ChildSubflowCancelRequestedEvent is received.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40020,
+        Level = LogLevel.Information,
+        Message = "ChildSubflowCancelRequestedEvent received for instance {InstanceId} in {Domain}/{Flow}")]
+    public static partial void ChildSubflowCancelRequestReceived(
+        this ILogger logger,
+        Guid instanceId,
+        string domain,
+        string flow);
+
+    /// <summary>
+    /// Logs when child subflow cancellation succeeds.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40021,
+        Level = LogLevel.Information,
+        Message = "Child subflow cancellation succeeded for instance {InstanceId}")]
+    public static partial void ChildSubflowCancelSucceeded(
+        this ILogger logger,
+        Guid instanceId);
+
+    /// <summary>
+    /// Logs when child subflow cancellation fails with a warning.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40050,
+        Level = LogLevel.Warning,
+        Message = "Child subflow cancellation failed for instance {InstanceId}, transition was not successful")]
+    public static partial void ChildSubflowCancelFailed(
+        this ILogger logger,
+        Guid instanceId);
+
+    /// <summary>
+    /// Logs when child subflow cancellation encounters an error.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40078,
+        Level = LogLevel.Error,
+        Message = "Child subflow cancellation error for instance {InstanceId}")]
+    public static partial void ChildSubflowCancelError(
+        this ILogger logger,
+        Exception exception,
+        Guid instanceId);
 
     #endregion
 
     #region Background Jobs
 
     /// <summary>
-    /// Logs when a background job starts execution.
+    /// Logs when a background job completes successfully.
     /// </summary>
     [LoggerMessage(
-        EventId = 20005,
+        EventId = 40017,
         Level = LogLevel.Information,
-        Message = "{Prefix} Job {JobName} started with ID {JobId}")]
-    public static partial void JobExecutionStarted(
+        Message = "Job {JobName} completed: {TransitionKey} for instance {InstanceId}")]
+    public static partial void JobCompleted(
         this ILogger logger,
-        string prefix,
         string jobName,
-        string jobId);
-
-    /// <summary>
-    /// Logs when a background job completes.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 20006,
-        Level = LogLevel.Information,
-        Message = "{Prefix} Job {JobName} completed in {ElapsedMs}ms")]
-    public static partial void JobExecutionCompleted(
-        this ILogger logger,
-        string prefix,
-        string jobName,
-        long elapsedMs);
-
-    /// <summary>
-    /// Logs when a background job is retrying.
-    /// </summary>
-    [LoggerMessage(
-        EventId = 20042,
-        Level = LogLevel.Warning,
-        Message = "{Prefix} Job {JobName} retrying (attempt {Attempt})")]
-    public static partial void JobRetrying(
-        this ILogger logger,
-        string prefix,
-        string jobName,
-        int attempt);
+        string transitionKey,
+        Guid instanceId);
 
     /// <summary>
     /// Logs when a background job fails.
     /// </summary>
     [LoggerMessage(
-        EventId = 20072,
+        EventId = 40075,
         Level = LogLevel.Error,
-        Message = "{Prefix} Job {JobName} failed")]
-    public static partial void JobExecutionFailed(
+        Message = "Job {JobName} failed for instance {InstanceId}")]
+    public static partial void JobFailed(
         this ILogger logger,
         Exception exception,
-        string prefix,
-        string jobName);
+        string jobName,
+        Guid instanceId);
+
+    /// <summary>
+    /// Logs when a job is cancelled.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40048,
+        Level = LogLevel.Warning,
+        Message = "Job {JobName} cancelled: {TransitionKey} for instance {InstanceId}")]
+    public static partial void JobCancelled(
+        this ILogger logger,
+        string jobName,
+        string transitionKey,
+        Guid instanceId);
+
+    #endregion
+
+    #region Runtime
+
+    /// <summary>
+    /// Logs when workflow instance deserialization fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40076,
+        Level = LogLevel.Error,
+        Message = "Failed to deserialize workflow instance data for schema {Schema}, instance {InstanceKey}, version {Version}")]
+    public static partial void InstanceDeserializationFailed(
+        this ILogger logger,
+        Exception exception,
+        string schema,
+        string? instanceKey,
+        string version);
+
+    #endregion
+
+    #region Query Operations
+
+    /// <summary>
+    /// Logs when SubFlow transitions query fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40049,
+        Level = LogLevel.Warning,
+        Message = "Failed to get transitions from SubFlow {SubFlowDomain}/{SubFlowName} for instance {InstanceId}")]
+    public static partial void SubFlowTransitionsQueryFailed(
+        this ILogger logger,
+        Exception exception,
+        string subFlowDomain,
+        string subFlowName,
+        Guid instanceId);
 
     #endregion
 }
-

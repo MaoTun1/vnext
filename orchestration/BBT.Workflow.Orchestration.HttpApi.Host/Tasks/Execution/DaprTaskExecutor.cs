@@ -69,12 +69,20 @@ public sealed class DaprTaskExecutor(
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var response = await daprClient.InvokeMethodAsync<TaskExecutionRequestInput, TaskExecutionResponseOutput>(
-                HttpMethod.Post,
+            var request = daprClient.CreateInvokeMethodRequest<TaskExecutionRequestInput>(
                 _executionServiceAppId,
                 "/api/v1/execution/task",
-                input,
-                cancellationToken);
+                input
+            );
+            
+            request.Headers.Add(WorkflowInfo.Name, WorkflowInfo.Generate(
+                input.Context.Workflow.Domain,
+                input.Context.Workflow.Key,
+                input.Context.Workflow.Version,
+                input.Context.InstanceId
+            ));
+
+            var response = await daprClient.InvokeMethodAsync<TaskExecutionResponseOutput>(request, cancellationToken);
 
             stopwatch.Stop();
 
@@ -211,7 +219,7 @@ public sealed class DaprTaskExecutor(
                 },
                 Mapping = new ScriptCodeInput()
                 {
-                    Type=onExecuteTask.Mapping.Type,
+                    Type = onExecuteTask.Mapping.Type,
                     Location = onExecuteTask.Mapping.Location,
                     Code = onExecuteTask.Mapping.Code
                 }

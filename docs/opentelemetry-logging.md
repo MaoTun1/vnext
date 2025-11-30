@@ -10,7 +10,6 @@ vNext workflow engine uses OpenTelemetry for distributed tracing and structured 
 
 A custom `BaseProcessor<LogRecord>` that automatically enriches all logs with:
 - **class**: Extracted from logger category name
-- **prefix**: Determined by namespace (vnext.exec, vnext.orch, vnext.app, vnext.infra, vnext.domain)
 - **event.id**: EventId number from LoggerMessage attribute
 - **event.name**: EventId name from LoggerMessage attribute
 - **traceId/spanId**: Automatically correlated with active OpenTelemetry spans
@@ -69,11 +68,10 @@ Located: `BBT.Workflow.Application/Telemetry/WorkflowEventIds.cs`
 
 ### 4.1. TelemetryConstants
 
-Centralized constants for telemetry prefixes and scope field names:
-- **Prefixes**: `vnext.exec`, `vnext.app`, `vnext.orch`, `vnext.infra`, `vnext.domain`
-- **ScopeFields**: `domain`, `flow`, `flowVersion`, `instanceId`, `transitionKey`, `taskKey`, `taskType`, `jobName`, `jobId`, `method`, `class`
+Centralized constants for OpenTelemetry span tag names:
+- **TagNames**: `vnext.domain`, `vnext.flow.key`, `vnext.flow.version`, `vnext.instance.id`, `vnext.transition.key`, `vnext.trigger.type`, `vnext.handler.name`, `vnext.task.key`, `vnext.task.type`, `vnext.state.from`, `vnext.state.to`
 
-Located: `BBT.Workflow.Application/Telemetry/TelemetryConstants.cs`
+Located: `BBT.Workflow.Domain/Logging/TelemetryConstants.cs`
 
 ### 5. TraceContextMiddleware
 
@@ -467,73 +465,42 @@ traceparent: 00-4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a-1a2b3c4d5e6f7890-01
 
 ## Usage Patterns
 
-### 1. Transition Execution Logging
+### 1. State Change Logging
 
 ```csharp
-using var scope = _logger.ForTransition(
-    context.Workflow.Key,
-    context.Workflow.Key,
-    context.Workflow.Version?.ToString(),
-    context.InstanceId,
-    context.TransitionKey);
-
-_logger.TransitionStarted(
-    TelemetryConstants.Prefixes.Execution,
-    context.TransitionKey,
-    context.InstanceId,
-    context.WorkflowKey);
-
-// ... execution logic ...
-
-_logger.TransitionCompleted(
-    TelemetryConstants.Prefixes.Execution,
-    context.TransitionKey,
-    context.InstanceId,
-    elapsedMs);
+// Log state transitions
+_logger.StateChanged(fromState, toState, context.InstanceId);
 ```
-
-**Using TelemetryConstants**:
-- `TelemetryConstants.Prefixes.Execution` → `"vnext.exec"`
-- `TelemetryConstants.Prefixes.Application` → `"vnext.app"`
-- `TelemetryConstants.Prefixes.Orchestration` → `"vnext.orch"`
-- `TelemetryConstants.Prefixes.Infrastructure` → `"vnext.infra"`
-- `TelemetryConstants.Prefixes.Domain` → `"vnext.domain"`
 
 ### 2. Task Execution Logging
 
 ```csharp
-using var scope = _logger.ForTask(
-    workflow.Key,
-    workflow.Key,
-    workflow.Version?.ToString(),
-    instanceId,
-    taskKey,
-    taskType);
-
-_logger.TaskExecutionStarted(
-    TelemetryConstants.Prefixes.Execution,
-    taskKey,
-    taskType,
-    instanceId);
-
+// Log task execution failures
+try
+{
 // ... task execution ...
-
-_logger.TaskExecutionCompleted(
-    TelemetryConstants.Prefixes.Execution,
-    taskKey,
-    taskType,
-    instanceId,
-    elapsedMs);
+}
+catch (Exception ex)
+{
+    _logger.TaskExecutionFailed(ex, taskKey, taskType, instanceId);
+    throw;
+}
 ```
 
-### 3. Pipeline Step Logging
+### 3. SubFlow Logging
 
 ```csharp
-_logger.PipelineStepStarted(TelemetryConstants.Prefixes.Execution, stepName, context.InstanceId);
+// Log SubFlow events
+_logger.SubFlowEventReceived(subInstanceId, parentInstanceId, domain, flow);
+_logger.SubFlowCorrelationCompleted(subInstanceId, parentInstanceId);
+_logger.SubFlowParentContinuationStarted(parentInstanceId, currentState);
+_logger.SubFlowOutputMappingStarted(parentInstanceId);
+_logger.SubFlowPipelineResumed(parentInstanceId);
 
-// ... step execution ...
-
-_logger.PipelineStepCompleted(TelemetryConstants.Prefixes.Execution, stepName, context.InstanceId, elapsedMs);
+// Log SubFlow errors
+_logger.SubFlowConfigInvalid(stateName, instanceId);
+_logger.SubFlowCorrelationNotFound(subInstanceId);
+_logger.SubFlowCompletionFailed(ex, subInstanceId, parentInstanceId);
 ```
 
 ### 4. Error Logging
@@ -546,15 +513,9 @@ try
 catch (TransitionRuleFailedException ex)
 {
     _logger.TransitionRuleFailed(
-        TelemetryConstants.Prefixes.Execution,
         context.TransitionKey,
         context.InstanceId,
         ex.Message);
-    throw;
-}
-catch (Exception ex)
-{
-    _logger.TransitionFailed(ex, TelemetryConstants.Prefixes.Execution, context.TransitionKey, context.InstanceId);
     throw;
 }
 ```
@@ -567,17 +528,16 @@ All logs follow a consistent schema:
 {
   "ts": "2025-10-11T10:30:45.123Z",
   "level": "Information",
-  "message": "vnext.exec Transition auto-approve started for instance 8b3e...",
-  "event.id": 10001,
-  "event.name": "TransitionStarted",
-  "category": "BBT.Workflow.Execution.Pipeline.TransitionPipeline",
-  "prefix": "vnext.exec",
-  "class": "TransitionPipeline",
-  "method": "RunAsync",
+  "message": "State changed from Draft to Submitted for instance 8b3e...",
+  "event.id": 10003,
+  "event.name": "StateChanged",
+  "category": "BBT.Workflow.Execution.Pipeline.Steps.ChangeStateStep",
+  "class": "ChangeStateStep",
+  "method": "ExecuteAsync",
   "domain": "amorphie",
   "flow": "loan-approval",
   "instanceId": "8b3e4a5c-...",
-  "transitionKey": "auto-approve",
+  "transitionKey": "submit",
   "http.header.x-correlation-id": "abc123...",
   "http.header.x-request-id": "def456...",
   "environment": "development",
@@ -588,18 +548,6 @@ All logs follow a consistent schema:
 ```
 
 ## Filtering and Querying
-
-### Filter by Prefix
-
-To see only execution logs:
-```
-prefix:"vnext.exec"
-```
-
-To see only orchestration logs:
-```
-prefix:"vnext.orch"
-```
 
 ### Filter by Instance
 
@@ -632,7 +580,7 @@ http.header.x-correlation-id:"abc123"
 
 To focus on business logic logs and exclude infrastructure noise:
 ```
-NOT category:Microsoft.* AND NOT category:System.* AND prefix:vnext.*
+NOT category:Microsoft.* AND NOT category:System.* AND category:BBT.Workflow.*
 ```
 
 ## Best Practices
@@ -648,11 +596,12 @@ using var scope = _logger.ForTransition(...);
 
 Prefer source-generated methods over manual LogInformation:
 ```csharp
-// Good
-_logger.TransitionStarted("vnext.exec", key, id, workflow);
+// Good - use WorkflowLogs extension methods
+_logger.StateChanged(fromState, toState, instanceId);
+_logger.TransitionRuleFailed(transitionKey, instanceId, reason);
 
-// Avoid
-_logger.LogInformation("Transition {Key} started", key);
+// Avoid - manual string interpolation
+_logger.LogInformation("State changed from {From} to {To}", fromState, toState);
 ```
 
 ### 3. Include Timing Information
@@ -665,16 +614,7 @@ sw.Stop();
 _logger.OperationCompleted(..., sw.ElapsedMilliseconds);
 ```
 
-### 4. Consistent Prefix Usage
-
-Use the correct prefix for your layer:
-- `vnext.exec`: Execution layer
-- `vnext.orch`: Orchestration layer
-- `vnext.app`: Application layer
-- `vnext.infra`: Infrastructure layer
-- `vnext.domain`: Domain layer
-
-### 5. Appropriate Log Levels
+### 4. Appropriate Log Levels
 
 - **Trace**: Very detailed debugging (disabled in production)
 - **Debug**: Detailed flow information (pipeline steps, state changes)
@@ -846,20 +786,24 @@ Every API response includes trace context headers. To trace a specific request:
 ### Before
 ```csharp
 _logger.LogDebug("Starting transition {TransitionKey}", key);
+_logger.LogInformation("State changed from {From} to {To}", fromState, toState);
 ```
 
 ### After
 ```csharp
-using var scope = _logger.ForTransition(domain, flow, instanceId, key);
-_logger.TransitionStarted("vnext.exec", key, instanceId, workflowKey);
+// Use source-generated WorkflowLogs extension methods
+_logger.StateChanged(fromState, toState, instanceId);
+_logger.TransitionRuleFailed(transitionKey, instanceId, reason);
+_logger.TaskExecutionFailed(ex, taskKey, taskType, instanceId);
 ```
 
 Benefits:
 - Structured, queryable fields
-- Automatic enrichment with class/method/prefix
-- Trace correlation
-- Zero-allocation performance
+- Automatic enrichment with class/method via VNextLogEnricherProcessor
+- Trace correlation via OpenTelemetry
+- Zero-allocation performance with LoggerMessage source generation
 - Consistent schema across the system
+- Clean log messages without prefix noise
 
 ## Performance Considerations
 

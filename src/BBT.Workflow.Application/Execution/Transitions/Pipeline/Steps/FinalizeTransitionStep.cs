@@ -11,7 +11,6 @@ namespace BBT.Workflow.Execution.Pipeline.Steps;
 /// <summary>
 /// Pipeline step that finalizes the transition execution.
 /// Updates the transition record and performs cleanup operations.
-/// Uses Result pattern for exception-free error handling.
 /// </summary>
 public sealed class FinalizeTransitionStep(
     IInstanceTransitionRepository instanceTransitionRepository,
@@ -28,69 +27,48 @@ public sealed class FinalizeTransitionStep(
     {
         Activity.Current?.SetDisplayName($"[{Order}] {nameof(FinalizeTransitionStep)}");
         
-        // Railway Oriented Programming: Chain operations, each wrapped in Try
-        return await GetTransitionRecordId(context)
-            .ThenAsync(recordId => LoadTransitionRecord(recordId, cancellationToken))
-            .ThenAsync(transition => MarkTransitionAsCompleted(context, transition))
-            .OnSuccess(transition => RecordStateDurationMetric(context, transition))
-            .ThenAsync(transition => UpdateTransitionRecord(transition, cancellationToken))
-            .ThenAsync(_ => PerformCleanupAndFinalize(context));
+        var recordId = GetTransitionRecordId(context);
+        
+        if (recordId != Guid.Empty)
+        {
+            // Railway chain: Load -> Complete -> Record metric -> Persist
+            await Result.Ok(recordId)
+                .BindAsync(id => LoadTransitionRecordAsync(id, cancellationToken))
+                .Tap(transition => transition?.Completed(context.Instance.GetCurrentState))
+                .Tap(transition => RecordDurationMetricIfAvailable(context, transition))
+                .TapAsync(transition => UpdateTransitionIfExistsAsync(transition, cancellationToken));
+        }
+
+        PerformCleanup(context);
+
+        return Result<StepOutcome>.Ok(StepOutcome.Continue());
     }
 
     /// <summary>
     /// Gets the transition record ID from context items.
     /// </summary>
-    private Task<Result<Guid>> GetTransitionRecordId(TransitionExecutionContext context)
+    private static Guid GetTransitionRecordId(TransitionExecutionContext context)
     {
-        if (context.Items.TryGetValue("TransitionRecordId", out var record) && record is Guid recordId)
-        {
-            return Task.FromResult(Result<Guid>.Ok(recordId));
-        }
-        
-        // Return a special Guid to indicate no record (will be handled in next step)
-        return Task.FromResult(Result<Guid>.Ok(Guid.Empty));
+        return context.Items.TryGetValue("TransitionRecordId", out var record) && record is Guid recordId
+            ? recordId
+            : Guid.Empty;
     }
 
     /// <summary>
     /// Loads the transition record from repository.
     /// </summary>
-    private async Task<Result<InstanceTransition?>> LoadTransitionRecord(Guid recordId, CancellationToken cancellationToken)
+    private async Task<Result<InstanceTransition?>> LoadTransitionRecordAsync(
+        Guid recordId, 
+        CancellationToken cancellationToken)
     {
-        // Skip if no record ID
-        if (recordId == Guid.Empty)
-        {
-            return Result<InstanceTransition?>.Ok(null);
-        }
-
-        var loadResult = await ResultExtensions.TryAsync(
-            async ct => await instanceTransitionRepository.GetAsync(recordId, true, ct),
-            cancellationToken);
-
-        return loadResult.IsSuccess
-            ? Result<InstanceTransition?>.Ok(loadResult.Value)
-            : Result<InstanceTransition?>.Fail(loadResult.Error);
+        var transition = await instanceTransitionRepository.GetAsync(recordId, true, cancellationToken);
+        return Result<InstanceTransition?>.Ok(transition);
     }
 
     /// <summary>
-    /// Marks the transition as completed.
+    /// Records duration metric if available.
     /// </summary>
-    private Task<Result<InstanceTransition?>> MarkTransitionAsCompleted(
-        TransitionExecutionContext context,
-        InstanceTransition? transition)
-    {
-        if (transition == null)
-        {
-            return Task.FromResult(Result<InstanceTransition?>.Ok(null));
-        }
-        
-        transition.Completed(context.Instance.GetCurrentState);
-        return Task.FromResult(Result<InstanceTransition?>.Ok(transition));
-    }
-
-    /// <summary>
-    /// Records state duration metric if available.
-    /// </summary>
-    private void RecordStateDurationMetric(TransitionExecutionContext context, InstanceTransition? transition)
+    private void RecordDurationMetricIfAvailable(TransitionExecutionContext context, InstanceTransition? transition)
     {
         if (transition?.Duration.HasValue == true)
         {
@@ -102,45 +80,27 @@ public sealed class FinalizeTransitionStep(
     }
 
     /// <summary>
-    /// Updates the transition record in repository.
+    /// Updates transition record if it exists.
     /// </summary>
-    private async Task<Result<InstanceTransition?>> UpdateTransitionRecord(
-        InstanceTransition? transition,
-        CancellationToken cancellationToken)
+    private async Task UpdateTransitionIfExistsAsync(InstanceTransition? transition, CancellationToken cancellationToken)
     {
-        if (transition == null)
+        if (transition != null)
         {
-            return Result<InstanceTransition?>.Ok(null);
+            await instanceTransitionRepository.UpdateCompletedAsync(transition, cancellationToken);
         }
-
-        var updateResult = await ResultExtensions.TryAsync(
-            async ct => await instanceTransitionRepository.UpdateCompletedAsync(transition, ct),
-            cancellationToken);
-
-        return updateResult.IsSuccess
-            ? Result<InstanceTransition?>.Ok(transition)
-            : Result<InstanceTransition?>.Fail(updateResult.Error);
     }
 
     /// <summary>
-    /// Performs cleanup operations and finalizes the step execution.
+    /// Performs cleanup operations.
     /// </summary>
-    private Task<Result<StepOutcome>> PerformCleanupAndFinalize(
-        TransitionExecutionContext context)
+    private static void PerformCleanup(TransitionExecutionContext context)
     {
-        return Task.FromResult(
-            ResultExtensions.Try(() =>
-            {
-                // Dispose ScriptContext if it exists
-                if (context.Cache.TryGetValue("ScriptContext", out var scriptContextObj) &&
-                    scriptContextObj is ScriptContext scriptContext)
-                {
-                    scriptContext.Dispose();
-                }
+        if (context.Cache.TryGetValue("ScriptContext", out var scriptContextObj) &&
+            scriptContextObj is ScriptContext scriptContext)
+        {
+            scriptContext.Dispose();
+        }
 
-                context.ClearCacheForFinalize();
-                return StepOutcome.Continue();
-            })
-        );
+        context.ClearCacheForFinalize();
     }
 }

@@ -16,6 +16,8 @@ public static class WorkflowErrorCodes
     public const string ValidationErrors = "App:900002";
     public const string ExecutionStrategyNotSupported = "App:900003";
     public const string TransitionHandlerNotSupported = "App:900004";
+    public const string InvalidSchema = "App:900005";
+    public const string InvalidWorkflow = "App:900006";
 
     #endregion
     
@@ -28,6 +30,8 @@ public static class WorkflowErrorCodes
     public const string NotFoundInstanceData = "Instance:100013";
     public const string NotFoundWorkflow = "Instance:100015";
     public const string CancelNotConfiguredForWorkflow = "Instance:100016";
+    public const string InstanceNotFound = "Instance:100017";
+    public const string InstanceCompleted = "Instance:100018";
     
     #endregion
     
@@ -41,6 +45,7 @@ public static class WorkflowErrorCodes
     public const string UnauthorizedTransition = "Transition:100010";
     public const string AutoTransitionFailed = "Transition:100011";
     public const string AutoTransitionConditionNotMet = "Transition:100014";
+    public const string TransitionChainDepthExceeded = "Transition:100017";
     
     #endregion
     
@@ -54,6 +59,17 @@ public static class WorkflowErrorCodes
     
     public const string TaskContextCreation = "Task:400001";
     public const string TaskExecution = "Task:400002";
+    public const string TaskPersistenceStrategyNotFound = "Task:400003";
+    public const string TaskCreationPersistenceFailed = "Task:400004";
+    public const string TaskCompletionPersistenceFailed = "Task:400005";
+    
+    #endregion
+    
+    #region Cache Errors (300xxx)
+    
+    public const string CacheItemNotFound = "Cache:300001";
+    public const string CacheInvalidKey = "Cache:300002";
+    public const string CacheTypeNotSupported = "Cache:300003";
     
     #endregion
 }

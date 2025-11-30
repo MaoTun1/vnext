@@ -1,3 +1,4 @@
+using BBT.Aether.Results;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using Microsoft.Extensions.Logging;
@@ -18,21 +19,16 @@ public sealed class TaskFactory(
     /// </summary>
     /// <param name="taskReference">Reference to the task to be created.</param>
     /// <param name="cancellationToken">Cancellation token for async operations.</param>
-    /// <returns>A task instance ready for execution, isolated from cache.</returns>
-    public async Task<WorkflowTask> CreateExecutionTaskAsync(
+    /// <returns>A Result containing the task instance ready for execution, or an error if creation failed.</returns>
+    public async Task<Result<WorkflowTask>> CreateExecutionTaskAsync(
         IReference taskReference, 
         CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var cachedTask = await componentCacheStore.GetTaskAsync(taskReference, cancellationToken);
-            return CreateFromCached(cachedTask);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to create execution task for reference: {TaskReference}", taskReference);
-            throw;
-        }
+        return await componentCacheStore.GetTaskAsync(taskReference, cancellationToken)
+            .Then(CreateFromCached)
+            .OnFailure(error => logger.LogWarning(
+                "Failed to create execution task for reference {TaskReference}: {ErrorCode}", 
+                taskReference, error.Code));
     }
 
     /// <summary>
@@ -40,23 +36,15 @@ public sealed class TaskFactory(
     /// Uses the task's own Clone method for type-specific optimization.
     /// </summary>
     /// <param name="cachedTask">The cached task instance to create from.</param>
-    /// <returns>A new task instance isolated from the cached one.</returns>
-    public WorkflowTask CreateFromCached(WorkflowTask cachedTask)
+    /// <returns>A Result containing the new task instance isolated from the cached one, or an error if cloning failed.</returns>
+    public Result<WorkflowTask> CreateFromCached(WorkflowTask cachedTask)
     {
         if (cachedTask == null)
-            throw new ArgumentNullException(nameof(cachedTask));
+            return Result<WorkflowTask>.Fail(
+                Error.Validation("task.null", "Cached task cannot be null"));
 
-        try
-        {
-            // Use the task's own optimized Clone method
-            var clonedTask = cachedTask.Clone();
-            return clonedTask;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to clone task {TaskKey} of type {TaskType}", 
-                cachedTask.Key, cachedTask.GetType().Name);
-            throw;
-        }
+        // Use the task's own optimized Clone method
+        var clonedTask = cachedTask.Clone();
+        return Result<WorkflowTask>.Ok(clonedTask);
     }
-} 
+}

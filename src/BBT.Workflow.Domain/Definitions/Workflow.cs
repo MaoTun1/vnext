@@ -90,17 +90,8 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     public string SemanticVersion =>
         Version.Contains('+') ? Regex.Match(Version, @"^([^+]+)").Groups[1].Value : Version;
 
-    public string CacheKey => $"{nameof(Workflow)}:{Domain}:{Flow}:{Key}:{Version}";
-
-    public static string GenerateCacheKey(
-        string domain,
-        string flow,
-        string key,
-        string version)
-    {
-        return $"{nameof(Workflow)}:{domain}:{flow}:{key}:{version}";
-    }
-
+    public string ComponentKey => RuntimeSysSchemaInfo.Flows;
+    
     /// <summary>
     /// When the workflow starts, a timer counts down.
     /// If the workflow is not completed within this time,

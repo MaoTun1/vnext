@@ -1,7 +1,7 @@
+using BBT.Workflow.Definitions;
 using BBT.Workflow.Execution.Handlers;
 using BBT.Workflow.Execution.Pipeline;
 using BBT.Workflow.Logging;
-using BBT.Workflow.Definitions;
 using System.Diagnostics;
 using BBT.Aether.Aspects;
 using BBT.Aether.Results;
@@ -18,54 +18,84 @@ public sealed class SyncTransitionStrategy(
     TransitionPipeline pipeline) : ITransitionStrategy
 {
     /// <inheritdoc />
+    /// <summary>
+    /// Executes transition synchronously.
+    /// Railway chain: Resolve Handler → Create Context → Execute Lifecycle
+    /// </summary>
     [Log]
     [Trace]
-    public async Task<Result<TransitionExecutionContext>> ExecuteAsync(WorkflowExecutionContext context,
+    public Task<Result<TransitionExecutionContext>> ExecuteAsync(
+        WorkflowExecutionContext context,
         CancellationToken cancellationToken)
     {
         var activity = Activity.Current;
 
-        // Railway: Resolve handler -> Create context -> Execute lifecycle
-        var handlerResult = handlerFactory.Get(context.TriggerType);
-        if (!handlerResult.IsSuccess)
-            return Result<TransitionExecutionContext>.Fail(handlerResult.Error);
+        return handlerFactory.Get(context.TriggerType)
+            .BindAsync(handler => CreateContextAndExecuteAsync(handler, context, activity, cancellationToken));
+    }
 
-        var handler = handlerResult.Value!;
-
+    /// <summary>
+    /// Creates execution context and runs the handler lifecycle.
+    /// Handles telemetry enrichment and activity status as side effects.
+    /// </summary>
+    private async Task<Result<TransitionExecutionContext>> CreateContextAndExecuteAsync(
+        ITransitionHandler handler,
+        WorkflowExecutionContext context,
+        Activity? activity,
+        CancellationToken cancellationToken)
+    {
         var contextResult = await contextFactory.CreateAsync(context, cancellationToken);
         if (!contextResult.IsSuccess)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, contextResult.Error.Message);
-            activity?.AddTag("error.code", contextResult.Error.Code);
-            return Result<TransitionExecutionContext>.Fail(contextResult.Error);
+            SetActivityError(activity, contextResult.Error);
+            return contextResult;
         }
 
         var ctx = contextResult.Value!;
-        await EnrichTelemetry(activity, ctx, handler, context.TriggerType);
+        EnrichTelemetry(activity, ctx, handler, context.TriggerType);
 
         var lifecycleResult = await ExecuteHandlerLifecycleAsync(handler, ctx, cancellationToken);
-        
-        if (lifecycleResult.IsSuccess)
-        {
-            activity?.SetStatus(ActivityStatusCode.Ok);
-        }
-        else
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, lifecycleResult.Error.Message);
-            activity?.AddTag("error.code", lifecycleResult.Error.Code);
-        }
+
+        SetActivityStatus(activity, lifecycleResult);
 
         return lifecycleResult;
     }
 
-    private static Task EnrichTelemetry(
+    /// <summary>
+    /// Executes the handler lifecycle: PreHandle → Pipeline → PostHandle.
+    /// No TryAsync - handlers are application layer, infrastructure exceptions bubble up.
+    /// </summary>
+    private async Task<Result<TransitionExecutionContext>> ExecuteHandlerLifecycleAsync(
+        ITransitionHandler handler,
+        TransitionExecutionContext ctx,
+        CancellationToken cancellationToken)
+    {
+        // PreHandle - application layer, no Try needed
+        await handler.PreHandleAsync(ctx, cancellationToken);
+
+        // Pipeline execution - returns Result
+        var pipelineResult = await pipeline.RunAsync(ctx, cancellationToken);
+        if (!pipelineResult.IsSuccess)
+            return Result<TransitionExecutionContext>.Fail(pipelineResult.Error);
+
+        // PostHandle - application layer, no Try needed
+        await handler.PostHandleAsync(ctx, cancellationToken);
+
+        return Result<TransitionExecutionContext>.Ok(ctx);
+    }
+
+    /// <summary>
+    /// Enriches the activity with telemetry tags.
+    /// Pure side effect - doesn't affect flow.
+    /// </summary>
+    private static void EnrichTelemetry(
         Activity? activity,
         TransitionExecutionContext ctx,
         ITransitionHandler handler,
         TriggerType triggerType)
     {
-        if (activity is null) return Task.CompletedTask;
-        
+        if (activity is null) return;
+
         activity.SetTag(TelemetryConstants.TagNames.Domain, ctx.Workflow.Domain);
         activity.SetTag(TelemetryConstants.TagNames.Flow, ctx.Workflow.Key);
         activity.SetTag(TelemetryConstants.TagNames.FlowVersion, ctx.Workflow.Version);
@@ -73,35 +103,40 @@ public sealed class SyncTransitionStrategy(
         activity.SetTag(TelemetryConstants.TagNames.TransitionKey, ctx.TransitionKey);
         activity.SetTag(TelemetryConstants.TagNames.TriggerType, triggerType.ToString());
         activity.SetTag(TelemetryConstants.TagNames.HandlerName, handler.GetType().Name);
-        activity.SetDisplayName($"{ctx.InstanceId}/{ctx.TransitionKey}");
 
-        return Task.CompletedTask;
+        activity.SetBaggage(TelemetryConstants.TagNames.Domain, ctx.Workflow.Domain);
+        activity.SetBaggage(TelemetryConstants.TagNames.Flow, ctx.Workflow.Key);
+        activity.SetBaggage(TelemetryConstants.TagNames.FlowVersion, ctx.Workflow.Version);
+        activity.SetBaggage(TelemetryConstants.TagNames.InstanceId, ctx.InstanceId.ToString());
+        
+        activity.SetDisplayName($"{ctx.InstanceId}/{ctx.TransitionKey}");
     }
 
-    private async Task<Result<TransitionExecutionContext>> ExecuteHandlerLifecycleAsync(
-        ITransitionHandler handler,
-        TransitionExecutionContext ctx,
-        CancellationToken cancellationToken)
+    /// <summary>
+    /// Sets activity status based on result.
+    /// </summary>
+    private static void SetActivityStatus<T>(Activity? activity, Result<T> result)
     {
-        // Railway: PreHandle -> Pipeline -> PostHandle with exception handling
-        var preHandleResult = await ResultExtensions.TryAsync(
-            async ct => await handler.PreHandleAsync(ctx, ct),
-            cancellationToken);
-        
-        if (!preHandleResult.IsSuccess)
-            return Result<TransitionExecutionContext>.Fail(preHandleResult.Error);
+        if (activity is null) return;
 
-        var pipelineResult = await pipeline.RunAsync(ctx, cancellationToken);
-        if (!pipelineResult.IsSuccess)
-            return Result<TransitionExecutionContext>.Fail(pipelineResult.Error);
+        if (result.IsSuccess)
+        {
+            activity.SetStatus(ActivityStatusCode.Ok);
+        }
+        else
+        {
+            SetActivityError(activity, result.Error);
+        }
+    }
 
-        var postHandleResult = await ResultExtensions.TryAsync(
-            async ct => await handler.PostHandleAsync(ctx, ct),
-            cancellationToken);
-        
-        if (!postHandleResult.IsSuccess)
-            return Result<TransitionExecutionContext>.Fail(postHandleResult.Error);
+    /// <summary>
+    /// Sets activity error status with error details.
+    /// </summary>
+    private static void SetActivityError(Activity? activity, Error error)
+    {
+        if (activity is null) return;
 
-        return Result<TransitionExecutionContext>.Ok(ctx);
+        activity.SetStatus(ActivityStatusCode.Error, error.Message);
+        activity.AddTag("error.code", error.Code);
     }
 }

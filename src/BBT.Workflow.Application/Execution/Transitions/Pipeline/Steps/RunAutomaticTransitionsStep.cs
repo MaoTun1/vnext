@@ -10,26 +10,11 @@ namespace BBT.Workflow.Execution.Pipeline.Steps;
 /// <summary>
 /// Pipeline step that evaluates and executes automatic transitions.
 /// Evaluates all automatic transition conditions and dispatches the first satisfied transition.
-/// Uses Result pattern for exception-free error handling.
 /// </summary>
-public sealed class RunAutomaticTransitionsStep : ITransitionStep
+public sealed class RunAutomaticTransitionsStep(
+    IAutoConditionEvaluator autoConditionEvaluator,
+    ILogger<RunAutomaticTransitionsStep> logger) : ITransitionStep
 {
-    private readonly IAutoConditionEvaluator _autoConditionEvaluator;
-    private readonly ILogger<RunAutomaticTransitionsStep> _logger;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="RunAutomaticTransitionsStep"/> class.
-    /// </summary>
-    /// <param name="autoConditionEvaluator">Service for evaluating automatic transition conditions.</param>
-    /// <param name="logger">Logger for diagnostic information.</param>
-    public RunAutomaticTransitionsStep(
-        IAutoConditionEvaluator autoConditionEvaluator,
-        ILogger<RunAutomaticTransitionsStep> logger)
-    {
-        _autoConditionEvaluator = autoConditionEvaluator ?? throw new ArgumentNullException(nameof(autoConditionEvaluator));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
-
     /// <inheritdoc />
     public int Order => LifecycleOrder.Auto;
 
@@ -45,51 +30,71 @@ public sealed class RunAutomaticTransitionsStep : ITransitionStep
         {
             return Result<StepOutcome>.Ok(StepOutcome.Continue());
         }
-        
+
+        // Railway chain: Evaluate all transitions -> Find winner -> Enqueue
+        return await EvaluateAllTransitionsAsync(context, cancellationToken)
+            .Bind(evaluations => FindWinningTransition(context, evaluations))
+            .Tap(winner => EnqueueWinningTransition(context, winner))
+            .Map(_ => StepOutcome.Continue());
+    }
+
+    /// <summary>
+    /// Evaluates all automatic transitions and returns the results.
+    /// </summary>
+    private async Task<Result<List<AutoConditionEvaluation>>> EvaluateAllTransitionsAsync(
+        TransitionExecutionContext context,
+        CancellationToken cancellationToken)
+    {
         var evaluations = new List<AutoConditionEvaluation>();
 
-        // Evaluate all automatic transitions
-        foreach (var automaticTransition in context.Target.AutoTransitions)
+        foreach (var automaticTransition in context.Target!.AutoTransitions)
         {
-            var evalResult = await _autoConditionEvaluator.EvaluateAsync(
+            var evalResult = await autoConditionEvaluator.EvaluateAsync(
                 automaticTransition,
                 context,
                 cancellationToken);
 
             if (!evalResult.IsSuccess)
             {
-                return Result<StepOutcome>.Fail(evalResult.Error);
+                return Result<List<AutoConditionEvaluation>>.Fail(evalResult.Error);
             }
 
             evaluations.Add(evalResult.Value);
         }
 
-        // Find the first satisfied transition
+        return Result<List<AutoConditionEvaluation>>.Ok(evaluations);
+    }
+
+    /// <summary>
+    /// Finds the first satisfied transition from evaluations.
+    /// </summary>
+    private Result<AutoConditionEvaluation> FindWinningTransition(
+        TransitionExecutionContext context,
+        List<AutoConditionEvaluation> evaluations)
+    {
         var winner = evaluations.FirstOrDefault(e => e.Status == AutoConditionStatus.Satisfied);
 
         if (winner.TransitionKey is null)
         {
-            // All conditions were NotSatisfied - this is a business rule violation
-            _logger.LogWarning(
-                "No automatic transition condition is satisfied for current state. " +
-                "StateKey={StateKey}, InstanceId={InstanceId}, EvaluatedTransitions={TransitionKeys}",
-                context.Target.Key,
+            logger.AutoTransitionConditionNotSatisfied(
+                context.Target!.Key,
                 context.InstanceId,
                 string.Join(", ", evaluations.Select(e => e.TransitionKey)));
 
-            return Result<StepOutcome>.Fail(
-                Error.Validation(
-                    WorkflowErrorCodes.AutoTransitionConditionNotMet,
-                    $"No automatic transition condition is satisfied for state '{context.Target.Key}'. " +
-                    $"At least one automatic transition must have a satisfied condition."));
+            return Result<AutoConditionEvaluation>.Fail(
+                ExecutionErrors.NoAutoTransitionConditionSatisfied(context.Target.Key));
         }
 
-        _logger.LogInformation(
-            "Automatic transition selected for execution. TransitionKey={TransitionKey}, " +
-            "StateKey={StateKey}, InstanceId={InstanceId}",
-            winner.TransitionKey, context.Target.Key, context.InstanceId);
+        logger.AutoTransitionSelected(winner.TransitionKey, context.Target!.Key, context.InstanceId);
 
-        // Enqueue the winning transition for inline execution
+        return Result<AutoConditionEvaluation>.Ok(winner);
+    }
+
+    /// <summary>
+    /// Enqueues the winning transition for inline execution.
+    /// </summary>
+    private static void EnqueueWinningTransition(TransitionExecutionContext context, AutoConditionEvaluation winner)
+    {
         var command = ReentryCommand.ForAutomatic(
             context.InstanceId,
             context.Domain,
@@ -100,7 +105,5 @@ public sealed class RunAutomaticTransitionsStep : ITransitionStep
             context.Headers);
 
         context.Directives.EnqueueInlineAuto(command);
-
-        return Result<StepOutcome>.Ok(StepOutcome.Continue());
     }
 }

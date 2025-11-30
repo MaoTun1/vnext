@@ -19,7 +19,6 @@ namespace BBT.Workflow.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasDefaultSchema("public")
                 .HasAnnotation("ProductVersion", "9.0.0")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
@@ -122,105 +121,7 @@ namespace BBT.Workflow.Migrations
                     b.HasIndex("Status", "HandledTime")
                         .HasDatabaseName("IX_BackgroundJobs_Processing");
 
-                    b.ToTable("BackgroundJobs", "public");
-                });
-
-            modelBuilder.Entity("BBT.Aether.Domain.Events.InboxMessage", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("CreatedAt");
-
-                    b.Property<byte[]>("EventData")
-                        .IsRequired()
-                        .HasColumnType("bytea");
-
-                    b.Property<string>("EventName")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("ExtraProperties")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("ExtraProperties");
-
-                    b.Property<DateTime?>("HandledTime")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("NextRetryTime")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("RetryCount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Status", "HandledTime")
-                        .HasDatabaseName("IX_InboxMessages_Cleanup");
-
-                    b.HasIndex("Status", "NextRetryTime", "RetryCount")
-                        .HasDatabaseName("IX_InboxMessages_Processing");
-
-                    b.ToTable("InboxMessages", "public");
-                });
-
-            modelBuilder.Entity("BBT.Aether.Domain.Events.OutboxMessage", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("CreatedAt");
-
-                    b.Property<byte[]>("EventData")
-                        .IsRequired()
-                        .HasColumnType("bytea");
-
-                    b.Property<string>("EventName")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("ExtraProperties")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("ExtraProperties");
-
-                    b.Property<string>("LastError")
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
-                    b.Property<DateTime?>("NextRetryAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("ProcessedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("RetryCount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProcessedAt", "CreatedAt")
-                        .HasDatabaseName("IX_OutboxMessages_Cleanup");
-
-                    b.HasIndex("ProcessedAt", "NextRetryAt", "RetryCount")
-                        .HasDatabaseName("IX_OutboxMessages_Processing");
-
-                    b.ToTable("OutboxMessages", "public");
+                    b.ToTable("BackgroundJobs", (string)null);
                 });
 
             modelBuilder.Entity("BBT.Workflow.Instances.Instance", b =>
@@ -270,7 +171,7 @@ namespace BBT.Workflow.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Instances", "public");
+                    b.ToTable("Instances", (string)null);
                 });
 
             modelBuilder.Entity("BBT.Workflow.Instances.InstanceAction", b =>
@@ -299,7 +200,7 @@ namespace BBT.Workflow.Migrations
 
                     b.HasIndex("TaskId");
 
-                    b.ToTable("InstanceActions", "public");
+                    b.ToTable("InstanceActions", (string)null);
                 });
 
             modelBuilder.Entity("BBT.Workflow.Instances.InstanceCorrelation", b =>
@@ -354,7 +255,7 @@ namespace BBT.Workflow.Migrations
                     b.HasIndex("ParentInstanceId", "IsCompleted", "SubFlowType")
                         .HasDatabaseName("IX_InstancesCorrelations_Performance");
 
-                    b.ToTable("InstancesCorrelations", "public");
+                    b.ToTable("InstancesCorrelations", (string)null);
                 });
 
             modelBuilder.Entity("BBT.Workflow.Instances.InstanceData", b =>
@@ -400,7 +301,7 @@ namespace BBT.Workflow.Migrations
                     b.HasIndex("InstanceId", "Version", "HistorySequence")
                         .IsUnique();
 
-                    b.ToTable("InstancesData", "public");
+                    b.ToTable("InstancesData", (string)null);
                 });
 
             modelBuilder.Entity("BBT.Workflow.Instances.InstanceJob", b =>
@@ -445,7 +346,7 @@ namespace BBT.Workflow.Migrations
                     b.HasIndex("JobId")
                         .IsUnique();
 
-                    b.ToTable("InstanceJobs", "public");
+                    b.ToTable("InstanceJobs", (string)null);
                 });
 
             modelBuilder.Entity("BBT.Workflow.Instances.InstanceTask", b =>
@@ -482,7 +383,7 @@ namespace BBT.Workflow.Migrations
 
                     b.HasIndex("TransitionId");
 
-                    b.ToTable("InstanceTasks", "public");
+                    b.ToTable("InstanceTasks", (string)null);
                 });
 
             modelBuilder.Entity("BBT.Workflow.Instances.InstanceTransition", b =>
@@ -520,7 +421,7 @@ namespace BBT.Workflow.Migrations
 
                     b.HasIndex("InstanceId");
 
-                    b.ToTable("InstanceTransitions", "public");
+                    b.ToTable("InstanceTransitions", (string)null);
                 });
 
             modelBuilder.Entity("BBT.Workflow.Instances.InstanceAction", b =>
@@ -543,7 +444,7 @@ namespace BBT.Workflow.Migrations
 
                             b1.HasKey("InstanceActionId");
 
-                            b1.ToTable("InstanceActions", "public");
+                            b1.ToTable("InstanceActions", (string)null);
 
                             b1.WithOwner()
                                 .HasForeignKey("InstanceActionId");
@@ -586,7 +487,7 @@ namespace BBT.Workflow.Migrations
 
                             b1.HasKey("InstanceDataId");
 
-                            b1.ToTable("InstancesData", "public");
+                            b1.ToTable("InstancesData", (string)null);
 
                             b1.WithOwner()
                                 .HasForeignKey("InstanceDataId");
@@ -621,7 +522,7 @@ namespace BBT.Workflow.Migrations
 
                             b1.HasKey("InstanceTaskId");
 
-                            b1.ToTable("InstanceTasks", "public");
+                            b1.ToTable("InstanceTasks", (string)null);
 
                             b1.WithOwner()
                                 .HasForeignKey("InstanceTaskId");
@@ -639,7 +540,7 @@ namespace BBT.Workflow.Migrations
 
                             b1.HasKey("InstanceTaskId");
 
-                            b1.ToTable("InstanceTasks", "public");
+                            b1.ToTable("InstanceTasks", (string)null);
 
                             b1.WithOwner()
                                 .HasForeignKey("InstanceTaskId");
@@ -672,7 +573,7 @@ namespace BBT.Workflow.Migrations
 
                             b1.HasKey("InstanceTransitionId");
 
-                            b1.ToTable("InstanceTransitions", "public");
+                            b1.ToTable("InstanceTransitions", (string)null);
 
                             b1.WithOwner()
                                 .HasForeignKey("InstanceTransitionId");
@@ -690,7 +591,7 @@ namespace BBT.Workflow.Migrations
 
                             b1.HasKey("InstanceTransitionId");
 
-                            b1.ToTable("InstanceTransitions", "public");
+                            b1.ToTable("InstanceTransitions", (string)null);
 
                             b1.WithOwner()
                                 .HasForeignKey("InstanceTransitionId");

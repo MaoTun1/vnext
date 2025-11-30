@@ -29,7 +29,6 @@ public interface IRuntimeInfoProvider
     /// </value>
     string Domain { get; }
 
-
     /// <summary>
     /// Validates that the requested domain matches the configured runtime domain.
     /// This method ensures that clients can only access workflows within their authorized domain.
@@ -129,6 +128,6 @@ public class RuntimeInfoProvider : IRuntimeInfoProvider
     {
         var assembly = Assembly.GetExecutingAssembly();
         var versionAttribute = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>();
-        return versionAttribute?.InformationalVersion ?? assembly.GetName().Version?.ToString() ?? "unknown";
+        return assembly.GetName().Version?.ToString() ?? versionAttribute?.InformationalVersion ?? "unknown";
     }
 }

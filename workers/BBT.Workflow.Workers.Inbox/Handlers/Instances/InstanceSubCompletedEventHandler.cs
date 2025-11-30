@@ -18,7 +18,6 @@ internal sealed class InstanceSubCompletedEventHandler(
         var eventData = envelope.Data;
         
         logger.SubFlowEventReceived(
-            TelemetryConstants.Prefixes.Application,
             eventData.SubInstanceId,
             eventData.InstanceId,
             eventData.Domain,
@@ -46,11 +45,8 @@ internal sealed class InstanceSubCompletedEventHandler(
         {
             logger.SubFlowCompletionFailed(
                 ex,
-                TelemetryConstants.Prefixes.Application,
                 eventData.SubInstanceId,
                 eventData.InstanceId);
-            
-            throw;
         }
     }
 }

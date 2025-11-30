@@ -1,13 +1,10 @@
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
-using BBT.Workflow.Domain;
-using BBT.Workflow.Execution;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Instances.Policies;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Shared;
 using BBT.Workflow.Validation;
-using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using BBT.Aether.Results;
 
@@ -20,48 +17,35 @@ public class TransitionValidationService(
     IComponentCacheStore componentCacheStore) : ITransitionValidationService
 {
     /// <inheritdoc />
+    /// <summary>
+    /// Validates a transition execution context.
+    /// Railway chain: Schema Validation → Policy Validation
+    /// </summary>
     public async Task<Result> ValidateAsync(
         TransitionExecutionContext context,
         CancellationToken cancellationToken = default)
     {
-        // 1. Validate data against schema if present
         var schemaResult = await ValidateTransitionSchemaAsync(context, cancellationToken);
         if (!schemaResult.IsSuccess)
-        {
             return schemaResult;
-        }
 
-        // 2. Validate that the instance can execute this transition (includes authorization check)
-        var policyResult = await ValidateTransitionPolicyAsync(context, context.Actor, cancellationToken);
-        if (!policyResult.IsSuccess)
-        {
-            return policyResult;
-        }
-
-        return Result.Ok();
+        return await ValidateTransitionPolicyAsync(context, context.Actor);
     }
 
     /// <summary>
-    /// Validates transition policies and authorization using Result Pattern.
+    /// Validates transition policies and authorization.
+    /// Returns early for skip scenarios (SubFlow resume, null transition, active SubFlow).
     /// </summary>
     private Task<Result> ValidateTransitionPolicyAsync(
         TransitionExecutionContext context,
-        ExecutionActor executionActor,
-        CancellationToken cancellationToken)
+        ExecutionActor executionActor)
     {
-        // Skip validation for SubFlow resume scenarios or when transition is null
-        if (context.Directives.IsSubFlowResume || context.Transition == null)
-        {
+        // Skip validation for special scenarios
+        if (ShouldSkipPolicyValidation(context))
             return Task.FromResult(Result.Ok());
-        }
-
-        if (context.Instance.HasActiveSubFlow)
-        {
-            return Task.FromResult(Result.Ok());
-        }
 
         var result = context.Instance.CanExecuteTransition(
-            context.Transition,
+            context.Transition!,
             context.Current,
             stateTransitionPolicy,
             executionActor);
@@ -70,24 +54,39 @@ public class TransitionValidationService(
     }
 
     /// <summary>
-    /// Validates transition data against JSON schema using Result Pattern.
+    /// Determines if policy validation should be skipped.
+    /// </summary>
+    private static bool ShouldSkipPolicyValidation(TransitionExecutionContext context)
+        => context.Directives.IsSubFlowResume
+           || context.Transition is null
+           || context.Instance.HasActiveSubFlow;
+
+    /// <summary>
+    /// Validates transition data against JSON schema.
+    /// Chains GetSchemaAsync Result into validation.
     /// </summary>
     private async Task<Result> ValidateTransitionSchemaAsync(
         TransitionExecutionContext context,
         CancellationToken cancellationToken)
     {
-        if (context.Transition?.Schema == null)
-        {
+        // Guard: No schema defined
+        if (context.Transition?.Schema is null)
             return Result.Ok();
-        }
 
-        return await ResultExtensions
-            .TryAsync(async ct => await componentCacheStore.GetSchemaAsync(context.Transition.Schema, ct),
-                cancellationToken)
-            .ThenAsync(schema => Task.FromResult(schemaValidator.Validate(schema.Schema, context.DataElement)));
+        var schemaResult = await componentCacheStore.GetSchemaAsync(
+            context.Transition.Schema, cancellationToken);
+
+        if (!schemaResult.IsSuccess)
+            return Result.Fail(schemaResult.Error);
+
+        return schemaValidator.Validate(schemaResult.Value!.Schema, context.DataElement);
     }
 
     /// <inheritdoc />
+    /// <summary>
+    /// Validates a start transition.
+    /// Railway chain: Get Initial State → Build Context → Validate
+    /// </summary>
     public async Task<Result> ValidateStartTransitionAsync(
         Definitions.Workflow workflow,
         Instance instance,
@@ -97,27 +96,15 @@ public class TransitionValidationService(
         IReadOnlyDictionary<string, string?>? headers = null,
         CancellationToken cancellationToken = default)
     {
-        // Get initial state for the start transition
-        var initialStateResult = workflow.GetInitialState();
-        if (!initialStateResult.IsSuccess)
-        {
-            return Result.Fail(initialStateResult.Error);
-        }
+        var contextResult = workflow.GetInitialState()
+            .Map(initialState => BuildStartTransitionContext(
+                workflow, instance, transition, initialState,
+                data, runtimeInfoProvider, headers));
 
-        var initialState = initialStateResult.Value!;
+        if (!contextResult.IsSuccess)
+            return Result.Fail(contextResult.Error);
 
-        // Manually construct TransitionExecutionContext for start transition validation
-        var context = BuildStartTransitionContext(
-            workflow,
-            instance,
-            transition,
-            initialState,
-            data,
-            runtimeInfoProvider,
-            headers);
-
-        // Reuse existing validation logic
-        return await ValidateAsync(context, cancellationToken);
+        return await ValidateAsync(contextResult.Value!, cancellationToken);
     }
 
     /// <summary>

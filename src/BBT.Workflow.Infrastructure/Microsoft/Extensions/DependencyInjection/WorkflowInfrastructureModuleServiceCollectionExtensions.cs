@@ -1,13 +1,13 @@
-using BBT.Aether.BackgroundJob;
-using BBT.Workflow.BackgroundJobs;
+using BBT.Aether.MultiSchema;
+using BBT.Aether.MultiSchema.EntityFrameworkCore.Interceptors;
 using BBT.Workflow.Data;
 using BBT.Workflow.Infrastructure.DataSink;
 using BBT.Workflow.Infrastructure.HostedServices;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Instances.Events;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Remote.Extensions;
 using BBT.Workflow.Schemas;
-using Microsoft.EntityFrameworkCore;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -27,13 +27,10 @@ public static class WorkflowInfrastructureModuleServiceCollectionExtensions
         services.AddApplicationModule();
         services.AddAetherInfrastructure();
         
-        // Schemas
-        services.AddScoped<ISchemaManager, PostgresSchemaManager>();
-        
         // DbContext
-        // services.AddAetherDbContextFactory<WorkflowDbContext, WorkflowDbContextFactory>(_ => { });
-        services.AddScoped<IDbContextFactory<WorkflowDbContext>, WorkflowDbContextFactory>();
-
+        services.AddSingleton<NpgsqlSchemaConnectionInterceptor>();
+        services.AddScoped<IMultiSchemaMigrator<WorkflowDbContext>, MultiSchemaMigrator<WorkflowDbContext>>();
+        
         // You can register your repositories here.
         services.AddScoped<IInstanceRepository, EfCoreInstanceRepository>();
         services.AddScoped<IInstanceCorrelationRepository, EfCoreInstanceCorrelationRepository>();
@@ -46,11 +43,10 @@ public static class WorkflowInfrastructureModuleServiceCollectionExtensions
         
         // Monitoring
         services.AddSingleton<IWorkflowMetrics, PrometheusWorkflowMetrics>();
-        services.AddScoped<WorkflowDatabaseInterceptor>();
-        services.AddScoped<WorkflowTransactionInterceptor>();
+        services.AddSingleton<WorkflowDatabaseInterceptor>();
+        services.AddSingleton<WorkflowTransactionInterceptor>();
         
         // Hosted Services
-        services.AddHostedService<BackgroundJobMetricsHostedService>();
         services.AddHostedService<SystemHealthMonitoringHostedService>();
         
         // DataSink Integration (replaces ClickHouse integration)
@@ -58,6 +54,11 @@ public static class WorkflowInfrastructureModuleServiceCollectionExtensions
         services.AddClickHouseDataSinks();
         services.RegisterDataSinks();
         
+        // Schema Migration Orchestration
+        services.AddScoped<ISchemaMigrationOrchestrator, SchemaMigrationOrchestrator>();
+        
+        // Event Hooks
+        services.AddEventHook<InstanceSubCompletedEvent, InstanceSubCompletedEventHook>();
         
         return services;
     }

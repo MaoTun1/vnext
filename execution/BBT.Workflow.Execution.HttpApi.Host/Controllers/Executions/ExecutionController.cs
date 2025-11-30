@@ -1,6 +1,5 @@
 using BBT.Aether.AspNetCore.Controllers;
 using BBT.Workflow.Tasks;
-using BBT.Workflow.Logging;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BBT.Workflow.Execution.Controllers.Executions;
@@ -40,13 +39,13 @@ public sealed class ExecutionController(
         // Note: Task type is not available at controller level, will be added by LocalTaskExecutor
         using (logger.BeginScope(new Dictionary<string, object>
         {
-            [TelemetryConstants.ScopeFields.Domain] = input.Context.Workflow.Domain,
-            [TelemetryConstants.ScopeFields.Flow] = input.Context.Workflow.Key,
-            [TelemetryConstants.ScopeFields.FlowVersion] = input.Context.Workflow.Version,
-            [TelemetryConstants.ScopeFields.InstanceId] = input.Context.InstanceId,
-            [TelemetryConstants.ScopeFields.TransitionKey] = input.Context.TransitionKey ?? "N/A",
-            [TelemetryConstants.ScopeFields.TaskKey] = input.OnExecuteTask.Task.Key,
-            [TelemetryConstants.ScopeFields.TaskTrigger] = input.TaskTrigger.ToString()
+            ["domain"] = input.Context.Workflow.Domain,
+            ["flow"] = input.Context.Workflow.Key,
+            ["flowVersion"] = input.Context.Workflow.Version,
+            ["instanceId"] = input.Context.InstanceId,
+            ["transitionKey"] = input.Context.TransitionKey ?? "N/A",
+            ["taskKey"] = input.OnExecuteTask.Task.Key,
+            ["taskTrigger"] = input.TaskTrigger.ToString()
         }))
         {
             logger.LogInformation("Executing task {TaskKey} for instance {InstanceId}", 
@@ -54,15 +53,7 @@ public sealed class ExecutionController(
 
             // Execute task and capture context updates for synchronization
             var result = await taskCommandAppService.ExecuteTaskAsync(input, cancellationToken);
-            
-            // // Use Result Pattern to automatically handle errors
-            // TODO:
-            // if (!result.IsSuccess)
-            //     return new ObjectResult(result.ToProblemDetails()) 
-            //     { 
-            //         StatusCode = result.ToProblemDetails().Status 
-            //     };
-            
+
             logger.LogInformation("Successfully executed task {TaskKey} for instance {InstanceId}. Context updates: TaskResponse={TaskResponseCount}, InstanceData={InstanceDataCount}", 
                 input.OnExecuteTask.Task.Key, 
                 input.Context.InstanceId,

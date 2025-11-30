@@ -2,6 +2,7 @@ using BBT.Aether.BackgroundJob;
 using BBT.Workflow.BackgroundJobs.Payloads;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Logging;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
 using Microsoft.Extensions.Logging;
@@ -27,17 +28,23 @@ public sealed class FlowTimeoutJobHandler(
     {
         try
         {
-            var workflow =
-                await componentCacheStore.GetFlowAsync(args.Domain, args.FlowName,
-                    args.Version, cancellationToken);
+            var workflowResult = await componentCacheStore.GetFlowAsync(args.Domain, args.FlowName,
+                args.Version, cancellationToken);
+
+            if (!workflowResult.IsSuccess)
+            {
+                logger.WorkflowNotFoundWarning(args.FlowName, workflowResult.Error.Code);
+                return;
+            }
+
+            var workflow = workflowResult.Value!;
 
             var instance =
                 await instanceRepository.FindAsync(p => p.Id == args.InstanceId, true,
                     cancellationToken);
             if (instance == null)
             {
-                logger.LogWarning("FlowTimeoutJobHandler: Instance not found with Id {InstanceId}",
-                    args.InstanceId);
+                logger.InstanceNotFound(args.InstanceId, args.FlowName);
                 return;
             }
 
@@ -48,8 +55,7 @@ public sealed class FlowTimeoutJobHandler(
 
                 if (workflow.Timeout is null)
                 {
-                    logger.LogWarning("FlowTimeoutJobHandler: Timeout configuration missing for {Flow}",
-                        instance.Flow);
+                    logger.TimeoutConfigMissing(instance.Flow);
                     return;
                 }
 
@@ -66,9 +72,7 @@ public sealed class FlowTimeoutJobHandler(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex,
-                "TransitionJobHandler: Failed to execute transition for JobName {JobId}",
-                args.JobName);
+            logger.JobFailed(ex, args.JobName, args.InstanceId);
             throw;
         }
     }

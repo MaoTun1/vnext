@@ -22,30 +22,38 @@ internal sealed class InstanceCanceledEventHandler(
     public async Task HandleAsync(CloudEventEnvelope<InstanceCanceledEvent> envelope,
         CancellationToken cancellationToken)
     {
-        logger.LogInformation(
-            WorkflowEventIds.EventReceived,
-            "Received InstanceCanceledEvent for instance {InstanceId} in workflow {Workflow}",
-            envelope.Data.InstanceId,
-            envelope.Data.Flow);
+        var eventData = envelope.Data;
 
-        var instance = await instanceRepository.FindAsync(envelope.Data.InstanceId, true, cancellationToken);
+        logger.InstanceCanceledEventReceived(
+            eventData.InstanceId,
+            eventData.Flow);
 
-        if (instance == null)
-            return;
-
-        if (instance.IsCompleted)
-            return;
-
-        var jobs = await instanceJobRepository.GetListActiveAsync(instance.Id, cancellationToken);
-
-        // Process all jobs in parallel for better performance
-        var processingTasks = jobs.Select(async job =>
+        try
         {
-            await backgroundJobService.DeleteAsync(job.JobId, cancellationToken);
-            job.MarkAsProcessed();
-            await instanceJobRepository.UpdateAsync(job, true, cancellationToken);
-        });
+            var instance = await instanceRepository.FindAsync(eventData.InstanceId, true, cancellationToken);
 
-        await Task.WhenAll(processingTasks);
+            if (instance == null)
+                return;
+
+            var jobs = await instanceJobRepository.GetListActiveAsync(instance.Id, cancellationToken);
+            if (jobs.Any())
+            {
+                // Process all jobs in parallel for better performance
+                var processingTasks = jobs.Select(async job =>
+                {
+                    await backgroundJobService.DeleteAsync(job.JobId, cancellationToken);
+                    job.MarkAsProcessed();
+                    await instanceJobRepository.UpdateAsync(job, true, cancellationToken);
+                });
+
+                await Task.WhenAll(processingTasks);
+
+                logger.InstanceCanceledJobsProcessed(eventData.InstanceId, jobs.Count);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.InstanceCanceledProcessingFailed(ex, eventData.InstanceId);
+        }
     }
 }

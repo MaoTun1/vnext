@@ -63,9 +63,7 @@ public class ClickHouseInstanceTaskDataSink : AbstractDataSink<InstanceTask>, ID
     {
         var data = MapInstanceTaskToClickHouse(entity, DataSinkOperation.Insert);
         _queue.Enqueue(data);
-
-        Logger.LogDebug("Queued instance task {TaskId} for ClickHouse transfer. Operation: Insert", entity.Id);
-
+        
         // Check if we need to flush immediately
         if (_queue.Count >= _configuration.BatchSize)
         {
@@ -83,9 +81,7 @@ public class ClickHouseInstanceTaskDataSink : AbstractDataSink<InstanceTask>, ID
     {
         var data = MapInstanceTaskToClickHouse(entity, DataSinkOperation.Update);
         _queue.Enqueue(data);
-
-        Logger.LogDebug("Queued instance task {TaskId} for ClickHouse transfer. Operation: Update", entity.Id);
-
+        
         // Check if we need to flush immediately
         if (_queue.Count >= _configuration.BatchSize)
         {
@@ -103,9 +99,7 @@ public class ClickHouseInstanceTaskDataSink : AbstractDataSink<InstanceTask>, ID
     {
         var data = MapInstanceTaskToClickHouse(entity, DataSinkOperation.Delete);
         _queue.Enqueue(data);
-
-        Logger.LogDebug("Queued instance task {TaskId} for ClickHouse transfer. Operation: Delete", entity.Id);
-
+        
         // Check if we need to flush immediately
         if (_queue.Count >= _configuration.BatchSize)
         {
@@ -134,7 +128,6 @@ public class ClickHouseInstanceTaskDataSink : AbstractDataSink<InstanceTask>, ID
             if (dataToFlush.Any())
             {
                 await SendDataToClickHouseAsync(_configuration.Tables.InstanceTasks, dataToFlush, cancellationToken);
-                Logger.LogDebug("Flushed {Count} instance task records to ClickHouse", dataToFlush.Count);
             }
         }
         finally
@@ -200,8 +193,6 @@ public class ClickHouseInstanceTaskDataSink : AbstractDataSink<InstanceTask>, ID
                 
                 if (response.IsSuccessStatusCode)
                 {
-                    Logger.LogDebug("Successfully sent {Count} instance task records to ClickHouse table {TableName}", 
-                        data.Count, tableName);
                     return;
                 }
 

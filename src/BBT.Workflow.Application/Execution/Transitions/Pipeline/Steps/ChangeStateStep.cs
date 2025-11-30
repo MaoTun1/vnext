@@ -31,101 +31,67 @@ public sealed class ChangeStateStep(
         // Skip for SubFlow resume - state already changed
         if (context.Directives.IsSubFlowResume || context.Transition == null)
         {
-            logger.LogDebug("Skipping state change for SubFlow resume on instance {InstanceId}",
-                context.InstanceId);
             return Result<StepOutcome>.Ok(StepOutcome.Continue());
         }
 
-        // Railway Oriented Programming: Chain operations, each wrapped in Try
-        return await GetStateTransitionInfo(context)
-            .ThenAsync(info => RecordTransitionMetric(context, info))
-            .ThenAsync(info => PerformStateChange(context, info, cancellationToken))
+        // Railway Oriented Programming: Fluent chain
+        return await Result.Ok(BuildStateTransitionInfo(context))
+            .Tap(info => RecordTransitionMetric(context, info))
+            .TapAsync(info => PerformStateChangeAsync(context, info, cancellationToken))
             .ThenAsync(_ => UpdateTargetStateInContext(context))
             .OnSuccess(_ => RecordStateEntryMetric(context))
-            .OnSuccess(info => LogStateChange(context, info))
-            .OnSuccess(AddTelemetryEvent)
-            .ThenAsync(_ => Task.FromResult(Result<StepOutcome>.Ok(StepOutcome.Continue())));
+            .OnSuccess(_ => LogStateChange(context))
+            .OnSuccess(_ => AddTelemetryEvent(context))
+            .MapAsync(_ => StepOutcome.Continue());
     }
 
     /// <summary>
-    /// Gets state transition information from context.
+    /// Builds state transition information from context.
     /// </summary>
-    private Task<Result<StateTransitionInfo>> GetStateTransitionInfo(TransitionExecutionContext context)
+    private static StateTransitionInfo BuildStateTransitionInfo(TransitionExecutionContext context)
     {
-        return Task.FromResult(
-            ResultExtensions.Try(() =>
-            {
-                var fromState = context.Instance.GetCurrentState;
-                var toState = context.Transition!.Target;
-
-                return new StateTransitionInfo(fromState, toState, context.Transition);
-            })
-        );
+        return new StateTransitionInfo(
+            context.Instance.GetCurrentState,
+            context.Transition!.Target,
+            context.Transition);
     }
 
     /// <summary>
     /// Records state transition metric.
     /// </summary>
-    private Task<Result<StateTransitionInfo>> RecordTransitionMetric(
-        TransitionExecutionContext context,
-        StateTransitionInfo info)
+    private void RecordTransitionMetric(TransitionExecutionContext context, StateTransitionInfo info)
     {
-        return Task.FromResult(
-            ResultExtensions.Try(() =>
-            {
-                workflowMetrics.RecordStateTransition(
-                    context.Workflow.Key,
-                    info.FromState,
-                    info.ToState);
-
-                return info;
-            })
-        );
+        workflowMetrics.RecordStateTransition(
+            context.Workflow.Key,
+            info.FromState,
+            info.ToState);
     }
 
     /// <summary>
     /// Performs the actual state change and updates the instance in repository.
     /// </summary>
-    private async Task<Result<StateTransitionInfo>> PerformStateChange(
+    private async Task PerformStateChangeAsync(
         TransitionExecutionContext context,
         StateTransitionInfo info,
         CancellationToken cancellationToken)
     {
-        // Change state
         context.Instance.ChangeState(info.Transition);
-
-        // Update repository - wrapped in Try
-        var updateResult = await ResultExtensions.TryAsync(
-            async ct => await instanceRepository.UpdateAsync(context.Instance, true, ct),
-            cancellationToken);
-
-        return updateResult.IsSuccess
-            ? Result<StateTransitionInfo>.Ok(info)
-            : Result<StateTransitionInfo>.Fail(updateResult.Error);
+        await instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
     }
 
     /// <summary>
     /// Updates target state in context using Result Pattern.
+    /// Returns Result because GetState can legitimately fail (state not found).
     /// </summary>
-    private Task<Result<StateTransitionInfo>> UpdateTargetStateInContext(TransitionExecutionContext context)
+    private Task<Result<TransitionExecutionContext>> UpdateTargetStateInContext(TransitionExecutionContext context)
     {
-        var targetStateResult = context.Workflow.GetState(context.Instance.GetCurrentState);
-
-        if (!targetStateResult.IsSuccess)
-        {
-            return Task.FromResult(
-                Result<StateTransitionInfo>.Fail(targetStateResult.Error)
-            );
-        }
-
-        context.Target = targetStateResult.Value!;
-
-        var info = new StateTransitionInfo(
-            context.Instance.GetCurrentState,
-            context.Instance.GetCurrentState,
-            context.Transition!);
-
-        return Task.FromResult(Result<StateTransitionInfo>.Ok(info));
+        var result = context.Workflow.GetState(context.Instance.GetCurrentState)
+            .Map(state =>
+            {
+                context.Target = state;
+                return context;
+            });
+        return Task.FromResult(result);
     }
 
     /// <summary>
@@ -141,25 +107,23 @@ public sealed class ChangeStateStep(
     /// <summary>
     /// Logs state change with structured logging.
     /// </summary>
-    private void LogStateChange(TransitionExecutionContext context, StateTransitionInfo info)
+    private void LogStateChange(TransitionExecutionContext context)
     {
-        logger.StateChanged(
-            TelemetryConstants.Prefixes.Execution,
-            info.FromState,
-            info.ToState,
-            context.InstanceId);
+        var fromState = context.Instance.GetCurrentState;
+        var toState = context.Target?.Key ?? "unknown";
+        logger.StateChanged(fromState, toState, context.InstanceId);
     }
 
     /// <summary>
     /// Adds state changed event to telemetry span.
     /// </summary>
-    private void AddTelemetryEvent(StateTransitionInfo info)
+    private static void AddTelemetryEvent(TransitionExecutionContext context)
     {
         Activity.Current?.AddEvent(new ActivityEvent("state.changed",
             tags: new ActivityTagsCollection
             {
-                { TelemetryConstants.TagNames.StateFrom, info.FromState },
-                { TelemetryConstants.TagNames.StateTo, info.ToState }
+                { TelemetryConstants.TagNames.StateFrom, context.Instance.GetCurrentState },
+                { TelemetryConstants.TagNames.StateTo, context.Target?.Key ?? "unknown" }
             }));
     }
 

@@ -1,3 +1,4 @@
+using BBT.Aether.Results;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Monitoring;
@@ -27,20 +28,15 @@ public sealed class PooledTaskFactory(
     /// Creates a task instance suitable for execution, ensuring it's isolated from cached instances.
     /// Uses object pooling for better performance in high-throughput scenarios.
     /// </summary>
-    public async Task<WorkflowTask> CreateExecutionTaskAsync(
+    public async Task<Result<WorkflowTask>> CreateExecutionTaskAsync(
         IReference taskReference,
         CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var cachedTask = await componentCacheStore.GetTaskAsync(taskReference, cancellationToken);
-            return CreateFromCached(cachedTask);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to create execution task for reference: {TaskReference}", taskReference);
-            throw;
-        }
+        return await componentCacheStore.GetTaskAsync(taskReference, cancellationToken)
+            .Then(CreateFromCached)
+            .OnFailure(error => logger.LogWarning(
+                "Failed to create execution task for reference {TaskReference}: {ErrorCode}", 
+                taskReference, error.Code));
     }
 
     /// <summary>
@@ -48,32 +44,24 @@ public sealed class PooledTaskFactory(
     /// Since task properties have private setters, we use the efficient Clone() method
     /// instead of true object pooling, but maintain the pool for future optimization.
     /// </summary>
-    public WorkflowTask CreateFromCached(WorkflowTask cachedTask)
+    public Result<WorkflowTask> CreateFromCached(WorkflowTask cachedTask)
     {
         if (cachedTask == null)
-            throw new ArgumentNullException(nameof(cachedTask));
+            return Result<WorkflowTask>.Fail(
+                Error.Validation("task.null", "Cached task cannot be null"));
 
-        try
+        var taskType = cachedTask.GetType();
+
+        // Use configuration to determine strategy
+        if (ShouldUsePoolingFromConfig(taskType))
         {
-            var taskType = cachedTask.GetType();
-
-            // Use configuration to determine strategy
-            if (ShouldUsePoolingFromConfig(taskType))
-            {
-                // Use real object pooling with the new CopyFromInternal methods
-                return CreateFromPool(cachedTask);
-            }
-
-            // Fall back to direct cloning for non-pooled types
-            var directClonedTask = cachedTask.Clone();
-            return directClonedTask;
+            // Use real object pooling with the new CopyFromInternal methods
+            return Result<WorkflowTask>.Ok(CreateFromPool(cachedTask));
         }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to clone task {TaskKey} of type {TaskType}",
-                cachedTask.Key, cachedTask.GetType().Name);
-            throw;
-        }
+
+        // Fall back to direct cloning for non-pooled types
+        var directClonedTask = cachedTask.Clone();
+        return Result<WorkflowTask>.Ok(directClonedTask);
     }
 
     private WorkflowTask CreateFromPool(WorkflowTask template)

@@ -7,7 +7,7 @@ using BBT.Workflow.DataSink;
 namespace BBT.Workflow.Instances;
 
 public class EfCoreInstanceTaskRepository(
-    WorkflowDbContext dbContext,
+    IDbContextProvider<WorkflowDbContext> dbContext,
     IServiceProvider serviceProvider,
     IDataSinkManager dataSinkManager)
     : EfCoreRepository<WorkflowDbContext, InstanceTask, Guid>(dbContext, serviceProvider),

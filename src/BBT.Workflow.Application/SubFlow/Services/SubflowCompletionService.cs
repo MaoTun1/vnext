@@ -9,7 +9,6 @@ using BBT.Workflow.Instances;
 using BBT.Workflow.Logging;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
-using BBT.Workflow.Schemas;
 using Microsoft.Extensions.Logging;
 using BBT.Workflow.Execution.Pipeline;
 using BBT.Workflow.Execution.Services;
@@ -20,7 +19,6 @@ namespace BBT.Workflow.SubFlow;
 /// <inheritdoc cref="ISubflowCompletionService" />
 public sealed class SubflowCompletionService(
     IServiceProvider serviceProvider,
-    ICurrentSchema currentSchema,
     IComponentCacheStore componentCacheStore,
     IInstanceRepository instanceRepository,
     IScriptEngine scriptEngine,
@@ -49,62 +47,52 @@ public sealed class SubflowCompletionService(
 
         try
         {
-            using (currentSchema.Change(completedInput.Flow))
+            // Get parent instance
+            var parentInstance = await instanceRepository.FindAsync(
+                completedInput.InstanceId, true, cancellationToken);
+
+            if (parentInstance == null)
             {
-                // Get parent instance
-                var parentInstance = await instanceRepository.FindAsync(
-                    completedInput.InstanceId, true, cancellationToken);
-
-                if (parentInstance == null)
-                {
-                    logger.InstanceNotFound(
-                        TelemetryConstants.Prefixes.Application,
-                        completedInput.InstanceId,
-                        completedInput.Flow);
-                    return;
-                }
-
-                // Complete correlation through Instance aggregate
-                var correlation = parentInstance.CompleteCorrelation(completedInput.SubInstanceId);
-                if (correlation == null)
-                {
-                    logger.SubFlowCorrelationNotFound(
-                        TelemetryConstants.Prefixes.Application,
-                        completedInput.SubInstanceId);
-                    return;
-                }
-
-                logger.SubFlowCorrelationCompleted(
-                    TelemetryConstants.Prefixes.Application,
-                    completedInput.SubInstanceId,
-                    completedInput.InstanceId);
-
-                // Save instance (correlation is part of aggregate)
-                await instanceRepository.UpdateAsync(parentInstance, true, cancellationToken);
-
-                // If this is a SubProcess (non-blocking), just return after marking correlation as completed
-                if (correlation.SubFlowType.Equals(SubFlowType.SubProcess))
-                {
-                    return;
-                }
-
-                // Process parent workflow continuation for SubFlow (blocking)
-                await ProcessParentWorkflowContinuationAsync(
-                    correlation,
-                    completedInput,
-                    parentInstance,
-                    cancellationToken);
+                logger.InstanceNotFound(
+                    completedInput.InstanceId,
+                    completedInput.Flow);
+                return;
             }
+
+            // Complete correlation through Instance aggregate
+            var correlation = parentInstance.CompleteCorrelation(completedInput.SubInstanceId);
+            if (correlation == null)
+            {
+                logger.SubFlowCorrelationNotFound(completedInput.SubInstanceId);
+                return;
+            }
+
+            logger.SubFlowCorrelationCompleted(
+                completedInput.SubInstanceId,
+                completedInput.InstanceId);
+
+            // Save instance (correlation is part of aggregate)
+            await instanceRepository.UpdateAsync(parentInstance, true, cancellationToken);
+
+            // If this is a SubProcess (non-blocking), just return after marking correlation as completed
+            if (correlation.SubFlowType.Equals(SubFlowType.SubProcess))
+            {
+                return;
+            }
+
+            // Process parent workflow continuation for SubFlow (blocking)
+            await ProcessParentWorkflowContinuationAsync(
+                correlation,
+                completedInput,
+                parentInstance,
+                cancellationToken);
         }
         catch (Exception ex)
         {
             logger.SubFlowCompletionFailed(
                 ex,
-                TelemetryConstants.Prefixes.Application,
                 completedInput.SubInstanceId,
                 completedInput.InstanceId);
-
-            throw;
         }
     }
 
@@ -123,16 +111,24 @@ public sealed class SubflowCompletionService(
         CancellationToken cancellationToken)
     {
         logger.SubFlowParentContinuationStarted(
-            TelemetryConstants.Prefixes.Application,
             parentInstance.Id,
             parentInstance.GetCurrentState);
 
         // Get parent workflow definition using data from completedInput
-        var parentWorkflow = await componentCacheStore.GetFlowAsync(
+        var parentWorkflowResult = await componentCacheStore.GetFlowAsync(
             completedInput.Domain,
             completedInput.Flow,
             completedInput.Version,
             cancellationToken);
+
+        if (!parentWorkflowResult.IsSuccess)
+        {
+            logger.LogWarning("Failed to get parent workflow {Flow} for SubFlow completion: {ErrorCode}",
+                completedInput.Flow, parentWorkflowResult.Error.Code);
+            return;
+        }
+
+        var parentWorkflow = parentWorkflowResult.Value!;
 
         // Get the state where SubFlow was initiated using Result Pattern
         var parentStateResult = parentWorkflow.GetState(correlation.ParentState);
@@ -154,9 +150,7 @@ public sealed class SubflowCompletionService(
 
         if (parentState.SubFlow?.Mapping != null)
         {
-            logger.SubFlowOutputMappingStarted(
-                TelemetryConstants.Prefixes.Application,
-                parentInstance.Id);
+            logger.SubFlowOutputMappingStarted(parentInstance.Id);
 
             await ProcessSubFlowOutputMappingAsync(
                 parentInstance,
@@ -166,17 +160,11 @@ public sealed class SubflowCompletionService(
         }
 
         // Resume automatic transitions and scheduled processes that were paused for SubFlow
-        logger.SubFlowPipelineResumed(
-            TelemetryConstants.Prefixes.Application,
-            parentInstance.Id);
-
-        // Find the transition that initiated the SubFlow
-        var transition = parentWorkflow.FindTransitionInContext(correlation.ParentState);
+        logger.SubFlowPipelineResumed(parentInstance.Id);
 
         await ResumePipelineAsync(
             parentInstance,
             parentWorkflow,
-            transition!,
             cancellationToken);
     }
 
@@ -231,7 +219,6 @@ public sealed class SubflowCompletionService(
         {
             logger.SubFlowCompletionFailed(
                 ex,
-                TelemetryConstants.Prefixes.Application,
                 Guid.Empty,
                 parentInstance.Id);
 
@@ -245,12 +232,10 @@ public sealed class SubflowCompletionService(
     /// </summary>
     /// <param name="parentInstance">The parent workflow instance</param>
     /// <param name="parentWorkflow">The parent workflow definition</param>
-    /// <param name="transition"></param>
     /// <param name="cancellationToken">Cancellation token</param>
     private async Task ResumePipelineAsync(
         Instance parentInstance,
         Definitions.Workflow parentWorkflow,
-        Transition transition,
         CancellationToken cancellationToken)
     {
         try
@@ -261,8 +246,8 @@ public sealed class SubflowCompletionService(
                 WorkflowKey = parentWorkflow.Key,
                 WorkflowVersion = parentWorkflow.Version,
                 InstanceId = parentInstance.Id,
-                TransitionKey = transition.Key, // For logging purposes only
-                TriggerType = transition.TriggerType,
+                TransitionKey = "", // For logging purposes only
+                TriggerType = TriggerType.Manual,
                 Mode = ExecMode.Resume, // Use Resume mode for SubFlow completion
                 Headers = new Dictionary<string, string?>(),
                 Actor = ExecutionActor.System,
@@ -284,8 +269,7 @@ public sealed class SubflowCompletionService(
                 if (result.Error.Code != WorkflowErrorCodes.AutoTransitionConditionNotMet)
                 {
                     logger.TransitionRuleFailed(
-                        TelemetryConstants.Prefixes.Application,
-                        transition.Key,
+                        "subflow",
                         parentInstance.Id,
                         result.Error.Message ?? "Unknown error");
                 }
@@ -295,7 +279,6 @@ public sealed class SubflowCompletionService(
         {
             logger.SubFlowCompletionFailed(
                 ex,
-                TelemetryConstants.Prefixes.Application,
                 Guid.Empty,
                 parentInstance.Id);
 

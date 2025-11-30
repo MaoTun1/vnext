@@ -1,14 +1,15 @@
 using System.Net;
 using System.Text.Json.Serialization;
 using BBT.Aether.AspNetCore.ExceptionHandling;
-using BBT.Aether.BackgroundJob;
+using BBT.Aether.AspNetCore.MultiSchema;
 using BBT.Aether.Domain.Services;
 using BBT.Aether.Events;
+using BBT.Aether.MultiSchema.EntityFrameworkCore.Interceptors;
 using BBT.Workflow;
-using BBT.Workflow.BackgroundJob;
 using BBT.Workflow.BackgroundJobs.Handlers;
 using BBT.Workflow.Data;
 using BBT.Workflow.Headers;
+using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
 using BBT.Workflow.Tasks;
@@ -16,10 +17,8 @@ using Dapr.Jobs.Extensions;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -45,7 +44,7 @@ public static class WorkflowApiBaseServiceCollectionExtensions
         ConfigureRedis(services);
         ConfigureDistributedCache(services, configuration);
         ConfigureDistributedLock(services, configuration);
-        ConfigureBackgroundJob(services, configuration);
+        ConfigureBackgroundJob(services);
         ConfigureRoute(services);
         ConfigureExceptionHandling(services);
         ConfigureBaseHost(services);
@@ -115,27 +114,53 @@ public static class WorkflowApiBaseServiceCollectionExtensions
 
     private static void ConfigureDbContext(IServiceCollection services, IConfiguration configuration)
     {
-        services.AddAetherDbContext<WorkflowDbContext>(options =>
+        services.AddSchemaResolution(options =>
+        {
+            options.HeaderKey = "X-Workflow";
+            options.QueryStringKey = "workflow";
+            options.RouteValueKey = "workflow";
+            options.ThrowIfNotFound = false;
+        });
+
+        services.AddAetherDbContext<WorkflowDbContext>((sp, options) =>
         {
             options.UseNpgsql(configuration.GetConnectionString("Default"),
                     npgsqlOptions => { npgsqlOptions.MigrationsHistoryTable("__Workflow_Migrations"); })
                 .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
 
-            options.ReplaceService<IModelCacheKeyFactory, DynamicSchemaModelCacheKeyFactory>();
-            options.ReplaceService<IMigrationsAssembly, DbSchemaAwareMigrationAssembly>();
+            options.ReplaceService<IMigrationsSqlGenerator, MultiSchemaNpgsqlMigrationsSqlGenerator>();
+            options.AddInterceptors(
+                sp.GetRequiredService<NpgsqlSchemaConnectionInterceptor>(),
+                sp.GetRequiredService<WorkflowDatabaseInterceptor>(),
+                sp.GetRequiredService<WorkflowTransactionInterceptor>()
+            );
         });
 
         services.AddAetherUnitOfWorkMiddleware();
 
-        services.AddAetherDomainEvents<WorkflowDbContext>(options =>
+        services.AddSingleton<IDataSeedService, WorkflowDataSeedService>();
+
+        #region DomainEvents
+
+        services.AddAetherDbContext<MessagingDbContext>((_, options) =>
         {
-            options.DispatchStrategy = DomainEventDispatchStrategy.AlwaysUseOutbox;
+            options.UseNpgsql(configuration.GetConnectionString("Default"),
+                    npgsqlOptions =>
+                    {
+                        npgsqlOptions.MigrationsHistoryTable("__Workflow_Migrations", "sys_queues");
+                    })
+                .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
         });
 
-        services.AddAetherOutbox<WorkflowDbContext>();
-        services.AddAetherInbox<WorkflowDbContext>();
+        services.AddAetherDomainEvents<MessagingDbContext>(options =>
+        {
+            options.DispatchStrategy = DomainEventDispatchStrategy.PublishWithFallback;
+        });
 
-        services.AddSingleton<IDataSeedService, WorkflowDataSeedService>();
+        services.AddAetherOutbox<MessagingDbContext>();
+        services.AddAetherInbox<MessagingDbContext>();
+
+        #endregion
     }
 
     private static void ConfigureMapper(IServiceCollection services)
@@ -165,7 +190,7 @@ public static class WorkflowApiBaseServiceCollectionExtensions
 
     private static void ConfigureEventBus(IServiceCollection services, IConfiguration configuration)
     {
-        services.AddAetherEventBus(options =>
+        services.AddEventBusWithHooks(options =>
             {
                 options.DefaultSource =
                     $"urn:vnext:{configuration.GetValue<string?>("ApplicationName")?.ToLowerInvariant()}";
@@ -175,7 +200,7 @@ public static class WorkflowApiBaseServiceCollectionExtensions
         );
     }
 
-    private static void ConfigureBackgroundJob(IServiceCollection services, IConfiguration configuration)
+    private static void ConfigureBackgroundJob(IServiceCollection services)
     {
         services.AddAetherBackgroundJob<WorkflowDbContext>(options =>
         {
@@ -183,8 +208,6 @@ public static class WorkflowApiBaseServiceCollectionExtensions
             options.AddHandler<TransitionJobHandler>(TransitionJobHandler.HandlerName);
             options.AddHandler<TransitionTimerJobHandler>(TransitionTimerJobHandler.HandlerName);
         });
-
-        services.Replace(ServiceDescriptor.Scoped<IJobDispatcher, AppJobDispatcher>());
         services.AddDaprJobScheduler();
     }
 
@@ -236,8 +259,6 @@ public static class WorkflowApiBaseServiceCollectionExtensions
             opt.Map(WorkflowErrorCodes.TaskContextCreation, HttpStatusCode.InternalServerError);
             opt.Map(WorkflowErrorCodes.TaskExecution, HttpStatusCode.InternalServerError);
         });
-
-       
     }
 
     private static void ConfigureBaseHost(IServiceCollection services)
@@ -245,5 +266,7 @@ public static class WorkflowApiBaseServiceCollectionExtensions
         services.AddScoped<WorkflowRuntimeMiddleware>();
         services.AddScoped<ResponseHeaderFilter>();
         services.AddScoped<IHeaderService, HttpContextHeaderService>();
+        services
+            .ReplaceSchemaResolver<HeaderSchemaResolutionStrategy, WorkflowHeaderSchemaResolutionStrategy>();
     }
 }

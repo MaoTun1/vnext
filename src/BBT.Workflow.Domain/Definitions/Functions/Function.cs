@@ -48,16 +48,7 @@ public sealed class Function : IDomainEntity, IFunctionReference, IReferenceSett
     public TaskScope Scope { get; private set; }
     [JsonInclude] public OnExecuteTask Task { get; private set; }
 
-    public string CacheKey => $"{nameof(Function)}:{Domain}:{Flow}:{Key}:{Version}";
-
-    public static string GenerateCacheKey(
-        string domain,
-        string flow,
-        string key,
-        string version)
-    {
-        return $"{nameof(Function)}:{domain}:{flow}:{key}:{version}";
-    }
+    public string ComponentKey => RuntimeSysSchemaInfo.Functions;
 
     private void SetKey(string key)
     {

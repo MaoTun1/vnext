@@ -3,12 +3,10 @@ using BBT.Aether.Domain.Entities;
 using BBT.Aether.Results;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
-using BBT.Workflow.Domain;
 using BBT.Workflow.Logging;
 using BBT.Workflow.Extentions;
 using BBT.Workflow.Instances.Remote;
 using BBT.Workflow.Runtime;
-using BBT.Workflow.Schemas;
 using BBT.Workflow.Scripting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -18,7 +16,6 @@ namespace BBT.Workflow.Instances;
 
 public sealed class InstanceQueryAppService(
     IServiceProvider serviceProvider,
-    ICurrentSchema currentSchema,
     IRuntimeInfoProvider runtimeInfoProvider,
     IComponentCacheStore componentCacheStore,
     IInstanceRepository instanceRepository,
@@ -35,35 +32,31 @@ public sealed class InstanceQueryAppService(
         CancellationToken cancellationToken = default)
     {
         runtimeInfoProvider.Check(input.Domain);
-        using (currentSchema.Change(input.Workflow))
-        {
-            var instanceResult = await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken);
-            if (!instanceResult.IsSuccess)
-            {
-                return ConditionalResult<GetInstanceOutput>.Fail(instanceResult.Error);
-            }
 
-            var instance = instanceResult.Value!;
+        return await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken)
+            .MatchAsync(
+                onSuccess: async instance =>
+                {
+                    // Check ETag for conditional requests
+                    if (!string.IsNullOrEmpty(input.IfNoneMatch) &&
+                        instance.LatestData != null &&
+                        instance.LatestData.ETag.MatchesIfNoneMatch(input.IfNoneMatch))
+                    {
+                        return ConditionalResult<GetInstanceOutput>.NotModified();
+                    }
 
-            // Check ETag for conditional requests
-            if (!string.IsNullOrEmpty(input.IfNoneMatch) &&
-                instance.LatestData != null &&
-                instance.LatestData.ETag.MatchesIfNoneMatch(input.IfNoneMatch))
-            {
-                return ConditionalResult<GetInstanceOutput>.NotModified();
-            }
+                    var result = await BuildInstanceOutputAsync(
+                        input.Domain,
+                        input.Extension,
+                        input.Workflow,
+                        instance,
+                        instance.LatestData,
+                        ExtensionScope.GetInstance,
+                        cancellationToken);
 
-            var result = await BuildInstanceOutputAsync(
-                input.Domain,
-                input.Extension,
-                input.Workflow,
-                instance,
-                instance.LatestData,
-                ExtensionScope.GetInstance,
-                cancellationToken);
-
-            return ConditionalResult<GetInstanceOutput>.Success(result);
-        }
+                    return ConditionalResult<GetInstanceOutput>.Success(result);
+                },
+                onFailure: error => ConditionalResult<GetInstanceOutput>.Fail(error));
     }
 
     public async Task<Result<PaginationResult<GetInstanceOutput>>> GetInstanceListAsync(
@@ -71,47 +64,45 @@ public sealed class InstanceQueryAppService(
         CancellationToken cancellationToken = default)
     {
         runtimeInfoProvider.Check(input.Domain);
-        using (currentSchema.Change(input.Workflow))
-        {
-            return await ResultExtensions.TryAsync(
-                async ct =>
+
+        return await ResultExtensions.TryAsync(
+            async ct =>
+            {
+                var filteredQuery = await instanceRepository.GetFilteredQueryAsync(
+                    input.Filter,
+                    ct);
+
+                // Then apply pagination to the filtered query
+                var pagedResult = await instanceRepository.GetPagedResultsAsync(
+                    input.Page,
+                    input.PageSize,
+                    input.PageUrl,
+                    httpContextAccessor.HttpContext?.Request.Query,
+                    filteredQuery,
+                    ct);
+
+                PaginationResult<GetInstanceOutput> result = new PaginationResult<GetInstanceOutput>()
                 {
-                    var filteredQuery = await instanceRepository.GetFilteredQueryAsync(
-                        input.Filter,
+                    Pagination = pagedResult.Pagination,
+                    Data = new List<GetInstanceOutput>()
+                };
+                foreach (var instance in pagedResult.Data)
+                {
+                    var instanceOutput = await BuildInstanceOutputAsync(
+                        input.Domain,
+                        input.Extension,
+                        input.Workflow,
+                        instance,
+                        instance.LatestData,
+                        ExtensionScope.GetAllInstances,
                         ct);
 
-                    // Then apply pagination to the filtered query
-                    var pagedResult = await instanceRepository.GetPagedResultsAsync(
-                        input.Page,
-                        input.PageSize,
-                        input.PageUrl,
-                        httpContextAccessor.HttpContext?.Request.Query,
-                        filteredQuery,
-                        ct);
+                    result.Data.Add(instanceOutput);
+                }
 
-                    PaginationResult<GetInstanceOutput> result = new PaginationResult<GetInstanceOutput>()
-                    {
-                        Pagination = pagedResult.Pagination,
-                        Data = new List<GetInstanceOutput>()
-                    };
-                    foreach (var instance in pagedResult.Data)
-                    {
-                        var instanceOutput = await BuildInstanceOutputAsync(
-                            input.Domain,
-                            input.Extension,
-                            input.Workflow,
-                            instance,
-                            instance.LatestData,
-                            ExtensionScope.GetAllInstances,
-                            ct);
-
-                        result.Data.Add(instanceOutput);
-                    }
-
-                    return result;
-                },
-                cancellationToken);
-        }
+                return result;
+            },
+            cancellationToken);
     }
 
     public async Task<Result<GetInstanceHistoryOutput>> GetInstanceHistoryAsync(
@@ -119,41 +110,30 @@ public sealed class InstanceQueryAppService(
         CancellationToken cancellationToken = default)
     {
         runtimeInfoProvider.Check(input.Domain);
-        using (currentSchema.Change(input.Workflow))
-        {
-            var instanceResult = await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken);
-            if (!instanceResult.IsSuccess)
+
+        return await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken)
+            .ThenAsync(async instance =>
             {
-                return Result<GetInstanceHistoryOutput>.Fail(instanceResult.Error);
-            }
-
-            var instance = instanceResult.Value!;
-
-            return await ResultExtensions.TryAsync(
-                async ct =>
+                var transitions = new List<GetInstanceOutput>();
+                foreach (var instanceData in instance.DataList.OrderBy(d => d.EnteredAt))
                 {
-                    var transitions = new List<GetInstanceOutput>();
-                    foreach (var instanceData in instance.DataList.OrderBy(d => d.EnteredAt))
-                    {
-                        var transitionOutput = await BuildInstanceOutputAsync(
-                            input.Domain,
-                            input.Extension,
-                            input.Workflow,
-                            instance,
-                            instanceData,
-                            ExtensionScope.GetInstance,
-                            ct);
+                    var transitionOutput = await BuildInstanceOutputAsync(
+                        input.Domain,
+                        input.Extension,
+                        input.Workflow,
+                        instance,
+                        instanceData,
+                        ExtensionScope.GetInstance,
+                        cancellationToken);
 
-                        transitions.Add(transitionOutput);
-                    }
+                    transitions.Add(transitionOutput);
+                }
 
-                    return new GetInstanceHistoryOutput
-                    {
-                        Transitions = transitions
-                    };
-                },
-                cancellationToken);
-        }
+                return Result<GetInstanceHistoryOutput>.Ok(new GetInstanceHistoryOutput
+                {
+                    Transitions = transitions
+                });
+            });
     }
 
     /// <summary>
@@ -217,8 +197,8 @@ public sealed class InstanceQueryAppService(
         catch (Exception ex)
         {
             // Log the exception and fall back to main flow transitions
-            logger.LogWarning(ex,
-                "Failed to get available transitions from SubFlow {SubFlowDomain}/{SubFlowName} for instance {InstanceId}. Falling back to main flow transitions.",
+            logger.SubFlowTransitionsQueryFailed(
+                ex,
                 activeSubFlowCorrelation.SubFlowDomain,
                 activeSubFlowCorrelation.SubFlowName,
                 activeSubFlowCorrelation.SubFlowInstanceId);
@@ -285,25 +265,19 @@ public sealed class InstanceQueryAppService(
             .ToList();
     }
 
-    private async Task<Result<Instance>> GetInstanceByIdOrKeyAsync(string instanceIdentifier,
+    /// <summary>
+    /// Retrieves an instance by ID or key using Railway pattern.
+    /// Returns Result.Fail if instance is not found instead of throwing.
+    /// </summary>
+    private async Task<Result<Instance>> GetInstanceByIdOrKeyAsync(
+        string instanceIdentifier,
         CancellationToken cancellationToken)
     {
-        return await ResultExtensions.TryAsync(
-            async ct =>
-            {
-                var instance = Guid.TryParse(instanceIdentifier, out var instanceId)
-                    ? await instanceRepository.FindByIdAsReadOnlyAsync(instanceId, ct)
-                    : await instanceRepository.FindByKeyAsReadOnlyAsync(instanceIdentifier, ct);
+        var instance = Guid.TryParse(instanceIdentifier, out var instanceId)
+            ? await instanceRepository.FindByIdAsReadOnlyAsync(instanceId, cancellationToken)
+            : await instanceRepository.FindByKeyAsReadOnlyAsync(instanceIdentifier, cancellationToken);
 
-                if (instance == null)
-                {
-                    throw new EntityNotFoundException(typeof(Instance), instanceIdentifier);
-                }
-
-                return instance;
-            },
-            cancellationToken,
-            _ => WorkflowErrors.InstanceNotFound(instanceIdentifier));
+        return instance.EnsureNotNull(WorkflowErrors.InstanceNotFound(instanceIdentifier));
     }
 
     private async Task<GetInstanceOutput> BuildInstanceOutputAsync(
@@ -315,10 +289,9 @@ public sealed class InstanceQueryAppService(
         ExtensionScope currentScope,
         CancellationToken cancellationToken)
     {
-        var flow = await componentCacheStore.GetFlowAsync(domain, workflow, null, cancellationToken);
-
-        // Build the data URL
-        // var dataUrl = BuildDataUrl(domain, workflow, instance);
+        var flowResult = await componentCacheStore.GetFlowAsync(domain, workflow, null, cancellationToken);
+        
+        var flow = flowResult.IsSuccess ? flowResult.Value! : null;
 
         var response = new GetInstanceOutput
         {
@@ -327,12 +300,15 @@ public sealed class InstanceQueryAppService(
             FlowVersion = instanceData?.Version ?? string.Empty,
             Etag = instanceData?.ETag ?? string.Empty,
             Domain = domain,
-            // DataUrl = dataUrl,
             Key = instance.Key!,
             Tags = instance.Tags,
             Attributes = instanceData?.Data.JsonElement
         };
 
+        if (flow == null)
+        {
+            return response;
+        }
 
         var scriptContext = await scriptContextFactory.NewBuilder()
             .WithWorkflow(flow)
@@ -342,12 +318,15 @@ public sealed class InstanceQueryAppService(
             .WithBody(instanceData?.Data ?? new JsonData("{}"))
             .BuildAsync(cancellationToken);
 
-        response.Extensions = await instanceExtensionService.ProcessExtensionsAsync(
+        var extensionsResult = await instanceExtensionService.ProcessExtensionsAsync(
             extensionRequested,
             scriptContext,
             flow,
             currentScope,
             cancellationToken);
+
+        // Extensions are optional enrichment - use empty dictionary if processing fails
+        response.Extensions = extensionsResult.ValueOrDefault(new Dictionary<string, object>())!;
 
         return response;
     }
@@ -358,39 +337,24 @@ public sealed class InstanceQueryAppService(
     {
         runtimeInfoProvider.Check(input.Domain);
 
-        var flowResult = await ResultExtensions.TryAsync(
-            async ct => await componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, null, ct),
-            cancellationToken,
-            _ => WorkflowErrors.WorkflowNotFound(input.Workflow));
-
-        if (!flowResult.IsSuccess)
-        {
-            return ConditionalResult<GetInstanceDataOutput>.Fail(flowResult.Error);
-        }
-
-        var flow = flowResult.Value!;
-
-        using (currentSchema.Change(input.Workflow))
-        {
-            var instanceResult = await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken);
-            if (!instanceResult.IsSuccess)
-            {
-                return ConditionalResult<GetInstanceDataOutput>.Fail(instanceResult.Error);
-            }
-
-            var instance = instanceResult.Value!;
-
-            // Check ETag for conditional requests
-            if (!string.IsNullOrEmpty(input.IfNoneMatch) &&
-                instance.LatestData != null &&
-                instance.LatestData.ETag.MatchesIfNoneMatch(input.IfNoneMatch))
-            {
-                return ConditionalResult<GetInstanceDataOutput>.NotModified();
-            }
-
-            var dataResult = await ResultExtensions.TryAsync(
-                async ct =>
+        // Railway chain: Load Flow → Get Instance → Match to ConditionalResult
+        return await componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, null, cancellationToken)
+            .BindAsync(workflow =>
+                GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken)
+                    .MapAsync(instance => (flow: workflow, instance)))
+            .MatchAsync(
+                onSuccess: async data =>
                 {
+                    var (flow, instance) = data;
+
+                    // Check ETag for conditional requests
+                    if (!string.IsNullOrEmpty(input.IfNoneMatch) &&
+                        instance.LatestData != null &&
+                        instance.LatestData.ETag.MatchesIfNoneMatch(input.IfNoneMatch))
+                    {
+                        return ConditionalResult<GetInstanceDataOutput>.NotModified();
+                    }
+
                     var result = new GetInstanceDataOutput
                     {
                         Data = instance.LatestData?.Data.JsonElement,
@@ -403,26 +367,21 @@ public sealed class InstanceQueryAppService(
                         .WithRuntime(runtimeInfoProvider)
                         .WithTransition(string.Empty)
                         .WithBody(instance.LatestData?.Data ?? new JsonData("{}"))
-                        .BuildAsync(ct);
+                        .BuildAsync(cancellationToken);
 
-                    result.Extensions = await instanceExtensionService.ProcessExtensionsAsync(
+                    var extensionsResult = await instanceExtensionService.ProcessExtensionsAsync(
                         input.Extensions,
                         scriptContext,
                         flow,
                         ExtensionScope.GetInstance,
-                        ct);
+                        cancellationToken);
 
-                    return result;
+                    // Extensions are optional enrichment - use empty dictionary if processing fails
+                    result.Extensions = extensionsResult.ValueOrDefault(new Dictionary<string, object>())!;
+
+                    return ConditionalResult<GetInstanceDataOutput>.Success(result);
                 },
-                cancellationToken);
-
-            if (!dataResult.IsSuccess)
-            {
-                return ConditionalResult<GetInstanceDataOutput>.Fail(dataResult.Error);
-            }
-
-            return ConditionalResult<GetInstanceDataOutput>.Success(dataResult.Value!);
-        }
+                onFailure: error => ConditionalResult<GetInstanceDataOutput>.Fail(error));
     }
 
     /// <summary>
@@ -473,114 +432,96 @@ public sealed class InstanceQueryAppService(
         CancellationToken cancellationToken = default)
     {
         runtimeInfoProvider.Check(input.Domain);
-        using (currentSchema.Change(input.Workflow))
+
+        // Railway chain: Get Instance → Get Workflow → Build State Output
+        return await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken)
+            .BindAsync(instance =>
+                componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, input.Version, cancellationToken)
+                    .MapAsync(workflow => (instance, workflow)))
+            .ThenAsync(data => BuildInstanceStateOutputAsync(data.instance, data.workflow, input, cancellationToken));
+    }
+
+    /// <summary>
+    /// Builds the complete instance state output including transitions, correlations, and view information.
+    /// </summary>
+    private async Task<Result<GetInstanceStateOutput>> BuildInstanceStateOutputAsync(
+        Instance instance,
+        Definitions.Workflow currentWorkflow,
+        GetInstanceStateInput input,
+        CancellationToken cancellationToken)
+    {
+        // Build instance transition information using shared logic
+        var transitionInfo = await BuildInstanceTransitionInfoAsync(instance, cancellationToken);
+
+        // Check if there are any active SubFlow correlations
+        var activeSubFlowCorrelation = transitionInfo.ActiveCorrelations
+            .Where(c => c.SubFlowType.Equals(SubFlowType.SubFlow) && !c.IsCompleted)
+            .OrderByDescending(c => c.CorrelationId)
+            .FirstOrDefault();
+
+        var (availableTransitions, currentState, status) = activeSubFlowCorrelation != null
+            ? await GetSubFlowTransitionsAsync(activeSubFlowCorrelation, instance, currentWorkflow, cancellationToken)
+            : GetMainFlowTransitions(instance, currentWorkflow, transitionInfo);
+
+        // Build transition items with href links
+        var transitionItems = availableTransitions.Select(transitionKey => new TransitionItem
         {
-            var instanceResult = await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken);
-            if (!instanceResult.IsSuccess)
+            Name = transitionKey,
+            Href = string.Format(InstanceUrlTemplates.Transition, input.Domain, input.Workflow, instance.Id, transitionKey)
+        }).ToList();
+
+        // Get current state using Railway pattern
+        return currentWorkflow.GetState(instance.CurrentState!)
+            .Ensure(
+                state => state != null,
+                Error.NotFound("notfound", $"State {instance.CurrentState} not found in workflow {input.Workflow}"))
+            .Map(currentStateValue =>
             {
-                return Result<GetInstanceStateOutput>.Fail(instanceResult.Error);
-            }
+                // Get view definition
+                var viewDefinition = GetViewDefinition(instance, currentWorkflow, currentStateValue);
 
-            var instance = instanceResult.Value!;
-
-            return await ResultExtensions.TryAsync(
-                async ct =>
+                // Build data href with extensions
+                var allExtensions = (input.Extensions ?? []).Concat(viewDefinition?.Extensions ?? []).ToArray();
+                var dataHref = new DataHref
                 {
-                    // Get workflow for available transitions
-                    var currentWorkflow = await componentCacheStore.GetFlowAsync(
-                        input.Domain,
-                        input.Workflow,
-                        input.Version,
-                        ct);
+                    Href = allExtensions.Length > 0
+                        ? string.Format(InstanceUrlTemplates.DataWithExtensions, input.Domain, input.Workflow, instance.Id, string.Join(",", allExtensions))
+                        : string.Format(InstanceUrlTemplates.Data, input.Domain, input.Workflow, instance.Id)
+                };
 
-                    // Build instance transition information using shared logic
-                    var transitionInfo = await BuildInstanceTransitionInfoAsync(instance, ct);
+                // Build view href
+                var viewHref = new ViewHref
+                {
+                    Href = string.Format(InstanceUrlTemplates.View, input.Domain, input.Workflow, instance.Id),
+                    LoadData = viewDefinition?.LoadData == true
+                };
 
-                    // Check if there are any active SubFlow correlations
-                    var activeSubFlowCorrelation = transitionInfo.ActiveCorrelations
-                        .Where(c => c.SubFlowType.Equals(SubFlowType.SubFlow) && !c.IsCompleted)
-                        .OrderByDescending(c => c.CorrelationId) // Get the latest active SubFlow
-                        .FirstOrDefault();
-
-                    (List<string> availableTransitions, string? currentState, InstanceStatus? status) =
-                        activeSubFlowCorrelation != null
-                            ? await GetSubFlowTransitionsAsync(activeSubFlowCorrelation, instance, currentWorkflow,
-                                ct)
-                            : GetMainFlowTransitions(instance, currentWorkflow, transitionInfo);
-
-                    // Build transition items with href links
-                    var transitionItems = availableTransitions.Select(transitionKey => new TransitionItem
+                // Build active correlations with href links
+                var activeCorrelationHrefs = transitionInfo.ActiveCorrelations.Select(correlation =>
+                    new ActiveCorrelationHref
                     {
-                        Name = transitionKey,
-                        Href = string.Format(InstanceUrlTemplates.Transition, input.Domain, input.Workflow,
-                            instance.Id,
-                            transitionKey)
+                        CorrelationId = correlation.CorrelationId,
+                        ParentState = correlation.ParentState,
+                        SubFlowInstanceId = correlation.SubFlowInstanceId,
+                        SubFlowType = correlation.SubFlowType,
+                        SubFlowDomain = correlation.SubFlowDomain,
+                        SubFlowName = correlation.SubFlowName,
+                        SubFlowVersion = correlation.SubFlowVersion,
+                        IsCompleted = correlation.IsCompleted,
+                        Href = string.Format(InstanceUrlTemplates.Data, correlation.SubFlowDomain, correlation.SubFlowName, correlation.SubFlowInstanceId)
                     }).ToList();
 
-                    var currentStateResult = currentWorkflow.GetState(instance.CurrentState!);
-                    if (!currentStateResult.IsSuccess || currentStateResult.Value == null)
-                    {
-                        throw new EntityNotFoundException(
-                            typeof(State),
-                            $"State {instance.CurrentState} not found in workflow {input.Workflow}");
-                    }
-
-                    // Get view definition
-                    var viewDefinition = GetViewDefinition(
-                        instance,
-                        currentWorkflow,
-                        currentStateResult.Value);
-
-                    // Build data href with extensions
-                    var allExtensions = (input.Extensions ?? []).Concat(viewDefinition?.Extensions ?? []).ToArray();
-                    var dataHref = new DataHref
-                    {
-                        Href = allExtensions.Length > 0
-                            ? string.Format(InstanceUrlTemplates.DataWithExtensions, input.Domain, input.Workflow,
-                                instance.Id,
-                                string.Join(",", allExtensions))
-                            : string.Format(InstanceUrlTemplates.Data, input.Domain, input.Workflow, instance.Id)
-                    };
-
-                    // Build view href
-                    var viewHref = new ViewHref
-                    {
-                        Href = string.Format(InstanceUrlTemplates.View, input.Domain, input.Workflow, instance.Id),
-                        LoadData = viewDefinition?.LoadData == true
-                    };
-
-                    // Build active correlations with href links
-                    var activeCorrelationHrefs = transitionInfo.ActiveCorrelations.Select(correlation =>
-                        new ActiveCorrelationHref
-                        {
-                            CorrelationId = correlation.CorrelationId,
-                            ParentState = correlation.ParentState,
-                            SubFlowInstanceId = correlation.SubFlowInstanceId,
-                            SubFlowType = correlation.SubFlowType,
-                            SubFlowDomain = correlation.SubFlowDomain,
-                            SubFlowName = correlation.SubFlowName,
-                            SubFlowVersion = correlation.SubFlowVersion,
-                            IsCompleted = correlation.IsCompleted,
-                            Href = string.Format(InstanceUrlTemplates.Data, correlation.SubFlowDomain,
-                                correlation.SubFlowName, correlation.SubFlowInstanceId)
-                        }).ToList();
-
-                    return new GetInstanceStateOutput
-                    {
-                        Data = dataHref,
-                        View = viewHref,
-                        State = currentState ?? string.Empty,
-                        Status = status,
-                        ActiveCorrelations = activeCorrelationHrefs,
-                        Transitions = transitionItems,
-                        ETag = instance.LatestData?.ETag ?? string.Empty
-                    };
-                },
-                cancellationToken,
-                ex => ex is EntityNotFoundException
-                    ? Error.NotFound("notfound", ex.Message)
-                    : Error.Dependency("unexpected", ex.Message));
-        }
+                return new GetInstanceStateOutput
+                {
+                    Data = dataHref,
+                    View = viewHref,
+                    State = currentState ?? string.Empty,
+                    Status = status,
+                    ActiveCorrelations = activeCorrelationHrefs,
+                    Transitions = transitionItems,
+                    ETag = instance.LatestData?.ETag ?? string.Empty
+                };
+            });
     }
 
     public async Task<Result<GetViewOutput>> GetPlatformSpecificViewAsync(
@@ -590,81 +531,69 @@ public sealed class InstanceQueryAppService(
         CancellationToken cancellationToken = default)
     {
         runtimeInfoProvider.Check(input.Domain);
-        using (currentSchema.Change(input.Workflow))
+
+        // Railway chain: Get Instance → Get Workflow → Resolve State → Get View
+        return await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken)
+            .BindAsync(instance =>
+                componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, input.Version, cancellationToken)
+                    .MapAsync(workflow => (instance, workflow)))
+            .ThenAsync(data => ResolveViewAsync(data.instance, data.workflow, input, platform, transitionKey, cancellationToken));
+    }
+
+    /// <summary>
+    /// Resolves and returns the appropriate view for the instance.
+    /// Handles subflow view overrides and platform-specific content.
+    /// </summary>
+    private async Task<Result<GetViewOutput>> ResolveViewAsync(
+        Instance instance,
+        Definitions.Workflow currentWorkflow,
+        GetViewInput input,
+        string? platform,
+        string? transitionKey,
+        CancellationToken cancellationToken)
+    {
+        // Get current state using Railway pattern
+        var currentStateResult = currentWorkflow.GetState(instance.CurrentState!);
+        if (!currentStateResult.IsSuccess || currentStateResult.Value == null)
         {
-            var instanceResult = await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken);
-            if (!instanceResult.IsSuccess)
-            {
-                return Result<GetViewOutput>.Fail(instanceResult.Error);
-            }
-
-            var instance = instanceResult.Value!;
-
-            return await ResultExtensions.TryAsync(
-                async ct =>
-                {
-                    // Get workflow for available transitions
-                    var currentWorkflow = await componentCacheStore.GetFlowAsync(
-                        input.Domain,
-                        input.Workflow,
-                        input.Version,
-                        ct);
-
-                    // Get current state
-                    var currentStateResult = currentWorkflow.GetState(instance.CurrentState!);
-                    if (!currentStateResult.IsSuccess || currentStateResult.Value == null)
-                    {
-                        throw new EntityNotFoundException(
-                            typeof(State),
-                            $"State {instance.CurrentState} not found in workflow {input.Workflow}");
-                    }
-
-                    var currentState = currentStateResult.Value;
-
-                    // If instance has active subflow, handle subflow view logic
-                    if (instance.HasActiveSubFlow)
-                    {
-                        var subFlowViewResult = await GetSubFlowViewWithOverrideAsync(
-                            instance,
-                            currentState,
-                            platform,
-                            transitionKey,
-                            ct);
-
-                        if (subFlowViewResult != null)
-                        {
-                            return subFlowViewResult;
-                        }
-                    }
-
-                    // Get view definition
-                    var viewDefinition = GetViewDefinition(
-                        instance,
-                        currentWorkflow,
-                        currentState,
-                        transitionKey);
-
-                    if (viewDefinition == null && viewDefinition?.View == null)
-                    {
-                        throw new EntityNotFoundException(
-                            typeof(View),
-                            $"View not found for state {instance.CurrentState} in workflow {currentWorkflow.Key}");
-                    }
-
-                    var view = await componentCacheStore.GetViewAsync(
-                        viewDefinition.View.Domain,
-                        viewDefinition.View.Key,
-                        viewDefinition.View.Version,
-                        ct);
-
-                    // Return platform-specific view for main flow
-                    return BuildViewOutput(view, platform);
-                },
-                cancellationToken,
-                ex => ex is EntityNotFoundException
-                    ? Error.NotFound("notfound", ex.Message)
-                    : Error.Dependency("unexpected", ex.Message));
+            return Result<GetViewOutput>.Fail(
+                Error.NotFound("notfound", $"State {instance.CurrentState} not found in workflow {input.Workflow}"));
         }
+
+        var currentState = currentStateResult.Value;
+
+        // If instance has active subflow, handle subflow view logic
+        if (instance.HasActiveSubFlow)
+        {
+            var subFlowViewResult = await GetSubFlowViewWithOverrideAsync(
+                instance,
+                currentState,
+                platform,
+                transitionKey,
+                cancellationToken);
+
+            if (subFlowViewResult != null)
+            {
+                return Result<GetViewOutput>.Ok(subFlowViewResult);
+            }
+        }
+
+        // Get view definition
+        var viewDefinition = GetViewDefinition(instance, currentWorkflow, currentState, transitionKey);
+
+        if (viewDefinition?.View == null)
+        {
+            return Result<GetViewOutput>.Fail(
+                Error.NotFound("notfound", $"View not found for state {instance.CurrentState} in workflow {currentWorkflow.Key}"));
+        }
+
+        // Fetch and return the view
+        return await componentCacheStore.GetViewAsync(
+                viewDefinition.View.Domain,
+                viewDefinition.View.Key,
+                viewDefinition.View.Version,
+                cancellationToken)
+            .MapAsync(view => BuildViewOutput(view, platform));
     }
 
     /// <summary>
@@ -708,13 +637,17 @@ public sealed class InstanceQueryAppService(
 
             if (overrideViewRef != null)
             {
-                var overrideView = await componentCacheStore.GetViewAsync(
+                var overrideViewResult = await componentCacheStore.GetViewAsync(
                     overrideViewRef.Domain,
                     overrideViewRef.Key,
                     overrideViewRef.Version,
                     cancellationToken);
 
-                return BuildViewOutput(overrideView, platform);
+                // If override view fetch fails, fall back to subflow view
+                if (overrideViewResult.IsSuccess)
+                {
+                    return BuildViewOutput(overrideViewResult.Value!, platform);
+                }
             }
         }
 

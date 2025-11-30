@@ -17,59 +17,86 @@ public sealed class AutoConditionEvaluator(
     ILogger<AutoConditionEvaluator> logger) : IAutoConditionEvaluator
 {
     /// <inheritdoc />
-    public async Task<Result<AutoConditionEvaluation>> EvaluateAsync(
+    /// <summary>
+    /// Evaluates the automatic transition condition.
+    /// Railway chain: Validate Rule → Execute Script → Map to Evaluation
+    /// </summary>
+    public Task<Result<AutoConditionEvaluation>> EvaluateAsync(
         Transition transition,
         TransitionExecutionContext context,
         CancellationToken cancellationToken = default)
     {
-        // Validate that the transition has a rule defined
-        if (transition.Rule is null)
-        {
-            logger.AutoTransitionNoRule(
-                TelemetryConstants.Prefixes.Execution,
-                transition.Key);
+        return ValidateTransitionRule(transition)
+            .BindAsync(_ => ExecuteConditionSafelyAsync(transition, context, cancellationToken));
+    }
 
-            return Result<AutoConditionEvaluation>.Fail(
-                Error.Validation(
-                    WorkflowErrorCodes.ConfigInvalid,
-                    $"Automatic transition '{transition.Key}' has no rule defined."));
-        }
+    /// <summary>
+    /// Validates that the transition has a rule defined.
+    /// Logs warning and returns validation error if rule is missing.
+    /// </summary>
+    private Result<Transition> ValidateTransitionRule(Transition transition)
+    {
+        if (transition.Rule is not null)
+            return Result<Transition>.Ok(transition);
 
-        try
-        {
-            // Build or retrieve cached ScriptContext
-            var scriptContext = await context.GetOrBuildScriptContextAsync(
-                ct => CreateScriptContextAsync(context, ct),
-                cancellationToken);
+        logger.AutoTransitionNoRule(transition.Key);
 
-            // Execute the condition script
-            var conditionResult = await taskConditionService.ExecuteConditionAsync(
-                transition.Rule,
-                scriptContext,
-                cancellationToken);
-            
+        return Result<Transition>.Fail(
+            ExecutionErrors.AutoTransitionNoRuleDefined(transition.Key));
+    }
 
-            var status = conditionResult
-                ? AutoConditionStatus.Satisfied
-                : AutoConditionStatus.NotSatisfied;
+    /// <summary>
+    /// Executes the condition script safely using TryAsync.
+    /// Script execution is dynamic invocation - Try is appropriate per Railway pattern.
+    /// </summary>
+    private Task<Result<AutoConditionEvaluation>> ExecuteConditionSafelyAsync(
+        Transition transition,
+        TransitionExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        return ResultExtensions.TryAsync(
+            async ct =>
+            {
+                var scriptContext = await context.GetOrBuildScriptContextAsync(
+                    innerCt => CreateScriptContextAsync(context, innerCt),
+                    ct);
 
-            var evaluation = new AutoConditionEvaluation(transition.Key, status);
-            return Result<AutoConditionEvaluation>.Ok(evaluation);
-        }
-        catch (Exception ex)
-        {
-            logger.TransitionRuleFailed(
-                TelemetryConstants.Prefixes.Execution,
-                transition.Key,
-                context.InstanceId,
-                ex.Message);
+                var conditionResult = await taskConditionService.ExecuteConditionAsync(
+                    transition.Rule!,
+                    scriptContext,
+                    ct);
 
-            return Result<AutoConditionEvaluation>.Fail(
-                Error.Failure(
-                    WorkflowErrorCodes.TransitionRuleFailed,
-                    $"Automatic transition rule evaluation failed for '{transition.Key}': {ex.Message}",
-                    ex.ToString()));
-        }
+                return MapToEvaluation(transition.Key, conditionResult);
+            },
+            cancellationToken,
+            ex => CreateScriptExecutionError(transition, context, ex));
+    }
+
+    /// <summary>
+    /// Maps the boolean condition result to an AutoConditionEvaluation.
+    /// Pure transformation function.
+    /// </summary>
+    private static AutoConditionEvaluation MapToEvaluation(string transitionKey, bool conditionResult)
+    {
+        var status = conditionResult
+            ? AutoConditionStatus.Satisfied
+            : AutoConditionStatus.NotSatisfied;
+
+        return new AutoConditionEvaluation(transitionKey, status);
+    }
+
+    /// <summary>
+    /// Creates an error for script execution failures.
+    /// Handles logging as a side effect within the error mapper.
+    /// </summary>
+    private Error CreateScriptExecutionError(
+        Transition transition,
+        TransitionExecutionContext context,
+        Exception ex)
+    {
+        logger.TransitionRuleFailed(transition.Key, context.InstanceId, ex.Message);
+
+        return ExecutionErrors.TransitionRuleEvaluationFailed(transition.Key, ex.Message, ex.ToString());
     }
 
     /// <summary>
@@ -84,10 +111,10 @@ public sealed class AutoConditionEvaluator(
             .WithInstance(context.Instance)
             .WithBody(context.Data)
             .WithHeaders(context.Headers.ToDictionary(kvp => kvp.Key, kvp => kvp.Value));
-        
+
         if (context.Transition != null)
             builder.WithTransition(context.Transition);
-        
+
         return await builder.BuildAsync(cancellationToken);
     }
 }

@@ -22,6 +22,11 @@ public sealed class HandleFinishStep(
     /// <inheritdoc />
     public int Order => LifecycleOrder.Finish;
 
+    /* TODO: 
+     * SubFlow bittiğinde bir hook deneyecek başarız olursa -> Event yayıyor.
+     * long pooling => aynı davranacak.
+    */
+    
     /// <inheritdoc />
     [Log]
     [Trace]
@@ -29,76 +34,58 @@ public sealed class HandleFinishStep(
         CancellationToken cancellationToken)
     {
         Activity.Current?.SetDisplayName($"[{Order}] {nameof(HandleFinishStep)}");
+        
+        // Check applicability - skip if not finish scenario
+        if (!IsFinishScenario(context))
+        {
+            return Result<StepOutcome>.Ok(StepOutcome.Continue());
+        }
 
-        // Check if this is a cancel transition
+        // Railway chain: Update status -> Persist -> Mark finish
+        return await Result.Ok(context)
+            .Tap(UpdateInstanceStatus)
+            .TapAsync(ctx => instanceRepository.UpdateAsync(ctx.Instance, true, cancellationToken))
+            .Tap(ctx => ctx.Items["IsFinishState"] = true)
+            .Map(_ => StepOutcome.Continue());
+    }
+
+    /// <summary>
+    /// Determines if this is a finish scenario (cancel or finish state).
+    /// </summary>
+    private bool IsFinishScenario(TransitionExecutionContext context)
+    {
         var isCancelTransition = context.IsCancelTransition();
         
-        // For cancel transitions, we don't need a Finish state type - we cancel immediately
-        if (!isCancelTransition)
+        // Cancel transitions always go through finish
+        if (isCancelTransition)
         {
-            if (context.Target == null)
-            {
-                logger.LogWarning("Target state is null for instance {InstanceId}", context.InstanceId);
-                return Result<StepOutcome>.Ok(StepOutcome.Continue());
-            }
-
-            // Only handle Finish state types for normal completions
-            if (context.Target.StateType != StateType.Finish)
-            {
-                return Result<StepOutcome>.Ok(StepOutcome.Continue());
-            }
+            return true;
         }
-        
-        // Railway Oriented Programming: Chain operations, each wrapped in Try
-        var updateResult = await UpdateInstanceStatus(context, isCancelTransition, cancellationToken);
-        if (!updateResult.IsSuccess)
-            return Result<StepOutcome>.Fail(updateResult.Error);
 
-        var markResult = await MarkFinishStateInContext(context);
-        if (!markResult.IsSuccess)
-            return Result<StepOutcome>.Fail(markResult.Error);
+        // Check for null target or non-finish state
+        if (context.Target == null)
+        {
+            logger.TargetStateNull(context.InstanceId);
+            return false;
+        }
 
-        // Domain events are automatically published by Instance.Complete() and Instance.Cancel()
-        // No need for additional pub/sub publishing here
-        
-        return Result<StepOutcome>.Ok(StepOutcome.Continue());
+        return context.Target.StateType == StateType.Finish;
     }
 
     /// <summary>
-    /// Updates the instance status in repository.
+    /// Updates instance status based on transition type.
     /// </summary>
-    private async Task<Result> UpdateInstanceStatus(
-        TransitionExecutionContext context, 
-        bool isCancelTransition, 
-        CancellationToken cancellationToken)
+    private void UpdateInstanceStatus(TransitionExecutionContext context)
     {
-        return await ResultExtensions.TryAsync(
-            async ct =>
-            {
-                if (isCancelTransition)
-                {
-                    logger.LogInformation("Canceling instance {InstanceId}", context.Instance.Id);
-                    context.Instance.Cancel();
-                }
-                else
-                {
-                    logger.LogInformation("Completing instance {InstanceId}", context.Instance.Id);
-                    context.Instance.Complete();
-                }
-                // TODO: UpdateStatus'dan Update'e geçtik.
-                await instanceRepository.UpdateAsync(context.Instance, true, ct);
-            },
-            cancellationToken);
-    }
-
-    /// <summary>
-    /// Marks that we're in a finish state in context items.
-    /// </summary>
-    private Task<Result> MarkFinishStateInContext(TransitionExecutionContext context)
-    {
-        context.Items["IsFinishState"] = true;
-        return Task.FromResult(
-            result: Result.Ok()
-        );
+        if (context.IsCancelTransition())
+        {
+            logger.InstanceCanceling(context.Instance.Id);
+            context.Instance.Cancel();
+        }
+        else
+        {
+            logger.InstanceCompleting(context.Instance.Id);
+            context.Instance.Complete();
+        }
     }
 }

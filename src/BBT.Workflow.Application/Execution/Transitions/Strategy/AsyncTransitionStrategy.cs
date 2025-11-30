@@ -1,11 +1,11 @@
 using BBT.Aether.BackgroundJob;
-using BBT.Workflow.BackgroundJobs;
-using BBT.Workflow.BackgroundJobs.Payloads;
-using Dapr.Jobs.Models;
-using Microsoft.Extensions.Logging;
 using BBT.Aether.Results;
 using BBT.Workflow.BackgroundJobs.Handlers;
+using BBT.Workflow.BackgroundJobs.Payloads;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Logging;
+using Dapr.Jobs.Models;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Execution.Strategies;
 
@@ -20,36 +20,120 @@ public sealed class AsyncTransitionStrategy(
     ILogger<AsyncTransitionStrategy> logger) : ITransitionStrategy
 {
     /// <inheritdoc />
-    public async Task<Result<TransitionExecutionContext>> ExecuteAsync(WorkflowExecutionContext context,
-        CancellationToken cancellationToken)
-    {
-        // Railway: Create context -> Enqueue job
-        var ctxResult = await ctxFactory.CreateAsync(context, cancellationToken);
-        if (!ctxResult.IsSuccess)
-            return Result<TransitionExecutionContext>.Fail(ctxResult.Error);
-
-        var ctx = ctxResult.Value!;
-
-        var enqueueResult = await EnqueueTransitionJobAsync(context, cancellationToken);
-        if (!enqueueResult.IsSuccess)
-        {
-            logger.LogError("Asynchronous transition execution failed for {TransitionKey} on instance {InstanceId}",
-                context.TransitionKey, context.InstanceId);
-            return Result<TransitionExecutionContext>.Fail(enqueueResult.Error);
-        }
-
-        logger.LogInformation(
-            "Successfully enqueued transition {TransitionKey} for instance {InstanceId} with job ID {JobId}",
-            context.TransitionKey, context.InstanceId, enqueueResult.Value);
-
-        return Result<TransitionExecutionContext>.Ok(ctx);
-    }
-
-    private async Task<Result<string>> EnqueueTransitionJobAsync(
+    /// <summary>
+    /// Executes transition asynchronously by enqueuing a background job.
+    /// Railway chain: Create Context → Enqueue Job → Return Context
+    /// </summary>
+    public Task<Result<TransitionExecutionContext>> ExecuteAsync(
         WorkflowExecutionContext context,
         CancellationToken cancellationToken)
     {
+        return ctxFactory.CreateAsync(context, cancellationToken)
+            .BindAsync(ctx => EnqueueJobAndReturnContextAsync(ctx, context, cancellationToken));
+    }
+
+    /// <summary>
+    /// Enqueues the job and returns the original context on success.
+    /// Uses Match for idiomatic Result handling with logging side effects.
+    /// </summary>
+    private async Task<Result<TransitionExecutionContext>> EnqueueJobAndReturnContextAsync(
+        TransitionExecutionContext ctx,
+        WorkflowExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        var enqueueResult = await EnqueueAndSaveJobAsync(context, cancellationToken);
+
+        return enqueueResult.Match(
+            onSuccess: jobName =>
+            {
+                LogEnqueueSuccess(context, jobName);
+                return Result<TransitionExecutionContext>.Ok(ctx);
+            },
+            onFailure: error =>
+            {
+                LogEnqueueFailure(context);
+                return Result<TransitionExecutionContext>.Fail(error);
+            });
+    }
+
+    /// <summary>
+    /// Enqueues the transition job to Dapr and saves the job record.
+    /// Railway chain: Build Payload → Enqueue to Dapr → Save Record
+    /// </summary>
+    private async Task<Result<string>> EnqueueAndSaveJobAsync(
+        WorkflowExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        var (jobName, jobPayload, schedule, metadata) = BuildJobPayload(context);
+
+        // Enqueue to Dapr - external service, TryAsync is appropriate
+        var enqueueResult = await EnqueueToDaprAsync(jobName, jobPayload, schedule, metadata, cancellationToken);
+        if (!enqueueResult.IsSuccess)
+            return Result<string>.Fail(enqueueResult.Error);
+
+        // Save job record - repository call, no Try needed (infrastructure exceptions bubble up)
+        await SaveJobRecordAsync(context, jobName, enqueueResult.Value!, cancellationToken);
+
+        return Result<string>.Ok(jobName);
+    }
+
+    /// <summary>
+    /// Enqueues the job to Dapr background job service.
+    /// Uses TryAsync because Dapr is an external service.
+    /// </summary>
+    private Task<Result<Guid>> EnqueueToDaprAsync(
+        string jobName,
+        TransitionJobPayload jobPayload,
+        string schedule,
+        Dictionary<string, object> metadata,
+        CancellationToken cancellationToken)
+    {
+        return ResultExtensions.TryAsync(
+            async ct => await backgroundJobService.EnqueueAsync(
+                TransitionJobHandler.HandlerName,
+                jobName,
+                jobPayload,
+                schedule,
+                metadata,
+                ct),
+            cancellationToken,
+            ex => Error.Dependency(
+                WorkflowErrorCodes.Dependency,
+                $"Failed to enqueue transition job '{jobName}': {ex.Message}",
+                "Dapr"));
+    }
+
+    /// <summary>
+    /// Saves the job record to the repository.
+    /// No Try wrapper - repository exceptions bubble up to middleware.
+    /// </summary>
+    private Task SaveJobRecordAsync(
+        WorkflowExecutionContext context,
+        string jobName,
+        Guid jobId,
+        CancellationToken cancellationToken)
+    {
+        return jobRepository.InsertAsync(
+            InstanceJob.Create(
+                jobId,
+                jobName,
+                jobId,
+                context.Domain,
+                context.WorkflowKey,
+                context.InstanceId),
+            true,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Builds the job payload, schedule, and metadata.
+    /// Pure function - no side effects.
+    /// </summary>
+    private static (string JobName, TransitionJobPayload Payload, string Schedule, Dictionary<string, object> Metadata)
+        BuildJobPayload(WorkflowExecutionContext context)
+    {
         var jobName = $"trans-{context.InstanceId}-{context.TransitionKey}";
+
         var jobPayload = new TransitionJobPayload
         {
             JobName = jobName,
@@ -63,7 +147,7 @@ public sealed class AsyncTransitionStrategy(
             RouteValues = context.RouteValues,
             ExecutionActor = context.Actor
         };
-        
+
         var schedule = DaprJobSchedule.FromDateTime(DateTime.UtcNow).ExpressionValue;
 
         var metadata = new Dictionary<string, object>
@@ -73,32 +157,22 @@ public sealed class AsyncTransitionStrategy(
             ["instanceId"] = context.InstanceId.ToString()
         };
 
-        var enqueueResult = await ResultExtensions.TryAsync(
-            async ct => await backgroundJobService.EnqueueAsync(
-                TransitionJobHandler.HandlerName,
-                jobName,
-                jobPayload,
-                schedule,
-                metadata,
-                ct),
-            cancellationToken);
+        return (jobName, jobPayload, schedule, metadata);
+    }
 
-        if (!enqueueResult.IsSuccess)
-            return Result<string>.Fail(enqueueResult.Error);
+    /// <summary>
+    /// Logs successful job enqueue.
+    /// </summary>
+    private void LogEnqueueSuccess(WorkflowExecutionContext context, string jobName)
+    {
+        logger.TransitionEnqueued(context.TransitionKey, context.InstanceId, jobName);
+    }
 
-        await jobRepository.InsertAsync(
-            InstanceJob.Create(
-                enqueueResult.Value,
-                jobName,
-                enqueueResult.Value,
-                context.Domain,
-                context.WorkflowKey,
-                context.InstanceId
-            ),
-            true,
-            cancellationToken
-        );
-
-        return Result<string>.Ok(jobName);
+    /// <summary>
+    /// Logs failed job enqueue.
+    /// </summary>
+    private void LogEnqueueFailure(WorkflowExecutionContext context)
+    {
+        logger.TransitionEnqueueFailed(context.TransitionKey, context.InstanceId);
     }
 }

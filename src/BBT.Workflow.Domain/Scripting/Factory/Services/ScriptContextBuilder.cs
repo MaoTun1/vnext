@@ -1,3 +1,4 @@
+using BBT.Aether.Results;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
@@ -189,11 +190,17 @@ internal sealed class ScriptContextBuilder(
             return _workflow;
 
         if (_workflowReference != null)
-            return await componentCacheStore.GetFlowAsync(_workflowReference, cancellationToken);
+        {
+            var result = await componentCacheStore.GetFlowAsync(_workflowReference, cancellationToken);
+            return result.GetValueOrThrow();
+        }
 
         if (_workflowDomain != null && _workflowKey != null)
-            return await componentCacheStore.GetFlowAsync(_workflowDomain, _workflowKey, _workflowVersion,
+        {
+            var result = await componentCacheStore.GetFlowAsync(_workflowDomain, _workflowKey, _workflowVersion,
                 cancellationToken);
+            return result.GetValueOrThrow();
+        }
 
         throw new InvalidOperationException("Workflow must be set either directly or through domain/key parameters.");
     }

@@ -34,7 +34,8 @@ The BBT Workflow Engine is a comprehensive, domain-driven workflow management sy
 - [Timer Execution Enhancement](./timer-execution-enhancement.md) - Enhanced timer execution and scheduling
 
 ### Performance & Optimization
-- [Caching Strategy](./caching-strategy.md) - Distributed caching implementation and patterns
+- [Caching Strategy](./caching-strategy.md) - Distributed caching implementation and patterns with Result Pattern integration
+- [Cache Result Pattern Integration](./cache-result-pattern-integration.md) - Result Pattern implementation in caching system
 - [Cache Metrics](./cache-metrics.md) - Cache performance monitoring
 - [Persistent Metrics](./persistent-metrics.md) - Long-term metrics storage
 - [Database Metrics Interceptor](./database-metrics-interceptor.md) - Database performance monitoring

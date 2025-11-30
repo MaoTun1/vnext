@@ -423,22 +423,12 @@ public class WorkflowTests : DomainTestBase<DomainEntryPoint>
         workflow.SetReference(reference);
 
         // Act
-        var cacheKey = workflow.CacheKey;
+        var cacheKey = workflow.ComponentKey;
 
         // Assert
         Assert.Equal("Workflow:test-domain:sys-flows:test-flow:1.0.0", cacheKey);
     }
-
-    [Fact]
-    public void GenerateCacheKey_ShouldGenerateCorrectFormat()
-    {
-        // Act
-        var cacheKey = Workflow.GenerateCacheKey("test-domain", "sys-flows", "test-flow", "1.0.0");
-
-        // Assert
-        Assert.Equal("Workflow:test-domain:sys-flows:test-flow:1.0.0", cacheKey);
-    }
-
+    
     [Fact]
     public void SemanticVersion_ShouldReturnVersionWithoutMetadata()
     {

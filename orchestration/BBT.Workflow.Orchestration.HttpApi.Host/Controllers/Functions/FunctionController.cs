@@ -24,8 +24,8 @@ public sealed class FunctionController(
         [FromQuery] bool? async = false,
         CancellationToken cancellationToken = default)
     {
-        var response = await functionAppService.GetDomainFunctions(domain, cancellationToken);
-        return Ok(response);
+        var response = await functionAppService.GetDomainFunctionsAsync(domain, cancellationToken);
+        return FromResult(response);
     }
 
     [HttpGet("{domain}/functions/{function}")]
@@ -35,9 +35,9 @@ public sealed class FunctionController(
         [FromQuery] bool? async = false,
         CancellationToken cancellationToken = default)
     {
-        var response = await functionAppService.GetFunctionByFunctionKey(function, RuntimeSysSchemaInfo.Functions,
-            domain, cancellationToken);
-        return Ok(response);
+        var response = await functionAppService.GetFunctionByFunctionKeyAsync(
+            function, RuntimeSysSchemaInfo.Functions, domain, cancellationToken);
+        return FromResult(response);
     }
 
     [HttpGet("{domain}/workflows/{workflow}/functions/{function}")]
@@ -48,8 +48,9 @@ public sealed class FunctionController(
         [FromQuery] bool? async = false,
         CancellationToken cancellationToken = default)
     {
-        var response = await functionAppService.GetFunctionByFunctionKey(function, workflow, domain, cancellationToken);
-        return Ok(response);
+        var response = await functionAppService.GetFunctionByFunctionKeyAsync(
+            function, workflow, domain, cancellationToken);
+        return FromResult(response);
     }
 
     [HttpGet("{domain}/workflows/{workflow}/instances/{instance}/functions/{function}")]
@@ -75,6 +76,7 @@ public sealed class FunctionController(
                 };
                 var response = await queryAppService.GetInstanceStateAsync(inputLongpooling, cancellationToken);
                 return response.ToActionResult(HttpContext);
+
             case Definitions.Functions.FunctionTypeConst.View:
                 var inputView = new GetViewInput
                 {
@@ -84,7 +86,7 @@ public sealed class FunctionController(
                     Version = parameters.Version
                 };
                 var responseView = await queryAppService.GetPlatformSpecificViewAsync(
-                    inputView, 
+                    inputView,
                     parameters.Platform,
                     parameters.TransitionKey,
                     cancellationToken);
@@ -92,9 +94,9 @@ public sealed class FunctionController(
                 {
                     return responseView.ToActionResult(HttpContext);
                 }
-
                 // Return only the content as requested, without Type and Target
                 return Ok(responseView.Value!);
+
             case Definitions.Functions.FunctionTypeConst.Data:
                 var inputData = new GetInstanceDataInput
                 {
@@ -105,17 +107,17 @@ public sealed class FunctionController(
                     Extensions = parameters.Extensions
                 };
                 var responseData = await queryAppService.GetInstanceDataAsync(inputData, cancellationToken);
-                
                 // Handle 304 via ToActionResult, but also set ETag header if present
                 if (responseData.Result.IsSuccess && !string.IsNullOrEmpty(responseData.Result.Value!.Etag))
                 {
                     HttpContext.Response.Headers[HeadersConstants.ETag] = responseData.Result.Value.Etag;
                 }
                 return FromResult(responseData.Result);
+
             default:
-                return Ok(
-                    await functionAppService.GetFunctionByInstance(function, workflow, domain, instance, cancellationToken)
-                    );
+                var functionResponse = await functionAppService.GetFunctionByInstanceAsync(
+                    function, workflow, domain, instance, cancellationToken);
+                return FromResult(functionResponse);
         }
     }
 }

@@ -31,7 +31,7 @@ public static class WorkflowApiBaseApplicationBuilderExtensions
         {
             app.UseHsts();
         }
-
+        app.UseExceptionHandler();
         app.UseAppResponseCompression();
         app.UseCloudEvents();
         app.MapSubscribeHandler();
@@ -42,13 +42,13 @@ public static class WorkflowApiBaseApplicationBuilderExtensions
         app.UseCurrentUser();
         app.UseStaticFiles();
         app.UseAetherApiVersioning();
-        app.UseAetherUnitOfWork();
         app.UseRouting();
+        app.UseSchemaResolution();
+        app.UseAetherUnitOfWork();
         app.UseWorkflowHttpMetrics(); // Track comprehensive HTTP metrics automatically
         app.UseHttpMetrics(); // Track basic Prometheus HTTP metrics
         app.MapMetrics(); // Expose /metrics endpoint for Prometheus scraping
         app.MapControllers();
-        app.UseExceptionHandler();
         app.UseDaprScheduledJobHandler();
         return app;
     }
@@ -82,6 +82,20 @@ public static class WorkflowApiBaseApplicationBuilderExtensions
             await scope.ServiceProvider
                 .GetRequiredService<IDataSeedService>()
                 .SeedAsync(new SeedContext());
+        });
+    }
+    
+    public static void MigrateMessagingDbContext(IServiceProvider services)
+    {
+        AsyncHelper.RunSync(async () =>
+        {
+            await using var scope = services.CreateAsyncScope();
+
+            var dbContext = scope.ServiceProvider.GetRequiredService<MessagingDbContext>();
+            if (dbContext.Database.IsRelational())
+            {
+                await dbContext.Database.MigrateAsync();
+            }
         });
     }
 } 

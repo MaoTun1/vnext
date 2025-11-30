@@ -1,5 +1,4 @@
 using BBT.Workflow.Workers.Inbox.HostedServices;
-using BBT.Workflow.Workers.Inbox.Services;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -17,14 +16,12 @@ public static class InboxWorkerServiceCollectionExtensions
     {
         services
             .AddWorkflowApiBase()
-            .AddWorkflowDaprClients();
+            .AddWorkflowDaprClients()
+            .AddWorkflowHttpClient();
         
         // Add health checks separately to avoid ambiguity
         services.AddAppHealthChecks();
-
-        // Register multi-schema outbox processor
-        services.AddSingleton<IMultiSchemaInboxProcessor, MultiSchemaInboxProcessor>();
-
+        
         // Register hosted service
         services.AddHostedService<InboxProcessorHostedService>();
 

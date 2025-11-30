@@ -1,5 +1,6 @@
 using System.Text.Json;
 using BBT.Aether.Events;
+using BBT.Workflow.Events.Hooks;
 
 namespace BBT.Workflow.Instances.Events;
 
@@ -7,6 +8,13 @@ namespace BBT.Workflow.Instances.Events;
 /// Event published when a SubFlow or SubProcess instance completes.
 /// Contains all necessary information about the completed SubItem instance and its data.
 /// </summary>
+/// <remarks>
+/// This event supports hooks. Register hooks via DI:
+/// <code>
+/// services.AddEventHook&lt;InstanceSubCompletedEvent, YourHookClass&gt;();
+/// </code>
+/// </remarks>
+[EventHook]
 [EventName("instance.sub.completed")]
 public class InstanceSubCompletedEvent : IDistributedEvent
 {

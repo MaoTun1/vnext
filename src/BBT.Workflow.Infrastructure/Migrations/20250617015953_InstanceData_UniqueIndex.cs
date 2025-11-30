@@ -8,24 +8,17 @@ namespace BBT.Workflow.Migrations
     /// <inheritdoc />
     public partial class InstanceData_UniqueIndex : Migration
     {
-        private readonly IDbContextSchema _schema;
-        
-        public InstanceData_UniqueIndex(IDbContextSchema schema)
-        {
-            _schema = schema;
-        }
-        
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropIndex(
                 name: "IX_InstancesData_InstanceId",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesData");
 
             migrationBuilder.CreateIndex(
                 name: "IX_InstancesData_InstanceId_Version",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesData",
                 columns: new[] { "InstanceId", "Version" },
                 unique: true);
@@ -36,12 +29,12 @@ namespace BBT.Workflow.Migrations
         {
             migrationBuilder.DropIndex(
                 name: "IX_InstancesData_InstanceId_Version",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesData");
 
             migrationBuilder.CreateIndex(
                 name: "IX_InstancesData_InstanceId",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesData",
                 column: "InstanceId");
         }

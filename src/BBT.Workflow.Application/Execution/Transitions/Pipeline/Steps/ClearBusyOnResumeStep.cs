@@ -6,6 +6,9 @@ using BBT.Workflow.Logging;
 
 namespace BBT.Workflow.Execution.Pipeline.Steps;
 
+/// <summary>
+/// Pipeline step that clears the busy state when resuming from SubFlow completion.
+/// </summary>
 public sealed class ClearBusyOnResumeStep(
     IInstanceRepository instanceRepository) : ITransitionStep
 {
@@ -21,48 +24,29 @@ public sealed class ClearBusyOnResumeStep(
         Activity.Current?.SetDisplayName($"[{Order}] {nameof(ClearBusyOnResumeStep)}");
 
         // Only process this step if resuming from SubFlow completion
-        // Note: ResumeFromOrder is consumed by the planner before steps execute,
-        // so we only check IsSubFlowResume flag here
         if (!context.Directives.IsSubFlowResume)
         {
             return Result<StepOutcome>.Ok(StepOutcome.Continue());
         }
 
-        // Railway Oriented Programming: Chain operations, each wrapped in Try
-        return await SetInstanceActive(context, cancellationToken)
-            .ThenAsync(() => UpdateTargetStateInContext(context));
+        // Railway chain: Set active -> Update repo -> Update target state
+        return await Result.Ok(context)
+            .Tap(ctx => ctx.Instance.Active())
+            .TapAsync(ctx => instanceRepository.UpdateAsync(ctx.Instance, true, cancellationToken))
+            .Bind(UpdateTargetStateInContext)
+            .Map(_ => StepOutcome.Continue());
     }
 
     /// <summary>
-    /// Sets instance to active state and updates in repository.
+    /// Updates target state in context.
     /// </summary>
-    private async Task<Result> SetInstanceActive(TransitionExecutionContext context, CancellationToken cancellationToken)
+    private static Result<TransitionExecutionContext> UpdateTargetStateInContext(TransitionExecutionContext context)
     {
-        // Set instance active
-        context.Instance.Active();
-        //TODO: UpdateStatus'den Update'e dönüş yaptık.
-        // Update repository - wrapped in Try
-        var updateResult = await ResultExtensions.TryAsync(
-            async ct => await instanceRepository.UpdateAsync(context.Instance, true, ct),
-            cancellationToken);
-        
-        return updateResult.IsSuccess ? Result.Ok() : Result.Fail(updateResult.Error);
-    }
-
-    /// <summary>
-    /// Updates target state in context using Result Pattern and returns the final step outcome.
-    /// </summary>
-    private Task<Result<StepOutcome>> UpdateTargetStateInContext(TransitionExecutionContext context)
-    {
-        var targetStateResult = context.Workflow.GetState(context.Instance.GetCurrentState);
-
-        if (!targetStateResult.IsSuccess)
-        {
-            return Task.FromResult(Result<StepOutcome>.Fail(targetStateResult.Error));
-        }
-
-        context.Target = targetStateResult.Value!;
-
-        return Task.FromResult(Result<StepOutcome>.Ok(StepOutcome.Continue()));
+        return context.Workflow.GetState(context.Instance.GetCurrentState)
+            .Map(state =>
+            {
+                context.Target = state;
+                return context;
+            });
     }
 }

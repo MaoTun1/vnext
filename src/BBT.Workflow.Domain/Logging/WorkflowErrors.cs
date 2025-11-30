@@ -30,28 +30,40 @@ public static class WorkflowErrors
             WorkflowErrorCodes.NotFoundInstanceData,
             $"Instance \"{instanceIdentifier}\" not found",
             target: instanceIdentifier);
+    
+    /// <summary>
+    /// Creates an error when instance data for a specific version is not found.
+    /// </summary>
+    /// <param name="key">The key of the instance.</param>
+    /// <param name="version">The version that was not found.</param>
+    public static Error InstanceDataNotFound(string key, string version)
+        => Error.NotFound(
+            WorkflowErrorCodes.NotFoundInstanceData,
+            $"Instance data not found for key {key} and version {version}",
+            target: $"{key}@{version}");
 
     #endregion
 
     #region Workflow Definition Errors
 
     /// <summary>
-    /// Workflow definition was not found.
+    /// Creates an error when a workflow version already exists (conflict).
     /// </summary>
-    public static Error WorkflowNotFound(string workflowKey, string? version = null)
-        => Error.NotFound(
-            WorkflowErrorCodes.NotFoundWorkflow,
-            $"Workflow \"{workflowKey}\" " + (version != null ? $"version \"{version}\" " : "") + "not found",
-            target: workflowKey);
+    public static Error WorkflowVersionConflict()
+        => Error.Conflict(
+            WorkflowErrorCodes.ConflictWorkflow,
+            "A record with the same version already exists.");
 
     /// <summary>
     /// Workflow state was not found.
     /// </summary>
-    public static Error StateNotFound(string flow, string state)
+    /// <param name="stateKey">The key of the state.</param>
+    /// <param name="workflowKey">The key of the workflow.</param>
+    public static Error StateNotFound(string stateKey, string workflowKey)
         => Error.NotFound(
-            WorkflowErrorCodes.NotFoundInitialState,
-            $"No {state} state found for workflow \"{flow}\"",
-            target: state);
+            WorkflowErrorCodes.RuntimeSchemaInvalidState,
+            $"State \"{stateKey}\" not found in workflow \"{workflowKey}\"",
+            target: stateKey);
 
     /// <summary>
     /// Workflow state is invalid for the operation.
@@ -62,48 +74,9 @@ public static class WorkflowErrors
             $"Transition \"{transition}\" is not valid for the current state. Expected state: {fromState}, Current state: {currentState}",
             target: transition);
 
-    /// <summary>
-    /// Cancel configuration is not defined for the workflow.
-    /// </summary>
-    public static Error CancelNotConfiguredForWorkflow(string workflowKey)
-        => Error.Validation(
-            WorkflowErrorCodes.CancelNotConfiguredForWorkflow,
-            $"This workflow \"{workflowKey}\" does not define a cancel configuration",
-            target: workflowKey);
-
     #endregion
 
     #region Transition Errors
-
-    /// <summary>
-    /// Transition was not found.
-    /// </summary>
-    public static Error TransitionNotFound(string transitionKey)
-        => Error.NotFound(
-            WorkflowErrorCodes.NotFoundTransition,
-            $"Transition \"{transitionKey}\" not found",
-            target: transitionKey);
-
-    /// <summary>
-    /// Transition rule evaluation failed.
-    /// </summary>
-    public static Error TransitionRuleFailed(string transitionKey, string reason)
-        => Error.Validation(
-            WorkflowErrorCodes.TransitionRuleFailed,
-            $"Transition \"{transitionKey}\" rule evaluation failed: {reason}",
-            target: transitionKey);
-
-    /// <summary>
-    /// Transition schema validation failed with detailed field-level errors.
-    /// </summary>
-    public static Error SchemaValidationFailed(
-        string transitionKey,
-        AetherValidationException validationError)
-        => Error.Validation(
-            WorkflowErrorCodes.ValidationErrors,
-            $"Transition \"{transitionKey}\" schema validation failed",
-            validationError,
-            target: transitionKey);
 
     /// <summary>
     /// Transition is not authorized for the execution context.
@@ -145,6 +118,35 @@ public static class WorkflowErrors
             WorkflowErrorCodes.ConfigInvalid,
             $"Configuration not found for state {state} on instance {instanceId}",
             target: instanceId.ToString());
+
+    #endregion
+    
+    #region Schema Errors
+
+    /// <summary>
+    /// Creates an error when schema is not configured in runtime options.
+    /// </summary>
+    /// <param name="schemaKey">The schema key that is not configured.</param>
+    public static Error SchemaNotConfigured(string schemaKey)
+        => Error.Validation(
+            WorkflowErrorCodes.InvalidSchema,
+            $"Schema '{schemaKey}' is not configured in runtime options",
+            target: schemaKey);
+
+    #endregion
+
+    #region Domain Errors
+
+    /// <summary>
+    /// Domain validation failed.
+    /// </summary>
+    /// <param name="domain">The domain name that failed validation.</param>
+    /// <param name="reason">The reason for the validation failure.</param>
+    public static Error DomainValidationFailed(string domain, string reason)
+        => Error.Validation(
+            WorkflowErrorCodes.NotFoundDomain,
+            $"Domain validation failed: {reason}",
+            target: domain);
 
     #endregion
 }

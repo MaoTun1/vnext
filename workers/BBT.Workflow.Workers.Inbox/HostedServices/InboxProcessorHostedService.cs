@@ -1,10 +1,9 @@
 using BBT.Aether.Events;
-using BBT.Workflow.Workers.Inbox.Services;
 
 namespace BBT.Workflow.Workers.Inbox.HostedServices;
 
 public sealed class InboxProcessorHostedService(
-    IMultiSchemaInboxProcessor processor,
+    IServiceScopeFactory scopeFactory,
     ILogger<InboxProcessorHostedService> logger,
     AetherOutboxOptions options)
     : BackgroundService
@@ -23,6 +22,8 @@ public sealed class InboxProcessorHostedService(
         {
             try
             {
+                await using var scope = scopeFactory.CreateAsyncScope();
+                var processor = scope.ServiceProvider.GetRequiredService<IInboxProcessor>();
                 await processor.RunAsync(stoppingToken);
             }
             catch (OperationCanceledException)

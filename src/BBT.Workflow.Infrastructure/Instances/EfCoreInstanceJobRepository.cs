@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 namespace BBT.Workflow.Instances;
 
 public sealed class EfCoreInstanceJobRepository(
-    WorkflowDbContext dbContext,
+    IDbContextProvider<WorkflowDbContext> dbContext,
     IServiceProvider serviceProvider)
     : EfCoreRepository<WorkflowDbContext, InstanceJob, Guid>(dbContext, serviceProvider),
         IInstanceJobRepository

@@ -27,6 +27,7 @@ using BBT.Workflow.Execution.Transitions.Services;
 using BBT.Workflow.Execution.Validation;
 using BBT.Workflow.Application.Notifications;
 using BBT.Workflow.Execution.TriggerTransition;
+using BBT.Workflow.Instances.Events;
 using BBT.Workflow.Tasks.TriggerTransition;
 using BBT.Workflow.Tasks.Execution;
 
@@ -58,7 +59,6 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddCacheServices();
         services.AddTaskServices();
         services.AddCastHandlers();
-
         return services;
     }
 
@@ -100,8 +100,19 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
     /// <returns>The service collection for method chaining.</returns>
     private static void AddApplicationServices(this IServiceCollection services)
     {
+        // Cache Backend Services
+        services.AddSingleton<ICacheBackend<Workflow>, RuntimeCacheBackend<Workflow>>();
+        services.AddSingleton<ICacheBackend<WorkflowTask>, RuntimeCacheBackend<WorkflowTask>>();
+        services.AddSingleton<ICacheBackend<SchemaDefinition>, RuntimeCacheBackend<SchemaDefinition>>();
+        services.AddSingleton<ICacheBackend<Function>, RuntimeCacheBackend<Function>>();
+        services.AddSingleton<ICacheBackend<View>, RuntimeCacheBackend<View>>();
+        services.AddSingleton<ICacheBackend<Extension>, RuntimeCacheBackend<Extension>>();
+
+        // Domain Cache Context
         services.AddSingleton<DomainCacheContext>();
         services.AddSingleton<IDomainCacheContext>(serviceProvider => serviceProvider.GetRequiredService<DomainCacheContext>());
+
+        // Application Services
         services.AddScoped<IAdminAppService, AdminAppService>();
         services.AddScoped<IInstanceCommandAppService, InstanceCommandAppService>();
         services.AddScoped<IInstanceQueryAppService, InstanceQueryAppService>();
@@ -110,7 +121,9 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddScoped<IInstanceExtensionService, InstanceExtensionService>();
         services.AddScoped<ISubflowCompletionService, SubflowCompletionService>();
         
+        // Runtime Services
         services.AddScoped<IRuntimeService, RuntimeService>();
+        services.AddScoped<IRuntimeCacheInitializer, RuntimeCacheInitializer>();
 
         // Notifications
         services.AddScoped<DaprComponentDetector>();

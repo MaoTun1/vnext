@@ -3,6 +3,7 @@ using BBT.Workflow.BackgroundJobs.Payloads;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Execution.Services;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Logging;
 using BBT.Workflow.Shared;
 using Microsoft.Extensions.Logging;
 
@@ -42,23 +43,16 @@ public sealed class TransitionTimerJobHandler(
 
             await jobRepository.MarkAsProcessedAsync(args.JobName, cancellationToken);
 
-            logger.LogInformation(
-                "TransitionTimerJobHandler: Successfully executed transition {TransitionKey} for instance {InstanceId}",
-                args.TransitionKey, args.InstanceId);
+            logger.JobCompleted(args.JobName, args.TransitionKey, args.InstanceId);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            logger.LogInformation(
-                "TransitionTimerJobHandler: Transition execution cancelled for JobName {JobName}, TransitionKey {TransitionKey}, InstanceId {InstanceId}",
-                args.JobName, args.TransitionKey, args.InstanceId);
+            logger.JobCancelled(args.JobName, args.TransitionKey, args.InstanceId);
             throw; // Re-throw cancellation exceptions
         }
         catch (Exception e)
         {
-            logger.LogError(e,
-                "TransitionTimerJobHandler: Unexpected error executing transition {TransitionKey} for instance {InstanceId}, JobName {JobName}",
-                args.TransitionKey, args.InstanceId, args.JobName);
-            
+            logger.JobFailed(e, args.JobName, args.InstanceId);
             throw;
         }
     }

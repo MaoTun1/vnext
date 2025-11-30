@@ -1,5 +1,7 @@
 using BBT.Aether.Domain.EntityFrameworkCore;
 using BBT.Aether.Domain.Services;
+using BBT.Aether.MultiSchema;
+using BBT.Aether.Results;
 using BBT.Aether.Uow;
 using BBT.Workflow.Data;
 using BBT.Workflow.DataSink;
@@ -13,17 +15,16 @@ using Microsoft.Extensions.Configuration;
 namespace BBT.Workflow.Instances;
 
 public sealed class EfCoreInstanceRepository(
-    WorkflowDbContext dbContext,
+    IDbContextProvider<WorkflowDbContext> dbContext,
     IServiceProvider serviceProvider,
     IConfiguration configuration,
     IWorkflowMetrics workflowMetrics,
     IRuntimeInfoProvider runtimeInfoProvider,
-    IDataSinkManager dataSinkManager)
+    IDataSinkManager dataSinkManager,
+    ICurrentSchema currentSchema)
     : EfCoreRepository<WorkflowDbContext, Instance, Guid>(dbContext, serviceProvider),
         IInstanceRepository
 {
-    private readonly WorkflowDbContext _dbContext = dbContext;
-
     public override async Task<IQueryable<Instance>> WithDetailsAsync()
     {
         return (await base.WithDetailsAsync())
@@ -196,7 +197,7 @@ public sealed class EfCoreInstanceRepository(
                         filters: filters,
                         jsonColumnName: "Data", // InstanceData.Data is the JSON column
                         tableName: "InstancesData", // Filter table name
-                        schema: _dbContext.SchemaName ?? "public" // Default schema
+                        schema: currentSchema.Name ?? "public" // Default schema
                     );
 
                 return filteredInstances
@@ -297,31 +298,45 @@ public sealed class EfCoreInstanceRepository(
         return query.Paginate(page, pageSize, route, configuration, queryParams);
     }
 
-    public async Task UpdateStatusAsync(Instance instance, CancellationToken cancellationToken = default)
+    public async Task<Result<Instance>> GetActiveAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var context = await GetDbContextAsync();
-        await context.Instances
-            .Where(p => p.Id == instance.Id)
-            .ExecuteUpdateAsync(s => s
-                    .SetProperty(p => p.Status, instance.Status)
-                    .SetProperty(p => p.CompletedAt, instance.IsCompleted 
-                        ? instance.CompletedAt 
-                        : null)
-                    .SetProperty(p => p.Duration, instance.IsCompleted 
-                        ? instance.Duration 
-                        : null),
-                cancellationToken);
-    }
-
-    public async Task<Instance> GetActiveAsync(Guid id, CancellationToken cancellationToken = default)
-    {
-        var instance = await GetAsync(id, true, cancellationToken);
-        if (instance.IsCompleted)
+        var instanceResult = await GetResultAsync(id, includeDetails: true, cancellationToken);
+        
+        if (!instanceResult.IsSuccess)
         {
-            throw new InstanceCompletedException(instance.Id);
+            return instanceResult;
         }
 
-        return instance;
+        var instance = instanceResult.Value!;
+        
+        if (instance.IsCompleted)
+        {
+            return Result<Instance>.Fail(Error.Validation(
+                WorkflowErrorCodes.InstanceCompleted,
+                $"Instance {id} is already completed with status: {instance.Status.Code}",
+                id.ToString()));
+        }
+
+        return Result<Instance>.Ok(instance);
+    }
+
+    /// <summary>
+    /// Gets an instance by ID using Result pattern.
+    /// Returns Result.NotFound if instance doesn't exist.
+    /// </summary>
+    public async Task<Result<Instance>> GetResultAsync(Guid id, bool includeDetails = true,
+        CancellationToken cancellationToken = default)
+    {
+        var instance = await FindAsync(id, includeDetails, cancellationToken);
+        if (instance is null)
+        {
+            return Result<Instance>.Fail(Error.NotFound(
+                WorkflowErrorCodes.InstanceNotFound,
+                $"Instance with ID {id} not found",
+                id.ToString()));
+        }
+
+        return Result<Instance>.Ok(instance);
     }
 
     public async Task<List<InstanceAndDataModel>> GetActiveDataListAsync(CancellationToken cancellationToken = default)

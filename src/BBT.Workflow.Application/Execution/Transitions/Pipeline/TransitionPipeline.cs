@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 using BBT.Aether.Aspects;
 using BBT.Aether.Results;
 
@@ -12,23 +11,20 @@ namespace BBT.Workflow.Execution.Pipeline;
 public class TransitionPipeline
 {
     private readonly IReadOnlyList<ITransitionStep> _steps;
-    private readonly ILogger<TransitionPipeline> _logger;
 
     /// <summary>
     /// Initializes a new instance of the TransitionPipeline.
     /// </summary>
     /// <param name="steps">The collection of pipeline steps to execute.</param>
-    /// <param name="logger">Logger for pipeline execution tracking.</param>
-    public TransitionPipeline(IEnumerable<ITransitionStep> steps, ILogger<TransitionPipeline> logger)
+    public TransitionPipeline(IEnumerable<ITransitionStep> steps)
     {
         _steps = steps.OrderBy(s => s.Order).ToList();
-        _logger = logger;
     }
 
     /// <summary>
     /// Executes all pipeline steps in order for the given transition context.
+    /// Stateful loop with flow control (stop, replan, continue).
     /// Returns Result to indicate success or failure without throwing exceptions.
-    /// Uses Railway Programming pattern for declarative error handling and step composition.
     /// </summary>
     /// <param name="context">The transition execution context.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
@@ -37,39 +33,31 @@ public class TransitionPipeline
     [Trace]
     public async Task<Result> RunAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
-        var plan = BuildExecutionPlan(context);
-        var state = new PipelineState(plan, 0);
+        var state = CreateInitialState(context);
 
         while (state.HasMoreSteps())
         {
+            // Guard: Skip immediate execution requested
             if (context.SkipImmediateExecution)
                 return Result.Ok();
 
-            var step = state.CurrentStep;
+            // Execute current step
+            var stepResult = await ExecuteStepAsync(state.CurrentStep, context, cancellationToken);
+            if (!stepResult.IsSuccess)
+                return Result.Fail(stepResult.Error);
 
-            // Railway Programming: Execute step → Log on failure → Handle outcome
-            var outcomeResult = await ExecuteStepAsync(step, context, cancellationToken);
+            // Determine flow control based on step outcome
+            var flowControl = DetermineFlowControl(stepResult.Value!, state.CurrentStep, context, state);
 
-            if (!outcomeResult.IsSuccess)
-            {
-                return Result.Fail(outcomeResult.Error);
-            }
-
-            var flowControlResult = await HandleStepOutcomeAsync(outcomeResult.Value!, step, context, state);
-
-            if (!flowControlResult.IsSuccess)
-                return flowControlResult.ToResult();
-
-            // Check if we need to replan and restart
-            var flowControl = flowControlResult.Value!;
-            if (flowControl.ShouldReplan)
-            {
-                state = new PipelineState(BuildExecutionPlan(context), 0);
-                continue;
-            }
-
+            // Apply flow control decision
             if (flowControl.ShouldStop)
                 break;
+
+            if (flowControl.ShouldReplan)
+            {
+                state = CreateInitialState(context);
+                continue;
+            }
 
             state = state.MoveNext();
         }
@@ -78,17 +66,21 @@ public class TransitionPipeline
     }
 
     /// <summary>
+    /// Creates initial pipeline state with execution plan.
+    /// </summary>
+    private PipelineState CreateInitialState(TransitionExecutionContext context)
+        => new(BuildExecutionPlan(context), 0);
+
+    /// <summary>
     /// Builds an execution plan by filtering and ordering steps based on context directives.
     /// Handles resume points, epilogue modes, and terminal states.
     /// </summary>
-    /// <param name="context">The transition execution context containing directives.</param>
-    /// <returns>A filtered and ordered list of steps to execute.</returns>
     private IReadOnlyList<ITransitionStep> BuildExecutionPlan(TransitionExecutionContext context)
     {
-        var ordered = _steps.ToList(); // Already ordered in constructor
+        var ordered = _steps.ToList();
 
         // 1) ResumeFrom start
-        var startOrder = context.Directives.ConsumeResumeFrom(); // one-time
+        var startOrder = context.Directives.ConsumeResumeFrom();
         if (startOrder.HasValue)
             ordered = ordered.Where(s => s.Order >= startOrder.Value).ToList();
 
@@ -112,24 +104,21 @@ public class TransitionPipeline
     }
 
     /// <summary>
-    /// Executes a single step.
-    /// Returns Result containing step outcome, following Railway Programming pattern.
+    /// Executes a single pipeline step.
+    /// Delegates to step implementation.
     /// </summary>
-    private async Task<Result<StepOutcome>> ExecuteStepAsync(
+    private static Task<Result<StepOutcome>> ExecuteStepAsync(
         ITransitionStep step,
         TransitionExecutionContext context,
         CancellationToken cancellationToken)
-    {
-        // Execute step and track result in telemetry
-        return await step.ExecuteAsync(context, cancellationToken);
-    }
+        => step.ExecuteAsync(context, cancellationToken);
 
     /// <summary>
-    /// Handles step outcome and determines flow control.
-    /// Applies directive mutations and determines if pipeline should stop, skip, or replan.
-    /// Returns flow control decision wrapped in Result.
+    /// Determines flow control based on step outcome.
+    /// Applies directive mutations and returns appropriate flow control decision.
+    /// Sync method - no async operations needed.
     /// </summary>
-    private Task<Result<FlowControl>> HandleStepOutcomeAsync(
+    private static FlowControl DetermineFlowControl(
         StepOutcome outcome,
         ITransitionStep step,
         TransitionExecutionContext context,
@@ -140,40 +129,48 @@ public class TransitionPipeline
 
         // 1) Stop pipeline?
         if (outcome.StopPipeline)
-            return Task.FromResult(Result<FlowControl>.Ok(FlowControl.Stop()));
+            return FlowControl.Stop();
 
         // 2) Skip to specific order? (e.g., restart from CreateTransition after inline auto)
         if (outcome.SkipToOrder is { } skipTo)
         {
             context.Directives.RequestResumeFrom(skipTo);
-            return Task.FromResult(Result<FlowControl>.Ok(FlowControl.Replan()));
+            return FlowControl.Replan();
         }
 
         // 3) Directives changed requiring replan?
         if (NeedsReplan(state.Plan, context.Directives))
         {
             context.Directives.RequestResumeFrom(step.Order + 1);
-            return Task.FromResult(Result<FlowControl>.Ok(FlowControl.Replan()));
+            return FlowControl.Replan();
         }
 
         // Continue to next step
-        return Task.FromResult(Result<FlowControl>.Ok(FlowControl.Continue()));
+        return FlowControl.Continue();
     }
 
+    /// <summary>
+    /// Determines if the execution plan needs to be rebuilt.
+    /// Checks for terminal state, epilogue mode changes, and resume requests.
+    /// </summary>
     private static bool NeedsReplan(IReadOnlyList<ITransitionStep> currentPlan, PipelineDirectives d)
     {
-        // A simple heuristic: replan if terminal is reached or epilogue mode is switched to SKIP.
-        if (d.TerminalReached) return true;
+        if (d.TerminalReached)
+            return true;
+
         if (d.Epilogue == EpilogueMode.Skip &&
             currentPlan.Any(s => s.Order == LifecycleOrder.Schedule || s.Order == LifecycleOrder.Auto))
             return true;
-        if (d.ResumeFromOrder is not null) return true;
+
+        if (d.ResumeFromOrder is not null)
+            return true;
+
         return false;
     }
 
     /// <summary>
     /// Represents the current execution state of the pipeline.
-    /// Encapsulates plan and current position for Railway Programming pattern.
+    /// Immutable record struct for functional state management.
     /// </summary>
     private readonly record struct PipelineState(IReadOnlyList<ITransitionStep> Plan, int Index)
     {
@@ -184,7 +181,7 @@ public class TransitionPipeline
 
     /// <summary>
     /// Represents flow control decision after step execution.
-    /// Used in Railway Programming to determine next action in pipeline.
+    /// Factory methods provide clear intent.
     /// </summary>
     private readonly record struct FlowControl(bool ShouldStop, bool ShouldReplan)
     {

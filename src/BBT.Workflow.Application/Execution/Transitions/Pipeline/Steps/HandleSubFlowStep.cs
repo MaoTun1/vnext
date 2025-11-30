@@ -33,75 +33,46 @@ public sealed class HandleSubFlowStep(
     {
         Activity.Current?.SetDisplayName($"[{Order}] {nameof(HandleSubFlowStep)}");
 
-        // Early return if this step is not applicable
+        // Early return if not applicable
         if (!IsApplicable(context))
+        {
             return Result<StepOutcome>.Ok(StepOutcome.Continue());
+        }
 
-        // If applicable, proceed with the railway
-        return await ValidateConfigurationAsync(context)
-            .ThenAsync(_ => LogSubFlowHandlingStartAsync(context))
-            .ThenAsync(_ => HandleSubFlowAsync(context, cancellationToken))
-            .ThenAsync(_ => CreateStepOutcomeAsync(context));
+        // Railway chain: Validate config -> Execute operations -> Create outcome
+        return await Result.Ok(context)
+            .Ensure(
+                ctx => ctx.Target!.SubFlow != null,
+                CreateConfigInvalidError(context))
+            .TapAsync(ctx => ExecuteSubFlowOperationsAsync(ctx, cancellationToken))
+            .Map(CreateStepOutcome);
     }
 
     /// <summary>
     /// Checks if this step is applicable for the given context.
-    /// Returns false if target is null or not a SubFlow state type.
     /// </summary>
-    private bool IsApplicable(TransitionExecutionContext context)
+    private static bool IsApplicable(TransitionExecutionContext context)
     {
-        if (context.Target == null || context.Transition == null)
-        {
-            return false;
-        }
-
-        // Only handle SubFlow state types
-        if (context.Target.StateType != StateType.SubFlow)
-        {
-            return false;
-        }
-
-        return true;
+        return context is { Target.StateType: StateType.SubFlow, Transition: not null };
     }
 
     /// <summary>
-    /// Validates the SubFlow configuration.
+    /// Creates configuration invalid error.
     /// </summary>
-    private Task<Result<TransitionExecutionContext>> ValidateConfigurationAsync(TransitionExecutionContext context)
+    private Error CreateConfigInvalidError(TransitionExecutionContext context)
     {
-        if (context.Target!.SubFlow == null)
-        {
-            logger.SubFlowConfigInvalid(
-                TelemetryConstants.Prefixes.Execution,
-                context.Target.Key,
-                context.InstanceId);
-            return Task.FromResult(Result<TransitionExecutionContext>.Fail(
-                    WorkflowErrors.ConfigInvalid(context.InstanceId, context.Target.Key)
-                )
-            );
-        }
-
-        return Task.FromResult(Result<TransitionExecutionContext>.Ok(context));
+        logger.SubFlowConfigInvalid(context.Target!.Key, context.InstanceId);
+        return WorkflowErrors.ConfigInvalid(context.InstanceId, context.Target.Key);
     }
-
-    /// <summary>
-    /// Logs the start of SubFlow handling.
-    /// </summary>
-    private Task<Result<TransitionExecutionContext>> LogSubFlowHandlingStartAsync(TransitionExecutionContext context)
-    {
-        return Task.FromResult(Result<TransitionExecutionContext>.Ok(context));
-    }
-    
 
     /// <summary>
     /// Creates the appropriate StepOutcome based on SubFlow type.
     /// </summary>
-    private Task<Result<StepOutcome>> CreateStepOutcomeAsync(TransitionExecutionContext context)
+    private static StepOutcome CreateStepOutcome(TransitionExecutionContext context)
     {
         if (context.Target!.SubFlow!.Type.Equals(SubFlowType.SubFlow))
         {
-            // Skip the epilogue, go to the finale, then stop the pipeline
-            var outcome = new StepOutcome
+            return new StepOutcome
             {
                 MutateDirectives = d =>
                 {
@@ -110,36 +81,43 @@ public sealed class HandleSubFlowStep(
                 },
                 SkipToOrder = LifecycleOrder.Finalize
             };
-            return Task.FromResult(Result<StepOutcome>.Ok(outcome));
         }
 
-        return Task.FromResult(Result<StepOutcome>.Ok(StepOutcome.Continue()));
-    }
-
-    /// <summary>
-    /// Handles SubFlow operations using Railway Oriented Programming.
-    /// </summary>
-    private async Task<Result<TransitionExecutionContext>> HandleSubFlowAsync(
-        TransitionExecutionContext context,
-        CancellationToken cancellationToken)
-    {
-        return await ResultExtensions.TryAsync(
-            async ct => await ExecuteSubFlowOperationsAsync(context, ct),
-            cancellationToken);
+        return StepOutcome.Continue();
     }
 
     /// <summary>
     /// Executes the SubFlow operations: creates correlation, updates instance, and starts SubFlow.
     /// </summary>
-    private async Task<TransitionExecutionContext> ExecuteSubFlowOperationsAsync(
+    private async Task ExecuteSubFlowOperationsAsync(
         TransitionExecutionContext context,
         CancellationToken cancellationToken)
     {
-        // Handle the SubFlow
-        // Create correlation to track SubFlow/SubProcess instance
-        // SubFlow (Type "S"): Blocks parent workflow until completion
+        var correlation = CreateCorrelation(context);
+        context.Instance.AddCorrelation(correlation);
+
+        await instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
+
+        var scriptContext = await context.GetOrBuildScriptContextAsync(
+            ct => CreateScriptContextAsync(context, ct),
+            cancellationToken);
         
-        var correlation = InstanceCorrelation.Create(
+        await subflowStarter.StartAsync(
+            context.Workflow,
+            context.Instance,
+            context.Target!,
+            context.Transition!,
+            correlation,
+            scriptContext,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Creates correlation for SubFlow tracking.
+    /// </summary>
+    private InstanceCorrelation CreateCorrelation(TransitionExecutionContext context)
+    {
+        return InstanceCorrelation.Create(
             guidGenerator.Create(),
             context.InstanceId,
             context.Target!.Key,
@@ -148,27 +126,6 @@ public sealed class HandleSubFlowStep(
             context.Target.SubFlow.Process.Domain,
             context.Target.SubFlow.Process.Key,
             context.Target.SubFlow.Process.Version);
-        
-        context.Instance.AddCorrelation(correlation);
-
-        await instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
-
-        // Create script context for SubFlow handling
-        var scriptContext = await context.GetOrBuildScriptContextAsync(
-            ct => CreateScriptContextAsync(context, ct),
-            cancellationToken);
-        
-        await subflowStarter.StartAsync(
-            context.Workflow,
-            context.Instance,
-            context.Target,
-            context.Transition!, // Transition is required for SubFlow handling
-            correlation,
-            scriptContext,
-            cancellationToken
-        );
-        
-        return context;
     }
 
     /// <summary>
@@ -181,7 +138,7 @@ public sealed class HandleSubFlowStep(
         return await scriptContextFactory.NewBuilder()
             .WithWorkflow(context.Workflow)
             .WithInstance(context.Instance)
-            .WithTransition(context.Transition!) // Transition is required for SubFlow handling
+            .WithTransition(context.Transition!)
             .WithBody(context.Data)
             .WithHeaders(context.Headers.ToDictionary(kvp => kvp.Key, kvp => kvp.Value))
             .BuildAsync(cancellationToken);

@@ -5,7 +5,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
-using BBT.Workflow.Domain;
 using BBT.Workflow.Execution;
 using BBT.Workflow.Execution.Pipeline;
 using BBT.Workflow.Instances;
@@ -43,8 +42,7 @@ public class TransitionPipelineTests
         _mockSteps.Add(CreateMockStep(LifecycleOrder.Finalize));
 
         _pipeline = new TransitionPipeline(
-            _mockSteps.Select(m => m.Object),
-            _mockLogger.Object);
+            _mockSteps.Select(m => m.Object));
     }
 
     #region RunAsync Tests
@@ -476,8 +474,7 @@ public class TransitionPipelineTests
         }
 
         var pipeline = new TransitionPipeline(
-            randomSteps.Select(m => m.Object),
-            _mockLogger.Object);
+            randomSteps.Select(m => m.Object));
 
         var context = CreateTransitionExecutionContext();
 

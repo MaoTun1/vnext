@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using BBT.Aether.Results;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Definitions.CastHandlers;
@@ -74,7 +75,7 @@ public class SchemaWorkflowCastHandlerTests
 
         _mockSchemasCacheSet
             .Setup(x => x.SetAsync(It.IsAny<SchemaDefinition>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync(Result.Ok());
 
         // Act
         await _handler.HandleAsync(reference, attributes, CancellationToken.None);
@@ -89,4 +90,3 @@ public class SchemaWorkflowCastHandlerTests
             Times.Once);
     }
 }
-

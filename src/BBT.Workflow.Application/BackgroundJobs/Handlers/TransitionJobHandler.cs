@@ -1,10 +1,8 @@
-using System.Text.Json;
 using BBT.Aether.BackgroundJob;
-using BBT.Aether.Domain.Repositories;
 using BBT.Workflow.BackgroundJobs.Payloads;
-using BBT.Workflow.Instances;
-using BBT.Workflow.Schemas;
 using BBT.Workflow.Execution.Services;
+using BBT.Workflow.Instances;
+using BBT.Workflow.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.BackgroundJobs.Handlers;
@@ -46,16 +44,11 @@ public sealed class TransitionJobHandler(
 
             await jobRepository.MarkAsProcessedAsync(args.JobName, cancellationToken);
             
-            logger.LogInformation(
-                "TransitionJobHandler: Successfully executed transition {TransitionKey} for instance {InstanceId}",
-                args.TransitionKey, args.InstanceId);
+            logger.JobCompleted(args.JobName, args.TransitionKey, args.InstanceId);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex,
-                "TransitionJobHandler: Failed to execute transition for JobName {JobName}",
-                args.JobName);
-            throw;
+            logger.JobFailed(ex, args.JobName, args.InstanceId);
         }
     }
 }

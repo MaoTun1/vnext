@@ -1,6 +1,7 @@
 using BBT.Aether;
 using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Execution.Validation;
 using Microsoft.Extensions.Logging;
 
@@ -26,6 +27,8 @@ public sealed class AutomaticTransitionHandler(
 
     /// <summary>
     /// Validates the system state for automatic transition execution.
+    /// Ensures that the transition chain depth does not exceed the maximum allowed limit
+    /// to prevent infinite loops and excessive recursion.
     /// </summary>
     private Task ValidateSystemStateAsync(TransitionExecutionContext context)
     {
@@ -34,10 +37,10 @@ public sealed class AutomaticTransitionHandler(
         const int maxChainDepth = 50; // This should come from configuration
         if (context.ChainDepth > maxChainDepth)
         {
-            //TODO: Spesifik Exception
-            throw new UserFriendlyException(
-                $"Maximum chain depth ({maxChainDepth}) exceeded for automatic transition {context.TransitionKey}",
-                WorkflowErrorCodes.ExecutionStepFailed);
+            throw new TransitionChainDepthExceededException(
+                currentChainDepth: context.ChainDepth,
+                maxChainDepth: maxChainDepth,
+                transitionKey: context.TransitionKey);
         }
 
         return Task.CompletedTask;

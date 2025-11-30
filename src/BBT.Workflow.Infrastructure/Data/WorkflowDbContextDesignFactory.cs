@@ -1,4 +1,3 @@
-using BBT.Workflow.Schemas;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 
@@ -15,10 +14,7 @@ public sealed class WorkflowDbContextDesignFactory : IDesignTimeDbContextFactory
             npgsqlOptions => { npgsqlOptions.MigrationsHistoryTable("__Workflow_Migrations"); });
 
         return new WorkflowDbContext(
-            optionsBuilder.Options,
-            new CurrentSchema(
-                AsyncLocalSchemaAccessor.Instance
-            )
+            optionsBuilder.Options
         );
     }
 }

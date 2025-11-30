@@ -1,6 +1,7 @@
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Logging;
 using BBT.Workflow.Runtime;
 using System.Diagnostics;
 using BBT.Aether.Results;
@@ -14,60 +15,72 @@ public sealed class TransitionContextFactory(
     IRuntimeInfoProvider runtimeInfoProvider) : ITransitionContextFactory
 {
     /// <inheritdoc />
-    public async Task<Result<TransitionExecutionContext>> CreateAsync(
+    /// <summary>
+    /// Creates a TransitionExecutionContext from the input.
+    /// Railway chain: Validate Domain → Rehydrate Instance → Resolve State/Transition → Build Context
+    /// </summary>
+    public Task<Result<TransitionExecutionContext>> CreateAsync(
         WorkflowExecutionContext input,
         CancellationToken cancellationToken)
     {
-        // Step 1: Validate domain first
-        runtimeInfoProvider.Check(input.Domain);
-
-        // Load workflow, rehydrate instance, resolve state/transition, build context
-        return await RehydrateInstanceAsync(input, cancellationToken)
-            .ThenAsync(data => ResolveStateAndTransitionAsync(data, input))
+        return ValidateDomain(input.Domain)
+            .BindAsync(_ => RehydrateInstanceAsync(input, cancellationToken))
+            .ThenAsync(data => Task.FromResult(ResolveStateAndTransition(data, input)))
             .MapAsync(data => BuildExecutionContext(data, input));
     }
 
     /// <summary>
-    /// Rehydrates the instance from storage.
+    /// Validates the domain using runtime info provider.
+    /// Converts potential validation exception to Result.Fail.
     /// </summary>
-    private async Task<Result<(Definitions.Workflow Workflow, Instance Instance)>> RehydrateInstanceAsync(
-        WorkflowExecutionContext input,
-        CancellationToken cancellationToken)
+    private Result<string> ValidateDomain(string domain)
     {
-        return await ResultExtensions.TryAsync(async ct =>
+        try
         {
-            var workflow = await componentCacheStore.GetFlowAsync(
-                input.Domain, input.WorkflowKey, input.WorkflowVersion, ct);
-            var instance = await instanceRepository.GetActiveAsync(input.InstanceId, ct);
-            return (workflow, instance);
-        }, cancellationToken);
+            runtimeInfoProvider.Check(domain);
+            return Result<string>.Ok(domain);
+        }
+        catch (Exception ex)
+        {
+            return Result<string>.Fail(
+                WorkflowErrors.DomainValidationFailed(domain, ex.Message));
+        }
     }
 
     /// <summary>
-    /// Resolves the current state and transition.
+    /// Rehydrates the workflow and instance from storage.
+    /// Combines GetFlowAsync and GetActiveAsync Results using Railway pattern.
     /// </summary>
-    private Task<Result<(Definitions.Workflow Workflow, Instance Instance, State CurrentState, Transition? Transition)>>
-        ResolveStateAndTransitionAsync(
+    private Task<Result<(Definitions.Workflow Workflow, Instance Instance)>> RehydrateInstanceAsync(
+        WorkflowExecutionContext input,
+        CancellationToken cancellationToken)
+    {
+        return componentCacheStore.GetFlowAsync(
+                input.Domain, input.WorkflowKey, input.WorkflowVersion, cancellationToken)
+            .BindAsync(workflow =>
+                instanceRepository.GetActiveAsync(input.InstanceId, cancellationToken)
+                    .MapAsync(instance => (workflow, instance)));
+    }
+
+    /// <summary>
+    /// Resolves the current state and transition using Railway pattern.
+    /// Uses Map to transform GetState result - no throwing on domain errors.
+    /// </summary>
+    private Result<(Definitions.Workflow Workflow, Instance Instance, State CurrentState, Transition? Transition)>
+        ResolveStateAndTransition(
             (Definitions.Workflow Workflow, Instance Instance) data,
             WorkflowExecutionContext input)
     {
-        var result = ResultExtensions.Try(() =>
-        {
-            var currentStateResult = data.Workflow.GetState(data.Instance.GetCurrentState);
-            if (!currentStateResult.IsSuccess)
-                throw new InvalidOperationException(currentStateResult.Error.Message);
-                    
-            var currentState = currentStateResult.Value!;
+        return data.Workflow.GetState(data.Instance.GetCurrentState)
+            .Map(currentState =>
+            {
+                // In Resume mode, transition is optional (e.g., SubFlow completion scenarios)
+                var transition = input.Mode == ExecMode.Resume
+                    ? null
+                    : ResolveTransition(data.Workflow, currentState, input.TransitionKey);
 
-            // In Resume mode, transition is optional (e.g., SubFlow completion scenarios)
-            var transition = input.Mode == ExecMode.Resume
-                ? null
-                : ResolveTransition(data.Workflow, currentState, input.TransitionKey);
-            
-            return (data.Workflow, data.Instance, currentState, transition);
-        });
-        
-        return Task.FromResult(result);
+                return (data.Workflow, data.Instance, currentState, transition);
+            });
     }
 
     /// <summary>

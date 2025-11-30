@@ -270,6 +270,9 @@ tempkey.jwk
 #DNT
 switcher.json
 
+# AI
+ai-docs/
+
 appsettings.secrets.json
 deploy/nuget-api-key.txt
 deploy/npm-auth-token.txt

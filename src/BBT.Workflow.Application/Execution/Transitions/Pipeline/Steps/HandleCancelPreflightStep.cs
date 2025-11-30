@@ -10,7 +10,8 @@ namespace BBT.Workflow.Execution.Pipeline.Steps;
 /// Pipeline step that detects cancel transitions and short-circuits to HandleFinishStep.
 /// This step runs early (Preflight order) to skip normal transition processing for cancellation.
 /// </summary>
-public sealed class HandleCancelPreflightStep(ILogger<HandleCancelPreflightStep> logger) : ITransitionStep
+public sealed class HandleCancelPreflightStep(
+    ILogger<HandleCancelPreflightStep> logger) : ITransitionStep
 {
     /// <inheritdoc />
     public int Order => LifecycleOrder.Preflight;
@@ -22,36 +23,41 @@ public sealed class HandleCancelPreflightStep(ILogger<HandleCancelPreflightStep>
     {
         Activity.Current?.SetDisplayName($"[{Order}] {nameof(HandleCancelPreflightStep)}");
 
-        // Only process if this is a cancel transition
+        // Skip if not a cancel transition
         if (!context.IsCancelTransition())
         {
             return Task.FromResult(Result<StepOutcome>.Ok(StepOutcome.Continue()));
         }
 
-        logger.LogInformation("Cancel transition detected for instance {InstanceId}", context.InstanceId);
+        // Railway chain: Log detection -> Validate -> Create skip outcome
+        var result = Result.Ok(context)
+            .Tap(_ => logger.CancelTransitionDetected(context.InstanceId))
+            .Ensure(
+                ctx => !ctx.Instance.IsCompleted,
+                CreateAlreadyCompletedError(context))
+            .Tap(_ => logger.CancelSkipToFinish(context.InstanceId))
+            .Map(_ => CreateSkipOutcome());
 
-        // Validate instance is not already completed
-        if (context.Instance.IsCompleted)
-        {
-            var errorMessage = $"Cannot cancel instance {context.InstanceId}: already in {context.Instance.Status.Description} state";
-            logger.LogWarning(errorMessage);
-            return Task.FromResult(Result<StepOutcome>.Fail(
-                Error.Validation(
-                    WorkflowErrorCodes.InvalidState,
-                    errorMessage,
-                    target: context.InstanceId.ToString())));
-        }
+        return Task.FromResult(result);
+    }
 
-        logger.LogInformation(
-            "Skipping normal pipeline steps for cancel transition, jumping to Finish step for instance {InstanceId}",
-            context.InstanceId);
-        
-        var outcome = new StepOutcome
+    /// <summary>
+    /// Creates error for already completed instance.
+    /// </summary>
+    private Error CreateAlreadyCompletedError(TransitionExecutionContext context)
+    {
+        logger.CancelInstanceAlreadyCompleted(context.InstanceId, context.Instance.Status.Description);
+        return ExecutionErrors.InstanceAlreadyCompleted(context.InstanceId, context.Instance.Status.Description);
+    }
+
+    /// <summary>
+    /// Creates outcome to skip to CreateTransition step.
+    /// </summary>
+    private static StepOutcome CreateSkipOutcome()
+    {
+        return new StepOutcome
         {
             SkipToOrder = LifecycleOrder.CreateTransition
         };
-        
-        return Task.FromResult(Result<StepOutcome>.Ok(outcome));
     }
 }
-

@@ -1,4 +1,5 @@
 using BBT.Workflow.Execution.Services;
+using BBT.Workflow.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -17,55 +18,59 @@ public sealed class DefaultReentryDispatcher(
     private readonly ReentryOptions _options = options.Value;
 
     /// <inheritdoc />
+    /// <summary>
+    /// Dispatches an automatic transition for re-entry.
+    /// Flow: Validate Chain Depth → Check Inline Preference → Execute or Defer
+    /// </summary>
     public async Task<ReentryOutcome> DispatchAutoAsync(ReentryCommand command, CancellationToken cancellationToken)
     {
         var nextCommand = command with { ChainDepth = command.ChainDepth + 1 };
 
-        // Check for infinite loop protection
-        if (nextCommand.ChainDepth > _options.MaxAutoHops)
-        {
-            logger.LogWarning(
-                "Maximum auto transition hops ({MaxHops}) exceeded for instance {InstanceId}, chain {ExecutionChainId}",
-                _options.MaxAutoHops, command.InstanceId, command.ExecutionChainId);
-            return new ReentryOutcome(false, false, null, null, null);
-        }
+        // Guard: Chain depth exceeded - return early to prevent infinite loops
+        if (IsChainDepthExceeded(nextCommand))
+            return ReentryOutcome.NotExecuted();
 
-        if (!nextCommand.PreferInline || !_options.AllowInlineAuto)
-        {
-            // The transition can be advanced as a background job.
-            return new ReentryOutcome(InlineExecuted: false, Succeeded: false, NewState: null, NextTransitionKey: null,
-                ResumeFromOrder: null);
-        }
-        
-        var succeeded = await InvokeInNewScopeAsync(nextCommand, cancellationToken);
-        
-        return new ReentryOutcome(InlineExecuted: true, Succeeded: succeeded, NewState: null, NextTransitionKey: null, ResumeFromOrder: null);
+        // Guard: Inline execution not allowed - defer to background job
+        if (!ShouldExecuteInline(nextCommand))
+            return ReentryOutcome.Deferred();
+
+        // Execute inline and return outcome
+        var succeeded = await ExecuteInNewScopeAsync(nextCommand, cancellationToken);
+        return ReentryOutcome.Executed(succeeded);
     }
 
     /// <summary>
-    /// Invokes a transition in a new dependency injection scope.
+    /// Checks if the chain depth has exceeded the maximum allowed hops.
+    /// Logs a warning when the limit is exceeded.
     /// </summary>
-    private async Task<bool> InvokeInNewScopeAsync(ReentryCommand command, CancellationToken cancellationToken)
+    private bool IsChainDepthExceeded(ReentryCommand command)
     {
-        try
-        {
-            using var scope = serviceScopeFactory.CreateScope();
-            var executionService = scope.ServiceProvider.GetRequiredService<IWorkflowExecutionService>();
+        if (command.ChainDepth <= _options.MaxAutoHops)
+            return false;
 
-            var input = WorkflowExecutionContext.From(command);
-            var result = await executionService.ExecuteTransitionAsync(input, cancellationToken);
-            return result.IsSuccess;
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex,
-                "Failed to execute inline re-entry for transition {TransitionKey} on instance {InstanceId}",
-                command.TransitionKey, command.InstanceId);
-            throw;
-        }
+        logger.MaxAutoHopsExceeded(_options.MaxAutoHops, command.InstanceId, command.ExecutionChainId);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Determines if the transition should be executed inline based on command preferences and options.
+    /// </summary>
+    private bool ShouldExecuteInline(ReentryCommand command)
+        => command.PreferInline && _options.AllowInlineAuto;
+
+    /// <summary>
+    /// Executes a transition in a new dependency injection scope.
+    /// Infrastructure exceptions bubble up to middleware - no try-catch needed.
+    /// </summary>
+    private async Task<bool> ExecuteInNewScopeAsync(ReentryCommand command, CancellationToken cancellationToken)
+    {
+        using var scope = serviceScopeFactory.CreateScope();
+        var executionService = scope.ServiceProvider.GetRequiredService<IWorkflowExecutionService>();
+
+        var input = WorkflowExecutionContext.From(command);
+        var result = await executionService.ExecuteTransitionAsync(input, cancellationToken);
+
+        return result.IsSuccess;
     }
 }

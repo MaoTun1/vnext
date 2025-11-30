@@ -1,4 +1,5 @@
 using BBT.Workflow.Caching;
+using BBT.Workflow.Orchestration.Services;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks;
 using BBT.Workflow.Tasks.Execution;
@@ -39,6 +40,8 @@ public static class OrchestrationApiServiceCollectionExtensions
         services.AddScoped<ITaskOrchestrator, DaprTaskExecutor>();
         
         // Add any Orchestration-specific hosted services
+        services.AddHostedService<MultiSchemaMigrationHostedService>();
+        services.AddHostedService<CacheCleanupHostedService>();
         services.AddHostedService<CacheInitializationHostedService>();
         services.AddHostedService<ScriptingInitializationService>();
     }

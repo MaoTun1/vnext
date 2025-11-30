@@ -100,8 +100,8 @@ public class TransitionValidationServiceTests
         SetupSuccessfulPolicyValidation(context);
         
         _mockComponentCacheStore
-            .Setup(x => x.GetSchemaAsync(schemaRef, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(schemaDefinition);
+            .Setup(x => x.GetSchemaAsync(schemaRef.Domain, schemaRef.Key, schemaRef.Version, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<SchemaDefinition>.Ok(schemaDefinition));
 
         _mockSchemaValidator
             .Setup(x => x.Validate(schemaDefinition.Schema, context.DataElement))
@@ -128,8 +128,8 @@ public class TransitionValidationServiceTests
         SetupSuccessfulPolicyValidation(context);
 
         _mockComponentCacheStore
-            .Setup(x => x.GetSchemaAsync(schemaRef, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(schemaDefinition);
+            .Setup(x => x.GetSchemaAsync(schemaRef.Domain, schemaRef.Key, schemaRef.Version, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<SchemaDefinition>.Ok(schemaDefinition));
 
         var validationError = Error.Validation(
             code: "SCHEMA_ERROR", 
@@ -211,8 +211,8 @@ public class TransitionValidationServiceTests
         SetupSuccessfulPolicyValidation(context);
 
         _mockComponentCacheStore
-            .Setup(x => x.GetSchemaAsync(schemaRef, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(schemaDefinition);
+            .Setup(x => x.GetSchemaAsync(schemaRef.Domain, schemaRef.Key, schemaRef.Version, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<SchemaDefinition>.Ok(schemaDefinition));
 
         var validationErrors = new List<ValidationResult> 
         { 
@@ -277,8 +277,8 @@ public class TransitionValidationServiceTests
         SetupSuccessfulPolicyValidation(context);
 
         _mockComponentCacheStore
-            .Setup(x => x.GetSchemaAsync(schemaRef, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(schemaDefinition);
+            .Setup(x => x.GetSchemaAsync(schemaRef.Domain, schemaRef.Key, schemaRef.Version, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<SchemaDefinition>.Ok(schemaDefinition));
 
         var validationErrors = new List<ValidationResult>
         {
@@ -427,4 +427,3 @@ public class TransitionValidationServiceTests
 
     #endregion
 }
-

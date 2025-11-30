@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using BBT.Aether.Aspects;
 using BBT.Aether.Guids;
+using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks.Factory;
@@ -17,6 +18,7 @@ namespace BBT.Workflow.Tasks.Execution;
 /// <summary>
 /// Local implementation of IWorkflowTaskExecutor that executes tasks directly without remote calls.
 /// This is used in the Execution service where tasks are executed locally.
+/// Uses Railway Oriented Programming for strategy resolution with Result pattern.
 /// </summary>
 /// <param name="taskExecutorFactory">Factory for creating task executors based on task type.</param>
 /// <param name="guidGenerator">Generator for creating unique identifiers.</param>
@@ -48,7 +50,7 @@ public sealed class LocalTaskExecutor(
     /// - Execution with error handling
     /// - Response processing and context updates
     /// - State transitions (Completed/Faulted)
-    /// - Persistence handling via Strategy Pattern
+    /// - Persistence handling via Strategy Pattern with Result-based error handling
     /// </remarks>
     [Log]
     [Trace]
@@ -60,7 +62,11 @@ public sealed class LocalTaskExecutor(
         CancellationToken cancellationToken = default)
     {
         // Use TaskFactory for optimized task creation with proper isolation
-        var task = await taskFactory.CreateExecutionTaskAsync(onExecuteTask.Task, cancellationToken);
+        var taskResult = await taskFactory.CreateExecutionTaskAsync(onExecuteTask.Task, cancellationToken);
+        
+        // Throw if task creation failed - infrastructure errors should bubble up
+        taskResult.ThrowIfFailure();
+        var task = taskResult.Value!;
 
         var taskExecutor = taskExecutorFactory.GetExecutor(task.GetTaskType());
         var instanceTask = new InstanceTask(
@@ -69,11 +75,14 @@ public sealed class LocalTaskExecutor(
             task.Key
         );
 
-        // Get the appropriate persistence strategy based on TaskTrigger
-        var persistenceStrategy = taskPersistenceStrategyFactory.GetStrategy(taskTrigger);
+        // Get the appropriate persistence strategy based on TaskTrigger using Result pattern
+        var strategyResult = taskPersistenceStrategyFactory.GetStrategy(taskTrigger);
+        strategyResult.ThrowIfFailure();
+        var persistenceStrategy = strategyResult.Value!;
 
-        // Handle task creation persistence
-        await persistenceStrategy.HandleCreationAsync(instanceTask, cancellationToken);
+        // Handle task creation persistence - throw on failure as it's infrastructure
+        var creationResult = await persistenceStrategy.HandleCreationAsync(instanceTask, cancellationToken);
+        creationResult.ThrowIfFailure();
 
         var taskType = task.GetTaskType().ToString();
         // Create span for task execution
@@ -81,7 +90,7 @@ public sealed class LocalTaskExecutor(
         activity?.SetTag(TelemetryConstants.TagNames.TaskKey, task.Key);
         activity?.SetTag(TelemetryConstants.TagNames.TaskType, taskType);
         activity?.SetTag(TelemetryConstants.TagNames.InstanceId, context.Instance.Id.ToString());
-        activity?.SetDisplayName($"Task: {task.Key}");
+        activity?.SetDisplayName($"[{onExecuteTask.Order}] Task: {task.Key}/{task.Version}");
 
         // Record task execution start 
         workflowMetrics.RecordTaskExecution(taskType, "started");
@@ -151,7 +160,6 @@ public sealed class LocalTaskExecutor(
             // Log task execution failure
             logger.TaskExecutionFailed(
                 e,
-                TelemetryConstants.Prefixes.Execution,
                 task.Key,
                 taskType,
                 context.Instance.Id);
@@ -162,8 +170,9 @@ public sealed class LocalTaskExecutor(
             throw;
         }
 
-        // Handle task completion persistence
-        await persistenceStrategy.HandleCompletionAsync(instanceTask, cancellationToken);
+        // Handle task completion persistence - throw on failure as it's infrastructure
+        var completionResult = await persistenceStrategy.HandleCompletionAsync(instanceTask, cancellationToken);
+        completionResult.ThrowIfFailure();
     }
 
     /// <summary>

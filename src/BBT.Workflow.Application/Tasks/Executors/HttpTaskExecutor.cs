@@ -124,7 +124,7 @@ public sealed class HttpTaskExecutor(
                 {
                     responseData = JsonSerializer.Deserialize<object>(content);
                 }
-                catch (JsonException ex)
+                catch (JsonException)
                 {
                     responseData = content;
                 }

@@ -1,3 +1,4 @@
+using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 
@@ -7,6 +8,7 @@ namespace BBT.Workflow.Tasks.Persistence;
 /// Strategy interface for handling task persistence based on different trigger types.
 /// This interface enables different persistence behaviors for various TaskTrigger scenarios
 /// while maintaining separation of concerns and following SOLID principles.
+/// Uses the Result pattern for consistent error handling without exceptions.
 /// </summary>
 public interface ITaskPersistenceStrategy
 {
@@ -22,14 +24,14 @@ public interface ITaskPersistenceStrategy
     /// </summary>
     /// <param name="instanceTask">The InstanceTask to be persisted.</param>
     /// <param name="cancellationToken">Cancellation token for async operation control.</param>
-    /// <returns>A task representing the asynchronous operation.</returns>
-    Task HandleCreationAsync(InstanceTask instanceTask, CancellationToken cancellationToken = default);
+    /// <returns>A Result indicating success or failure of the persistence operation.</returns>
+    Task<Result> HandleCreationAsync(InstanceTask instanceTask, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Handles the completion and final persistence of an InstanceTask if required.
     /// </summary>
     /// <param name="instanceTask">The InstanceTask to be updated.</param>
     /// <param name="cancellationToken">Cancellation token for async operation control.</param>
-    /// <returns>A task representing the asynchronous operation.</returns>
-    Task HandleCompletionAsync(InstanceTask instanceTask, CancellationToken cancellationToken = default);
+    /// <returns>A Result indicating success or failure of the persistence operation.</returns>
+    Task<Result> HandleCompletionAsync(InstanceTask instanceTask, CancellationToken cancellationToken = default);
 } 

@@ -138,7 +138,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     }
 
     private readonly List<InstanceData> _dataList = new();
-    private readonly object _dataListLock = new(); // Thread-safe lock for data operations
+    private readonly Lock _dataListLock = new(); // Thread-safe lock for data operations
 
     /// <summary>
     /// Child Correlations
@@ -230,8 +230,8 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         CompletedAt = DateTime.UtcNow;
         Duration = CompletedAt - CreatedAt;
 
-        // Publish completion event for SubItems (SubFlow)
-        if (IsSubFlow)
+        // Publish completion event for SubItems (SubFlow or SubProcess)
+        if (IsSubItem)
         {
             var latestData = LatestData;
             var contractInfo = ExtraProperties.ToSubFlowContractInfo();

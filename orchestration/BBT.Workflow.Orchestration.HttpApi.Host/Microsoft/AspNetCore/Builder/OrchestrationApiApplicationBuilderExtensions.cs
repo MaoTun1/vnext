@@ -16,9 +16,7 @@ public static class OrchestrationApiApplicationBuilderExtensions
         app.UseWorkflowApiBase();
         app.MapAppHealthChecks();
         
-        // Seed test data
-        WorkflowApiBaseApplicationBuilderExtensions.SeedTestData(app.Services);
-
+        WorkflowApiBaseApplicationBuilderExtensions.MigrateMessagingDbContext(app.Services);
         return app;
     }
 }
