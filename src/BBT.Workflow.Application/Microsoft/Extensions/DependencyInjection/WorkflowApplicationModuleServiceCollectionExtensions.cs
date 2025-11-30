@@ -200,15 +200,13 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddScoped<ConditionTaskExecutor>();
         services.AddScoped<TimerTaskExecutor>();
         services.AddScoped<NotificationTaskExecutor>();
-        services.AddScoped<TriggerTransitionTaskExecutor>();
+        services.AddScoped<StartTaskExecutor>();
+        services.AddScoped<DirectTriggerTaskExecutor>();
+        services.AddScoped<GetInstanceDataTaskExecutor>();
+        services.AddScoped<SubProcessTaskExecutor>();
 
-        // Trigger Transition Strategies
-        services.AddScoped<ITriggerTransitionStrategyFactory, TriggerTransitionStrategyFactory>();
+        // HTTP Task Factory for trigger transition tasks
         services.AddScoped<ITriggerTransitionHttpTaskFactory, TriggerTransitionHttpTaskFactory>();
-        services.AddScoped<StartTriggerStrategy>();
-        services.AddScoped<DirectTriggerStrategy>();
-        services.AddScoped<SubProcessTriggerStrategy>();
-        services.AddScoped<GetInstanceDataTriggerStrategy>();
         
         // Scripting service
         services.AddScoped<IScriptContextFactory, ScriptContextFactory>();

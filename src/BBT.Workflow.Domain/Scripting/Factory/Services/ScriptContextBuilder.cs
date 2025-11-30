@@ -24,6 +24,7 @@ internal sealed class ScriptContextBuilder(
     private object? _body;
     private Dictionary<string, string?>? _headers;
     private Dictionary<string, object?>? _routeValues;
+    private Dictionary<string, object?>? _queryParameters;
     private Dictionary<string, object?> _taskResponse = new();
     private Dictionary<string, object> _metadata = new();
     private Dictionary<string, object> _definitions = new();
@@ -140,6 +141,18 @@ internal sealed class ScriptContextBuilder(
         return this;
     }
 
+    public IScriptContextBuilder WithQueryParameters(Dictionary<string, object?>? queryParameters)
+    {
+        _queryParameters = queryParameters;
+        return this;
+    }
+
+    public IScriptContextBuilder WithQueryParameters(Dictionary<string, string?>? queryParameters)
+    {
+        _queryParameters = queryParameters?.ToDictionary(kvp => kvp.Key, kvp => (object?)kvp.Value);
+        return this;
+    }
+
     public IScriptContextBuilder WithTaskResponse(Dictionary<string, object?> taskResponse)
     {
         _taskResponse = taskResponse;
@@ -178,6 +191,7 @@ internal sealed class ScriptContextBuilder(
             .SetBody(_body)
             .SetHeaders(_headers)
             .SetRouteValues(_routeValues)
+            .SetQueryParameters(_queryParameters)
             .SetTaskResponse(_taskResponse)
             .SetMetadata(_metadata)
             .SetDefinitions(_definitions)

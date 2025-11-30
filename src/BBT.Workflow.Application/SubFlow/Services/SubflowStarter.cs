@@ -65,6 +65,7 @@ public sealed class SubflowStarter(
     /// <param name="transition">The transition triggering the SubProcess.</param>
     /// <param name="correlation">Correlation information for tracking.</param>
     /// <param name="subFlowType">Type code of the SubFlow ("S" or "P").</param>
+    /// <param name="inputMappingResult">Optional input mapping result containing data, headers, and key information.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public async Task SubStartAsync(
         Definitions.Workflow workflow,
@@ -73,6 +74,7 @@ public sealed class SubflowStarter(
         Transition transition,
         InstanceCorrelation correlation,
         string subFlowType,
+        ScriptResponse? inputMappingResult = null,
         CancellationToken cancellationToken = default)
     {
         await StartSubFlowInternalAsync(
@@ -83,7 +85,7 @@ public sealed class SubflowStarter(
             transition.Key,
             correlation,
             subFlowType,
-            inputMappingResult: null,
+            inputMappingResult,
             cancellationToken);
     }
 

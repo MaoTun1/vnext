@@ -18,6 +18,7 @@ The BBT Workflow Engine is a comprehensive, domain-driven workflow management sy
 ### Application Layer
 - [Application Services](./application-services.md) - Application layer services and interfaces
 - [Task Executors](./task-executors.md) - Task execution system and custom executors
+- [Trigger Transition Tasks](./trigger-transition-tasks.md) - Workflow instance interaction tasks (Start, DirectTrigger, GetInstanceData, SubProcess)
 - [Task Factory & Object Pooling](./task-factory-pooling.md) - High-performance task instance creation and memory optimization
 
 ### Scripting & Extensibility

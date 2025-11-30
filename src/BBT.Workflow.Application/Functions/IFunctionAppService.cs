@@ -16,6 +16,8 @@ public interface IFunctionAppService : IApplicationService
         string key,
         string flow,
         string domain,
+        Dictionary<string, string?>? headers = null,
+        Dictionary<string, string?>? queryParameters = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -26,6 +28,8 @@ public interface IFunctionAppService : IApplicationService
         string flow,
         string domain,
         string instance,
+        Dictionary<string, string?>? headers = null,
+        Dictionary<string, string?>? queryParameters = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

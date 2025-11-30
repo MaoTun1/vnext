@@ -2,6 +2,7 @@ using BBT.Aether;
 using BBT.Aether.Application.Services;
 using BBT.Aether.BackgroundJob;
 using BBT.Aether.DistributedLock;
+using BBT.Aether.Domain.Entities;
 using BBT.Aether.Guids;
 using BBT.Aether.Results;
 using BBT.Workflow.BackgroundJobs.Handlers;
@@ -289,15 +290,33 @@ public sealed class InstanceCommandAppService(
 
     /// <inheritdoc />
     public async Task<Result<TransitionOutput>> TransitionAsync(
-        Guid instanceId,
+        string instance,
         string transitionKey,
         TransitionInput input,
         CancellationToken cancellationToken = default)
     {
         // Validate domain first
         runtimeInfoProvider.Check(input.Domain);
-        return await ExecuteTransitionAsync(instanceId, transitionKey, input, cancellationToken)
-            .OnSuccess(output => AddTransitionHeader(output, input));
+        
+        // If already a Guid, use it directly without repository lookup
+        if (Guid.TryParse(instance, out var instanceId))
+        {
+            return await ExecuteTransitionAsync(instanceId, transitionKey, input, cancellationToken)
+                .OnSuccess(output => AddTransitionHeader(output, input));
+        }
+        
+        // If it's a Key, we need to lookup the instance ID
+        using (currentSchema.Change(input.Workflow))
+        {
+            var instanceResult = await GetInstanceIdByKeyAsync(instance, cancellationToken);
+            if (!instanceResult.IsSuccess)
+            {
+                return Result<TransitionOutput>.Fail(instanceResult.Error);
+            }
+
+            return await ExecuteTransitionAsync(instanceResult.Value, transitionKey, input, cancellationToken)
+                .OnSuccess(output => AddTransitionHeader(output, input));
+        }
     }
 
     /// <summary>
@@ -344,6 +363,32 @@ public sealed class InstanceCommandAppService(
         );
     }
 
+
+    /// <summary>
+    /// Gets instance ID by Key.
+    /// </summary>
+    /// <param name="instanceKey">Instance Key</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Instance ID if found, or error result</returns>
+    private async Task<Result<Guid>> GetInstanceIdByKeyAsync(
+        string instanceKey,
+        CancellationToken cancellationToken)
+    {
+        return await ResultExtensions.TryAsync(
+            async ct =>
+            {
+                var instance = await instanceRepository.FindByKeyAsReadOnlyAsync(instanceKey, ct);
+
+                if (instance == null)
+                {
+                    throw new EntityNotFoundException(typeof(Instance), instanceKey);
+                }
+
+                return instance.Id;
+            },
+            cancellationToken,
+            _ => WorkflowErrors.InstanceNotFound(instanceKey));
+    }
 
     /// <summary>
     /// Creates and prepares a new instance with the provided parameters.
