@@ -79,6 +79,21 @@ public static class ExecutionErrors
             detail: exceptionType);
     
     #endregion
+
+    #region Instance Key Errors
+
+    /// <summary>
+    /// Creates an error when attempting to set a key that already exists on another active instance.
+    /// </summary>
+    /// <param name="key">The duplicate key value.</param>
+    /// <param name="instanceId">The current instance ID attempting to use the key.</param>
+    public static Error DuplicateInstanceKey(string key, Guid instanceId)
+        => Error.Conflict(
+            WorkflowErrorCodes.DuplicateInstanceKey,
+            $"An active instance with key '{key}' already exists. Instance {instanceId} cannot use this key.",
+            target: key);
+
+    #endregion
     
 }
 

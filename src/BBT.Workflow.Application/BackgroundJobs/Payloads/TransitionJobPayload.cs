@@ -40,7 +40,17 @@ public sealed class TransitionJobPayload
     /// Gets or sets the transition data as JSON.
     /// </summary>
     public JsonElement? Data { get; set; }
-    
+
+    /// <summary>
+    /// Gets or sets the instance key (Optional).
+    /// </summary>
+    public string? InstanceKey { get; set; }
+
+    /// <summary>
+    /// Gets or sets the instance tags (Optional).
+    /// </summary>
+    public string[]? Tags { get; set; }
+
     /// <summary>
     /// Gets or sets the request headers.
     /// </summary>

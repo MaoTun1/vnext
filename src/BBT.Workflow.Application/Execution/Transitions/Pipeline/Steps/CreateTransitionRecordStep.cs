@@ -42,9 +42,10 @@ public sealed class CreateTransitionRecordStep(
         var transitionKey = GetTransitionKey(context);
         var (instanceTransition, transition) = CreateInstanceTransition(context, transitionKey);
 
-        // Railway chain: Map data -> Add to instance -> Persist
+        // Railway chain: Map data -> Add to instance -> Validate key uniqueness -> Persist
         return await MapTransitionDataAsync(context, transition, cancellationToken)
             .Tap(mappedData => AddMappedDataToInstance(context, mappedData, transition))
+            .BindAsync(_ => ValidateAndSetInstanceKeyAsync(context, cancellationToken))
             .TapAsync(_ => instanceRepository.UpdateAsync(context.Instance, true, cancellationToken))
             .TapAsync(_ => instanceTransitionRepository.InsertAsync(instanceTransition, saveChanges: true, cancellationToken))
             .Tap(_ => UpdateContextItems(context, instanceTransition.Id))
@@ -116,6 +117,44 @@ public sealed class CreateTransitionRecordStep(
                 new JsonData(mappedData),
                 transition?.VersionStrategy);
         }
+        
+        if(context.Tags != null)
+        {
+            context.Instance.AddTags(context.Tags);
+        }
+    }
+
+    /// <summary>
+    /// Validates that the instance key is unique among active instances and sets it if valid.
+    /// </summary>
+    /// <param name="context">The transition execution context.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Success if no duplicate key exists, failure with DuplicateInstanceKey error otherwise.</returns>
+    private async Task<Result<object?>> ValidateAndSetInstanceKeyAsync(
+        TransitionExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        // If no key is provided, skip validation
+        if (string.IsNullOrWhiteSpace(context.InstanceKey) || context.Instance.HasKey)
+        {
+            return Result<object?>.Ok(null);
+        }
+
+        // Check if another active instance already has this key
+        var isDuplicate = await instanceRepository.AnyActiveByKeyAsync(
+            context.InstanceKey,
+            context.InstanceId,
+            cancellationToken);
+
+        if (isDuplicate)
+        {
+            return Result<object?>.Fail(
+                ExecutionErrors.DuplicateInstanceKey(context.InstanceKey, context.InstanceId));
+        }
+
+        // Set the key on the instance
+        context.Instance.SetKey(context.InstanceKey);
+        return Result<object?>.Ok(null);
     }
 
     /// <summary>

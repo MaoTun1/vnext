@@ -155,7 +155,8 @@ public sealed class RemoteInstanceCommandAppService(
     {
         try
         {
-            var url = InstanceUrlTemplates.Transition(input.Domain, input.Workflow, instanceId.ToString(), transitionKey, ApiVersionPrefix);
+            var url = InstanceUrlTemplates.Transition(input.Domain, input.Workflow, instanceId.ToString(),
+                transitionKey, ApiVersionPrefix);
 
             var queryParams = new List<string>();
             if (!string.IsNullOrEmpty(input.Version))
@@ -166,9 +167,10 @@ public sealed class RemoteInstanceCommandAppService(
             if (queryParams.Count > 0)
                 url += "?" + string.Join("&", queryParams);
 
-            var content = input.Data.HasValue
-                ? new StringContent(input.Data.Value.GetRawText(), Encoding.UTF8, "application/json")
-                : new StringContent("null", Encoding.UTF8, "application/json");
+            var content = input.Data != null
+                ? new StringContent(JsonSerializer.Serialize(input.Data, JsonOptions), Encoding.UTF8,
+                    "application/json")
+                : new StringContent("{}", Encoding.UTF8, "application/json");
 
             var requestMessage = new HttpRequestMessage(HttpMethod.Patch, url)
             {
@@ -205,7 +207,8 @@ public sealed class RemoteInstanceCommandAppService(
     {
         try
         {
-            var url = InstanceUrlTemplates.Complete(input.Domain, input.Flow, input.InstanceId.ToString(), ApiVersionPrefix);
+            var url = InstanceUrlTemplates.Complete(input.Domain, input.Flow, input.InstanceId.ToString(),
+                ApiVersionPrefix);
 
             var jsonContent = JsonSerializer.Serialize(input, JsonOptions);
             var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
@@ -226,12 +229,13 @@ public sealed class RemoteInstanceCommandAppService(
             return Result.Fail(Error.Transient("remote_network_error", ex.Message));
         }
     }
-    
+
     /// <summary>
     /// Handles HTTP response by mapping status codes to appropriate Result types.
     /// Follows Railway Pattern: Status code → Result.Fail (not exceptions).
     /// </summary>
-    private static async Task<Result<T>> HandleResponseAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static async Task<Result<T>> HandleResponseAsync<T>(HttpResponseMessage response,
+        CancellationToken cancellationToken)
     {
         // Success case
         if (response.IsSuccessStatusCode)
@@ -248,7 +252,8 @@ public sealed class RemoteInstanceCommandAppService(
     /// <summary>
     /// Non-generic overload for void operations
     /// </summary>
-    private static async Task<Result> HandleResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static async Task<Result> HandleResponseAsync(HttpResponseMessage response,
+        CancellationToken cancellationToken)
     {
         // Success case
         if (response.IsSuccessStatusCode)
@@ -271,13 +276,15 @@ public sealed class RemoteInstanceCommandAppService(
     /// - 5xx Server Error → Dependency Error (external service failed)
     /// - Other → Dependency Error
     /// </summary>
-    private static async Task<Result<T>> MapStatusCodeToError<T>(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static async Task<Result<T>> MapStatusCodeToError<T>(HttpResponseMessage response,
+        CancellationToken cancellationToken)
     {
         var error = await MapStatusCodeToErrorCore(response, cancellationToken);
         return Result<T>.Fail(error);
     }
 
-    private static async Task<Error> MapStatusCodeToErrorCore(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static async Task<Error> MapStatusCodeToErrorCore(HttpResponseMessage response,
+        CancellationToken cancellationToken)
     {
         var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
         var statusCode = response.StatusCode;
@@ -294,17 +301,22 @@ public sealed class RemoteInstanceCommandAppService(
                     // Use the prefix from remote service if available, otherwise infer from status code
                     var prefix = errorResponse.Error.Prefix ?? InferPrefixFromStatusCode(statusCode);
                     var code = errorResponse.Error.Code ?? "remote_error";
-                    
+
                     // Map to appropriate Error type based on prefix
                     return prefix switch
                     {
-                        ErrorCodes.Prefixes.Validation => Error.Validation(code, errorResponse.Error.Message, errorResponse.Error.Target),
-                        ErrorCodes.Prefixes.NotFound => Error.NotFound(code, errorResponse.Error.Message, errorResponse.Error.Target),
-                        ErrorCodes.Prefixes.Conflict => Error.Conflict(code, errorResponse.Error.Message, errorResponse.Error.Target),
+                        ErrorCodes.Prefixes.Validation => Error.Validation(code, errorResponse.Error.Message,
+                            errorResponse.Error.Target),
+                        ErrorCodes.Prefixes.NotFound => Error.NotFound(code, errorResponse.Error.Message,
+                            errorResponse.Error.Target),
+                        ErrorCodes.Prefixes.Conflict => Error.Conflict(code, errorResponse.Error.Message,
+                            errorResponse.Error.Target),
                         ErrorCodes.Prefixes.Unauthorized => Error.Unauthorized(code, errorResponse.Error.Message),
                         ErrorCodes.Prefixes.Forbidden => Error.Forbidden(code, errorResponse.Error.Message),
-                        ErrorCodes.Prefixes.Dependency => Error.Dependency(code, errorResponse.Error.Message, errorResponse.Error.Target),
-                        ErrorCodes.Prefixes.Transient => Error.Transient(code, errorResponse.Error.Message, errorResponse.Error.Target),
+                        ErrorCodes.Prefixes.Dependency => Error.Dependency(code, errorResponse.Error.Message,
+                            errorResponse.Error.Target),
+                        ErrorCodes.Prefixes.Transient => Error.Transient(code, errorResponse.Error.Message,
+                            errorResponse.Error.Target),
                         _ => Error.Failure(code, errorResponse.Error.Message, errorResponse.Error.Details)
                     };
                 }
@@ -340,12 +352,12 @@ public sealed class RemoteInstanceCommandAppService(
                 "Forbidden access to remote API"),
 
             System.Net.HttpStatusCode.InternalServerError or
-            System.Net.HttpStatusCode.BadGateway or
-            System.Net.HttpStatusCode.ServiceUnavailable or
-            System.Net.HttpStatusCode.GatewayTimeout => Error.Dependency(
-                "remote_service_error",
-                $"Remote API service error: {response.ReasonPhrase}",
-                ((int)statusCode).ToString()),
+                System.Net.HttpStatusCode.BadGateway or
+                System.Net.HttpStatusCode.ServiceUnavailable or
+                System.Net.HttpStatusCode.GatewayTimeout => Error.Dependency(
+                    "remote_service_error",
+                    $"Remote API service error: {response.ReasonPhrase}",
+                    ((int)statusCode).ToString()),
 
             _ => Error.Dependency(
                 "remote_http_error",

@@ -3,42 +3,6 @@ using BBT.Workflow.Definitions;
 namespace BBT.Workflow.Instances;
 
 /// <summary>
-/// Output for retrieving available transitions with system view information
-/// </summary>
-public sealed class GetAvailableSysGetViewOutput
-{
-    /// <summary>
-    /// Available transition items with href links
-    /// </summary>
-    public List<TransitionItem> Items { get; set; } = [];
-
-    /// <summary>
-    /// Instance status
-    /// </summary>
-    public InstanceStatus? Status { get; set; }
-
-    /// <summary>
-    /// Current state of the instance
-    /// </summary>
-    public string? CurrentState { get; set; }
-
-    /// <summary>
-    /// Data href link
-    /// </summary>
-    public DataHref Data { get; set; } = new();
-
-    /// <summary>
-    /// View href link
-    /// </summary>
-    public ViewHref View { get; set; } = new();
-
-    /// <summary>
-    /// Active correlations with href links
-    /// </summary>
-    public List<ActiveCorrelationHref> ActiveCorrelations { get; set; } = [];
-}
-
-/// <summary>
 /// Transition item with href link
 /// </summary>
 public sealed class TransitionItem : HrefBase

@@ -31,6 +31,12 @@ public sealed class TransitionExecutionContext
     [Enrich(Name = "vnext.flow.transition")]
     public string TransitionKey { get; init; } = default!;
 
+    /// <summary>Gets or sets instance key (Optional).</summary>
+    public string? InstanceKey { get; set; }
+    
+    /// <summary>Gets or sets instance tags (Optional).</summary>
+    public string[]? Tags { get; set; }
+
     /// <summary>Gets the trigger type that initiated this transition.</summary>
     public TriggerType Trigger { get; init; }
 

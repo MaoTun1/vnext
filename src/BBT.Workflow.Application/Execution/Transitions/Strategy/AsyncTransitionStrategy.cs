@@ -144,7 +144,9 @@ public sealed class AsyncTransitionStrategy(
             Domain = transContext.Domain,
             Workflow = transContext.WorkflowKey,
             Version = transContext.Workflow.Version,
-            Data = context.Data,
+            Data = context.Data?.Attributes,
+            InstanceKey = context.Data?.Key,
+            Tags = context.Data?.Tags,
             Headers = context.Headers,
             RouteValues = context.RouteValues,
             ExecutionActor = context.Actor

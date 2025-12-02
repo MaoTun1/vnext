@@ -7,9 +7,8 @@ using BBT.Workflow.Instances;
 namespace BBT.Workflow.Instances;
 public class CreateInstanceDto
 {
-    [Required]
     [StringLength(InstanceConstants.MaxKeyLength)]
-    public string Key { get; set; }
+    public string? Key { get; set; }
     public string[]? Tags { get; set; }
     public JsonElement? Attributes { get; set; }
 }

@@ -32,6 +32,7 @@ public static class WorkflowErrorCodes
     public const string CancelNotConfiguredForWorkflow = "Instance:100016";
     public const string InstanceNotFound = "Instance:100017";
     public const string InstanceCompleted = "Instance:100018";
+    public const string DuplicateInstanceKey = "Instance:100019";
     
     #endregion
     
