@@ -52,7 +52,6 @@ public class ContextRefresherTests
         // Assert
         result.IsSuccess.ShouldBeTrue();
         context.Instance.ShouldBe(instance);
-        context.ConcurrencyToken.ShouldBe(instance.ConcurrencyStamp);
         context.Current.Key.ShouldBe(currentState);
         context.Target.ShouldBeNull();
         
@@ -95,7 +94,6 @@ public class ContextRefresherTests
         var newConcurrencyToken = "new-token";
         
         var instance = CreateMockInstance(instanceId, workflowKey, currentState);
-        instance.ConcurrencyStamp = newConcurrencyToken;
         
         var workflow = CreateMockWorkflow(workflowKey, currentState);
         var context = CreateExecutionContext(instanceId, workflow, currentState);
@@ -227,7 +225,6 @@ public class ContextRefresherTests
             Workflow = workflow,
             Current = currentState,
             Instance = instance,
-            ConcurrencyToken = instance.ConcurrencyStamp,
             Data = instance.Data,
             TraceId = Guid.NewGuid().ToString("N"),
             SpanId = Guid.NewGuid().ToString("N")[..16]

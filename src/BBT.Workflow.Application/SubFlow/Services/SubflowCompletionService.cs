@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 using BBT.Aether.Application.Services;
 using BBT.Aether.Guids;
@@ -7,10 +6,9 @@ using BBT.Workflow.Definitions;
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Execution;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Logging;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
-using BBT.Workflow.Schemas;
-using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Logging;
 using BBT.Workflow.Execution.Pipeline;
 using BBT.Workflow.Execution.Services;
@@ -21,10 +19,8 @@ namespace BBT.Workflow.SubFlow;
 /// <inheritdoc cref="ISubflowCompletionService" />
 public sealed class SubflowCompletionService(
     IServiceProvider serviceProvider,
-    ICurrentSchema currentSchema,
     IComponentCacheStore componentCacheStore,
     IInstanceRepository instanceRepository,
-    IInstanceCorrelationRepository instanceCorrelationRepository,
     IScriptEngine scriptEngine,
     IScriptContextFactory scriptContextFactory,
     IRuntimeInfoProvider runtimeInfoProvider,
@@ -34,127 +30,69 @@ public sealed class SubflowCompletionService(
     : ApplicationService(serviceProvider), ISubflowCompletionService
 {
     /// <inheritdoc />
-    public async Task HandleSubFlowCompletionAsync(
-        FlowCompletedDataEto completedDataEto,
+    public async Task CompletionAsync(
+        FlowCompletedInput completedInput,
         CancellationToken cancellationToken = default)
     {
-        var sw = Stopwatch.StartNew();
-
-        logger.LogInformation(
-            "Processing SubFlow completion for instance {InstanceId} in domain {Domain}",
-            completedDataEto.InstanceId, completedDataEto.Domain);
-
-        // Parse parent information from metadata
-        var subFlowContractInfo = completedDataEto.MetaData.ToSubFlowContractInfo();
-        if (subFlowContractInfo == null)
+        // Check if this domain is handled by this runtime instance
+        try
         {
-            logger.LogWarning(
-                "No parent information found in metadata for completed SubFlow instance {InstanceId}. This may be a standalone flow.",
-                completedDataEto.InstanceId);
+            runtimeInfoProvider.Check(completedInput.Domain);
+        }
+        catch (NotFoundDomainException)
+        {
+            // Silently ignore - this is expected in multi-domain scenarios
             return;
         }
-        
-        // Enrich logs with parent workflow context for SubFlow completion
-        using (logger.ForSubFlow(
-                   parentDomain: subFlowContractInfo.Domain,
-                   parentFlow: subFlowContractInfo.Flow,
-                   parentFlowVersion: subFlowContractInfo.Version,
-                   parentInstanceId: subFlowContractInfo.Id,
-                   transitionKey: subFlowContractInfo.Transition))
+
+        try
         {
-            // Check if this domain is handled by this runtime instance
-            try
+            // Get parent instance
+            var parentInstance = await instanceRepository.FindAsync(
+                completedInput.InstanceId, true, cancellationToken);
+
+            if (parentInstance == null)
             {
-                runtimeInfoProvider.Check(subFlowContractInfo.Domain);
+                logger.InstanceNotFound(
+                    completedInput.InstanceId,
+                    completedInput.Flow);
+                return;
             }
-            catch (NotFoundDomainException)
+
+            // Complete correlation through Instance aggregate
+            var correlation = parentInstance.CompleteCorrelation(completedInput.SubInstanceId);
+            if (correlation == null)
             {
-                logger.LogInformation(
-                    "SubFlow completion event for instance {InstanceId} belongs to domain {Domain} which is not handled by this runtime instance {RuntimeDomain}. Event will be ignored.",
-                    completedDataEto.InstanceId, subFlowContractInfo.Domain, runtimeInfoProvider.Domain);
-                return; // Silently ignore - this is expected in multi-domain scenarios
+                logger.SubFlowCorrelationNotFound(completedInput.SubInstanceId);
+                return;
             }
 
-            logger.LogDebug(
-                "SubFlow completion event belongs to parent instance {ParentInstanceId} in domain {Domain}, flow {Flow}",
-                subFlowContractInfo.Id, subFlowContractInfo.Domain, subFlowContractInfo.Flow);
+            logger.SubFlowCorrelationCompleted(
+                completedInput.SubInstanceId,
+                completedInput.InstanceId);
 
-            // Create span for SubFlow completion
-            using var activity = WorkflowActivitySource.Instance.StartActivity(
-                TelemetryConstants.SpanNames.SubFlowComplete);
+            // Save instance (correlation is part of aggregate)
+            await instanceRepository.UpdateAsync(parentInstance, true, cancellationToken);
 
-            activity?.SetTag(TelemetryConstants.TagNames.SubFlowKey, subFlowContractInfo.Flow);
-            activity?.SetTag(TelemetryConstants.TagNames.Domain, subFlowContractInfo.Domain);
-            activity?.SetTag(TelemetryConstants.TagNames.InstanceId, completedDataEto.InstanceId.ToString());
-            activity?.SetDisplayName($"SubFlow Complete: {subFlowContractInfo.Flow}");
-
-            try
+            // If this is a SubProcess (non-blocking), just return after marking correlation as completed
+            if (correlation.SubFlowType.Equals(SubFlowType.SubProcess))
             {
-                using (currentSchema.Change(subFlowContractInfo.Flow))
-                {
-                    // TODO: Bunu instance içinde yönet.
-                    // Find the correlation record for this completed SubFlow
-                    var correlation = await instanceCorrelationRepository
-                        .FindBySubInstanceIdAsync(completedDataEto.InstanceId, cancellationToken);
-
-                    if (correlation == null)
-                    {
-                        logger.LogWarning(
-                            "No correlation found for completed SubFlow instance {InstanceId}. This may be a standalone flow or already processed.",
-                            completedDataEto.InstanceId);
-                        return;
-                    }
-
-                    if (correlation.IsCompleted)
-                    {
-                        logger.LogWarning(
-                            "SubFlow correlation {CorrelationId} for instance {InstanceId} is already marked as completed.",
-                            correlation.Id, completedDataEto.InstanceId);
-                        return;
-                    }
-
-                    logger.LogInformation(
-                        "Found SubFlow correlation {CorrelationId} for parent instance {ParentInstanceId} in state {ParentState}",
-                        correlation.Id, correlation.ParentInstanceId, correlation.ParentState);
-
-                    // Mark the correlation as completed
-                    correlation.Completed();
-                    await instanceCorrelationRepository.UpdateAsync(correlation, true, cancellationToken);
-
-                    if (correlation.SubFlowType.Equals(SubFlowType.SubProcess))
-                    {
-                        logger.LogInformation(
-                            "SubProcess {SubFlowName} for instance {InstanceId} has completed",
-                            correlation.SubFlowName, completedDataEto.InstanceId);
-                        return;
-                    }
-
-                    // Process parent workflow continuation within the parent's schema context
-                    await ProcessParentWorkflowContinuationAsync(correlation, completedDataEto, subFlowContractInfo,
-                        cancellationToken);
-
-                    sw.Stop();
-
-                    // Log SubFlow completion
-                    logger.SubFlowCompleted(
-                        TelemetryConstants.Prefixes.Execution,
-                        correlation.SubFlowName,
-                        completedDataEto.InstanceId,
-                        sw.ElapsedMilliseconds);
-                }
+                return;
             }
-            catch (Exception ex)
-            {
-                sw.Stop();
 
-                activity?.RecordExceptionWithStatus(ex);
-
-                logger.LogError(ex,
-                    "Failed to process SubFlow completion for instance {InstanceId}",
-                    completedDataEto.InstanceId);
-
-                throw;
-            }
+            // Process parent workflow continuation for SubFlow (blocking)
+            await ProcessParentWorkflowContinuationAsync(
+                correlation,
+                completedInput,
+                parentInstance,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.SubFlowCompletionFailed(
+                ex,
+                completedInput.SubInstanceId,
+                completedInput.InstanceId);
         }
     }
 
@@ -163,63 +101,56 @@ public sealed class SubflowCompletionService(
     /// This includes output mapping and resuming automatic/scheduled transitions.
     /// </summary>
     /// <param name="correlation">The SubFlow correlation</param>
-    /// <param name="completedDataEto">The completed SubFlow data</param>
-    /// <param name="subFlowContractInfo">The parsed parent workflow information</param>
+    /// <param name="completedInput">The completed SubFlow data</param>
+    /// <param name="parentInstance">The parent instance</param>
     /// <param name="cancellationToken">Cancellation token</param>
     private async Task ProcessParentWorkflowContinuationAsync(
         InstanceCorrelation correlation,
-        FlowCompletedDataEto completedDataEto,
-        SubFlowContractInfo subFlowContractInfo,
+        FlowCompletedInput completedInput,
+        Instance parentInstance,
         CancellationToken cancellationToken)
     {
-        // Get the parent instance
-        var parentInstance = await instanceRepository.FindAsync(correlation.ParentInstanceId, true, cancellationToken);
+        logger.SubFlowParentContinuationStarted(
+            parentInstance.Id,
+            parentInstance.GetCurrentState);
 
-        if (parentInstance == null)
+        // Get parent workflow definition using data from completedInput
+        var parentWorkflowResult = await componentCacheStore.GetFlowAsync(
+            completedInput.Domain,
+            completedInput.Flow,
+            completedInput.Version,
+            cancellationToken);
+
+        if (!parentWorkflowResult.IsSuccess)
         {
-            logger.LogWarning(
-                "Parent instance {ParentInstanceId} not found for correlation {CorrelationId}",
-                correlation.ParentInstanceId, correlation.Id);
+            logger.LogWarning("Failed to get parent workflow {Flow} for SubFlow completion: {ErrorCode}",
+                completedInput.Flow, parentWorkflowResult.Error.Code);
             return;
         }
 
-        logger.LogInformation(
-            "Processing parent workflow continuation for instance {ParentInstanceId} in state {CurrentState}",
-            parentInstance.Id, parentInstance.CurrentState);
-
-        // Get parent workflow definition
-        var parentWorkflow = await componentCacheStore.GetFlowAsync(
-            subFlowContractInfo.Domain,
-            subFlowContractInfo.Flow,
-            subFlowContractInfo.Version, // Use the specific version from parent info
-            cancellationToken);
+        var parentWorkflow = parentWorkflowResult.Value!;
 
         // Get the state where SubFlow was initiated using Result Pattern
         var parentStateResult = parentWorkflow.GetState(correlation.ParentState);
         if (!parentStateResult.IsSuccess)
         {
-            logger.LogError(
-                "Parent state {ParentState} not found in workflow {WorkflowKey} for SubFlow completion. Skipping parent continuation.",
-                correlation.ParentState, parentWorkflow.Key);
+            // Log error using WorkflowErrors - state not found
             return;
         }
 
         var parentState = parentStateResult.Value!;
-        var transition = parentWorkflow.FindTransitionInContext(subFlowContractInfo.Transition!);
 
         // Create script context for output mapping with completed SubFlow data
         var scriptContextBuilder = scriptContextFactory.NewBuilder()
             .WithWorkflow(parentWorkflow)
             .WithInstance(parentInstance)
             .WithRuntime(runtimeInfoProvider)
-            .WithBody(completedDataEto.InstanceData?.Deserialize<Dictionary<string, object>>() ??
+            .WithBody(completedInput.InstanceData?.Deserialize<Dictionary<string, object>>() ??
                       new Dictionary<string, object>());
 
         if (parentState.SubFlow?.Mapping != null)
         {
-            logger.LogInformation(
-                "Processing SubFlow output mapping for parent instance {ParentInstanceId}",
-                parentInstance.Id);
+            logger.SubFlowOutputMappingStarted(parentInstance.Id);
 
             await ProcessSubFlowOutputMappingAsync(
                 parentInstance,
@@ -229,14 +160,11 @@ public sealed class SubflowCompletionService(
         }
 
         // Resume automatic transitions and scheduled processes that were paused for SubFlow
-        logger.LogInformation(
-            "Resuming automatic transitions for parent instance {ParentInstanceId} after SubFlow completion",
-            parentInstance.Id);
+        logger.SubFlowPipelineResumed(parentInstance.Id);
 
         await ResumePipelineAsync(
             parentInstance,
             parentWorkflow,
-            transition!,
             cancellationToken);
     }
 
@@ -258,17 +186,10 @@ public sealed class SubflowCompletionService(
             var subFlowConfig = parentState.SubFlow;
             if (subFlowConfig == null)
             {
-                logger.LogWarning(
-                    "SubFlow configuration not found for parent instance {ParentInstanceId}",
-                    parentInstance.Id);
                 return;
             }
 
             var mappingCode = subFlowConfig.Mapping.DecodedCode;
-
-            logger.LogDebug(
-                "Executing SubFlow output mapping for parent instance {ParentInstanceId}",
-                parentInstance.Id);
 
             // Compile the mapping script to the appropriate interface
             var mappingInstance = await scriptEngine.CompileToInstanceAsync<object>(
@@ -285,10 +206,6 @@ public sealed class SubflowCompletionService(
 
             if (outputMappingResult?.Data != null)
             {
-                logger.LogInformation(
-                    "Merging SubFlow output data into parent instance {ParentInstanceId}",
-                    parentInstance.Id);
-
                 // Add the mapped output data to the parent instance
                 parentInstance.AddData(
                     guidGenerator.Create(),
@@ -296,16 +213,13 @@ public sealed class SubflowCompletionService(
                     parentState.VersionStrategy);
 
                 await instanceRepository.UpdateAsync(parentInstance, true, cancellationToken);
-
-                logger.LogDebug(
-                    "Successfully merged SubFlow output data into parent instance {ParentInstanceId}",
-                    parentInstance.Id);
             }
         }
         catch (Exception ex)
         {
-            logger.LogError(ex,
-                "Failed to process SubFlow output mapping for parent instance {ParentInstanceId}",
+            logger.SubFlowCompletionFailed(
+                ex,
+                Guid.Empty,
                 parentInstance.Id);
 
             // Don't throw - we still want to resume automatic processes even if mapping fails
@@ -318,31 +232,22 @@ public sealed class SubflowCompletionService(
     /// </summary>
     /// <param name="parentInstance">The parent workflow instance</param>
     /// <param name="parentWorkflow">The parent workflow definition</param>
-    /// <param name="transition"></param>
     /// <param name="cancellationToken">Cancellation token</param>
     private async Task ResumePipelineAsync(
         Instance parentInstance,
         Definitions.Workflow parentWorkflow,
-        Transition transition,
         CancellationToken cancellationToken)
     {
         try
         {
-            logger.LogInformation(
-                "Resuming automatic processes for parent instance {ParentInstanceId} in state {CurrentState}",
-                parentInstance.Id, parentInstance.CurrentState);
-
-            // using var scope = ServiceProvider.CreateScope();
-            // var workflowExecutionService = scope.ServiceProvider.GetRequiredService<IWorkflowExecutionService>();
-
             var input = new WorkflowExecutionContext
             {
                 Domain = parentWorkflow.Domain,
                 WorkflowKey = parentWorkflow.Key,
                 WorkflowVersion = parentWorkflow.Version,
-                InstanceId = parentInstance.Id,
-                TransitionKey = transition.Key, // For logging purposes only
-                TriggerType = transition.TriggerType,
+                InstanceId = parentInstance.Id.ToString(),
+                TransitionKey = "", // For logging purposes only
+                TriggerType = TriggerType.Manual,
                 Mode = ExecMode.Resume, // Use Resume mode for SubFlow completion
                 Headers = new Dictionary<string, string?>(),
                 Actor = ExecutionActor.System,
@@ -361,37 +266,20 @@ public sealed class SubflowCompletionService(
             if (!result.IsSuccess)
             {
                 // Check if this is an auto-transition condition not met
-                if (result.Error.Code == WorkflowErrorCodes.AutoTransitionConditionNotMet)
+                if (result.Error.Code != WorkflowErrorCodes.AutoTransitionConditionNotMet)
                 {
-                    logger.LogDebug(
-                        "Auto-transition condition not met for parent instance {ParentInstanceId} after SubFlow completion - this is normal",
-                        parentInstance.Id);
+                    logger.TransitionRuleFailed(
+                        "subflow",
+                        parentInstance.Id,
+                        result.Error.Message ?? "Unknown error");
                 }
-                else
-                {
-                    logger.LogWarning(
-                        "Failed to resume automatic processes for parent instance {ParentInstanceId}: {ErrorCode} - {ErrorMessage}",
-                        parentInstance.Id, result.Error.Code, result.Error.Message);
-                }
-
-                // Don't throw - SubFlow completion should still be marked as successful
-                return;
             }
-
-            logger.LogInformation(
-                "Successfully resumed automatic processes for parent instance {ParentInstanceId}",
-                parentInstance.Id);
-        }
-        catch (AutoTransitionConditionNotMetException)
-        {
-            logger.LogDebug(
-                "Auto-transition condition not met for parent instance {ParentInstanceId} after SubFlow completion - this is normal",
-                parentInstance.Id);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex,
-                "Failed to resume automatic processes for parent instance {ParentInstanceId}",
+            logger.SubFlowCompletionFailed(
+                ex,
+                Guid.Empty,
                 parentInstance.Id);
 
             // Don't throw - SubFlow completion should still be marked as successful

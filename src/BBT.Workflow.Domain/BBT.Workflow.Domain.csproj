@@ -8,12 +8,14 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="BBT.Aether.Domain" Version="$(AetherPackageVersion)" />
+    <PackageReference Include="BBT.Aether.Aspects" Version="$(AetherPackageVersion)" />
     <PackageReference Include="Dapr.Jobs" Version="$(DaprPackageVersion)" />
     <PackageReference Include="Ulid" Version="$(UlidPackageVersion)" />
     <PackageReference Include="JsonSchema.Net" Version="$(JsonSchemaNetPackageVersion)" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="$(MicrosoftPackageVersion)" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="$(MicrosoftPackageVersion)" />
     <ProjectReference Include="..\..\modules\BBT.Workflow.Modules.Scripting\BBT.Workflow.Modules.Scripting.csproj" />
+    <ProjectReference Include="..\BBT.Workflow.Events.Contracts\BBT.Workflow.Events.Contracts.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="Definitions\Validators\ValidationResult.cs" />

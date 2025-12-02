@@ -78,7 +78,7 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
     public LanguageLabel[]? Labels { get; private set; } = [];
     public PlatformOverrides? PlatformOverrides { get; private set; }
     
-    public string CacheKey => $"{nameof(View)}:{Domain}:{Flow}:{Key}:{Version}";
+    public string ComponentKey => RuntimeSysSchemaInfo.Views;
 
     public static string GenerateCacheKey(
         string domain,

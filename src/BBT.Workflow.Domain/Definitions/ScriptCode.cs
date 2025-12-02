@@ -27,7 +27,7 @@ public sealed class ScriptCode : ValueObject
         {
             try
             {
-                if (Type != MappingType.Global)
+                if (!Type.Equals(MappingType.Global))
                 {
                     var bytes = Convert.FromBase64String(Code);
                     return System.Text.Encoding.UTF8.GetString(bytes);

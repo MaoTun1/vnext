@@ -67,16 +67,7 @@ public abstract class WorkflowTask : IDomainEntity, ITaskReference, IReferenceSe
     /// </summary>
     public JsonElement Config { get; private set; }
 
-    public string CacheKey => $"{nameof(WorkflowTask)}:{Domain}:{Flow}:{Key}:{Version}";
-
-    public static string GenerateCacheKey(
-        string domain,
-        string flow,
-        string key,
-        string version)
-    {
-        return $"{nameof(WorkflowTask)}:{domain}:{flow}:{key}:{version}";
-    }
+    public string ComponentKey => RuntimeSysSchemaInfo.Tasks;
 
     private void SetKey(string key)
     {

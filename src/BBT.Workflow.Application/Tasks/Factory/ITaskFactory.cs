@@ -1,3 +1,4 @@
+using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 
 namespace BBT.Workflow.Tasks.Factory;
@@ -13,13 +14,13 @@ public interface ITaskFactory
     /// </summary>
     /// <param name="taskReference">Reference to the task to be created.</param>
     /// <param name="cancellationToken">Cancellation token for async operations.</param>
-    /// <returns>A task instance ready for execution, isolated from cache.</returns>
-    Task<WorkflowTask> CreateExecutionTaskAsync(IReference taskReference, CancellationToken cancellationToken = default);
+    /// <returns>A Result containing the task instance ready for execution, or an error if creation failed.</returns>
+    Task<Result<WorkflowTask>> CreateExecutionTaskAsync(IReference taskReference, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Creates a task instance from cached data with optimized cloning strategy.
     /// </summary>
     /// <param name="cachedTask">The cached task instance to create from.</param>
-    /// <returns>A new task instance isolated from the cached one.</returns>
-    WorkflowTask CreateFromCached(WorkflowTask cachedTask);
-} 
+    /// <returns>A Result containing the new task instance isolated from the cached one, or an error if cloning failed.</returns>
+    Result<WorkflowTask> CreateFromCached(WorkflowTask cachedTask);
+}

@@ -42,26 +42,17 @@ public sealed class DaprPubSubTaskExecutor(
     {
         var daprTask = (task as DaprPubSubTask)!;
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-
-        Logger.LogInformation("Starting DAPR pub/sub task execution for task {TaskKey} - PubSubName: {PubSubName}, Topic: {Topic}",
-            daprTask.Key, daprTask.PubSubName, daprTask.Topic);
-
+        
         StandardTaskResponse standardResponse;
 
         try
         {
-            Logger.LogDebug("Preparing input for DAPR pub/sub task {TaskKey}", daprTask.Key);
             await PrepareInputAsync(daprTask, scriptCode, context, cancellationToken);
-
             await CallAsync(daprTask, context, cancellationToken);
-
             stopwatch.Stop();
-
+            
             // Record successful DAPR pub/sub message published
             workflowMetrics.RecordDaprPubsubMessagePublished(daprTask.PubSubName, daprTask.Topic, "success");
-
-            Logger.LogInformation("DAPR pub/sub task {TaskKey} completed successfully in {Duration}ms",
-                daprTask.Key, stopwatch.ElapsedMilliseconds);
 
             standardResponse = CreateSuccessResponse(
                 data: new { Published = true, Message = "Event published successfully" },
@@ -79,9 +70,6 @@ public sealed class DaprPubSubTaskExecutor(
 
             // Record cancelled DAPR pub/sub message publishing
             workflowMetrics.RecordDaprPubsubMessagePublished(daprTask.PubSubName, daprTask.Topic, "cancelled");
-
-            Logger.LogWarning("DAPR pub/sub task {TaskKey} was cancelled after {Duration}ms",
-                daprTask.Key, stopwatch.ElapsedMilliseconds);
 
             standardResponse = CreateErrorResponse(
                 errorMessage: "DAPR pub/sub operation was cancelled",
@@ -117,13 +105,8 @@ public sealed class DaprPubSubTaskExecutor(
                 });
         }
 
-        Logger.LogDebug("Setting standard response in context for DAPR pub/sub task {TaskKey}", daprTask.Key);
         context.SetStandardResponse(standardResponse);
-
-        Logger.LogDebug("Processing output for DAPR pub/sub task {TaskKey}", daprTask.Key);
         var outputResponse = await ProcessOutputAsync(scriptCode, context, cancellationToken);
-
-        Logger.LogInformation("DAPR pub/sub task {TaskKey} execution completed, returning processed output", daprTask.Key);
         return outputResponse;
     }
     public async Task CallAsync(WorkflowTask task, ScriptContext context,
@@ -133,19 +116,7 @@ public sealed class DaprPubSubTaskExecutor(
           var metadata = daprTask.Metadata.ValueKind != JsonValueKind.Null && daprTask.Metadata.ValueKind != JsonValueKind.Undefined
                 ? daprTask.Metadata.ToDictionary()
                 : new Dictionary<string, string>();
-
-            Logger.LogDebug("Prepared metadata for DAPR pub/sub task {TaskKey}: {MetadataCount} entries",
-                daprTask.Key, metadata.Count);
-
-            if (metadata.Count > 0)
-            {
-                Logger.LogDebug("DAPR pub/sub metadata for task {TaskKey}: {Metadata}",
-                    daprTask.Key, string.Join(", ", metadata.Select(kvp => $"{kvp.Key}={kvp.Value}")));
-            }
-
-            Logger.LogInformation("Publishing event to DAPR pub/sub for task {TaskKey}: {PubSubName}/{Topic}",
-                daprTask.Key, daprTask.PubSubName, daprTask.Topic);
-
+          
             await daprClient.PublishEventAsync(
                 daprTask.PubSubName,
                 daprTask.Topic,

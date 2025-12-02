@@ -201,7 +201,7 @@ public static class ScriptHelper
     /// <typeparam name="T">The type to convert the value to</typeparam>
     /// <param name="obj">The dynamic object</param>
     /// <param name="propertyName">The property name</param>
-    /// <returns>The property value converted to type T or null if not found</returns>
+    /// <returns>The property value converted to type T or default(T) if not found or null</returns>
     public static T? GetPropertyValue<T>(object obj, string propertyName)
     {
         var value = GetPropertyValue(obj, propertyName);
@@ -219,6 +219,37 @@ public static class ScriptHelper
         catch
         {
             return default;
+        }
+    }
+
+    /// <summary>
+    /// Gets a property value from a dynamic object safely and converts it to a specific type with a default value
+    /// </summary>
+    /// <typeparam name="T">The type to convert the value to</typeparam>
+    /// <param name="obj">The dynamic object</param>
+    /// <param name="propertyName">The property name</param>
+    /// <param name="defaultValue">The default value to return if property is not found, null, or conversion fails</param>
+    /// <returns>The property value converted to type T or defaultValue if not found, null, or conversion fails</returns>
+    public static T GetPropertyValue<T>(object obj, string propertyName, T defaultValue)
+    {
+        if (obj == null || string.IsNullOrWhiteSpace(propertyName))
+            return defaultValue;
+
+        var value = GetPropertyValue(obj, propertyName);
+
+        if (value == null)
+            return defaultValue;
+
+        if (value is T tValue)
+            return tValue;
+
+        try
+        {
+            return (T)Convert.ChangeType(value, typeof(T));
+        }
+        catch
+        {
+            return defaultValue;
         }
     }
 

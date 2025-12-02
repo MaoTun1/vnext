@@ -1,5 +1,5 @@
+using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
-using BBT.Workflow.Domain;
 using BBT.Workflow.Scripting;
 
 namespace BBT.Workflow.Execution.TriggerTransition;

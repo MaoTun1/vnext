@@ -81,9 +81,9 @@ public sealed class WorkflowInfo(string domain, string workflow, string version,
     /// <param name="version">The workflow version</param>
     /// <param name="instanceId">The workflow instance identifier</param>
     /// <returns>A formatted string for the workflow header</returns>
-    public static string Generate(string domain, string workflow, string version, Guid? instanceId)
+    public static string Generate(string domain, string workflow, string? version, Guid? instanceId)
     {
-        return $"{domain},{workflow},{version},{instanceId}";
+        return $"{domain},{workflow},{version ?? "latest"},{instanceId}";
     }
 }
 

@@ -1,0 +1,166 @@
+using BBT.Aether.Results;
+using BBT.Aether.Validation;
+using BBT.Workflow.Definitions;
+using BBT.Workflow.Shared;
+
+namespace BBT.Workflow.Logging;
+
+/// <summary>
+/// Domain-specific error factory for workflow operations.
+/// Provides strongly-typed error creation with workflow-specific error codes.
+/// </summary>
+public static class WorkflowErrors
+{
+    #region Instance Errors
+
+    /// <summary>
+    /// Instance already exists with the given key.
+    /// </summary>
+    public static Error InstanceAlreadyExists(string instanceKey)
+        => Error.Conflict(
+            WorkflowErrorCodes.ConflictWorkflow,
+            $"An active instance with key \"{instanceKey}\" already exists",
+            target: instanceKey);
+
+    /// <summary>
+    /// Instance was not found by ID or key.
+    /// </summary>
+    public static Error InstanceNotFound(string instanceIdentifier)
+        => Error.NotFound(
+            WorkflowErrorCodes.NotFoundInstanceData,
+            $"Instance \"{instanceIdentifier}\" not found",
+            target: instanceIdentifier);
+    
+    /// <summary>
+    /// Creates an error when instance data for a specific version is not found.
+    /// </summary>
+    /// <param name="key">The key of the instance.</param>
+    /// <param name="version">The version that was not found.</param>
+    public static Error InstanceDataNotFound(string key, string version)
+        => Error.NotFound(
+            WorkflowErrorCodes.NotFoundInstanceData,
+            $"Instance data not found for key {key} and version {version}",
+            target: $"{key}@{version}");
+
+    #endregion
+
+    #region Workflow Definition Errors
+
+    /// <summary>
+    /// Creates an error when a workflow version already exists (conflict).
+    /// </summary>
+    public static Error WorkflowVersionConflict()
+        => Error.Conflict(
+            WorkflowErrorCodes.ConflictWorkflow,
+            "A record with the same version already exists.");
+
+    /// <summary>
+    /// Workflow state was not found.
+    /// </summary>
+    /// <param name="stateKey">The key of the state.</param>
+    /// <param name="workflowKey">The key of the workflow.</param>
+    public static Error StateNotFound(string stateKey, string workflowKey)
+        => Error.NotFound(
+            WorkflowErrorCodes.RuntimeSchemaInvalidState,
+            $"State \"{stateKey}\" not found in workflow \"{workflowKey}\"",
+            target: stateKey);
+
+    /// <summary>
+    /// Workflow state is invalid for the operation.
+    /// </summary>
+    public static Error InvalidState(string transition, string? fromState = "N/A", string? currentState = "N/A")
+        => Error.Validation(
+            WorkflowErrorCodes.InvalidState,
+            $"Transition \"{transition}\" is not valid for the current state. Expected state: {fromState}, Current state: {currentState}",
+            target: transition);
+
+    #endregion
+
+    #region Transition Errors
+
+    /// <summary>
+    /// Transition is not authorized for the execution context.
+    /// </summary>
+    public static Error TransitionUnauthorized(string transitionKey, TriggerType triggerType,
+        ExecutionActor executionActor)
+        => Error.Forbidden(
+            WorkflowErrorCodes.UnauthorizedTransition,
+            $"Transition '{transitionKey}' with trigger type '{triggerType}' cannot be executed by '{executionActor}' context");
+
+    /// <summary>
+    /// No automatic transition succeeded.
+    /// </summary>
+    public static Error AutoTransitionFailed(Guid instanceId, string workflow)
+        => Error.Validation(
+            WorkflowErrorCodes.AutoTransitionFailed,
+            $"No automatic transition succeeded for InstanceId={instanceId} in Workflow={workflow}",
+            target: instanceId.ToString());
+
+    /// <summary>
+    /// Automatic transition condition was not met.
+    /// This is not an error in multi-auto-transition scenarios, just means this specific transition cannot proceed.
+    /// </summary>
+    public static Error AutoTransitionConditionNotMet(string transitionKey, string? reason = null)
+        => Error.Validation(
+            WorkflowErrorCodes.AutoTransitionConditionNotMet,
+            $"Auto-transition \"{transitionKey}\" condition not met" + (reason != null ? $": {reason}" : ""),
+            target: transitionKey);
+
+    #endregion
+
+    #region Task Errors
+
+    /// <summary>
+    /// Task headers conversion to dictionary failed.
+    /// </summary>
+    public static Error TaskHeadersConversionFailed(string taskKey, string reason)
+        => Error.Validation(
+            WorkflowErrorCodes.TaskHeadersConversionFailed,
+            $"Failed to convert headers to dictionary for task '{taskKey}': {reason}",
+            target: taskKey);
+
+    #endregion
+
+    #region Configuration Errors
+
+    /// <summary>
+    /// Configuration is invalid or not found.
+    /// </summary>
+    public static Error ConfigInvalid(Guid instanceId, string state)
+        => Error.Validation(
+            WorkflowErrorCodes.ConfigInvalid,
+            $"Configuration not found for state {state} on instance {instanceId}",
+            target: instanceId.ToString());
+
+    #endregion
+    
+    #region Schema Errors
+
+    /// <summary>
+    /// Creates an error when schema is not configured in runtime options.
+    /// </summary>
+    /// <param name="schemaKey">The schema key that is not configured.</param>
+    public static Error SchemaNotConfigured(string schemaKey)
+        => Error.Validation(
+            WorkflowErrorCodes.InvalidSchema,
+            $"Schema '{schemaKey}' is not configured in runtime options",
+            target: schemaKey);
+
+    #endregion
+
+    #region Domain Errors
+
+    /// <summary>
+    /// Domain validation failed.
+    /// </summary>
+    /// <param name="domain">The domain name that failed validation.</param>
+    /// <param name="reason">The reason for the validation failure.</param>
+    public static Error DomainValidationFailed(string domain, string reason)
+        => Error.Validation(
+            WorkflowErrorCodes.NotFoundDomain,
+            $"Domain validation failed: {reason}",
+            target: domain);
+
+    #endregion
+}
+

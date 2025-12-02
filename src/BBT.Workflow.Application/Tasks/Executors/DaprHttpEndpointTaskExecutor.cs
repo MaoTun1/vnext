@@ -40,19 +40,10 @@ public sealed class DaprHttpEndpointTaskExecutor(
         CancellationToken cancellationToken = default)
     {
         var daprTask = (task as DaprHttpEndpointTask)!;
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        
-        Logger.LogInformation("Starting DAPR HTTP endpoint task execution for task {TaskKey} - EndpointName: {EndpointName}, Path: {Path}, Method: {Method}", 
-            daprTask.Key, daprTask.EndpointName, daprTask.Path, daprTask.Method);
-
         try
         {
-            Logger.LogDebug("Preparing input for DAPR HTTP endpoint task {TaskKey}", daprTask.Key);
             await PrepareInputAsync(daprTask, scriptCode, context, cancellationToken);
-
-            Logger.LogInformation("Invoking DAPR HTTP endpoint for task {TaskKey}: {EndpointName}{Path} via {Method}", 
-                daprTask.Key, daprTask.EndpointName, daprTask.Path, daprTask.Method);
-
+            
             //Usage
             var response = await daprClient.InvokeMethodAsync<object?, object>(
                 new HttpMethod(daprTask.Method),
@@ -61,44 +52,28 @@ public sealed class DaprHttpEndpointTaskExecutor(
                 daprTask.Body,
                 cancellationToken: cancellationToken
             );
-
-            stopwatch.Stop();
             
             // Record successful DAPR service invocation (HTTP endpoint)
             workflowMetrics.RecordDaprServiceInvocation(daprTask.EndpointName, daprTask.Path, "success");
-            
-            Logger.LogInformation("DAPR HTTP endpoint task {TaskKey} completed successfully in {Duration}ms", 
-                daprTask.Key, stopwatch.ElapsedMilliseconds);
-
-            Logger.LogDebug("Setting response body in context for DAPR HTTP endpoint task {TaskKey}", daprTask.Key);
             context.SetBody(response);
             
-            Logger.LogDebug("Processing output for DAPR HTTP endpoint task {TaskKey}", daprTask.Key);
             var outputResponse = await ProcessOutputAsync(scriptCode, context, cancellationToken);
             
-            Logger.LogInformation("DAPR HTTP endpoint task {TaskKey} execution completed, returning processed output", daprTask.Key);
             return outputResponse;
         }
         catch (TaskCanceledException ex) when (ex.CancellationToken.IsCancellationRequested)
         {
-            stopwatch.Stop();
-            
             // Record cancelled DAPR service invocation (HTTP endpoint)
             workflowMetrics.RecordDaprServiceInvocation(daprTask.EndpointName, daprTask.Path, "cancelled");
-            
-            Logger.LogWarning("DAPR HTTP endpoint task {TaskKey} was cancelled after {Duration}ms", 
-                daprTask.Key, stopwatch.ElapsedMilliseconds);
             throw;
         }
         catch (Exception ex)
         {
-            stopwatch.Stop();
-            
             // Record failed DAPR service invocation (HTTP endpoint)
             workflowMetrics.RecordDaprServiceInvocation(daprTask.EndpointName, daprTask.Path, "failure");
             
-            Logger.LogError(ex, "Error occurred during DAPR HTTP endpoint task {TaskKey} execution after {Duration}ms - EndpointName: {EndpointName}, Path: {Path}", 
-                daprTask.Key, stopwatch.ElapsedMilliseconds, daprTask.EndpointName, daprTask.Path);
+            Logger.LogError(ex, "Error occurred during DAPR HTTP endpoint task {TaskKey} execution after - EndpointName: {EndpointName}, Path: {Path}", 
+                daprTask.Key,  daprTask.EndpointName, daprTask.Path);
             throw;
         }
     }

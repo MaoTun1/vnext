@@ -34,9 +34,6 @@ public sealed class DaprHumanTaskExecutor(
         ScriptContext context,
         CancellationToken cancellationToken = default)
     {
-        Logger.LogWarning("Human task execution requested for task {TaskKey} but DaprHumanTaskExecutor is not yet implemented", task.Key);
-        Logger.LogError("DaprHumanTaskExecutor.ExecuteAsync called but implementation is missing");
-        
         throw new NotImplementedException("DaprHumanTaskExecutor is not yet implemented");
     }
 }

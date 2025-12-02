@@ -1,5 +1,5 @@
 using BBT.Aether.Domain.EntityFrameworkCore;
-using BBT.Aether.Domain.Services;
+using BBT.Aether.Uow;
 using BBT.Workflow.Data;
 using BBT.Workflow.Definitions;
 using Microsoft.EntityFrameworkCore;
@@ -13,12 +13,10 @@ namespace BBT.Workflow.Instances;
 /// </summary>
 /// <param name="dbContext">The workflow database context for data operations.</param>
 /// <param name="serviceProvider">Service provider for dependency injection.</param>
-/// <param name="transactionService">Service for managing database transactions.</param>
 public sealed class EfCoreInstanceCorrelationRepository(
-    WorkflowDbContext dbContext,
-    IServiceProvider serviceProvider,
-    ITransactionService transactionService)
-    : EfCoreRepository<WorkflowDbContext, InstanceCorrelation, Guid>(dbContext, serviceProvider, transactionService),
+    IDbContextProvider<WorkflowDbContext> dbContext,
+    IServiceProvider serviceProvider)
+    : EfCoreRepository<WorkflowDbContext, InstanceCorrelation, Guid>(dbContext, serviceProvider),
         IInstanceCorrelationRepository
 {
     /// <inheritdoc />

@@ -1,8 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text.Json.Serialization;
-using System.Threading.Tasks;
 
 namespace BBT.Workflow.Instances.DTOs;
 
@@ -17,9 +13,7 @@ public class FunctionListQueryParameters
 
     [JsonPropertyName("pageSize")]
     public int PageSize { get; set; } = 10;
+    
     [JsonPropertyName("sort")]
     public string? Sort { get; set; } = string.Empty;
-    [JsonPropertyName("pageUrl")]
-    [JsonIgnore]
-    public string? PageUrl { get; set; } 
 }

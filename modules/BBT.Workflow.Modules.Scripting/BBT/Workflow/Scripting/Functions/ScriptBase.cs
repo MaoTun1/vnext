@@ -85,10 +85,35 @@ public abstract class ScriptBase
     /// <typeparam name="T">The type to convert the value to</typeparam>
     /// <param name="obj">The dynamic object</param>
     /// <param name="propertyName">The property name</param>
-    /// <returns>The property value converted to type T or null if not found</returns>
+    /// <returns>The property value converted to type T or default(T) if not found or null</returns>
     protected T? GetPropertyValue<T>(object obj, string propertyName)
     {
         return ScriptHelper.GetPropertyValue<T>(obj, propertyName);
+    }
+
+    /// <summary>
+    /// Gets a property value from a dynamic object safely and converts it to a specific type with a default value
+    /// </summary>
+    /// <typeparam name="T">The type to convert the value to</typeparam>
+    /// <param name="obj">The dynamic object</param>
+    /// <param name="propertyName">The property name</param>
+    /// <param name="defaultValue">The default value to return if property is not found, null, or conversion fails</param>
+    /// <returns>The property value converted to type T or defaultValue if not found, null, or conversion fails</returns>
+    /// <example>
+    /// <code>
+    /// // Get string property with default
+    /// var name = GetPropertyValue(context.Instance.Data, "name", "Unknown");
+    /// 
+    /// // Get int property with default
+    /// var count = GetPropertyValue(context.Instance.Data, "count", 0);
+    /// 
+    /// // Get bool property with default
+    /// var isActive = GetPropertyValue(context.Instance.Data, "isActive", false);
+    /// </code>
+    /// </example>
+    protected T GetPropertyValue<T>(object obj, string propertyName, T defaultValue)
+    {
+        return ScriptHelper.GetPropertyValue(obj, propertyName, defaultValue);
     }
 
     #region Logging Functions

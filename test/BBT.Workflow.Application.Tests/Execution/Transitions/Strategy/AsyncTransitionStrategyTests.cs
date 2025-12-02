@@ -2,15 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using BBT.Workflow.BackgroundJobs;
+using BBT.Aether.BackgroundJob;
+using BBT.Aether.Results;
 using BBT.Workflow.BackgroundJobs.Payloads;
+using BBT.Workflow.BackgroundJobs.Handlers;
 using BBT.Workflow.Definitions;
-using BBT.Workflow.Domain;
 using BBT.Workflow.Execution;
 using BBT.Workflow.Execution.Strategies;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Shared;
-using Dapr.Jobs.Models;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
@@ -26,6 +26,7 @@ public class AsyncTransitionStrategyTests
 {
     private readonly Mock<IBackgroundJobService> _mockBackgroundJobService;
     private readonly Mock<ITransitionContextFactory> _mockContextFactory;
+    private readonly Mock<IInstanceJobRepository> _mockJobRepository;
     private readonly Mock<ILogger<AsyncTransitionStrategy>> _mockLogger;
     private readonly AsyncTransitionStrategy _strategy;
 
@@ -33,11 +34,13 @@ public class AsyncTransitionStrategyTests
     {
         _mockBackgroundJobService = new Mock<IBackgroundJobService>();
         _mockContextFactory = new Mock<ITransitionContextFactory>();
+        _mockJobRepository = new Mock<IInstanceJobRepository>();
         _mockLogger = new Mock<ILogger<AsyncTransitionStrategy>>();
 
         _strategy = new AsyncTransitionStrategy(
             _mockBackgroundJobService.Object,
             _mockContextFactory.Object,
+            _mockJobRepository.Object,
             _mockLogger.Object);
     }
 
@@ -61,11 +64,11 @@ public class AsyncTransitionStrategyTests
 
         _mockBackgroundJobService.Verify(
             x => x.EnqueueAsync(
-                BackgroundJobConsts.TransitionJobName,
-                It.Is<string>(id => id.StartsWith($"transition-{workflowContext.InstanceId}")),
-                It.IsAny<DaprJobSchedule>(),
+                TransitionJobHandler.HandlerName,
+                It.Is<string>(id => id.StartsWith($"trans-{workflowContext.InstanceId}")),
                 It.IsAny<TransitionJobPayload>(),
-                It.IsAny<Dictionary<string, string>>(),
+                It.IsAny<string>(),
+                It.IsAny<Dictionary<string, object>>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -84,20 +87,20 @@ public class AsyncTransitionStrategyTests
             .Setup(x => x.EnqueueAsync(
                 It.IsAny<string>(),
                 It.IsAny<string>(),
-                It.IsAny<DaprJobSchedule>(),
                 It.IsAny<TransitionJobPayload>(),
-                It.IsAny<Dictionary<string, string>>(),
+                It.IsAny<string>(),
+                It.IsAny<Dictionary<string, object>>(),
                 It.IsAny<CancellationToken>()))
-            .Callback<string, string, DaprJobSchedule, TransitionJobPayload, Dictionary<string, string>, CancellationToken>(
-                (_, _, _, payload, _, _) => capturedPayload = payload)
-            .Returns(Task.CompletedTask);
+            .Callback<string, string, TransitionJobPayload, string, Dictionary<string, object>, CancellationToken>(
+                (_, _, payload, _, _, _) => capturedPayload = payload)
+            .ReturnsAsync(It.IsAny<Guid>());
 
         // Act
         await _strategy.ExecuteAsync(workflowContext, CancellationToken.None);
 
         // Assert
         capturedPayload!.ShouldNotBeNull();
-        capturedPayload.InstanceId.ShouldBe(workflowContext.InstanceId);
+        capturedPayload.InstanceId.ToString().ShouldBe(workflowContext.InstanceId);
         capturedPayload.TransitionKey.ShouldBe(workflowContext.TransitionKey);
         capturedPayload.Domain.ShouldBe(workflowContext.Domain);
         capturedPayload.Workflow.ShouldBe(workflowContext.WorkflowKey);
@@ -110,7 +113,7 @@ public class AsyncTransitionStrategyTests
         // Arrange
         var workflowContext = CreateWorkflowExecutionContext();
         var transitionContext = CreateTransitionExecutionContext();
-        Dictionary<string, string>? capturedMetadata = null;
+        Dictionary<string, object>? capturedMetadata = null;
 
         SetupSuccessfulExecution(workflowContext, transitionContext);
 
@@ -118,22 +121,22 @@ public class AsyncTransitionStrategyTests
             .Setup(x => x.EnqueueAsync(
                 It.IsAny<string>(),
                 It.IsAny<string>(),
-                It.IsAny<DaprJobSchedule>(),
                 It.IsAny<TransitionJobPayload>(),
-                It.IsAny<Dictionary<string, string>>(),
+                It.IsAny<string>(),
+                It.IsAny<Dictionary<string, object>>(),
                 It.IsAny<CancellationToken>()))
-            .Callback<string, string, DaprJobSchedule, TransitionJobPayload, Dictionary<string, string>, CancellationToken>(
+            .Callback<string, string, TransitionJobPayload, string, Dictionary<string, object>, CancellationToken>(
                 (_, _, _, _, metadata, _) => capturedMetadata = metadata)
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync(It.IsAny<Guid>());
 
         // Act
         await _strategy.ExecuteAsync(workflowContext, CancellationToken.None);
 
         // Assert
         capturedMetadata.ShouldNotBeNull();
-        capturedMetadata["domain"].ShouldBe(workflowContext.Domain);
-        capturedMetadata["flowName"].ShouldBe(workflowContext.WorkflowKey);
-        capturedMetadata["instanceId"].ShouldBe(workflowContext.InstanceId.ToString());
+        capturedMetadata["domain"].ShouldBe((object)workflowContext.Domain);
+        capturedMetadata["flowName"].ShouldBe((object)workflowContext.WorkflowKey);
+        capturedMetadata["instanceId"].ShouldBe((object)workflowContext.InstanceId.ToString());
     }
 
     [Fact]
@@ -150,13 +153,13 @@ public class AsyncTransitionStrategyTests
             .Setup(x => x.EnqueueAsync(
                 It.IsAny<string>(),
                 It.IsAny<string>(),
-                It.IsAny<DaprJobSchedule>(),
                 It.IsAny<TransitionJobPayload>(),
-                It.IsAny<Dictionary<string, string>>(),
+                It.IsAny<string>(),
+                It.IsAny<Dictionary<string, object>>(),
                 It.IsAny<CancellationToken>()))
-            .Callback<string, string, DaprJobSchedule, TransitionJobPayload, Dictionary<string, string>, CancellationToken>(
+            .Callback<string, string, TransitionJobPayload, string, Dictionary<string, object>, CancellationToken>(
                 (_, jobId, _, _, _, _) => jobIds.Add(jobId))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync(It.IsAny<Guid>());
 
         // Act
         await _strategy.ExecuteAsync(workflowContext, CancellationToken.None);
@@ -189,9 +192,9 @@ public class AsyncTransitionStrategyTests
             x => x.EnqueueAsync(
                 It.IsAny<string>(),
                 It.IsAny<string>(),
-                It.IsAny<DaprJobSchedule>(),
                 It.IsAny<TransitionJobPayload>(),
-                It.IsAny<Dictionary<string, string>>(),
+                It.IsAny<string>(),
+                It.IsAny<Dictionary<string, object>>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -211,9 +214,9 @@ public class AsyncTransitionStrategyTests
             .Setup(x => x.EnqueueAsync(
                 It.IsAny<string>(),
                 It.IsAny<string>(),
-                It.IsAny<DaprJobSchedule>(),
                 It.IsAny<TransitionJobPayload>(),
-                It.IsAny<Dictionary<string, string>>(),
+                It.IsAny<string>(),
+                It.IsAny<Dictionary<string, object>>(),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("Job service unavailable"));
 
@@ -231,7 +234,7 @@ public class AsyncTransitionStrategyTests
         // Arrange
         var workflowContext = CreateWorkflowExecutionContext();
         var transitionContext = CreateTransitionExecutionContext();
-        DaprJobSchedule? capturedSchedule = null;
+        string? capturedSchedule = null;
 
         SetupSuccessfulExecution(workflowContext, transitionContext);
 
@@ -239,13 +242,13 @@ public class AsyncTransitionStrategyTests
             .Setup(x => x.EnqueueAsync(
                 It.IsAny<string>(),
                 It.IsAny<string>(),
-                It.IsAny<DaprJobSchedule>(),
                 It.IsAny<TransitionJobPayload>(),
-                It.IsAny<Dictionary<string, string>>(),
+                It.IsAny<string>(),
+                It.IsAny<Dictionary<string, object>>(),
                 It.IsAny<CancellationToken>()))
-            .Callback<string, string, DaprJobSchedule, TransitionJobPayload, Dictionary<string, string>, CancellationToken>(
-                (_, _, schedule, _, _, _) => capturedSchedule = schedule)
-            .Returns(Task.CompletedTask);
+            .Callback<string, string, TransitionJobPayload, string, Dictionary<string, object>, CancellationToken>(
+                (_, _, _, schedule, _, _) => capturedSchedule = schedule)
+            .ReturnsAsync(It.IsAny<Guid>());
 
         // Act
         await _strategy.ExecuteAsync(workflowContext, CancellationToken.None);
@@ -315,13 +318,13 @@ public class AsyncTransitionStrategyTests
             .Setup(x => x.EnqueueAsync(
                 It.IsAny<string>(),
                 It.IsAny<string>(),
-                It.IsAny<DaprJobSchedule>(),
                 It.IsAny<TransitionJobPayload>(),
-                It.IsAny<Dictionary<string, string>>(),
+                It.IsAny<string>(),
+                It.IsAny<Dictionary<string, object>>(),
                 It.IsAny<CancellationToken>()))
-            .Callback<string, string, DaprJobSchedule, TransitionJobPayload, Dictionary<string, string>, CancellationToken>(
-                (_, _, _, payload, _, _) => capturedPayload = payload)
-            .Returns(Task.CompletedTask);
+            .Callback<string, string, TransitionJobPayload, string, Dictionary<string, object>, CancellationToken>(
+                (_, _, payload, _, _, _) => capturedPayload = payload)
+            .ReturnsAsync(It.IsAny<Guid>());
 
         // Act
         await _strategy.ExecuteAsync(workflowContext, CancellationToken.None);
@@ -346,18 +349,25 @@ public class AsyncTransitionStrategyTests
             .Setup(x => x.EnqueueAsync(
                 It.IsAny<string>(),
                 It.IsAny<string>(),
-                It.IsAny<DaprJobSchedule>(),
                 It.IsAny<TransitionJobPayload>(),
-                It.IsAny<Dictionary<string, string>>(),
+                It.IsAny<string>(),
+                It.IsAny<Dictionary<string, object>>(),
                 It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync(It.IsAny<Guid>());
+
+        _mockJobRepository
+            .Setup(x => x.InsertAsync(
+                It.IsAny<InstanceJob>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(It.IsAny<InstanceJob>());
     }
 
     private WorkflowExecutionContext CreateWorkflowExecutionContext()
     {
         return new WorkflowExecutionContext
         {
-            InstanceId = Guid.NewGuid(),
+            InstanceId = Guid.NewGuid().ToString(),
             Domain = "test-domain",
             WorkflowKey = "test-workflow",
             TransitionKey = "test-transition",
@@ -395,7 +405,6 @@ public class AsyncTransitionStrategyTests
             Current = state,
             Transition = transition,
             Instance = instance,
-            ConcurrencyToken = instance.ConcurrencyStamp,
             Data = new { test = "data" },
             TraceId = Guid.NewGuid().ToString("N"),
             SpanId = Guid.NewGuid().ToString("N")[..16]

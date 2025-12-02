@@ -1,4 +1,4 @@
-using BBT.Workflow.Domain;
+using BBT.Aether.Results;
 
 namespace BBT.Workflow.Instances.Remote;
 
@@ -13,14 +13,7 @@ public interface IRemoteInstanceQueryAppService
     Task<ConditionalResult<GetInstanceOutput>> GetInstanceAsync(
         GetInstanceInput input,
         CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Retrieves a paginated list of instances with optional extensions
-    /// </summary>
-    Task<Result<Definitions.PaginationResult<GetInstanceOutput>>> GetInstanceListAsync(
-        GetInstanceListInput input,
-        CancellationToken cancellationToken = default);
-
+    
     /// <summary>
     /// Retrieves the complete history of an instance (all data transitions)
     /// </summary>

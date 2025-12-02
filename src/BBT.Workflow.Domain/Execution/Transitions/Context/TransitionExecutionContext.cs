@@ -1,5 +1,6 @@
 using System.Text.Json;
 using BBT.Workflow.Definitions;
+using BBT.Aether.Aspects;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Shared;
@@ -15,15 +16,19 @@ public sealed class TransitionExecutionContext
 {
     // Identity (immutable)
     /// <summary>Gets the domain/tenant identifier.</summary>
+    [Enrich(Name = "vnext.domain")]
     public string Domain { get; init; } = default!;
 
     /// <summary>Gets the workflow instance identifier.</summary>
+    [Enrich(Name = "vnext.instanceid")]
     public Guid InstanceId { get; init; }
 
     /// <summary>Gets the workflow key.</summary>
+    [Enrich(Name = "vnext.flow.key")]
     public string WorkflowKey { get; init; } = default!;
 
     /// <summary>Gets the transition key being executed.</summary>
+    [Enrich(Name = "vnext.flow.transition")]
     public string TransitionKey { get; init; } = default!;
 
     /// <summary>Gets the trigger type that initiated this transition.</summary>
@@ -111,16 +116,19 @@ public sealed class TransitionExecutionContext
 
     /// <summary>
     /// Gets or builds a ScriptContext using the provided factory function.
-    /// The ScriptContext is cached in Items to avoid recreating it multiple times.
+    /// The ScriptContext is cached in Cache to avoid recreating it multiple times.
     /// </summary>
-    /// <param name="factory">Factory function to create a new ScriptContext if not cached.</param>
+    /// <param name="factory">Async factory function to create a new ScriptContext if not cached.</param>
+    /// <param name="cancellationToken">Cancellation token for the async operation.</param>
     /// <returns>The cached or newly created ScriptContext.</returns>
-    public ScriptContext GetOrBuildScriptContext(Func<ScriptContext> factory)
+    public async Task<ScriptContext> GetOrBuildScriptContextAsync(
+        Func<CancellationToken, Task<ScriptContext>> factory,
+        CancellationToken cancellationToken = default)
     {
         if (Cache.TryGetValue("ScriptContext", out var cached) && cached is ScriptContext scriptContext)
             return scriptContext;
 
-        var created = factory();
+        var created = await factory(cancellationToken);
         Cache["ScriptContext"] = created;
         return created;
     }

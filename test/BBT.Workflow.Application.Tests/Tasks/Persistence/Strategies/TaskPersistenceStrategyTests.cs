@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using NSubstitute;
@@ -156,25 +157,28 @@ public class TaskPersistenceStrategyTests
         var factory = new TaskPersistenceStrategyFactory(strategies);
 
         // Act
-        var strategy = factory.GetStrategy(taskTrigger);
+        var result = factory.GetStrategy(taskTrigger);
 
         // Assert
-        strategy.ShouldBeOfType(expectedStrategyType);
-        strategy.CanHandle(taskTrigger).ShouldBeTrue();
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ShouldBeOfType(expectedStrategyType);
+        result.Value!.CanHandle(taskTrigger).ShouldBeTrue();
     }
 
     [Fact]
-    public void TaskPersistenceStrategyFactory_GetStrategy_ShouldThrowWhenNoStrategyFound()
+    public void TaskPersistenceStrategyFactory_GetStrategy_ShouldReturnFailWhenNoStrategyFound()
     {
         // Arrange
         var strategies = new List<ITaskPersistenceStrategy>(); // Empty list
         var factory = new TaskPersistenceStrategyFactory(strategies);
 
         // Act
-        var act = () => factory.GetStrategy(TaskTrigger.OnEntry);
+        var result = factory.GetStrategy(TaskTrigger.OnEntry);
 
         // Assert
-        act.ShouldThrow<InvalidOperationException>("No task persistence strategy found for TaskTrigger: OnEntry");
+        result.IsSuccess.ShouldBeFalse();
+        result.Error.Prefix.ShouldBe(ErrorCodes.Prefixes.NotFound);
+        result.Error.Message!.ShouldContain("No task persistence strategy found for TaskTrigger: OnEntry");
     }
 
     [Fact]
@@ -192,4 +196,4 @@ public class TaskPersistenceStrategyTests
         // Strategies should have distinct responsibilities
         standardStrategy.GetType().ShouldNotBe(extensionStrategy.GetType());
     }
-} 
+}

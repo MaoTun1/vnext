@@ -12,40 +12,45 @@ public static class LifecycleOrder
     public const int Preflight = 5;
     
     /// <summary>
+    /// Subflow
+    /// </summary>
+    public const int ForwardToActiveSubflow = 10;
+    
+    /// <summary>
     /// Order for creating the transition record in the database.
     /// This should be the first step to track the transition attempt.
     /// </summary>
-    public const int CreateTransition = 10;
+    public const int CreateTransition = 20;
     
     /// <summary>
     /// Order for executing transition's OnExecute tasks.
     /// These tasks run before the state change occurs.
     /// </summary>
-    public const int OnExecute = 20;
+    public const int OnExecute = 30;
     
     /// <summary>
     /// Order for executing current state's OnExit tasks.
     /// These tasks run when leaving the current state.
     /// </summary>
-    public const int OnExit = 30;
+    public const int OnExit = 40;
     
     /// <summary>
     /// Order for changing the instance state.
     /// This is the core state transition operation.
     /// </summary>
-    public const int ChangeState = 40;
+    public const int ChangeState = 50;
     
     /// <summary>
     /// Order for executing target state's OnEntry tasks.
     /// These tasks run when entering the new state.
     /// </summary>
-    public const int OnEntry = 50;
+    public const int OnEntry = 60;
     
     /// <summary>
     /// Order for handling SubFlow operations.
     /// Manages sub-process initiation when state type is SubFlow.
     /// </summary>
-    public const int SubFlow = 60;
+    public const int SubFlow = 70;
 
     public const int ClearBusyOnResumeStep = Schedule - 1;
     
@@ -53,26 +58,26 @@ public static class LifecycleOrder
     /// Order for scheduling future transitions.
     /// Enqueues scheduled transitions based on timers.
     /// </summary>
-    public const int Schedule = 70;
+    public const int Schedule = 80;
     
     /// <summary>
     /// Order for executing automatic transitions.
     /// Evaluates and triggers automatic transitions based on conditions.
     /// </summary>
-    public const int Auto = 80;
+    public const int Auto = 90;
     
     /// <summary>
     /// Order for handling workflow finishing.
     /// Manages workflow completion when state type is Finish.
     /// This should run after all other pipeline steps.
     /// </summary>
-    public const int Finish = 90;
+    public const int Finish = 100;
     
     /// <summary>
     /// Order for finalizing the transition.
     /// Updates transition record and performs cleanup operations.
     /// </summary>
-    public const int Finalize = 100;
+    public const int Finalize = 110;
     
     public const int AfterEpilogueRefresh = Finalize + 1;
     

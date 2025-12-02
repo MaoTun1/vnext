@@ -184,7 +184,7 @@ public class WorkflowTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var workflow = Workflow.Create();
-        var state = State.Create("initial", StateType.Initial, "Patch");
+        var state = State.Create("initial", StateType.Initial, StateSubType.Success, "Patch");
 
         // Act
         workflow.AddState(state);
@@ -230,7 +230,7 @@ public class WorkflowTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var workflow = Workflow.Create();
-        var initialState = State.Create("initial", StateType.Initial, "Patch");
+        var initialState = State.Create("initial", StateType.Initial, StateSubType.Success, "Patch");
         workflow.AddState(initialState);
 
         // Act
@@ -260,7 +260,7 @@ public class WorkflowTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var workflow = Workflow.Create();
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
         workflow.AddState(state);
 
         // Act
@@ -289,7 +289,7 @@ public class WorkflowTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var workflow = Workflow.Create();
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
         workflow.AddState(state);
 
         // Act
@@ -379,7 +379,7 @@ public class WorkflowTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var workflow = Workflow.Create();
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
         var stateTransition = Transition.Create("submit", "test-state", "next-state", TriggerType.Manual, "Patch");
         state.AddTransition(stateTransition);
         workflow.AddState(state);
@@ -400,7 +400,7 @@ public class WorkflowTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var workflow = Workflow.Create();
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
         workflow.AddState(state);
 
         var sharedTransition = Transition.Create("cancel", null, "cancelled", TriggerType.Manual, "Patch");
@@ -423,22 +423,12 @@ public class WorkflowTests : DomainTestBase<DomainEntryPoint>
         workflow.SetReference(reference);
 
         // Act
-        var cacheKey = workflow.CacheKey;
+        var cacheKey = workflow.ComponentKey;
 
         // Assert
         Assert.Equal("Workflow:test-domain:sys-flows:test-flow:1.0.0", cacheKey);
     }
-
-    [Fact]
-    public void GenerateCacheKey_ShouldGenerateCorrectFormat()
-    {
-        // Act
-        var cacheKey = Workflow.GenerateCacheKey("test-domain", "sys-flows", "test-flow", "1.0.0");
-
-        // Assert
-        Assert.Equal("Workflow:test-domain:sys-flows:test-flow:1.0.0", cacheKey);
-    }
-
+    
     [Fact]
     public void SemanticVersion_ShouldReturnVersionWithoutMetadata()
     {
@@ -474,7 +464,7 @@ public class WorkflowTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var workflow = Workflow.Create();
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
         
         var manualTransition = Transition.Create("submit", "test-state", "next", TriggerType.Manual, "Patch");
         var eventTransition = Transition.Create("event", "test-state", "other", TriggerType.Event, "Patch");
@@ -500,7 +490,7 @@ public class WorkflowTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var workflow = Workflow.Create();
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
         workflow.AddState(state);
 
         var sharedTransition = Transition.Create("cancel", null, "cancelled", TriggerType.Manual, "Patch");
@@ -520,7 +510,7 @@ public class WorkflowTests : DomainTestBase<DomainEntryPoint>
         // Arrange
         var workflow = Workflow.Create();
         workflow.SetStartTransition(Transition.Create("start-tran", "", "init", TriggerType.Manual, "Patch"));
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
         var stateTransition = Transition.Create("state-trans", "test-state", "next", TriggerType.Manual, "Patch");
         state.AddTransition(stateTransition);
         workflow.AddState(state);

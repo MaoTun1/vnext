@@ -1,5 +1,6 @@
 using BBT.Aether.Domain.EntityFrameworkCore;
 using BBT.Aether.Domain.Services;
+using BBT.Aether.Uow;
 using BBT.Workflow.Data;
 using BBT.Workflow.DataSink;
 using Microsoft.EntityFrameworkCore;
@@ -7,11 +8,10 @@ using Microsoft.EntityFrameworkCore;
 namespace BBT.Workflow.Instances;
 
 public class EfCoreInstanceTransitionRepository(
-    WorkflowDbContext dbContext,
+    IDbContextProvider<WorkflowDbContext> dbContext,
     IServiceProvider serviceProvider,
-    ITransactionService transactionService,
     IDataSinkManager dataSinkManager)
-    : EfCoreRepository<WorkflowDbContext, InstanceTransition, Guid>(dbContext, serviceProvider, transactionService),
+    : EfCoreRepository<WorkflowDbContext, InstanceTransition, Guid>(dbContext, serviceProvider),
         IInstanceTransitionRepository
 {
     /// <summary>

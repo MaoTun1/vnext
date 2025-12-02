@@ -8,29 +8,22 @@ namespace BBT.Workflow.Migrations
     /// <inheritdoc />
     public partial class InstanceCorrelation_RemoveSubInstanceIdFK_And_FlowRef : Migration
     {
-        private readonly IDbContextSchema _schema;
-        
-        public InstanceCorrelation_RemoveSubInstanceIdFK_And_FlowRef(IDbContextSchema schema)
-        {
-            _schema = schema;
-        }
-        
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropForeignKey(
                 name: "FK_InstancesCorrelations_Instances_SubFlowInstanceId",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesCorrelations");
 
             migrationBuilder.DropIndex(
                 name: "IX_InstancesCorrelations_SubFlowInstanceId",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesCorrelations");
 
             migrationBuilder.AddColumn<string>(
                 name: "SubFlowDomain",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesCorrelations",
                 type: "character varying(50)",
                 maxLength: 50,
@@ -39,7 +32,7 @@ namespace BBT.Workflow.Migrations
 
             migrationBuilder.AddColumn<string>(
                 name: "SubFlowName",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesCorrelations",
                 type: "character varying(100)",
                 maxLength: 100,
@@ -48,7 +41,7 @@ namespace BBT.Workflow.Migrations
 
             migrationBuilder.AddColumn<string>(
                 name: "SubFlowVersion",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesCorrelations",
                 type: "character varying(20)",
                 maxLength: 20,
@@ -60,32 +53,32 @@ namespace BBT.Workflow.Migrations
         {
             migrationBuilder.DropColumn(
                 name: "SubFlowDomain",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesCorrelations");
 
             migrationBuilder.DropColumn(
                 name: "SubFlowName",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesCorrelations");
 
             migrationBuilder.DropColumn(
                 name: "SubFlowVersion",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesCorrelations");
 
             migrationBuilder.CreateIndex(
                 name: "IX_InstancesCorrelations_SubFlowInstanceId",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesCorrelations",
                 column: "SubFlowInstanceId",
                 unique: true);
 
             migrationBuilder.AddForeignKey(
                 name: "FK_InstancesCorrelations_Instances_SubFlowInstanceId",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesCorrelations",
                 column: "SubFlowInstanceId",
-                principalSchema: _schema.SchemaName,
+                principalSchema: null,
                 principalTable: "Instances",
                 principalColumn: "Id");
         }

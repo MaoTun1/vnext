@@ -1,7 +1,7 @@
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using BBT.Aether.Domain.Entities;
+using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Runtime;
 using Moq;
@@ -59,16 +59,17 @@ public class ComponentCacheStoreTests
         
         _mockWorkflowsCacheSet
             .Setup(x => x.GetAsync(expectedCacheKey, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(workflow);
+            .ReturnsAsync(Result<Definitions.Workflow>.Ok(workflow));
 
         // Act
         var result = await _store.GetFlowAsync(domain, key, version, CancellationToken.None);
 
         // Assert
-        result.ShouldNotBeNull();
-        result.Key.ShouldBe(key);
-        result.Domain.ShouldBe(domain);
-        result.Version.ShouldBe(version);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ShouldNotBeNull();
+        result.Value!.Key.ShouldBe(key);
+        result.Value.Domain.ShouldBe(domain);
+        result.Value.Version.ShouldBe(version);
     }
 
     [Fact]
@@ -80,20 +81,21 @@ public class ComponentCacheStoreTests
         var workflow = CreateMockWorkflow(key, domain, "2.0.0");
         
         _mockWorkflowsCacheSet
-            .Setup(x => x.GetLatestByNameAsync(domain, RuntimeSysSchemaInfo.Flows, key, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(workflow);
+            .Setup(x => x.GetLatestByNameAsync(domain, key, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Definitions.Workflow>.Ok(workflow));
 
         // Act
         var result = await _store.GetFlowAsync(domain, key, null, CancellationToken.None);
 
         // Assert
-        result.ShouldNotBeNull();
-        result.Key.ShouldBe(key);
-        result.Version.ShouldBe("2.0.0");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ShouldNotBeNull();
+        result.Value!.Key.ShouldBe(key);
+        result.Value.Version.ShouldBe("2.0.0");
     }
 
     [Fact]
-    public async Task GetFlowAsync_WhenNotFound_ShouldThrowEntityNotFoundException()
+    public async Task GetFlowAsync_WhenNotFound_ShouldReturnNotFoundError()
     {
         // Arrange
         var domain = "test-domain";
@@ -102,14 +104,15 @@ public class ComponentCacheStoreTests
         
         _mockWorkflowsCacheSet
             .Setup(x => x.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-#pragma warning disable CS8600 // Converting null literal or possible null value to non-nullable type.
-            .ReturnsAsync((Definitions.Workflow)null);
-#pragma warning restore CS8600 // Converting null literal or possible null value to non-nullable type.
+            .ReturnsAsync(Result<Definitions.Workflow>.Fail(
+                Error.NotFound("Workflow.NotFound", "Workflow not found")));
 
-        // Act & Assert
-        await Should.ThrowAsync<EntityNotFoundException>(
-            async () => await _store.GetFlowAsync(domain, key, version, CancellationToken.None)
-        );
+        // Act
+        var result = await _store.GetFlowAsync(domain, key, version, CancellationToken.None);
+
+        // Assert
+        result.IsSuccess.ShouldBeFalse();
+        result.Error.Prefix.ShouldBe(ErrorCodes.Prefixes.NotFound);
     }
 
     #endregion
@@ -129,34 +132,36 @@ public class ComponentCacheStoreTests
         
         _mockTasksCacheSet
             .Setup(x => x.GetAsync(expectedCacheKey, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(task);
+            .ReturnsAsync(Result<WorkflowTask>.Ok(task));
 
         // Act
         var result = await _store.GetTaskAsync(domain, key, version, CancellationToken.None);
 
         // Assert
-        result.ShouldNotBeNull();
-        result.Key.ShouldBe(key);
-        result.Domain.ShouldBe(domain);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ShouldNotBeNull();
+        result.Value!.Key.ShouldBe(key);
+        result.Value.Domain.ShouldBe(domain);
     }
 
     [Fact]
-    public async Task GetTaskAsync_WhenNotFound_ShouldThrowEntityNotFoundException()
+    public async Task GetTaskAsync_WhenNotFound_ShouldReturnNotFoundError()
     {
         // Arrange
         var domain = "test-domain";
         var key = "nonexistent-task";
         
         _mockTasksCacheSet
-            .Setup(x => x.GetLatestByNameAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-#pragma warning disable CS8600 // Converting null literal or possible null value to non-nullable type.
-            .ReturnsAsync((WorkflowTask)null);
-#pragma warning restore CS8600 // Converting null literal or possible null value to non-nullable type.
+            .Setup(x => x.GetLatestByNameAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<WorkflowTask>.Fail(
+                Error.NotFound("WorkflowTask.NotFound", "Task not found")));
 
-        // Act & Assert
-        await Should.ThrowAsync<EntityNotFoundException>(
-            async () => await _store.GetTaskAsync(domain, key, null, CancellationToken.None)
-        );
+        // Act
+        var result = await _store.GetTaskAsync(domain, key, null, CancellationToken.None);
+
+        // Assert
+        result.IsSuccess.ShouldBeFalse();
+        result.Error.Prefix.ShouldBe(ErrorCodes.Prefixes.NotFound);
     }
 
     #endregion
@@ -176,14 +181,15 @@ public class ComponentCacheStoreTests
         
         _mockSchemasCacheSet
             .Setup(x => x.GetAsync(expectedCacheKey, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(schema);
+            .ReturnsAsync(Result<SchemaDefinition>.Ok(schema));
 
         // Act
         var result = await _store.GetSchemaAsync(domain, key, version, CancellationToken.None);
 
         // Assert
-        result.ShouldNotBeNull();
-        result.Key.ShouldBe(key);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ShouldNotBeNull();
+        result.Value!.Key.ShouldBe(key);
     }
 
     #endregion
@@ -203,14 +209,15 @@ public class ComponentCacheStoreTests
         
         _mockFunctionsCacheSet
             .Setup(x => x.GetAsync(expectedCacheKey, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(function);
+            .ReturnsAsync(Result<Function>.Ok(function));
 
         // Act
         var result = await _store.GetFunctionAsync(domain, key, version, CancellationToken.None);
 
         // Assert
-        result.ShouldNotBeNull();
-        result.Key.ShouldBe(key);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ShouldNotBeNull();
+        result.Value!.Key.ShouldBe(key);
     }
 
     #endregion
@@ -230,14 +237,15 @@ public class ComponentCacheStoreTests
         
         _mockViewsCacheSet
             .Setup(x => x.GetAsync(expectedCacheKey, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(view);
+            .ReturnsAsync(Result<View>.Ok(view));
 
         // Act
         var result = await _store.GetViewAsync(domain, key, version, CancellationToken.None);
 
         // Assert
-        result.ShouldNotBeNull();
-        result.Key.ShouldBe(key);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ShouldNotBeNull();
+        result.Value!.Key.ShouldBe(key);
     }
 
     #endregion
@@ -257,14 +265,15 @@ public class ComponentCacheStoreTests
         
         _mockExtensionsCacheSet
             .Setup(x => x.GetAsync(expectedCacheKey, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(extension);
+            .ReturnsAsync(Result<Extension>.Ok(extension));
 
         // Act
         var result = await _store.GetExtensionAsync(domain, key, version, CancellationToken.None);
 
         // Assert
-        result.ShouldNotBeNull();
-        result.Key.ShouldBe(key);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ShouldNotBeNull();
+        result.Value!.Key.ShouldBe(key);
     }
 
     #endregion
@@ -285,13 +294,15 @@ public class ComponentCacheStoreTests
         
         _mockExtensionsCacheSet
             .Setup(x => x.GetAllByDomainAsync(domain, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(extensions);
+            .ReturnsAsync(Result<System.Collections.Generic.List<Extension>>.Ok(extensions));
 
         // Act
         var result = await _store.GetAllExtensionsAsync(domain, CancellationToken.None);
 
         // Assert
-        var enumerable = result as Extension[] ?? result.ToArray();
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ShouldNotBeNull();
+        var enumerable = result.Value!.ToArray();
         enumerable.ShouldNotBeNull();
         enumerable.Length.ShouldBe(3);
     }
@@ -308,12 +319,13 @@ public class ComponentCacheStoreTests
         
         _mockWorkflowsCacheSet
             .Setup(x => x.SetAsync(workflow, It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync(Result.Ok());
 
         // Act
-        await _store.SetAsync(workflow, CancellationToken.None);
+        var result = await _store.SetAsync(workflow, CancellationToken.None);
 
         // Assert
+        result.IsSuccess.ShouldBeTrue();
         _mockWorkflowsCacheSet.Verify(
             x => x.SetAsync(workflow, It.IsAny<CancellationToken>()), 
             Times.Once);
@@ -327,12 +339,13 @@ public class ComponentCacheStoreTests
         
         _mockTasksCacheSet
             .Setup(x => x.SetAsync(task, It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync(Result.Ok());
 
         // Act
-        await _store.SetAsync(task, CancellationToken.None);
+        var result = await _store.SetAsync(task, CancellationToken.None);
 
         // Assert
+        result.IsSuccess.ShouldBeTrue();
         _mockTasksCacheSet.Verify(
             x => x.SetAsync(task, It.IsAny<CancellationToken>()), 
             Times.Once);
@@ -466,4 +479,3 @@ public class ComponentCacheStoreTests
 
     #endregion
 }
-

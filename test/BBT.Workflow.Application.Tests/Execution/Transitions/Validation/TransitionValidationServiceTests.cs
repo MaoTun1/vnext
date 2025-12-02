@@ -4,6 +4,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using BBT.Aether.Results;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Domain;
@@ -48,8 +49,7 @@ public class TransitionValidationServiceTests
         _service = new TransitionValidationService(
             _stateTransitionPolicy,
             _mockSchemaValidator.Object,
-            _mockComponentCacheStore.Object,
-            _mockLogger.Object);
+            _mockComponentCacheStore.Object);
     }
 
     #region ValidateAsync Tests
@@ -100,8 +100,8 @@ public class TransitionValidationServiceTests
         SetupSuccessfulPolicyValidation(context);
         
         _mockComponentCacheStore
-            .Setup(x => x.GetSchemaAsync(schemaRef, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(schemaDefinition);
+            .Setup(x => x.GetSchemaAsync(schemaRef.Domain, schemaRef.Key, schemaRef.Version, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<SchemaDefinition>.Ok(schemaDefinition));
 
         _mockSchemaValidator
             .Setup(x => x.Validate(schemaDefinition.Schema, context.DataElement))
@@ -128,8 +128,8 @@ public class TransitionValidationServiceTests
         SetupSuccessfulPolicyValidation(context);
 
         _mockComponentCacheStore
-            .Setup(x => x.GetSchemaAsync(schemaRef, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(schemaDefinition);
+            .Setup(x => x.GetSchemaAsync(schemaRef.Domain, schemaRef.Key, schemaRef.Version, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<SchemaDefinition>.Ok(schemaDefinition));
 
         var validationError = Error.Validation(
             code: "SCHEMA_ERROR", 
@@ -211,8 +211,8 @@ public class TransitionValidationServiceTests
         SetupSuccessfulPolicyValidation(context);
 
         _mockComponentCacheStore
-            .Setup(x => x.GetSchemaAsync(schemaRef, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(schemaDefinition);
+            .Setup(x => x.GetSchemaAsync(schemaRef.Domain, schemaRef.Key, schemaRef.Version, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<SchemaDefinition>.Ok(schemaDefinition));
 
         var validationErrors = new List<ValidationResult> 
         { 
@@ -277,8 +277,8 @@ public class TransitionValidationServiceTests
         SetupSuccessfulPolicyValidation(context);
 
         _mockComponentCacheStore
-            .Setup(x => x.GetSchemaAsync(schemaRef, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(schemaDefinition);
+            .Setup(x => x.GetSchemaAsync(schemaRef.Domain, schemaRef.Key, schemaRef.Version, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<SchemaDefinition>.Ok(schemaDefinition));
 
         var validationErrors = new List<ValidationResult>
         {
@@ -349,7 +349,6 @@ public class TransitionValidationServiceTests
             Current = state,
             Transition = transition,
             Instance = instance,
-            ConcurrencyToken = instance.ConcurrencyStamp,
             Data = new { test = "data" },
             TraceId = Guid.NewGuid().ToString("N"),
             SpanId = Guid.NewGuid().ToString("N")[..16]
@@ -428,4 +427,3 @@ public class TransitionValidationServiceTests
 
     #endregion
 }
-

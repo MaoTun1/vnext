@@ -140,6 +140,13 @@ public static class WorkflowFactory
                 BindingTransition(input.StartTransition)
             );
         }
+        
+        if (input.Cancel != null)
+        {
+            workflow.SetCancel(
+                BindingTransition(input.Cancel)
+            );
+        }
     }
 
     /// <summary>
@@ -169,27 +176,27 @@ public static class WorkflowFactory
                 transition.AddAvailableIn(item);
             }
 
-        if (transitionInput.Rule != null)
+        if (transitionInput.Rule is { HasValue: true })
         {
             transition.SetRule(
-                transitionInput.Rule.Location,
-                transitionInput.Rule.Code
+                transitionInput.Rule.Location ?? "./",
+                transitionInput.Rule.Code!
             );
         }
 
-        if (transitionInput.Timer != null)
+        if (transitionInput.Timer is { HasValue: true })
         {
             transition.SetTimer(
-                transitionInput.Timer.Location,
-                transitionInput.Timer.Code
+                transitionInput.Timer.Location ?? "./",
+                transitionInput.Timer.Code!
             );
         }
-        
-        if (transitionInput.Mapping != null)
+
+        if (transitionInput.Mapping is { HasValue: true })
         {
             transition.SetMapping(
-                transitionInput.Mapping.Location,
-                transitionInput.Mapping.Code
+                transitionInput.Mapping.Location ?? "./",
+                transitionInput.Mapping.Code!
             );
         }
 
@@ -203,7 +210,8 @@ public static class WorkflowFactory
                     OnExecuteTask.Create(
                         taskInput.Order,
                         taskInput.Task,
-                        new ScriptCode(taskInput.Mapping.Location, taskInput.Mapping.Code,taskInput.Mapping.Type)
+                        new ScriptCode(taskInput.Mapping.Location ?? "./", taskInput.Mapping.Code ?? string.Empty,
+                            taskInput.Mapping.Type)
                     )
                 );
             }
@@ -229,6 +237,7 @@ public static class WorkflowFactory
             var state = State.Create(
                 stateInput.Key,
                 stateInput.StateType,
+                stateInput.SubType,
                 stateInput.VersionStrategy
             );
 
@@ -254,7 +263,7 @@ public static class WorkflowFactory
                         OnExecuteTask.Create(
                             taskInput.Order,
                             taskInput.Task,
-                            new ScriptCode(taskInput.Mapping.Location, taskInput.Mapping.Code,taskInput.Mapping.Type)
+                            new ScriptCode(taskInput.Mapping.Location ?? "./", taskInput.Mapping.Code ?? string.Empty, taskInput.Mapping.Type)
                         )
                     );
                 }
@@ -265,7 +274,7 @@ public static class WorkflowFactory
                     state.AddOnExit(OnExecuteTask.Create(
                             taskInput.Order,
                             taskInput.Task,
-                            new ScriptCode(taskInput.Mapping.Location, taskInput.Mapping.Code,taskInput.Mapping.Type)
+                            new ScriptCode(taskInput.Mapping.Location ?? "./", taskInput.Mapping.Code ?? string.Empty, taskInput.Mapping.Type)
                         )
                     );
                 }
@@ -278,9 +287,9 @@ public static class WorkflowFactory
             if (stateInput.SubFlow != null)
             {
                 state.SetSubFlow(
-                    stateInput.SubFlow.Type, 
-                    stateInput.SubFlow.Process, 
-                    new ScriptCode(stateInput.SubFlow.Mapping.Location, stateInput.SubFlow.Mapping.Code),
+                    stateInput.SubFlow.Type,
+                    stateInput.SubFlow.Process,
+                    new ScriptCode(stateInput.SubFlow.Mapping.Location ?? "./", stateInput.SubFlow.Mapping.Code ?? string.Empty),
                     stateInput.SubFlow.ViewOverrides);
             }
 

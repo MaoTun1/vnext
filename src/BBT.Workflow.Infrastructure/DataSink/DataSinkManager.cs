@@ -39,13 +39,9 @@ public class DataSinkManager : IDataSinkManager
         
         if (!dataSinks.Any())
         {
-            _logger.LogDebug("No data sinks registered for entity type {EntityType}", typeof(TEntity).Name);
             return;
         }
-
-        _logger.LogDebug("Processing insert operation for entity type {EntityType} through {SinkCount} data sinks", 
-            typeof(TEntity).Name, dataSinks.Count);
-
+        
         var tasks = dataSinks.Select(sink => sink.HandleInsertAsync(entity, cancellationToken));
         await Task.WhenAll(tasks);
     }
@@ -68,12 +64,8 @@ public class DataSinkManager : IDataSinkManager
         
         if (!dataSinks.Any())
         {
-            _logger.LogDebug("No data sinks registered for entity type {EntityType}", typeof(TEntity).Name);
             return;
         }
-
-        _logger.LogDebug("Processing update operation for entity type {EntityType} through {SinkCount} data sinks", 
-            typeof(TEntity).Name, dataSinks.Count);
 
         var tasks = dataSinks.Select(sink => sink.HandleUpdateAsync(entity, cancellationToken));
         await Task.WhenAll(tasks);
@@ -97,12 +89,8 @@ public class DataSinkManager : IDataSinkManager
         
         if (!dataSinks.Any())
         {
-            _logger.LogDebug("No data sinks registered for entity type {EntityType}", typeof(TEntity).Name);
             return;
         }
-
-        _logger.LogDebug("Processing delete operation for entity type {EntityType} through {SinkCount} data sinks", 
-            typeof(TEntity).Name, dataSinks.Count);
 
         var tasks = dataSinks.Select(sink => sink.HandleDeleteAsync(entity, cancellationToken));
         await Task.WhenAll(tasks);
@@ -119,12 +107,9 @@ public class DataSinkManager : IDataSinkManager
         
         if (!allDataSinks.Any())
         {
-            _logger.LogDebug("No data sinks registered for flushing");
             return;
         }
-
-        _logger.LogDebug("Flushing all {SinkCount} registered data sinks", allDataSinks.Count);
-
+        
         var tasks = allDataSinks.Select(sink => sink.FlushAsync(cancellationToken));
         await Task.WhenAll(tasks);
     }
@@ -141,13 +126,8 @@ public class DataSinkManager : IDataSinkManager
         
         if (!dataSinks.Any())
         {
-            _logger.LogDebug("No data sinks registered for entity type {EntityType}", typeof(TEntity).Name);
             return;
         }
-
-        _logger.LogDebug("Flushing {SinkCount} data sinks for entity type {EntityType}", 
-            dataSinks.Count, typeof(TEntity).Name);
-
         var tasks = dataSinks.Select(sink => sink.FlushAsync(cancellationToken));
         await Task.WhenAll(tasks);
     }

@@ -1,10 +1,11 @@
-using BBT.Workflow.BackgroundJobs;
+using BBT.Aether.BackgroundJob;
+using BBT.Aether.Results;
+using BBT.Workflow.BackgroundJobs.Handlers;
 using BBT.Workflow.BackgroundJobs.Payloads;
-using BBT.Workflow.Domain;
-using BBT.Workflow.Telemetry;
+using BBT.Workflow.Instances;
+using BBT.Workflow.Logging;
 using Dapr.Jobs.Models;
 using Microsoft.Extensions.Logging;
-using System.Diagnostics;
 
 namespace BBT.Workflow.Execution.Strategies;
 
@@ -15,86 +16,165 @@ namespace BBT.Workflow.Execution.Strategies;
 public sealed class AsyncTransitionStrategy(
     IBackgroundJobService backgroundJobService,
     ITransitionContextFactory ctxFactory,
+    IInstanceJobRepository jobRepository,
     ILogger<AsyncTransitionStrategy> logger) : ITransitionStrategy
 {
     /// <inheritdoc />
-    public async Task<Result<TransitionExecutionContext>> ExecuteAsync(WorkflowExecutionContext context, CancellationToken cancellationToken)
+    /// <summary>
+    /// Executes transition asynchronously by enqueuing a background job.
+    /// Railway chain: Create Context → Enqueue Job → Return Context
+    /// </summary>
+    public Task<Result<TransitionExecutionContext>> ExecuteAsync(
+        WorkflowExecutionContext context,
+        CancellationToken cancellationToken)
     {
-        var sw = Stopwatch.StartNew();
-        
-        logger.StrategyExecutionStarted(
-            TelemetryConstants.Prefixes.Execution,
-            nameof(AsyncTransitionStrategy),
-            context.TransitionKey,
-            context.InstanceId);
+        return ctxFactory.CreateAsync(context, cancellationToken)
+            .BindAsync(ctx => EnqueueJobAndReturnContextAsync(ctx, context, cancellationToken));
+    }
 
-        // 1. Create execution context (for state reservation)
-        var ctxResult = await ctxFactory.CreateAsync(context, cancellationToken);
-        if (!ctxResult.IsSuccess)
-            return Result<TransitionExecutionContext>.Fail(ctxResult.Error);
-        
-        var ctx = ctxResult.Value!;
-        
-        logger.ContextCreated(
-            TelemetryConstants.Prefixes.Execution,
-            context.TransitionKey,
-            "BackgroundJob");
+    /// <summary>
+    /// Enqueues the job and returns the original context on success.
+    /// Uses Match for idiomatic Result handling with logging side effects.
+    /// </summary>
+    private async Task<Result<TransitionExecutionContext>> EnqueueJobAndReturnContextAsync(
+        TransitionExecutionContext ctx,
+        WorkflowExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        var enqueueResult = await EnqueueAndSaveJobAsync(context, ctx, cancellationToken);
 
-        // 2. Prepare job payload
+        return enqueueResult.Match(
+            onSuccess: jobName =>
+            {
+                LogEnqueueSuccess(context, jobName);
+                return Result<TransitionExecutionContext>.Ok(ctx);
+            },
+            onFailure: error =>
+            {
+                LogEnqueueFailure(context);
+                return Result<TransitionExecutionContext>.Fail(error);
+            });
+    }
+
+    /// <summary>
+    /// Enqueues the transition job to Dapr and saves the job record.
+    /// Railway chain: Build Payload → Enqueue to Dapr → Save Record
+    /// </summary>
+    private async Task<Result<string>> EnqueueAndSaveJobAsync(
+        WorkflowExecutionContext context,
+        TransitionExecutionContext transContext,
+        CancellationToken cancellationToken)
+    {
+        var (jobName, jobPayload, schedule, metadata) = BuildJobPayload(context, transContext);
+
+        // Enqueue to Dapr - external service, TryAsync is appropriate
+        var enqueueResult = await EnqueueToDaprAsync(jobName, jobPayload, schedule, metadata, cancellationToken);
+        if (!enqueueResult.IsSuccess)
+            return Result<string>.Fail(enqueueResult.Error);
+
+        // Save job record - repository call, no Try needed (infrastructure exceptions bubble up)
+        await SaveJobRecordAsync(context, transContext, jobName, enqueueResult.Value!, cancellationToken);
+
+        return Result<string>.Ok(jobName);
+    }
+
+    /// <summary>
+    /// Enqueues the job to Dapr background job service.
+    /// Uses TryAsync because Dapr is an external service.
+    /// </summary>
+    private Task<Result<Guid>> EnqueueToDaprAsync(
+        string jobName,
+        TransitionJobPayload jobPayload,
+        string schedule,
+        Dictionary<string, object> metadata,
+        CancellationToken cancellationToken)
+    {
+        return ResultExtensions.TryAsync(
+            async ct => await backgroundJobService.EnqueueAsync(
+                TransitionJobHandler.HandlerName,
+                jobName,
+                jobPayload,
+                schedule,
+                metadata,
+                ct),
+            cancellationToken,
+            ex => Error.Dependency(
+                WorkflowErrorCodes.Dependency,
+                $"Failed to enqueue transition job '{jobName}': {ex.Message}",
+                "Dapr"));
+    }
+
+    /// <summary>
+    /// Saves the job record to the repository.
+    /// No Try wrapper - repository exceptions bubble up to middleware.
+    /// </summary>
+    private Task SaveJobRecordAsync(
+        WorkflowExecutionContext context,
+        TransitionExecutionContext transContext,
+        string jobName,
+        Guid jobId,
+        CancellationToken cancellationToken)
+    {
+        return jobRepository.InsertAsync(
+            InstanceJob.Create(
+                jobId,
+                jobName,
+                jobId,
+                context.Domain,
+                context.WorkflowKey,
+                transContext.InstanceId),
+            true,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Builds the job payload, schedule, and metadata.
+    /// Pure function - no side effects.
+    /// </summary>
+    private static (string JobName, TransitionJobPayload Payload, string Schedule, Dictionary<string, object> Metadata)
+        BuildJobPayload(WorkflowExecutionContext context, TransitionExecutionContext transContext)
+    {
+        var jobName = $"trans-{context.InstanceId}-{context.TransitionKey}";
+
         var jobPayload = new TransitionJobPayload
         {
-            InstanceId = context.InstanceId,
-            TransitionKey = context.TransitionKey,
-            Domain = context.Domain,
-            Workflow = context.WorkflowKey,
-            Version = context.WorkflowVersion,
+            JobName = jobName,
+            InstanceId = transContext.InstanceId,
+            TransitionKey = transContext.TransitionKey,
+            Domain = transContext.Domain,
+            Workflow = transContext.WorkflowKey,
+            Version = transContext.Workflow.Version,
             Data = context.Data,
             Headers = context.Headers,
             RouteValues = context.RouteValues,
             ExecutionActor = context.Actor
         };
 
-        var jobId = $"transition-{context.InstanceId}-{context.TransitionKey}-{Guid.NewGuid():N}";
-        var schedule = DaprJobSchedule.FromDateTime(DateTime.UtcNow); // Execute immediately
+        var schedule = DaprJobSchedule.FromDateTime(DateTime.UtcNow).ExpressionValue;
 
-        var metadata = new Dictionary<string, string>
+        var metadata = new Dictionary<string, object>
         {
             ["domain"] = context.Domain,
             ["flowName"] = context.WorkflowKey,
             ["instanceId"] = context.InstanceId.ToString()
         };
 
-        // 3. Enqueue background job for actual execution
-        var enqueueResult = await ResultExtensions.TryAsync(async ct =>
-        {
-            await backgroundJobService.EnqueueAsync(
-                BackgroundJobConsts.TransitionJobName,
-                jobId,
-                schedule,
-                jobPayload,
-                metadata,
-                ct);
-            return true;
-        }, cancellationToken, ex => Error.Dependency("backgroundJob.enqueue", $"Failed to enqueue transition job: {ex.Message}"));
+        return (jobName, jobPayload, schedule, metadata);
+    }
 
-        sw.Stop();
-        
-        if (!enqueueResult.IsSuccess)
-        {
-            logger.LogError("Asynchronous transition execution failed for {TransitionKey} on instance {InstanceId}",
-                context.TransitionKey, context.InstanceId);
-            return Result<TransitionExecutionContext>.Fail(enqueueResult.Error);
-        }
-        
-        logger.StrategyExecutionCompleted(
-            TelemetryConstants.Prefixes.Execution,
-            nameof(AsyncTransitionStrategy),
-            context.TransitionKey,
-            sw.ElapsedMilliseconds);
-        
-        logger.LogInformation("Successfully enqueued transition {TransitionKey} for instance {InstanceId} with job ID {JobId}",
-            context.TransitionKey, context.InstanceId, jobId);
+    /// <summary>
+    /// Logs successful job enqueue.
+    /// </summary>
+    private void LogEnqueueSuccess(WorkflowExecutionContext context, string jobName)
+    {
+        logger.TransitionEnqueued(context.TransitionKey, context.InstanceId, jobName);
+    }
 
-        return Result<TransitionExecutionContext>.Ok(ctx);
+    /// <summary>
+    /// Logs failed job enqueue.
+    /// </summary>
+    private void LogEnqueueFailure(WorkflowExecutionContext context)
+    {
+        logger.TransitionEnqueueFailed(context.TransitionKey, context.InstanceId);
     }
 }

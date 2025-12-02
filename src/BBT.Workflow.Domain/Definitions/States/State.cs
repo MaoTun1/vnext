@@ -14,10 +14,12 @@ public sealed class State : IHasKey
 
     private State(
         string key,
-        StateType stateType)
+        StateType stateType,
+        StateSubType subType)
     {
         SetKey(key);
         StateType = stateType;
+        SubType = subType;
     
         labels = [];
         onEntries = [];
@@ -28,12 +30,13 @@ public sealed class State : IHasKey
     private State(
         string key,
         StateType stateType,
+        StateSubType subType,
         VersionStrategy versionStrategy,
         List<LanguageLabel>? labels,
         List<OnExecuteTask>? onEntries,
         List<OnExecuteTask>? onExits,
         ViewDefinition view)
-        : this(key, stateType)
+        : this(key, stateType, subType)
     {
         VersionStrategy = versionStrategy;
         this.labels = labels ?? [];
@@ -56,6 +59,11 @@ public sealed class State : IHasKey
     /// <see cref="StateType"/>
     /// </summary>
     public StateType StateType { get; private set; }
+
+    /// <summary>
+    /// <see cref="SubType"/>
+    /// </summary>
+    public StateSubType SubType { get; private set; }
 
     [JsonInclude] [JsonPropertyName("labels")]
     private List<LanguageLabel> labels = new();
@@ -162,12 +170,14 @@ public sealed class State : IHasKey
     public static State Create(
         string key,
         StateType stateType,
+        StateSubType stateSubType,
         string versionStrategy
     )
     {
         return new State(
             key,
-            stateType)
+            stateType,
+            stateSubType)
         {
             VersionStrategy = VersionStrategy.FromCode(versionStrategy)
         };

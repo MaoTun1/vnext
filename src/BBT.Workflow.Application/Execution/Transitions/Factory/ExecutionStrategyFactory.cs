@@ -1,6 +1,5 @@
-using BBT.Workflow.Domain;
+using BBT.Aether.Results;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Execution.Strategies;
 
@@ -9,14 +8,11 @@ namespace BBT.Workflow.Execution.Strategies;
 /// Uses dependency injection to resolve strategies.
 /// </summary>
 public sealed class ExecutionStrategyFactory(
-    IServiceProvider serviceProvider,
-    ILogger<ExecutionStrategyFactory> logger) : IExecutionStrategyFactory
+    IServiceProvider serviceProvider) : IExecutionStrategyFactory
 {
     /// <inheritdoc />
-    public ITransitionStrategy Get(ExecMode mode)
+    public Result<ITransitionStrategy> Get(ExecMode mode)
     {
-        logger.LogDebug("Resolving execution strategy for mode {ExecMode}", mode);
-
         ITransitionStrategy? strategy = mode switch
         {
             ExecMode.Sync => serviceProvider.GetService<SyncTransitionStrategy>(),
@@ -25,15 +21,13 @@ public sealed class ExecutionStrategyFactory(
             _ => null
         };
 
-        if (strategy == null)
-        {
-            logger.LogError("No execution strategy found for mode {ExecMode}", mode);
-            throw new NotSupportedException($"No execution strategy found for mode {mode}");
-        }
-
-        logger.LogDebug("Resolved execution strategy {StrategyType} for mode {ExecMode}",
-            strategy.GetType().Name, mode);
-
-        return strategy;
+        return strategy != null
+            ? Result<ITransitionStrategy>.Ok(strategy)
+            : Result<ITransitionStrategy>.Fail(
+                Error.NotSupported(
+                    WorkflowErrorCodes.ExecutionStrategyNotSupported,
+                    $"No execution strategy found for mode {mode}"
+                )
+            );
     }
 }

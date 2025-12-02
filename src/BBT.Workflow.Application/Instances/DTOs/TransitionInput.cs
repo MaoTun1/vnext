@@ -25,7 +25,7 @@ public sealed class TransitionInput(
     /// <param name="instanceId">The workflow instance identifier</param>
     /// <param name="transitionKey">The transition key to execute</param>
     /// <returns>A new WorkflowExecutionContext instance</returns>
-    public WorkflowExecutionContext ToExecutionContext(Guid instanceId, string transitionKey)
+    public WorkflowExecutionContext ToExecutionContext(string instanceId, string transitionKey)
     {
         return new WorkflowExecutionContext
         {
