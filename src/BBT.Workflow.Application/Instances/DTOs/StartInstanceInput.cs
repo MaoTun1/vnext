@@ -41,7 +41,10 @@ public sealed class StartInstanceInput(
             RequestedAt = DateTimeOffset.UtcNow,
             Headers = Headers,
             RouteValues = RouteValues,
-            Data = Instance.Attributes,
+            Data = new TransitionDataInfo(Instance.Attributes)
+            {
+                Tags = Instance.Tags
+            },
             IsReentry = false // Start transitions are never re-entry
         };
     }
@@ -50,10 +53,9 @@ public sealed class StartInstanceInput(
 public sealed class CreateInstanceInput: IHasExtraProperties
 {
     public Guid? Id { get; set; }
-
-    [Required]
+    
     [StringLength(InstanceConstants.MaxKeyLength)]
-    public string Key { get; set; }
+    public string? Key { get; set; }
 
     public string[]? Tags { get; set; }
     public JsonElement? Attributes { get; set; }

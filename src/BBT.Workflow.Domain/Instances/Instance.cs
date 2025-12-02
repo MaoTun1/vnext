@@ -55,6 +55,8 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// It is the key value for the heat flow.
     /// </summary>
     public string? Key { get; private set; }
+    
+    public bool HasKey => !string.IsNullOrWhiteSpace(Key);
 
     /// <summary>
     /// Flow key.

@@ -28,7 +28,11 @@ public sealed class TransitionJobHandler(
                     args.Domain,
                     args.Workflow,
                     args.Version,
-                    args.Data,
+                    new TransitionDataInput(args.Data)
+                    {
+                        Key = args.InstanceKey,
+                        Tags = args.Tags
+                    },
                     sync: true) // Force sync=true to avoid infinite loop
                 {
                     Headers = args.Headers,

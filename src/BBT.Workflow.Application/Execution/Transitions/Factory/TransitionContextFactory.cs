@@ -114,7 +114,9 @@ public sealed class TransitionContextFactory(
 
             // Instance state
             Instance = data.Instance,
-            Data = input.Data,
+            Data = input.Data?.Attributes,
+            InstanceKey = input.Data?.Key,
+            Tags = input.Data?.Tags,
 
             // Flags
             IsReentry = input.IsReentry,

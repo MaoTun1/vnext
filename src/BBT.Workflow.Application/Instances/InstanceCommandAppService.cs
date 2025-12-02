@@ -2,9 +2,7 @@ using BBT.Aether;
 using BBT.Aether.Application.Services;
 using BBT.Aether.BackgroundJob;
 using BBT.Aether.DistributedLock;
-using BBT.Aether.Domain.Entities;
 using BBT.Aether.Guids;
-using BBT.Aether.MultiSchema;
 using BBT.Aether.Results;
 using BBT.Workflow.BackgroundJobs.Handlers;
 using BBT.Workflow.BackgroundJobs.Payloads;
@@ -329,7 +327,7 @@ public sealed class InstanceCommandAppService(
                 Error.Conflict(
                     WorkflowErrorCodes.ConflictWorkflow,
                     "Failed to acquire lock for instance",
-                    instanceId.ToString()));
+                    instanceId));
         }
 
         return lockOutcome.Result;
@@ -353,7 +351,7 @@ public sealed class InstanceCommandAppService(
     private async Task<Result<Instance>> CreateAndPrepareInstanceAsync(
         Definitions.Workflow workflow,
         Guid instanceId,
-        string instanceKey,
+        string? instanceKey,
         List<string>? tags,
         ExtraPropertyDictionary metadata,
         bool isSync,
@@ -361,9 +359,11 @@ public sealed class InstanceCommandAppService(
         CancellationToken cancellationToken = default)
     {
         // Check for existing active instance first
-        var existingInstance = await instanceRepository.FindByIdentifierAsync(instanceKey, cancellationToken);
+        var existingInstance = await instanceRepository.FindByIdentifierAsync(instanceId.ToString(), cancellationToken);
         if (existingInstance is { IsCompleted: false })
-            return Result<Instance>.Fail(WorkflowErrors.InstanceAlreadyExists(instanceKey));
+            return Result<Instance>.Fail(WorkflowErrors.InstanceAlreadyExists(
+                instanceKey.IsNullOrWhiteSpace() ? instanceId.ToString() : instanceKey)
+            );
 
         // Railway chain: Get initial state → Create and configure instance
         return workflow.GetInitialState()

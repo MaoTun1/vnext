@@ -114,7 +114,7 @@ public sealed class FunctionController(
         [FromRoute] string function,
         [FromRoute] string workflow,
         [FromRoute] string instance,
-        [FromQuery] FunctionQueryParemeters parameters,
+        [FromQuery] FunctionQueryParameters parameters,
         [FromHeader(Name = "If-None-Match")] string? ifNoneMatch,
         CancellationToken cancellationToken = default)
     {

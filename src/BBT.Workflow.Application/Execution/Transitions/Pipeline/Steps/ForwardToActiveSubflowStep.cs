@@ -53,7 +53,11 @@ public class ForwardToActiveSubflowStep(
             context.Instance.Subflow!.SubFlowDomain,
             context.Instance.Subflow!.SubFlowName,
             context.Instance.Subflow!.SubFlowVersion,
-            context.DataElement,
+            new TransitionDataInput(context.DataElement)
+            {
+                Key = context.InstanceKey,
+                Tags = context.Tags
+            },
             true // sync = true
         )
         {
