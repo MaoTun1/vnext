@@ -3,6 +3,9 @@ using System.Text.Json;
 using BBT.Aether;
 using BBT.Aether.AspNetCore.Controllers;
 using BBT.Aether.AspNetCore.Results;
+using BBT.Aether.Domain.Pagination;
+using BBT.Aether.Results;
+using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.SubFlow;
 using Microsoft.AspNetCore.Mvc;
@@ -18,7 +21,8 @@ public sealed class InstanceController(
     IInstanceCommandAppService commandAppService,
     IInstanceQueryAppService queryAppService,
     IHttpContextAccessor httpContextAccessor,
-    ISubflowCompletionService subflowCompletionService) : AetherControllerBase
+    ISubflowCompletionService subflowCompletionService,
+    IPaginationLinkGenerator linkGenerator) : AetherControllerBase
 {
     /// <summary>
     /// Starts a new workflow instance.
@@ -203,19 +207,25 @@ public sealed class InstanceController(
     {
         var input = new GetInstanceListInput
         {
-
             Domain = domain,
             Workflow = workflow,
             Extension = extension,
             Page = page,
             PageSize = pageSize,
-            PageUrl = $"{domain}/workflows/{workflow}/instances",
+            PageUrl = InstanceUrlTemplates.InstanceList(domain, workflow),
 
             Filter = filter,
             Sort = sort
         };
 
         var response = await queryAppService.GetInstanceListAsync(input, cancellationToken);
+        if (response.IsSuccess)
+        {
+            var route = InstanceUrlTemplates.InstanceList(domain, workflow, InstanceUrlTemplates.GetApiVersionPrefix("1"));
+            var output = linkGenerator.CreateHateoasResult(response.Value!, response.Value!.Items.ToList(), route);
+            return Result.Ok(output).ToAcceptedResult(HttpContext);
+        }
+        
         return response.ToActionResult(HttpContext);
     }
 

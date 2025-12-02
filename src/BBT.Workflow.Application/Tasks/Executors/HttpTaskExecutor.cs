@@ -150,7 +150,7 @@ public sealed class HttpTaskExecutor(
             {
                 standardResponse = CreateErrorResponse(
                     errorMessage: $"HTTP request failed with status {response.StatusCode}: {response.ReasonPhrase}",
-                    taskType: "HttpTask",
+                    taskType: nameof(TaskType.Http),
                     executionDurationMs: stopwatch.ElapsedMilliseconds,
                     statusCode: (int)response.StatusCode,
                     metadata: new Dictionary<string, object>

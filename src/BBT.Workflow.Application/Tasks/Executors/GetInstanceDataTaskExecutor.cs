@@ -1,7 +1,6 @@
+using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
-using BBT.Workflow.Domain;
 using BBT.Workflow.Execution.TriggerTransition;
-using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
 using Microsoft.Extensions.Logging;
 
@@ -11,13 +10,11 @@ namespace BBT.Workflow.Tasks;
 /// Executes get instance data tasks that retrieve instance data from workflow instances.
 /// </summary>
 /// <param name="scriptEngine">The script engine used for compiling input/output mapping scripts.</param>
-/// <param name="runtimeInfoProvider">The runtime information provider for domain checks.</param>
 /// <param name="taskExecutorFactory">Factory for creating task executors.</param>
 /// <param name="httpTaskFactory">Factory for creating HTTP tasks.</param>
 /// <param name="logger">The logger instance for logging get instance data task execution details.</param>
 public sealed class GetInstanceDataTaskExecutor(
     IScriptEngine scriptEngine,
-    IRuntimeInfoProvider runtimeInfoProvider,
     ITaskExecutorFactory taskExecutorFactory,
     ITriggerTransitionHttpTaskFactory httpTaskFactory,
     ILogger<GetInstanceDataTaskExecutor> logger) : TaskExecutor(scriptEngine, logger), ITaskExecutor
@@ -42,16 +39,9 @@ public sealed class GetInstanceDataTaskExecutor(
         CancellationToken cancellationToken = default)
     {
         var getDataTask = (task as GetInstanceDataTask)!;
-
-        Logger.LogInformation("Starting get instance data task execution for task {TaskKey} - Domain: {Domain}, Flow: {Flow}",
-            getDataTask.Key, getDataTask.TriggerDomain, getDataTask.TriggerFlow);
-
+        
         try
         {
-            // Check runtime domain
-            runtimeInfoProvider.Check(context.Runtime.Domain);
-
-            Logger.LogDebug("Preparing input for get instance data task {TaskKey}", getDataTask.Key);
             await PrepareInputAsync(getDataTask, scriptCode, context, cancellationToken);
 
             // Execute get instance data logic
@@ -64,11 +54,8 @@ public sealed class GetInstanceDataTaskExecutor(
                     getDataTask.Key, executionResult.Error.Code, executionResult.Error.Message);
                 throw new InvalidOperationException($"Get instance data execution failed: {executionResult.Error.Message}");
             }
-
-            Logger.LogDebug("Processing output for get instance data task {TaskKey}", getDataTask.Key);
+            
             var outputResponse = await ProcessOutputAsync(scriptCode, context, cancellationToken);
-
-            Logger.LogInformation("Get instance data task {TaskKey} execution completed, returning processed output", getDataTask.Key);
             return outputResponse;
         }
         catch (Exception ex)
@@ -103,9 +90,6 @@ public sealed class GetInstanceDataTaskExecutor(
         return await ResultExtensions.TryAsync(
             async ct =>
             {
-                Logger.LogInformation("Handling GetInstanceData trigger for task {TaskKey} - Domain: {Domain}, Flow: {Flow}, InstanceId: {InstanceId}",
-                    task.Key, task.TriggerDomain, task.TriggerFlow, context.Instance.Id);
-
                 // Resolve instance ID using the factory's ResolveInstanceIdAsync method
                 var instanceIdResult = await httpTaskFactory.ResolveInstanceIdAsync(task, context, ct);
                 if (!instanceIdResult.IsSuccess)
@@ -121,7 +105,7 @@ public sealed class GetInstanceDataTaskExecutor(
                 if (task.Extensions?.Length > 0)
                 {
                     var extensionsParam = string.Join(",", task.Extensions);
-                    path = string.Format(InstanceUrlTemplates.DataWithExtensions,
+                    path = InstanceUrlTemplates.DataWithExtensions(
                         task.TriggerDomain,
                         task.TriggerFlow,
                         instanceId,
@@ -129,7 +113,7 @@ public sealed class GetInstanceDataTaskExecutor(
                 }
                 else
                 {
-                    path = string.Format(InstanceUrlTemplates.Data,
+                    path = InstanceUrlTemplates.Data(
                         task.TriggerDomain,
                         task.TriggerFlow,
                         instanceId);
@@ -148,8 +132,7 @@ public sealed class GetInstanceDataTaskExecutor(
 
                 if (httpExecutor == null)
                     throw new InvalidOperationException("HttpTaskExecutor not found");
-
-                Logger.LogDebug("Calling HttpTaskExecutor.CallAsync for GetInstanceData trigger task {TaskKey}", task.Key);
+                
                 await httpExecutor.CallAsync(httpTask, context, ct);
             },
             cancellationToken,

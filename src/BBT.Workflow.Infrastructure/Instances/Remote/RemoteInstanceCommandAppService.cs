@@ -18,6 +18,8 @@ public sealed class RemoteInstanceCommandAppService(
 {
     private readonly RemoteOptions _options = options.Value;
 
+    private string ApiVersionPrefix => InstanceUrlTemplates.GetApiVersionPrefix(_options.ApiVersion);
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -34,7 +36,7 @@ public sealed class RemoteInstanceCommandAppService(
     {
         try
         {
-            var url = $"api/v{_options.ApiVersion}" + string.Format(InstanceUrlTemplates.Start, input.Domain, input.Workflow);
+            var url = InstanceUrlTemplates.Start(input.Domain, input.Workflow, ApiVersionPrefix);
 
             var queryParams = new List<string>();
             if (!string.IsNullOrEmpty(input.Version))
@@ -91,7 +93,7 @@ public sealed class RemoteInstanceCommandAppService(
     {
         try
         {
-            var url = $"api/v{_options.ApiVersion}" + string.Format(InstanceUrlTemplates.StartSub, input.Domain, input.Workflow);
+            var url = InstanceUrlTemplates.StartSub(input.Domain, input.Workflow, ApiVersionPrefix);
 
             var queryParams = new List<string>();
             if (!string.IsNullOrEmpty(input.Version))
@@ -153,7 +155,7 @@ public sealed class RemoteInstanceCommandAppService(
     {
         try
         {
-            var url = $"api/v{_options.ApiVersion}" + string.Format(InstanceUrlTemplates.Transition, input.Domain, input.Workflow, instanceId, transitionKey);
+            var url = InstanceUrlTemplates.Transition(input.Domain, input.Workflow, instanceId.ToString(), transitionKey, ApiVersionPrefix);
 
             var queryParams = new List<string>();
             if (!string.IsNullOrEmpty(input.Version))
@@ -203,7 +205,7 @@ public sealed class RemoteInstanceCommandAppService(
     {
         try
         {
-            var url = $"api/v{_options.ApiVersion}" + string.Format(InstanceUrlTemplates.Complete, input.Domain, input.Flow, input.InstanceId);
+            var url = InstanceUrlTemplates.Complete(input.Domain, input.Flow, input.InstanceId.ToString(), ApiVersionPrefix);
 
             var jsonContent = JsonSerializer.Serialize(input, JsonOptions);
             var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");

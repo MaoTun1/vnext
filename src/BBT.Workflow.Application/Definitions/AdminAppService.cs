@@ -45,7 +45,7 @@ public sealed class AdminAppService(
 
         using (currentSchema.Use(input.Flow))
         {
-            var instance = await instanceRepository.FindByKeyAsync(input.Key, cancellationToken)
+            var instance = await instanceRepository.FindByIdentifierAsync(input.Key, cancellationToken)
                            ?? Instance.Create(GuidGenerator.Create(), input.Flow, input.Key);
 
             instance.AddTags(input.Tags.ToArray());
@@ -206,7 +206,7 @@ public sealed class AdminAppService(
         PublishDataInput dataItem,
         CancellationToken cancellationToken)
     {
-        var instance = await instanceRepo.FindByKeyAsync(dataItem.Key, cancellationToken)
+        var instance = await instanceRepo.FindByIdentifierAsync(dataItem.Key, cancellationToken)
                        ?? Instance.Create(GuidGenerator.Create(), input.Key, dataItem.Key);
 
         if (instance.FindData(dataItem.Version) != null)
@@ -255,7 +255,7 @@ public sealed class AdminAppService(
 
         using (currentSchema.Use(input.Flow))
         {
-            var instance = await instanceRepository.FindByKeyAsync(input.Key, cancellationToken);
+            var instance = await instanceRepository.FindByIdentifierAsync(input.Key, cancellationToken);
             if (instance == null)
             {
                 return Result.Fail(WorkflowErrors.InstanceNotFound(input.Key));

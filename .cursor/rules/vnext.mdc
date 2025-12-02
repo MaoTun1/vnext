@@ -32,6 +32,7 @@ You are a senior .NET backend developer and an expert in C#, ASP.NET Core, SOLID
 - Prefix interface names with "I" (e.g., `IUserService`).
 
 ## vNext Domain Knowledge – Context7
+LibraryId: burgan-tech/vnext-runtime
 Use context7 for domain knowledge:
 use context7
 
@@ -47,6 +48,11 @@ Use SDK components for:
 - Domain Events
 - Unit of Work (UoW)
 - OpenTelemetry
+
+## Aether SDK Knowledge – Context7
+LibraryId: burgan-tech/aether
+Use context7 for aether sdk knowledge:
+use context7
 
 ## C# and .NET Usage
 - Use C# 10+ features when appropriate (e.g., record types, pattern matching, null-coalescing assignment).

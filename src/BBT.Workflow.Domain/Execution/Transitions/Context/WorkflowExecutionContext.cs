@@ -18,7 +18,7 @@ public sealed class WorkflowExecutionContext
     
     /// <summary>Gets or sets the workflow instance identifier.</summary>
     [Enrich(Name = "vnext.instanceid")]
-    public Guid InstanceId { get; set; }
+    public string InstanceId { get; set; }
     
     /// <summary>Gets or sets the workflow key.</summary>
     [Enrich(Name = "vnext.flow.key")]
@@ -73,7 +73,7 @@ public sealed class WorkflowExecutionContext
     public static WorkflowExecutionContext From(ReentryCommand command) => new()
     {
         Domain = command.Domain,
-        InstanceId = command.InstanceId,
+        InstanceId = command.InstanceId.ToString(),
         WorkflowKey = command.WorkflowKey,
         TransitionKey = command.TransitionKey,
         TriggerType = command.TriggerType,

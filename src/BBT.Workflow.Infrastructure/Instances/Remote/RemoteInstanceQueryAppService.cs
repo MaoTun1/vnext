@@ -36,6 +36,8 @@ public sealed class RemoteInstanceQueryAppService(
 {
     private readonly RemoteOptions _options = options.Value;
 
+    private string ApiVersionPrefix => InstanceUrlTemplates.GetApiVersionPrefix(_options.ApiVersion);
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -52,7 +54,7 @@ public sealed class RemoteInstanceQueryAppService(
     {
         try
         {
-            var url = $"api/v{_options.ApiVersion}" + string.Format(InstanceUrlTemplates.Instance, input.Domain, input.Workflow, input.Instance);
+            var url = InstanceUrlTemplates.Instance(input.Domain, input.Workflow, input.Instance, ApiVersionPrefix);
 
             var queryParams = new List<string>();
             if (input.Extension?.Length > 0)
@@ -91,47 +93,7 @@ public sealed class RemoteInstanceQueryAppService(
             return ConditionalResult<GetInstanceOutput>.Fail(Error.Transient("remote_network_error", ex.Message));
         }
     }
-
-    /// <summary>
-    /// Retrieves a paginated list of instances with optional extensions
-    /// GET {baseUrl}/api/v{version}/{domain}/workflows/{workflow}/instances
-    /// </summary>
-    public async Task<Result<PaginationResult<GetInstanceOutput>>> GetInstanceListAsync(
-        GetInstanceListInput input,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var url = $"api/v{_options.ApiVersion}" + string.Format(InstanceUrlTemplates.InstanceList, input.Domain, input.Workflow);
-
-            var queryParams = new List<string>
-            {
-                $"page={input.Page}",
-                $"pageSize={input.PageSize}"
-            };
-
-            if (input.Extension?.Length > 0)
-            {
-                foreach (var ext in input.Extension)
-                {
-                    queryParams.Add($"extension={Uri.EscapeDataString(ext)}");
-                }
-            }
-
-            url += "?" + string.Join("&", queryParams);
-
-            var response = await httpClient.GetAsync(url, cancellationToken);
-
-            // Status code → Result.Fail (per Railway Pattern)
-            return await HandleResponseAsync<PaginationResult<GetInstanceOutput>>(response, cancellationToken);
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
-        {
-            // Network errors → Transient error (per Railway Pattern)
-            return Result<PaginationResult<GetInstanceOutput>>.Fail(Error.Transient("remote_network_error", ex.Message));
-        }
-    }
-
+    
     /// <summary>
     /// Retrieves the complete history of an instance (all data transitions)
     /// GET {baseUrl}/api/v{version}/{domain}/workflows/{workflow}/instances/{instance}/transitions
@@ -142,7 +104,7 @@ public sealed class RemoteInstanceQueryAppService(
     {
         try
         {
-            var url = $"api/v{_options.ApiVersion}" + string.Format(InstanceUrlTemplates.InstanceHistory, input.Domain, input.Workflow, input.Instance);
+            var url = InstanceUrlTemplates.InstanceHistory(input.Domain, input.Workflow, input.Instance, ApiVersionPrefix);
 
             var queryParams = new List<string>();
             if (input.Extension?.Length > 0)
@@ -178,7 +140,7 @@ public sealed class RemoteInstanceQueryAppService(
     {
         try
         {
-            var url = $"api/v{_options.ApiVersion}" + string.Format(InstanceUrlTemplates.State, input.Domain, input.Workflow, input.Instance);
+            var url = InstanceUrlTemplates.State(input.Domain, input.Workflow, input.Instance, ApiVersionPrefix);
 
             var queryParams = new List<string>();
             if (!string.IsNullOrEmpty(input.Version))
@@ -221,7 +183,7 @@ public sealed class RemoteInstanceQueryAppService(
     {
         try
         {
-            var url = $"api/v{_options.ApiVersion}" + string.Format(InstanceUrlTemplates.View, input.Domain, input.Workflow, input.Instance);
+            var url = InstanceUrlTemplates.View(input.Domain, input.Workflow, input.Instance, ApiVersionPrefix);
 
             var queryParams = new List<string>();
             if (!string.IsNullOrEmpty(input.Version))

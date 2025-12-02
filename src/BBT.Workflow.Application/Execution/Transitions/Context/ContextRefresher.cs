@@ -19,7 +19,7 @@ public sealed class ContextRefresher(
         TransitionExecutionContext context,
         CancellationToken cancellationToken)
     {
-        return instanceRepository.GetResultAsync(context.InstanceId, true, cancellationToken)
+        return instanceRepository.GetResultAsync(context.InstanceId.ToString(), true, cancellationToken)
             .Tap(fresh =>
             {
                 context.Instance = fresh;

@@ -19,8 +19,6 @@
     <ItemGroup>
         <ProjectReference Include="..\..\src\BBT.Workflow.HttpApi.Shared\BBT.Workflow.HttpApi.Shared.csproj"/>
         <ProjectReference Include="..\..\src\BBT.Workflow.Events.Contracts\BBT.Workflow.Events.Contracts.csproj"/>
-        <ProjectReference Include="../../../aether\framework\src\BBT.Aether.AspNetCore\BBT.Aether.AspNetCore.csproj"/>
-        <ProjectReference Include="../../../aether\framework\src\BBT.Aether.Infrastructure\BBT.Aether.Infrastructure.csproj"/>
     </ItemGroup>
 </Project>
 

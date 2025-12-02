@@ -22,107 +22,34 @@ public sealed class FunctionAppService(
     IComponentCacheStore componentCacheStore,
     ITaskOrchestrationService taskExecutionService) : ApplicationService(serviceProvider), IFunctionAppService
 {
-    public async Task<Result<Dictionary<string, dynamic?>>> GetFunctionByFunctionKey(
-     string key,
-     string flow,
-     string domain,
-     Dictionary<string, string?>? headers = null,
-     Dictionary<string, string?>? queryParameters = null,
-     CancellationToken cancellationToken = default)
-    {
-        runtimeInfoProvider.Check(domain);
-        using (currentSchema.Change(flow))
-        {
-            Instance? instance = await instanceRepository.FindByKeyAsync(key, cancellationToken);
-            return await BuildFunctionResponse(instance, key, flow, domain, headers, queryParameters, cancellationToken);
-        }
-    }
-    
-    public async Task<Result<Dictionary<string, dynamic?>>> GetFunctionByInstance(
-       string key,
-       string flow,
-       string domain,
-       string instanceKey,
-       Dictionary<string, string?>? headers = null,
-       Dictionary<string, string?>? queryParameters = null,
-       CancellationToken cancellationToken = default)
-    {
-        runtimeInfoProvider.Check(domain);
-        using (currentSchema.Change(flow))
-        {
-
-            Instance? instance = Guid.TryParse(instanceKey, out var instanceId)
-            ? await instanceRepository.FindAsync(instanceId, true, cancellationToken)
-            : await instanceRepository.FindByKeyAsync(instanceKey, cancellationToken);
-            return await BuildFunctionResponse(instance, key, flow, domain, headers, queryParameters, cancellationToken);
-        }
-    }
-
-    public async Task<List<InstanceAndDataModel>> GetDomainFunctions(
+    /// <inheritdoc />
+    public async Task<Result<Dictionary<string, dynamic?>>> GetFunctionByFunctionKeyAsync(
+        string key,
+        string flow,
         string domain,
+        Dictionary<string, string?>? headers = null,
+        Dictionary<string, string?>? queryParameters = null,
         CancellationToken cancellationToken = default)
     {
         runtimeInfoProvider.Check(domain);
-        var instance = await instanceRepository.FindByKeyAsync(key, cancellationToken);
-        return await BuildFunctionResponseAsync(instance, key, flow, domain, cancellationToken);
+        Instance? instance = await instanceRepository.FindByIdentifierAsync(key, cancellationToken);
+        return await BuildFunctionResponseAsync(instance, key, flow, domain, headers, queryParameters, cancellationToken);
     }
 
-    private async Task<dynamic> BuildFunctionResponse(Instance? instance, string key,
-       string flow,
-       string domain,
-       Dictionary<string, string?>? headers = null,
-       Dictionary<string, string?>? queryParameters = null,
-       CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public async Task<Result<Dictionary<string, dynamic?>>> GetFunctionByInstanceAsync(
+        string key,
+        string flow,
+        string domain,
+        string instanceKey,
+        Dictionary<string, string?>? headers = null,
+        Dictionary<string, string?>? queryParameters = null,
+        CancellationToken cancellationToken = default)
     {
-        Dictionary<string, object> response = new Dictionary<string, object>();
-        using (currentSchema.Change(flow))
-        {
-            Function? function = await componentCacheStore.GetFunctionAsync(
-                       runtimeInfoProvider.Domain,
-                       key, string.Empty,
-                       cancellationToken);
-            var workflow = await componentCacheStore.GetFlowAsync(domain, flow, null, cancellationToken);
-
-            // var scriptContext = new ScriptContext.Builder()
-            //             .SetWorkflow(workflow)
-            //             .SetInstance(instance!)
-            //             .SetRuntime(runtimeInfoProvider)
-            //             .Build();
-            var scriptContext = await scriptContextFactory.NewBuilder()
-.WithWorkflow(workflow)
-.WithInstance(instance)
-.WithRuntime(runtimeInfoProvider)
-.WithBody(instance?.LatestData?.Data ?? new JsonData("{}"))
-.WithHeaders(headers)
-.WithQueryParameters(queryParameters)
-.BuildAsync(cancellationToken);
-            await taskExecutionService.ExecuteAsync(
-                    function.GetExecuteTasks(),
-                    null,
-                    TaskTrigger.Extension,
-                    scriptContext,
-                    cancellationToken);
-            var variableKeyFunction = function.Key.ToVariableName();
-            var variableKeyTask = function.Task.Task.Key.ToVariableName();
-            if (scriptContext.TaskResponse.TryGetValue(variableKeyTask, out var value))
-            {
-                // Try to extract Data from ScriptResponse if available
-                try
-                {
-                    // Try to extract data property from JsonElement
-                    response[variableKeyFunction] = value is JsonElement jsonElement && jsonElement.TryGetProperty("data", out var dataProperty) 
-                        ? dataProperty 
-                        : value!;
-                }
-                catch
-                {
-                    // If extraction fails, use the original value
-                    response[variableKeyFunction] = value!;
-                }
-
-            }
-            return response;
-        }
+        runtimeInfoProvider.Check(domain);
+        var instance = await instanceRepository.FindByIdentifierAsync(instanceKey, cancellationToken);
+        return await BuildFunctionResponseAsync(instance, key, flow, domain, headers, queryParameters,
+            cancellationToken);
     }
 
     /// <inheritdoc />
@@ -144,13 +71,17 @@ public sealed class FunctionAppService(
         string functionKey,
         string flow,
         string domain,
+        Dictionary<string, string?>? headers = null,
+        Dictionary<string, string?>? queryParameters = null,
         CancellationToken cancellationToken = default)
     {
-        return componentCacheStore.GetFunctionAsync(runtimeInfoProvider.Domain, functionKey, string.Empty, cancellationToken)
+        return componentCacheStore
+            .GetFunctionAsync(domain, functionKey, string.Empty, cancellationToken)
             .BindAsync(function =>
                 componentCacheStore.GetFlowAsync(domain, flow, null, cancellationToken)
                     .MapAsync(workflow => (function, workflow)))
-            .ThenAsync(data => ExecuteFunctionAsync(data.function, data.workflow, instance, cancellationToken));
+            .ThenAsync(data => ExecuteFunctionAsync(data.function, data.workflow, instance, headers, queryParameters,
+                cancellationToken));
     }
 
     /// <summary>
@@ -160,13 +91,17 @@ public sealed class FunctionAppService(
         Function function,
         Definitions.Workflow workflow,
         Instance? instance,
-        CancellationToken cancellationToken)
+        Dictionary<string, string?>? headers = null,
+        Dictionary<string, string?>? queryParameters = null,
+        CancellationToken cancellationToken = default)
     {
         var scriptContext = await scriptContextFactory.NewBuilder()
             .WithWorkflow(workflow)
             .WithInstance(instance)
             .WithRuntime(runtimeInfoProvider)
             .WithBody(instance?.LatestData?.Data ?? new JsonData("{}"))
+            .WithHeaders(headers)
+            .WithQueryParameters(queryParameters)
             .BuildAsync(cancellationToken);
 
         await taskExecutionService.ExecuteAsync(
@@ -193,10 +128,18 @@ public sealed class FunctionAppService(
 
         if (scriptContext.TaskResponse.TryGetValue(variableKeyTask, out var value))
         {
-            response[variableKeyFunction] = value is JsonElement jsonElement &&
-                                            jsonElement.TryGetProperty("data", out var dataProperty)
-                ? dataProperty
-                : value;
+            try
+            {
+                response[variableKeyFunction] = value is JsonElement jsonElement &&
+                                                jsonElement.TryGetProperty("data", out var dataProperty)
+                    ? dataProperty
+                    : value;
+            }
+            catch
+            {
+                // If extraction fails, use the original value
+                response[variableKeyFunction] = value!;
+            }
         }
 
         return response;

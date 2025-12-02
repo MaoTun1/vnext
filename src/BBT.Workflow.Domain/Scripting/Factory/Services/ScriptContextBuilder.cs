@@ -35,7 +35,7 @@ internal sealed class ScriptContextBuilder(
     private string? _workflowVersion;
     private IReference? _workflowReference;
     private Guid? _instanceId;
-    private bool _noTracking = false;
+    private bool _noTracking;
     private string? _transitionKey;
 
     public IScriptContextBuilder WithRuntime(IRuntimeInfoProvider runtimeInfoProvider)
@@ -227,8 +227,8 @@ internal sealed class ScriptContextBuilder(
         if (_instanceId.HasValue)
         {
             var instance = _noTracking
-                ? await instanceRepository.FindByIdAsReadOnlyAsync(_instanceId.Value, cancellationToken)
-                : await instanceRepository.FindAsync(_instanceId.Value, true,
+                ? await instanceRepository.FindByIdentifierAsReadOnlyAsync(_instanceId.Value.ToString(), cancellationToken)
+                : await instanceRepository.FindByIdentifierAsync(_instanceId.Value.ToString(),
                     cancellationToken);
             
             if (instance == null)

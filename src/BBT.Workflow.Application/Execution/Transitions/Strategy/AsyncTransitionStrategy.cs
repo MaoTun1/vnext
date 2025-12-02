@@ -41,7 +41,7 @@ public sealed class AsyncTransitionStrategy(
         WorkflowExecutionContext context,
         CancellationToken cancellationToken)
     {
-        var enqueueResult = await EnqueueAndSaveJobAsync(context, cancellationToken);
+        var enqueueResult = await EnqueueAndSaveJobAsync(context, ctx, cancellationToken);
 
         return enqueueResult.Match(
             onSuccess: jobName =>
@@ -62,9 +62,10 @@ public sealed class AsyncTransitionStrategy(
     /// </summary>
     private async Task<Result<string>> EnqueueAndSaveJobAsync(
         WorkflowExecutionContext context,
+        TransitionExecutionContext transContext,
         CancellationToken cancellationToken)
     {
-        var (jobName, jobPayload, schedule, metadata) = BuildJobPayload(context);
+        var (jobName, jobPayload, schedule, metadata) = BuildJobPayload(context, transContext);
 
         // Enqueue to Dapr - external service, TryAsync is appropriate
         var enqueueResult = await EnqueueToDaprAsync(jobName, jobPayload, schedule, metadata, cancellationToken);
@@ -72,7 +73,7 @@ public sealed class AsyncTransitionStrategy(
             return Result<string>.Fail(enqueueResult.Error);
 
         // Save job record - repository call, no Try needed (infrastructure exceptions bubble up)
-        await SaveJobRecordAsync(context, jobName, enqueueResult.Value!, cancellationToken);
+        await SaveJobRecordAsync(context, transContext, jobName, enqueueResult.Value!, cancellationToken);
 
         return Result<string>.Ok(jobName);
     }
@@ -109,6 +110,7 @@ public sealed class AsyncTransitionStrategy(
     /// </summary>
     private Task SaveJobRecordAsync(
         WorkflowExecutionContext context,
+        TransitionExecutionContext transContext,
         string jobName,
         Guid jobId,
         CancellationToken cancellationToken)
@@ -120,7 +122,7 @@ public sealed class AsyncTransitionStrategy(
                 jobId,
                 context.Domain,
                 context.WorkflowKey,
-                context.InstanceId),
+                transContext.InstanceId),
             true,
             cancellationToken);
     }
@@ -130,18 +132,18 @@ public sealed class AsyncTransitionStrategy(
     /// Pure function - no side effects.
     /// </summary>
     private static (string JobName, TransitionJobPayload Payload, string Schedule, Dictionary<string, object> Metadata)
-        BuildJobPayload(WorkflowExecutionContext context)
+        BuildJobPayload(WorkflowExecutionContext context, TransitionExecutionContext transContext)
     {
         var jobName = $"trans-{context.InstanceId}-{context.TransitionKey}";
 
         var jobPayload = new TransitionJobPayload
         {
             JobName = jobName,
-            InstanceId = context.InstanceId,
-            TransitionKey = context.TransitionKey,
-            Domain = context.Domain,
-            Workflow = context.WorkflowKey,
-            Version = context.WorkflowVersion,
+            InstanceId = transContext.InstanceId,
+            TransitionKey = transContext.TransitionKey,
+            Domain = transContext.Domain,
+            Workflow = transContext.WorkflowKey,
+            Version = transContext.Workflow.Version,
             Data = context.Data,
             Headers = context.Headers,
             RouteValues = context.RouteValues,

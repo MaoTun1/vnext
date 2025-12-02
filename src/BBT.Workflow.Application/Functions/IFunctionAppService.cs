@@ -1,5 +1,6 @@
 using BBT.Aether.Application;
 using BBT.Aether.Results;
+using BBT.Workflow.Instances;
 
 namespace BBT.Workflow.Functions;
 
@@ -35,7 +36,7 @@ public interface IFunctionAppService : IApplicationService
     /// <summary>
     /// Gets all active domain functions.
     /// </summary>
-    Task<Result<List<Instances.InstanceAndDataModel>>> GetDomainFunctionsAsync(
+    Task<Result<List<InstanceAndDataModel>>> GetDomainFunctionsAsync(
         string domain,
         CancellationToken cancellationToken = default);
 }

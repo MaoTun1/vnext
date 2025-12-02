@@ -184,7 +184,7 @@ public sealed class InstanceExtensionService(
         ExtensionProcessingContext context)
     {
         var variableKeyExtension = extension.Key.ToVariableName();
-        var variableKeyTask = extension.Task!.Task.Key.ToVariableName();
+        var variableKeyTask = extension.Task.Task.Key.ToVariableName();
 
         if (!scriptContext.TaskResponse.TryGetValue(variableKeyTask, out var value))
             return;

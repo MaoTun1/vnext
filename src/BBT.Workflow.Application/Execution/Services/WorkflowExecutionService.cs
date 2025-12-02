@@ -73,11 +73,10 @@ public sealed class WorkflowExecutionService(
     /// Uses ToResult extension for null-safe Result conversion.
     /// </summary>
     private async Task<Result<Instance>> FetchInstanceAsync(
-        Guid instanceId,
+        string instanceId,
         CancellationToken cancellationToken)
     {
-        var instance = await instanceRepository.FindByIdAsReadOnlyAsync(instanceId, cancellationToken);
-
+        var instance = await instanceRepository.FindByIdentifierAsReadOnlyAsync(instanceId, cancellationToken);
         return instance.ToResult(
             ExecutionErrors.InstanceNotFoundForResponse(instanceId));
     }

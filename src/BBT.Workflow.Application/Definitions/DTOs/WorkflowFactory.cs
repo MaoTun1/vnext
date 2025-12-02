@@ -237,6 +237,7 @@ public static class WorkflowFactory
             var state = State.Create(
                 stateInput.Key,
                 stateInput.StateType,
+                stateInput.SubType,
                 stateInput.VersionStrategy
             );
 

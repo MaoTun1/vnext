@@ -36,7 +36,7 @@ public sealed class TransitionJobHandler(
                 };
 
             var context =
-                transitionInput.ToExecutionContext(args.InstanceId, args.TransitionKey);
+                transitionInput.ToExecutionContext(args.InstanceId.ToString(), args.TransitionKey);
             context.Actor = args.ExecutionActor;
 
             // Use the background-specific method that handles pre-reserved instances

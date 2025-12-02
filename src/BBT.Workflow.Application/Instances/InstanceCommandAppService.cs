@@ -4,6 +4,7 @@ using BBT.Aether.BackgroundJob;
 using BBT.Aether.DistributedLock;
 using BBT.Aether.Domain.Entities;
 using BBT.Aether.Guids;
+using BBT.Aether.MultiSchema;
 using BBT.Aether.Results;
 using BBT.Workflow.BackgroundJobs.Handlers;
 using BBT.Workflow.BackgroundJobs.Payloads;
@@ -194,7 +195,7 @@ public sealed class InstanceCommandAppService(
         // Lock acquisition failure is a domain error → Result.Fail
         if (!lockOutcome.Acquired)
         {
-            logger.InstanceLockFailed(data.Instance.Id);
+            logger.InstanceLockFailed(data.Instance.Id.ToString());
             return Result<StartInstanceOutput>.Fail(
                 Error.Conflict(
                     WorkflowErrorCodes.ConflictWorkflow,
@@ -297,33 +298,15 @@ public sealed class InstanceCommandAppService(
     {
         // Validate domain first
         runtimeInfoProvider.Check(input.Domain);
-        
-        // If already a Guid, use it directly without repository lookup
-        if (Guid.TryParse(instance, out var instanceId))
-        {
-            return await ExecuteTransitionAsync(instanceId, transitionKey, input, cancellationToken)
-                .OnSuccess(output => AddTransitionHeader(output, input));
-        }
-        
-        // If it's a Key, we need to lookup the instance ID
-        using (currentSchema.Change(input.Workflow))
-        {
-            var instanceResult = await GetInstanceIdByKeyAsync(instance, cancellationToken);
-            if (!instanceResult.IsSuccess)
-            {
-                return Result<TransitionOutput>.Fail(instanceResult.Error);
-            }
-
-            return await ExecuteTransitionAsync(instanceResult.Value, transitionKey, input, cancellationToken)
-                .OnSuccess(output => AddTransitionHeader(output, input));
-        }
+        return await ExecuteTransitionAsync(instance, transitionKey, input, cancellationToken)
+            .OnSuccess(output => AddTransitionHeader(output, input));
     }
 
     /// <summary>
     /// Executes the transition with distributed lock and returns the output.
     /// </summary>
     private async Task<Result<TransitionOutput>> ExecuteTransitionAsync(
-        Guid instanceId,
+        string instanceId,
         string transitionKey,
         TransitionInput input,
         CancellationToken cancellationToken)
@@ -363,33 +346,6 @@ public sealed class InstanceCommandAppService(
         );
     }
 
-
-    /// <summary>
-    /// Gets instance ID by Key.
-    /// </summary>
-    /// <param name="instanceKey">Instance Key</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Instance ID if found, or error result</returns>
-    private async Task<Result<Guid>> GetInstanceIdByKeyAsync(
-        string instanceKey,
-        CancellationToken cancellationToken)
-    {
-        return await ResultExtensions.TryAsync(
-            async ct =>
-            {
-                var instance = await instanceRepository.FindByKeyAsReadOnlyAsync(instanceKey, ct);
-
-                if (instance == null)
-                {
-                    throw new EntityNotFoundException(typeof(Instance), instanceKey);
-                }
-
-                return instance.Id;
-            },
-            cancellationToken,
-            _ => WorkflowErrors.InstanceNotFound(instanceKey));
-    }
-
     /// <summary>
     /// Creates and prepares a new instance with the provided parameters.
     /// Railway chain: Get Initial State → Check Existing → Create Instance → Configure
@@ -405,7 +361,7 @@ public sealed class InstanceCommandAppService(
         CancellationToken cancellationToken = default)
     {
         // Check for existing active instance first
-        var existingInstance = await instanceRepository.FindByKeyAsReadOnlyAsync(instanceKey, cancellationToken);
+        var existingInstance = await instanceRepository.FindByIdentifierAsync(instanceKey, cancellationToken);
         if (existingInstance is { IsCompleted: false })
             return Result<Instance>.Fail(WorkflowErrors.InstanceAlreadyExists(instanceKey));
 

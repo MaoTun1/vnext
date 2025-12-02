@@ -315,7 +315,7 @@ public class TransitionTests : DomainTestBase<DomainEntryPoint>
     public void CanExecute_ShouldReturnTrue_WhenValidTransition()
     {
         // Arrange
-        var state = State.Create("from-state", StateType.Intermediate, "Patch");
+        var state = State.Create("from-state", StateType.Intermediate, StateSubType.Success, "Patch");
         var transition = Transition.Create("submit", "from-state", "to-state", TriggerType.Manual, "Patch");
         state.AddTransition(transition);
 

@@ -100,7 +100,7 @@ public class AsyncTransitionStrategyTests
 
         // Assert
         capturedPayload!.ShouldNotBeNull();
-        capturedPayload.InstanceId.ShouldBe(workflowContext.InstanceId);
+        capturedPayload.InstanceId.ToString().ShouldBe(workflowContext.InstanceId);
         capturedPayload.TransitionKey.ShouldBe(workflowContext.TransitionKey);
         capturedPayload.Domain.ShouldBe(workflowContext.Domain);
         capturedPayload.Workflow.ShouldBe(workflowContext.WorkflowKey);
@@ -367,7 +367,7 @@ public class AsyncTransitionStrategyTests
     {
         return new WorkflowExecutionContext
         {
-            InstanceId = Guid.NewGuid(),
+            InstanceId = Guid.NewGuid().ToString(),
             Domain = "test-domain",
             WorkflowKey = "test-workflow",
             TransitionKey = "test-transition",

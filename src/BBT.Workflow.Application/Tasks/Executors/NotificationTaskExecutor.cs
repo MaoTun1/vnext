@@ -164,20 +164,20 @@ public sealed class NotificationTaskExecutor(
         var transitionItems = availableTransitions.Select(transitionKey => new TransitionItem
         {
             Name = transitionKey,
-            Href = string.Format(InstanceUrlTemplates.Transition, context.Runtime.Domain, workflow.Key, instance.Id,
+            Href = InstanceUrlTemplates.Transition(context.Runtime.Domain, workflow.Key, instance.Id.ToString(),
                 transitionKey)
         }).ToList();
 
         // Build data href
         var dataHref = new DataHref
         {
-            Href = string.Format(InstanceUrlTemplates.Data, context.Runtime.Domain, workflow.Key, instance.Id)
+            Href = InstanceUrlTemplates.Data(context.Runtime.Domain, workflow.Key, instance.Id.ToString())
         };
 
         // Build view href
         var viewHref = new ViewHref
         {
-            Href = string.Format(InstanceUrlTemplates.View, context.Runtime.Domain, workflow.Key, instance.Id),
+            Href = InstanceUrlTemplates.View(context.Runtime.Domain, workflow.Key, instance.Id.ToString()),
             LoadData = true
         };
 
@@ -192,8 +192,8 @@ public sealed class NotificationTaskExecutor(
             SubFlowName = correlation.SubFlowName,
             SubFlowVersion = correlation.SubFlowVersion,
             IsCompleted = correlation.IsCompleted,
-            Href = string.Format(InstanceUrlTemplates.Data, correlation.SubFlowDomain, correlation.SubFlowName,
-                correlation.SubFlowInstanceId)
+            Href = InstanceUrlTemplates.Data(correlation.SubFlowDomain, correlation.SubFlowName,
+                correlation.SubFlowInstanceId.ToString())
         }).ToList();
 
         return new GetInstanceStateOutput

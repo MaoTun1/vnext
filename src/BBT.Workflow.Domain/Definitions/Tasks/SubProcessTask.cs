@@ -37,11 +37,11 @@ public sealed class SubProcessTask : WorkflowTask
     /// <summary>
     /// Body data to send with the subprocess request
     /// </summary>
-    public dynamic? Body { get; private set; }
+    public JsonElement? Body { get; private set; }
 
     public void SetBody(dynamic body)
     {
-        Body=body;
+        Body = JsonSerializer.SerializeToElement(body);
     }
 
     public void SetKey(string key)

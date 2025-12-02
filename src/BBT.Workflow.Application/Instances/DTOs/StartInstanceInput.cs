@@ -3,7 +3,6 @@ using System.Text.Json;
 using BBT.Aether;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Execution;
-using BBT.Workflow.Shared;
 
 namespace BBT.Workflow.Instances;
 
@@ -32,7 +31,7 @@ public sealed class StartInstanceInput(
         return new WorkflowExecutionContext
         {
             Domain = Domain,
-            InstanceId = instanceId,
+            InstanceId = instanceId.ToString(),
             WorkflowKey = Workflow,
             WorkflowVersion = Version,
             TransitionKey = startTransitionKey,

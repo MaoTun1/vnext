@@ -26,11 +26,11 @@ public static class ExecutionErrors
     /// Creates an error when a workflow instance is not found during transition response build.
     /// </summary>
     /// <param name="instanceId">The ID of the workflow instance.</param>
-    public static Error InstanceNotFoundForResponse(Guid instanceId)
+    public static Error InstanceNotFoundForResponse(string instanceId)
         => Error.NotFound(
             WorkflowErrorCodes.NotFoundInstanceData,
             $"Workflow instance {instanceId} not found during transition response build.",
-            target: instanceId.ToString());
+            target: instanceId);
     
     #endregion
 

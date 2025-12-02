@@ -1,5 +1,8 @@
+using BBT.Aether.Application.Dtos;
 using BBT.Aether.AspNetCore.Controllers;
-using BBT.Aether.AspNetCore.Results;
+using BBT.Aether.Domain.Pagination;
+using BBT.Aether.Domain.Repositories;
+using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Domain.Shared;
 using BBT.Workflow.Functions;
@@ -20,12 +23,12 @@ namespace BBT.Workflow.Controllers.Instances;
 [ServiceFilter(typeof(ResponseHeaderFilter))]
 public sealed class FunctionController(
     IFunctionAppService functionAppService,
-    IInstanceQueryAppService queryAppService) : AetherControllerBase
+    IInstanceQueryAppService queryAppService,
+    IPaginationLinkGenerator linkGenerator) : AetherControllerBase
 {
     [HttpPatch("{domain}/functions")]
-    public async Task<IActionResult> GetDomainFunctions(
+    public async Task<IActionResult> GetDomainFunctionsAsync(
         [FromRoute] string domain,
-        [FromQuery] bool? async = false,
         CancellationToken cancellationToken = default)
     {
         var response = await functionAppService.GetDomainFunctionsAsync(domain, cancellationToken);
@@ -33,33 +36,31 @@ public sealed class FunctionController(
     }
 
     [HttpGet("{domain}/functions/{function}")]
-    public async Task<IActionResult> GetFunctionByKey(
+    public async Task<IActionResult> GetFunctionByKeyAsync(
         [FromRoute] string domain,
         [FromRoute] string function,
         [FromQuery] FunctionListQueryParameters parameters,
-        [FromQuery] bool? async = false,
         CancellationToken cancellationToken = default)
     {
-            var headers = HttpContext.Request.Headers.ToDictionary(h => h.Key, h => (string?)h.Value.ToString());
-            var queryParams = HttpContext.Request.Query.ToDictionary(q => q.Key, q => (string?)q.Value.ToString());
-            
-            var response = await functionAppService.GetFunctionByFunctionKey(
-                function, 
-                RuntimeSysSchemaInfo.Functions,
-                domain, 
-                headers, 
-                queryParams, 
-                cancellationToken);
-         return FromResult(response);
+        var headers = HttpContext.Request.Headers.ToDictionary(h => h.Key, h => (string?)h.Value.ToString());
+        var queryParams = HttpContext.Request.Query.ToDictionary(q => q.Key, q => (string?)q.Value.ToString());
+
+        var response = await functionAppService.GetFunctionByFunctionKeyAsync(
+            function,
+            RuntimeSysSchemaInfo.Functions,
+            domain,
+            headers,
+            queryParams,
+            cancellationToken);
+        return FromResult(response);
     }
 
     [HttpGet("{domain}/workflows/{workflow}/functions/{function}")]
-    public async Task<IActionResult> GetFunctionByKey(
+    public async Task<IActionResult> GetFunctionByKeyAsync(
         [FromRoute] string domain,
         [FromRoute] string function,
         [FromRoute] string workflow,
         [FromQuery] FunctionListQueryParameters parameters,
-        [FromQuery] bool? async = false,
         CancellationToken cancellationToken = default)
     {
         var getInstanceListInput = new GetInstanceListInput
@@ -67,35 +68,48 @@ public sealed class FunctionController(
             Domain = domain,
             Page = parameters.Page,
             PageSize = parameters.PageSize,
-            PageUrl = string.Format(InstanceUrlTemplates.FunctionList, domain, workflow, function),
+            PageUrl = InstanceUrlTemplates.FunctionList(domain, workflow, function),
             Sort = parameters.Sort,
             Workflow = workflow,
-            Filter = function.ToLowerInvariant() == Definitions.Functions.FunctionTypeConst.Data ? parameters.Filter : Array.Empty<string>()
+            Filter = function.ToLowerInvariant() == Definitions.Functions.FunctionTypeConst.Data
+                ? parameters.Filter
+                : []
         };
-        
+
         var instanceListResult = await queryAppService.GetInstanceListAsync(getInstanceListInput, cancellationToken);
-        
+
         if (!instanceListResult.IsSuccess)
         {
-            return instanceListResult.ToActionResult();
+            return FromResult(instanceListResult);
         }
 
         // Process based on function type
-        return FromResult(function.ToLowerInvariant() switch
+        var functionType = function.ToLowerInvariant();
+
+        if (functionType == Definitions.Functions.FunctionTypeConst.Longpooling)
         {
-            Definitions.Functions.FunctionTypeConst.Longpooling =>
-                await ProcessLongpoolingFunctionList(domain, workflow, instanceListResult.Value!, cancellationToken),
-            Definitions.Functions.FunctionTypeConst.View =>
-                await ProcessViewFunctionList(domain, workflow, instanceListResult.Value!, cancellationToken),
-            Definitions.Functions.FunctionTypeConst.Data =>
-                await ProcessDataFunctionList(domain, workflow, instanceListResult.Value!, cancellationToken),
-            _ =>
-                await ProcessCustomFunctionList(function, workflow, domain, instanceListResult.Value!, cancellationToken)
-        });
+            return FromResult(await ProcessLongpoolingFunctionListAsync(domain, workflow, instanceListResult.Value!,
+                cancellationToken));
+        }
+
+        if (functionType == Definitions.Functions.FunctionTypeConst.View)
+        {
+            return FromResult(await ProcessViewFunctionListAsync(domain, workflow, instanceListResult.Value!,
+                cancellationToken));
+        }
+
+        if (functionType == Definitions.Functions.FunctionTypeConst.Data)
+        {
+            return FromResult(await ProcessDataFunctionListAsync(domain, workflow, instanceListResult.Value!,
+                cancellationToken));
+        }
+
+        return FromResult(await ProcessCustomFunctionListAsync(function, workflow, domain, instanceListResult.Value!,
+            cancellationToken));
     }
 
     [HttpGet("{domain}/workflows/{workflow}/instances/{instance}/functions/{function}")]
-    public async Task<IActionResult> GetFunctionWithInstance(
+    public async Task<IActionResult> GetFunctionWithInstanceAsync(
         [FromRoute] string domain,
         [FromRoute] string function,
         [FromRoute] string workflow,
@@ -106,23 +120,41 @@ public sealed class FunctionController(
     {
         var headers = HttpContext.Request.Headers.ToDictionary(h => h.Key, h => (string?)h.Value.ToString());
         var queryParams = HttpContext.Request.Query.ToDictionary(q => q.Key, q => (string?)q.Value.ToString());
-        
-        return function.ToLowerInvariant() switch
+
+        var functionType = function.ToLowerInvariant();
+
+        if (functionType == Definitions.Functions.FunctionTypeConst.Longpooling)
         {
-            Definitions.Functions.FunctionTypeConst.Longpooling =>
-                FromResult(await ProcessLongpoolingFunction(domain, workflow, instance, parameters.Version, parameters.Extensions, cancellationToken)),
-            Definitions.Functions.FunctionTypeConst.View =>
-                FromResult(await ProcessViewFunction(domain, workflow, instance, parameters.Version, parameters.Platform, parameters.TransitionKey, cancellationToken)),
-            Definitions.Functions.FunctionTypeConst.Data =>
-                FromResult(await ProcessDataFunction(domain, workflow, instance, ifNoneMatch, parameters.Extensions, cancellationToken)),
-            _ =>
-                FromResult(await functionAppService.GetFunctionByInstance(function, workflow, domain, instance, headers, queryParams, cancellationToken))
-        };
+            return FromResult(await ProcessLongpoolingFunctionAsync(domain, workflow, instance, parameters.Version,
+                parameters.Extensions, cancellationToken));
+        }
+
+        if (functionType == Definitions.Functions.FunctionTypeConst.View)
+        {
+            return FromResult(await ProcessViewFunctionAsync(domain, workflow, instance, parameters.Version,
+                parameters.Platform, parameters.TransitionKey, cancellationToken));
+        }
+
+        if (functionType == Definitions.Functions.FunctionTypeConst.Data)
+        {
+            var dataResult = await ProcessDataFunctionAsync(domain, workflow, instance, ifNoneMatch,
+                parameters.Extensions, cancellationToken);
+
+            if (dataResult.IsNotModified)
+            {
+                return StatusCode(304);
+            }
+
+            return FromResult(dataResult.Result);
+        }
+
+        return FromResult(await functionAppService.GetFunctionByInstanceAsync(function, workflow, domain, instance,
+            headers, queryParams, cancellationToken));
     }
 
     #region Private Helper Methods
 
-    private async Task<IActionResult> ProcessLongpoolingFunction(
+    private async Task<Result<GetInstanceStateOutput>> ProcessLongpoolingFunctionAsync(
         string domain,
         string workflow,
         string instance,
@@ -138,44 +170,43 @@ public sealed class FunctionController(
             Version = version,
             Extensions = extensions
         };
-        var response = await queryAppService.GetInstanceStateAsync(input, cancellationToken);
-        return response.ToActionResult();
+        return await queryAppService.GetInstanceStateAsync(input, cancellationToken);
     }
 
-    private async Task<IActionResult> ProcessLongpoolingFunctionList(
+    private async Task<Result<HateoasPagedResultDto<GetInstanceStateOutput>>> ProcessLongpoolingFunctionListAsync(
         string domain,
         string workflow,
-        PaginationResult<GetInstanceOutput> instanceListResult,
+        HateoasPagedList<GetInstanceOutput> instanceListResult,
         CancellationToken cancellationToken)
     {
-        var outputs = new PaginationResult<GetInstanceStateOutput>
-        {
-            Pagination = instanceListResult.Pagination,
-            Data = new List<GetInstanceStateOutput>()
-        };
+        var list = new List<GetInstanceStateOutput>();
 
-        foreach (var instance in instanceListResult.Data)
+        foreach (var instance in instanceListResult.Items)
         {
-            var result = await ProcessLongpoolingFunction(
+            var result = await ProcessLongpoolingFunctionAsync(
                 domain,
                 workflow,
-                instance.Key!.ToString(),
+                instance.Key!,
                 instance.FlowVersion,
                 null,
                 cancellationToken);
 
-            if (result is not OkObjectResult okResult)
+            if (!result.IsSuccess)
             {
-                return result;
+                continue;
             }
 
-            outputs.Data.Add((GetInstanceStateOutput)okResult.Value!);
+            list.Add(result.Value!);
         }
 
-        return Ok(outputs);
+        var route = InstanceUrlTemplates.FunctionList(domain, workflow,
+            Definitions.Functions.FunctionTypeConst.Longpooling, InstanceUrlTemplates.GetApiVersionPrefix("1"));
+        var output = linkGenerator.CreateHateoasResult(instanceListResult, list, route);
+
+        return Result<HateoasPagedResultDto<GetInstanceStateOutput>>.Ok(output);
     }
 
-    private async Task<IActionResult> ProcessViewFunction(
+    private async Task<Result<GetViewOutput>> ProcessViewFunctionAsync(
         string domain,
         string workflow,
         string instance,
@@ -192,55 +223,48 @@ public sealed class FunctionController(
             Version = version
         };
 
-        var response = await queryAppService.GetPlatformSpecificViewAsync(
+        return await queryAppService.GetPlatformSpecificViewAsync(
             input,
             platform ?? string.Empty,
             transitionKey ?? string.Empty,
             cancellationToken);
-
-        if (!response.IsSuccess)
-        {
-            return response.ToActionResult();
-        }
-
-        return Ok(response.Value!);
     }
 
-    private async Task<IActionResult> ProcessViewFunctionList(
+    private async Task<Result<HateoasPagedResultDto<GetViewOutput>>> ProcessViewFunctionListAsync(
         string domain,
         string workflow,
-        PaginationResult<GetInstanceOutput> instanceListResult,
+        HateoasPagedList<GetInstanceOutput> instanceListResult,
         CancellationToken cancellationToken)
     {
-        var outputs = new PaginationResult<GetViewOutput>
-        {
-            Pagination = instanceListResult.Pagination,
-            Data = new List<GetViewOutput>()
-        };
+        var list = new List<GetViewOutput>();
 
-        foreach (var instance in instanceListResult.Data)
+        foreach (var instance in instanceListResult.Items)
         {
-            var result = await ProcessViewFunction(
+            var result = await ProcessViewFunctionAsync(
                 domain,
                 workflow,
-                instance.Key!.ToString(),
+                instance.Key!,
                 instance.FlowVersion,
                 string.Empty,
                 string.Empty,
                 cancellationToken);
 
-            if (result is not OkObjectResult okResult)
+            if (!result.IsSuccess)
             {
-                return result;
+                continue;
             }
 
-            outputs.Data.Add((GetViewOutput)okResult.Value!);
+            list.Add(result.Value!);
         }
 
-        return Ok(outputs);
+        var route = InstanceUrlTemplates.FunctionList(domain, workflow,
+            Definitions.Functions.FunctionTypeConst.View, InstanceUrlTemplates.GetApiVersionPrefix("1"));
+        var output = linkGenerator.CreateHateoasResult(instanceListResult, list, route);
+
+        return Result<HateoasPagedResultDto<GetViewOutput>>.Ok(output);
     }
 
-    private async Task<IActionResult> ProcessDataFunction(
+    private async Task<ConditionalResult<GetInstanceDataOutput>> ProcessDataFunctionAsync(
         string domain,
         string workflow,
         string instance,
@@ -264,63 +288,69 @@ public sealed class FunctionController(
             HttpContext.Response.Headers[HeadersConstants.ETag] = response.Result.Value.Etag;
         }
 
-        return response.ToActionResult();
+        return response;
     }
 
-    private async Task<IActionResult> ProcessDataFunctionList(
+    private async Task<Result<HateoasPagedResultDto<GetInstanceDataOutput>>> ProcessDataFunctionListAsync(
         string domain,
         string workflow,
-        PaginationResult<GetInstanceOutput> instanceListResult,
+        HateoasPagedList<GetInstanceOutput> instanceListResult,
         CancellationToken cancellationToken)
     {
-        var outputs = new PaginationResult<GetInstanceDataOutput>
-        {
-            Pagination = instanceListResult.Pagination,
-            Data = new List<GetInstanceDataOutput>()
-        };
+        var list = new List<GetInstanceDataOutput>();
 
-        foreach (var instance in instanceListResult.Data)
+        foreach (var instance in instanceListResult.Items)
         {
             var input = new GetInstanceDataInput
             {
                 Domain = domain,
                 Workflow = workflow,
-                Instance = instance.Key!.ToString(),
+                Instance = instance.Key!,
             };
 
             var response = await queryAppService.GetInstanceDataAsync(input, cancellationToken);
-            outputs.Data.Add(response.Result.Value!);
+            list.Add(response.Result.Value!);
         }
 
-        return Ok(outputs);
+        var route = InstanceUrlTemplates.FunctionList(domain, workflow,
+            Definitions.Functions.FunctionTypeConst.Data, InstanceUrlTemplates.GetApiVersionPrefix("1"));
+        var output = linkGenerator.CreateHateoasResult(instanceListResult, list, route);
+        return Result<HateoasPagedResultDto<GetInstanceDataOutput>>.Ok(output);
     }
 
-    private async Task<IActionResult> ProcessCustomFunctionList(
+    private async Task<Result<HateoasPagedResultDto<Dictionary<string, dynamic?>>>> ProcessCustomFunctionListAsync(
         string function,
         string workflow,
         string domain,
-        PaginationResult<GetInstanceOutput> instanceListResult,
+        HateoasPagedList<GetInstanceOutput> instanceListResult,
         CancellationToken cancellationToken)
     {
         var headers = HttpContext.Request.Headers.ToDictionary(h => h.Key, h => (string?)h.Value.ToString());
         var queryParams = HttpContext.Request.Query.ToDictionary(q => q.Key, q => (string?)q.Value.ToString());
-        
-        var outputs = new PaginationResult<Dictionary<string, dynamic?>>
-        {
-            Pagination = instanceListResult.Pagination,
-            Data = new List<Dictionary<string, dynamic?>>()
-        };
 
-        foreach (var instance in instanceListResult.Data)
+        var list = new List<Dictionary<string, dynamic?>>();
+
+        foreach (var instance in instanceListResult.Items)
         {
-            outputs.Data.Add(
-                await functionAppService.GetFunctionByInstance(function, workflow, domain, instance.Key!.ToString(), headers, queryParams, cancellationToken)
+            var result = await functionAppService.GetFunctionByInstanceAsync(function, workflow, domain,
+                instance.Key!,
+                headers, queryParams, cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                continue;
+            }
+
+            list.Add(
+                result.Value!
             );
         }
 
-        return Ok(outputs);
+        var route = InstanceUrlTemplates.FunctionList(domain, workflow, function,
+            InstanceUrlTemplates.GetApiVersionPrefix("1"));
+        var output = linkGenerator.CreateHateoasResult(instanceListResult, list, route);
+        return Result<HateoasPagedResultDto<Dictionary<string, dynamic?>>>.Ok(output);
     }
 
     #endregion
 }
-

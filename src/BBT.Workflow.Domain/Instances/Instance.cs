@@ -81,12 +81,10 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     public bool IsCompleted =>
         Status.Equals(InstanceStatus.Completed)
         || Status.Equals(InstanceStatus.Faulted)
-        || Status.Equals(InstanceStatus.Passive)
-        || Status.Equals(InstanceStatus.Canceled);
+        || Status.Equals(InstanceStatus.Passive);
 
     public bool IsBusy => Status.Equals(InstanceStatus.Busy);
     public bool IsActive => Status.Equals(InstanceStatus.Active);
-    public bool IsCanceled => Status.Equals(InstanceStatus.Canceled);
     public bool IsSubFlow => this.ToFlowType() == WorkflowType.SubFlow;
 
     public bool IsSubItem => this.ToFlowType() == WorkflowType.SubFlow ||
@@ -263,7 +261,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// </summary>
     public void Cancel()
     {
-        Status = InstanceStatus.Canceled;
+        Status = InstanceStatus.Completed;
         CompletedAt = DateTime.UtcNow;
         Duration = CompletedAt - CreatedAt;
 

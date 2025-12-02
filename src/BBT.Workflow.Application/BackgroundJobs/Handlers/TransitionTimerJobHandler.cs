@@ -28,7 +28,7 @@ public sealed class TransitionTimerJobHandler(
 
             // Convert TransitionInput to WorkflowExecutionContext
             var executionContext = input.ToExecutionContext(
-                args.InstanceId,
+                args.InstanceId.ToString(),
                 args.TransitionKey);
 
             // Override trigger type to Scheduled for timer-based transitions

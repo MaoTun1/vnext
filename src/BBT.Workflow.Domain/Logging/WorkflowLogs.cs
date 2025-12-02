@@ -33,7 +33,7 @@ public static partial class WorkflowLogs
     public static partial void TransitionEnqueued(
         this ILogger logger,
         string transitionKey,
-        Guid instanceId,
+        string instanceId,
         string jobName);
 
     /// <summary>
@@ -151,7 +151,7 @@ public static partial class WorkflowLogs
     public static partial void TransitionEnqueueFailed(
         this ILogger logger,
         string transitionKey,
-        Guid instanceId);
+        string instanceId);
 
     /// <summary>
     /// Logs when attempting to cancel an already completed instance.
@@ -332,7 +332,7 @@ public static partial class WorkflowLogs
         Message = "Failed to acquire lock for instance {InstanceId}")]
     public static partial void InstanceLockFailed(
         this ILogger logger,
-        Guid instanceId);
+        string instanceId);
 
     /// <summary>
     /// Logs when start transition validation fails.

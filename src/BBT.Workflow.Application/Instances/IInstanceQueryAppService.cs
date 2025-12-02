@@ -1,6 +1,6 @@
 using BBT.Aether.Application;
+using BBT.Aether.Domain.Repositories;
 using BBT.Aether.Results;
-using BBT.Workflow.Domain;
 
 namespace BBT.Workflow.Instances;
 
@@ -16,7 +16,7 @@ public interface IInstanceQueryAppService : IApplicationService
     /// <summary>
     /// Retrieves a paginated list of instances with optional extensions
     /// </summary>
-    Task<Result<Definitions.PaginationResult<GetInstanceOutput>>> GetInstanceListAsync(
+    Task<Result<HateoasPagedList<GetInstanceOutput>>> GetInstanceListAsync(
         GetInstanceListInput input,
         CancellationToken cancellationToken = default);
 

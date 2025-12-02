@@ -6,50 +6,25 @@ namespace BBT.Workflow.Instances;
 
 public interface IInstanceRepository : IRepository<Instance, Guid>
 {
-    Task<Instance?> FindByKeyAsync(string key,
+    Task<Instance?> FindByIdentifierAsync(string identifier,
         CancellationToken cancellationToken = default);
     
-    Task<Instance?> FindByKeyAsReadOnlyAsync(string key,
+    Task<Instance?> FindByIdentifierAsReadOnlyAsync(string identifier,
         CancellationToken cancellationToken = default);
 
-    Task<Instance?> FindByIdAsReadOnlyAsync(Guid id,
-        CancellationToken cancellationToken = default);
-
-    Task<Result<Instance>> GetActiveAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<Result<Instance>> GetActiveAsync(string identifier, CancellationToken cancellationToken = default);
+    
     Task<List<InstanceAndDataModel>> GetActiveDataListAsync(CancellationToken cancellationToken = default);
 
     Task<InstanceAndDataModel?> FindActiveDataAsync(string key, string version,
         CancellationToken cancellationToken = default);
-    
-    Task<IQueryable<Instance>> GetFilteredQueryAsync(
-        string[]? filters,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Get filtered instances using PostgreSQL native JSON operators with advanced options
-    /// </summary>
-    Task<IQueryable<Instance>> GetFilteredQueryWithPostgreSqlAsync(
-        string[]? filters,
-        bool includeDataList = true,
-        bool onlyLatest = true,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Get filtered InstanceData directly using PostgreSQL native JSON operators
-    /// </summary>
-    Task<IQueryable<InstanceData>> GetFilteredInstanceDataAsync(
-        string[]? filters,
-        bool onlyLatest = true,
-        CancellationToken cancellationToken = default);
         
-    Task<Definitions.PaginationResult<Instance>> GetPagedResultsAsync(
+    Task<HateoasPagedList<Instance>> GetPagedResultsAsync(
         int page, 
         int pageSize, 
-        string route, 
-        IQueryCollection? queryParams = null,
-        IQueryable<Instance>? instance = null,
+        string[]? filters,
         CancellationToken cancellationToken = default);
 
-    Task<Result<Instance>> GetResultAsync(Guid id, bool includeDetails = true,
+    Task<Result<Instance>> GetResultAsync(string identifier, bool includeDetails = true,
         CancellationToken cancellationToken = default);
 }

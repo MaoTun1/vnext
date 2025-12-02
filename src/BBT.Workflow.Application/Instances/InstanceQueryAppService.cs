@@ -1,5 +1,6 @@
 using BBT.Aether.Application.Services;
 using BBT.Aether.Domain.Entities;
+using BBT.Aether.Domain.Repositories;
 using BBT.Aether.Results;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
@@ -8,7 +9,6 @@ using BBT.Workflow.Extentions;
 using BBT.Workflow.Instances.Remote;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using BBT.Workflow.Shared;
 
@@ -22,7 +22,6 @@ public sealed class InstanceQueryAppService(
     IInstanceCorrelationRepository instanceCorrelationRepository,
     IInstanceExtensionService instanceExtensionService,
     IScriptContextFactory scriptContextFactory,
-    IHttpContextAccessor httpContextAccessor,
     IRemoteInstanceQueryAppService remoteInstanceQueryAppService,
     ILogger<InstanceQueryAppService> logger)
     : ApplicationService(serviceProvider), IInstanceQueryAppService
@@ -59,7 +58,7 @@ public sealed class InstanceQueryAppService(
                 onFailure: error => ConditionalResult<GetInstanceOutput>.Fail(error));
     }
 
-    public async Task<Result<PaginationResult<GetInstanceOutput>>> GetInstanceListAsync(
+    public async Task<Result<HateoasPagedList<GetInstanceOutput>>> GetInstanceListAsync(
         GetInstanceListInput input,
         CancellationToken cancellationToken = default)
     {
@@ -68,25 +67,14 @@ public sealed class InstanceQueryAppService(
         return await ResultExtensions.TryAsync(
             async ct =>
             {
-                var filteredQuery = await instanceRepository.GetFilteredQueryAsync(
+                var pagedList = await instanceRepository.GetPagedResultsAsync(
+                    input.Page,
+                    input.PageSize,
                     input.Filter,
                     ct);
 
-                // Then apply pagination to the filtered query
-                var pagedResult = await instanceRepository.GetPagedResultsAsync(
-                    input.Page,
-                    input.PageSize,
-                    input.PageUrl,
-                    httpContextAccessor.HttpContext?.Request.Query,
-                    filteredQuery,
-                    ct);
-
-                PaginationResult<GetInstanceOutput> result = new PaginationResult<GetInstanceOutput>()
-                {
-                    Pagination = pagedResult.Pagination,
-                    Data = new List<GetInstanceOutput>()
-                };
-                foreach (var instance in pagedResult.Data)
+                var list = new List<GetInstanceOutput>();
+                foreach (var instance in pagedList.Items)
                 {
                     var instanceOutput = await BuildInstanceOutputAsync(
                         input.Domain,
@@ -97,10 +85,10 @@ public sealed class InstanceQueryAppService(
                         ExtensionScope.GetAllInstances,
                         ct);
 
-                    result.Data.Add(instanceOutput);
+                    list.Add(instanceOutput);
                 }
-
-                return result;
+                
+                return new HateoasPagedList<GetInstanceOutput>(list, pagedList.CurrentPage, pagedList.PageSize, pagedList.HasNext);
             },
             cancellationToken);
     }
@@ -273,10 +261,7 @@ public sealed class InstanceQueryAppService(
         string instanceIdentifier,
         CancellationToken cancellationToken)
     {
-        var instance = Guid.TryParse(instanceIdentifier, out var instanceId)
-            ? await instanceRepository.FindByIdAsReadOnlyAsync(instanceId, cancellationToken)
-            : await instanceRepository.FindByKeyAsReadOnlyAsync(instanceIdentifier, cancellationToken);
-
+        var instance = await instanceRepository.FindByIdentifierAsync(instanceIdentifier, cancellationToken);
         return instance.EnsureNotNull(WorkflowErrors.InstanceNotFound(instanceIdentifier));
     }
 
@@ -467,7 +452,7 @@ public sealed class InstanceQueryAppService(
         var transitionItems = availableTransitions.Select(transitionKey => new TransitionItem
         {
             Name = transitionKey,
-            Href = string.Format(InstanceUrlTemplates.Transition, input.Domain, input.Workflow, instance.Id, transitionKey)
+            Href = InstanceUrlTemplates.Transition(input.Domain, input.Workflow, instance.Id.ToString(), transitionKey)
         }).ToList();
 
         // Get current state using Railway pattern
@@ -485,14 +470,14 @@ public sealed class InstanceQueryAppService(
                 var dataHref = new DataHref
                 {
                     Href = allExtensions.Length > 0
-                        ? string.Format(InstanceUrlTemplates.DataWithExtensions, input.Domain, input.Workflow, instance.Id, string.Join(",", allExtensions))
-                        : string.Format(InstanceUrlTemplates.Data, input.Domain, input.Workflow, instance.Id)
+                        ? InstanceUrlTemplates.DataWithExtensions(input.Domain, input.Workflow, instance.Id.ToString(), string.Join(",", allExtensions))
+                        : InstanceUrlTemplates.Data(input.Domain, input.Workflow, instance.Id.ToString())
                 };
 
                 // Build view href
                 var viewHref = new ViewHref
                 {
-                    Href = string.Format(InstanceUrlTemplates.View, input.Domain, input.Workflow, instance.Id),
+                    Href = InstanceUrlTemplates.View(input.Domain, input.Workflow, instance.Id.ToString()),
                     LoadData = viewDefinition?.LoadData == true
                 };
 
@@ -508,7 +493,7 @@ public sealed class InstanceQueryAppService(
                         SubFlowName = correlation.SubFlowName,
                         SubFlowVersion = correlation.SubFlowVersion,
                         IsCompleted = correlation.IsCompleted,
-                        Href = string.Format(InstanceUrlTemplates.Data, correlation.SubFlowDomain, correlation.SubFlowName, correlation.SubFlowInstanceId)
+                        Href = InstanceUrlTemplates.Data(correlation.SubFlowDomain, correlation.SubFlowName, correlation.SubFlowInstanceId.ToString())
                     }).ToList();
 
                 return new GetInstanceStateOutput

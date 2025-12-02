@@ -1,7 +1,6 @@
+using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
-using BBT.Workflow.Domain;
 using BBT.Workflow.Execution.TriggerTransition;
-using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
 using Microsoft.Extensions.Logging;
 
@@ -11,13 +10,11 @@ namespace BBT.Workflow.Tasks;
 /// Executes direct trigger tasks that trigger transitions on workflow instances.
 /// </summary>
 /// <param name="scriptEngine">The script engine used for compiling input/output mapping scripts.</param>
-/// <param name="runtimeInfoProvider">The runtime information provider for domain checks.</param>
 /// <param name="taskExecutorFactory">Factory for creating task executors.</param>
 /// <param name="httpTaskFactory">Factory for creating HTTP tasks.</param>
 /// <param name="logger">The logger instance for logging direct trigger task execution details.</param>
 public sealed class DirectTriggerTaskExecutor(
     IScriptEngine scriptEngine,
-    IRuntimeInfoProvider runtimeInfoProvider,
     ITaskExecutorFactory taskExecutorFactory,
     ITriggerTransitionHttpTaskFactory httpTaskFactory,
     ILogger<DirectTriggerTaskExecutor> logger) : TaskExecutor(scriptEngine, logger), ITaskExecutor
@@ -42,16 +39,9 @@ public sealed class DirectTriggerTaskExecutor(
         CancellationToken cancellationToken = default)
     {
         var directTriggerTask = (task as DirectTriggerTask)!;
-
-        Logger.LogInformation("Starting direct trigger task execution for task {TaskKey} - Domain: {Domain}, Flow: {Flow}, Transition: {Transition}",
-            directTriggerTask.Key, directTriggerTask.TriggerDomain, directTriggerTask.TriggerFlow, directTriggerTask.TransitionName);
-
+        
         try
         {
-            // Check runtime domain
-            runtimeInfoProvider.Check(context.Runtime.Domain);
-
-            Logger.LogDebug("Preparing input for direct trigger task {TaskKey}", directTriggerTask.Key);
             await PrepareInputAsync(directTriggerTask, scriptCode, context, cancellationToken);
 
             // Execute direct trigger logic
@@ -64,11 +54,8 @@ public sealed class DirectTriggerTaskExecutor(
                     directTriggerTask.Key, executionResult.Error.Code, executionResult.Error.Message);
                 throw new InvalidOperationException($"Direct trigger execution failed: {executionResult.Error.Message}");
             }
-
-            Logger.LogDebug("Processing output for direct trigger task {TaskKey}", directTriggerTask.Key);
+            
             var outputResponse = await ProcessOutputAsync(scriptCode, context, cancellationToken);
-
-            Logger.LogInformation("Direct trigger task {TaskKey} execution completed, returning processed output", directTriggerTask.Key);
             return outputResponse;
         }
         catch (Exception ex)
@@ -109,10 +96,7 @@ public sealed class DirectTriggerTaskExecutor(
                 {
                     throw new InvalidOperationException("TransitionName is required for Direct trigger type");
                 }
-
-                Logger.LogInformation("Handling Direct trigger for task {TaskKey} - InstanceId: {InstanceId}, Transition: {Transition}",
-                    task.Key, context.Instance.Id, task.TransitionName);
-
+                
                 // Resolve instance ID using the factory's ResolveInstanceIdAsync method
                 var instanceIdResult = await httpTaskFactory.ResolveInstanceIdAsync(task, context, ct);
                 if (!instanceIdResult.IsSuccess)
@@ -124,7 +108,7 @@ public sealed class DirectTriggerTaskExecutor(
                 var instanceId = instanceIdResult.Value!;
 
                 // Create path using InstanceUrlTemplates.Transition format
-                var path = string.Format(InstanceUrlTemplates.Transition,
+                var path = InstanceUrlTemplates.Transition(
                     task.TriggerDomain,
                     task.TriggerFlow,
                     instanceId,
@@ -136,15 +120,14 @@ public sealed class DirectTriggerTaskExecutor(
                     Logger.LogError("Failed to create HTTP task for Direct trigger: {Error}", httpTaskResult.Error.Code);
                     throw new InvalidOperationException($"Failed to create HTTP task: {httpTaskResult.Error.Message}");
                 }
-
+                
                 var httpTask = httpTaskResult.Value!;
-
+                
                 var httpExecutor = taskExecutorFactory.GetExecutor(TaskType.Http) as HttpTaskExecutor;
 
                 if (httpExecutor == null)
                     throw new InvalidOperationException("HttpTaskExecutor not found");
-
-                Logger.LogDebug("Calling HttpTaskExecutor.CallAsync for Direct trigger task {TaskKey}", task.Key);
+                
                 await httpExecutor.CallAsync(httpTask, context, ct);
             },
             cancellationToken,

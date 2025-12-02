@@ -245,7 +245,7 @@ public sealed class SubflowCompletionService(
                 Domain = parentWorkflow.Domain,
                 WorkflowKey = parentWorkflow.Key,
                 WorkflowVersion = parentWorkflow.Version,
-                InstanceId = parentInstance.Id,
+                InstanceId = parentInstance.Id.ToString(),
                 TransitionKey = "", // For logging purposes only
                 TriggerType = TriggerType.Manual,
                 Mode = ExecMode.Resume, // Use Resume mode for SubFlow completion
