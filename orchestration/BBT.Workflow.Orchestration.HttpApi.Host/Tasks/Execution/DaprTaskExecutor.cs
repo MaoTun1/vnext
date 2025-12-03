@@ -243,7 +243,8 @@ public sealed class DaprTaskExecutor(
                 RouteValues = context.RouteValues,
                 TaskResponse = context.TaskResponse,
                 MetaData = context.MetaData,
-                Definitions = context.Definitions
+                Definitions = context.Definitions,
+                QueryParameters=context.QueryParameters
             }
         };
     }

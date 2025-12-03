@@ -32,6 +32,7 @@ public static class ScriptContextFactoryExtensions
             .WithBody(input.Context.Body)
             .WithHeaders(input.Context.Headers)
             .WithRouteValues(input.Context.RouteValues)
+            .WithQueryParameters(input.Context.QueryParameters)
             .WithTaskResponse(input.Context.TaskResponse)
             .WithMetadata(input.Context.MetaData ?? new Dictionary<string, object>())
             .WithDefinitions(input.Context.Definitions ?? new Dictionary<string, object>())
