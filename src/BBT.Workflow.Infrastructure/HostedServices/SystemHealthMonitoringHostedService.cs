@@ -89,8 +89,6 @@ public sealed class SystemHealthMonitoringHostedService : BackgroundService
 
         try
         {
-            _logger.LogDebug("Updating system health metrics");
-
             // Calculate and update error rates for each component
             foreach (var (component, tracker) in _errorRateTrackers)
             {
@@ -100,12 +98,7 @@ public sealed class SystemHealthMonitoringHostedService : BackgroundService
                 // Determine health status based on error rate thresholds
                 var isHealthy = DetermineHealthStatus(errorRate);
                 workflowMetrics.SetWorkflowHealthStatus(component, isHealthy);
-
-                _logger.LogDebug("Component '{Component}' - Error Rate: {ErrorRate:F2}%, Health: {HealthStatus}", 
-                    component, errorRate, isHealthy ? "Healthy" : "Unhealthy");
             }
-
-            _logger.LogDebug("System health metrics updated successfully");
         }
         catch (Exception ex)
         {

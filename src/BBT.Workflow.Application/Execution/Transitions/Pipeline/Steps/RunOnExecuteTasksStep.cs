@@ -1,11 +1,11 @@
 using BBT.Workflow.Definitions;
-using BBT.Workflow.Domain;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks;
-using BBT.Workflow.Telemetry;
-using Microsoft.Extensions.Logging;
+using BBT.Workflow.Logging;
 using System.Diagnostics;
+using BBT.Aether.Aspects;
+using BBT.Aether.Results;
 
 namespace BBT.Workflow.Execution.Pipeline.Steps;
 
@@ -17,81 +17,88 @@ namespace BBT.Workflow.Execution.Pipeline.Steps;
 public sealed class RunOnExecuteTasksStep(
     ITaskOrchestrationService taskOrchestrationService,
     IScriptContextFactory scriptContextFactory,
-    IInstanceRepository instanceRepository,
-    ILogger<RunOnExecuteTasksStep> logger) : ITransitionStep
+    IInstanceRepository instanceRepository) : ITransitionStep
 {
     /// <inheritdoc />
     public int Order => LifecycleOrder.OnExecute;
 
     /// <inheritdoc />
+    [Log]
+    [Trace]
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
-        // Skip if no transition or no OnExecute tasks
-        if (context.Transition == null || !context.Transition.OnExecutionTasks.Any())
+        Activity.Current?.SetDisplayName($"[{Order}] {nameof(RunOnExecuteTasksStep)}");
+
+        // Skip if no OnExecute tasks
+        if (!HasOnExecuteTasks(context))
         {
-            logger.LogTrace("No OnExecute tasks for transition {TransitionKey}", context.TransitionKey);
             return Result<StepOutcome>.Ok(StepOutcome.Continue());
         }
 
-        var sw = Stopwatch.StartNew();
-        logger.LogDebug("Executing {TaskCount} OnExecute tasks for transition {TransitionKey} on instance {InstanceId}",
-            context.Transition.OnExecutionTasks.Count, context.TransitionKey, context.InstanceId);
-
-        return await ResultExtensions.TryAsync<StepOutcome>(async ct =>
-        {
-            // Get or build script context
-            var scriptContext = context.GetOrBuildScriptContext(() => 
-                CreateScriptContext(context));
-
-            // Get the transition record from previous step
-            var instanceTransitionId = context.Items.TryGetValue("TransitionRecordId", out var record) 
-                ? record as Guid? 
-                : null;
-
-            // Execute the tasks
-            await taskOrchestrationService.ExecuteAsync(
-                context.Transition.OnExecutionTasks,
-                instanceTransitionId,
-                TaskTrigger.OnExecute,
-                scriptContext,
-                ct);
-
-            context.ApplyScriptContextChanges(scriptContext);
-            
-            await instanceRepository.UpdateAsync(context.Instance, true, ct);
-
-            sw.Stop();
-            logger.LogDebug("Completed {TaskCount} OnExecute tasks for transition {TransitionKey} in {ElapsedMs}ms",
-                context.Transition.OnExecutionTasks.Count, context.TransitionKey, sw.ElapsedMilliseconds);
-            
-            return StepOutcome.Continue();
-        },
-        cancellationToken,
-        ex =>
-        {
-            sw.Stop();
-            logger.LogError(ex, "OnExecute tasks failed for transition {TransitionKey} after {ElapsedMs}ms",
-                context.TransitionKey, sw.ElapsedMilliseconds);
-            return Error.Failure(
-                WorkflowErrorCodes.ExecutionStepFailed,
-                $"OnExecute tasks execution failed: {ex.Message}",
-                ex.GetType().Name);
-        });
+        // Railway chain: Build context -> Execute tasks -> Apply changes -> Persist
+        return await Result.Ok(context)
+            .MapAsync(ctx => BuildScriptContextAsync(ctx, cancellationToken))
+            .TapAsync(scriptContext => ExecuteTasksAsync(context, scriptContext, cancellationToken))
+            .Tap(context.ApplyScriptContextChanges)
+            .TapAsync(_ => instanceRepository.UpdateAsync(context.Instance, true, cancellationToken))
+            .Map(_ => StepOutcome.Continue());
     }
+
+    /// <summary>
+    /// Checks if context has OnExecute tasks.
+    /// </summary>
+    private static bool HasOnExecuteTasks(TransitionExecutionContext context)
+        => context.Transition != null && context.Transition.OnExecutionTasks.Any();
+
+    /// <summary>
+    /// Builds or retrieves script context.
+    /// </summary>
+    private async Task<ScriptContext> BuildScriptContextAsync(
+        TransitionExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        return await context.GetOrBuildScriptContextAsync(
+            ct => CreateScriptContextAsync(context, ct),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Executes the OnExecute tasks.
+    /// </summary>
+    private async Task ExecuteTasksAsync(
+        TransitionExecutionContext context,
+        ScriptContext scriptContext,
+        CancellationToken cancellationToken)
+    {
+        var instanceTransitionId = GetTransitionRecordId(context);
+
+        await taskOrchestrationService.ExecuteAsync(
+            context.Transition!.OnExecutionTasks,
+            instanceTransitionId,
+            TaskTrigger.OnExecute,
+            scriptContext,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets transition record ID from context items.
+    /// </summary>
+    private static Guid? GetTransitionRecordId(TransitionExecutionContext context)
+        => context.Items.TryGetValue("TransitionRecordId", out var record) ? record as Guid? : null;
 
     /// <summary>
     /// Creates a script context for task execution.
     /// </summary>
-    private ScriptContext CreateScriptContext(TransitionExecutionContext context)
+    private async Task<ScriptContext> CreateScriptContextAsync(
+        TransitionExecutionContext context,
+        CancellationToken cancellationToken)
     {
-        return scriptContextFactory.NewBuilder()
+        return await scriptContextFactory.NewBuilder()
             .WithWorkflow(context.Workflow)
             .WithInstance(context.Instance)
             .WithTransition(context.Transition)
             .WithBody(context.Data)
-            .WithHeaders(context.Headers.ToDictionary(kvp => kvp.Key, kvp => (string?)kvp.Value))
-            .BuildAsync(CancellationToken.None)
-            .GetAwaiter()
-            .GetResult();
+            .WithHeaders(context.Headers.ToDictionary(kvp => kvp.Key, kvp => kvp.Value))
+            .BuildAsync(cancellationToken);
     }
 }

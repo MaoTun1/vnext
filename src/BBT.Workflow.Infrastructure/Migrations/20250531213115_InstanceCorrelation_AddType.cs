@@ -8,24 +8,17 @@ namespace BBT.Workflow.Migrations
     /// <inheritdoc />
     public partial class InstanceCorrelation_AddType : Migration
     {
-        private readonly IDbContextSchema _schema;
-        
-        public InstanceCorrelation_AddType(IDbContextSchema schema)
-        {
-            _schema = schema;
-        }
-        
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropIndex(
                 name: "IX_InstancesCorrelations_ParentInstanceId",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesCorrelations");
 
             migrationBuilder.AddColumn<string>(
                 name: "SubFlowType",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesCorrelations",
                 type: "character varying(3)",
                 maxLength: 3,
@@ -35,7 +28,7 @@ namespace BBT.Workflow.Migrations
 
             migrationBuilder.CreateIndex(
                 name: "IX_InstancesCorrelations_Performance",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesCorrelations",
                 columns: new[] { "ParentInstanceId", "IsCompleted", "SubFlowType" });
         }
@@ -45,17 +38,17 @@ namespace BBT.Workflow.Migrations
         {
             migrationBuilder.DropIndex(
                 name: "IX_InstancesCorrelations_Performance",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesCorrelations");
 
             migrationBuilder.DropColumn(
                 name: "SubFlowType",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesCorrelations");
 
             migrationBuilder.CreateIndex(
                 name: "IX_InstancesCorrelations_ParentInstanceId",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesCorrelations",
                 column: "ParentInstanceId");
         }

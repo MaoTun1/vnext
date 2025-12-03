@@ -1,4 +1,5 @@
-using BBT.Workflow.Domain;
+using BBT.Aether.Results;
+using BBT.Workflow.SubFlow;
 
 namespace BBT.Workflow.Instances.Remote;
 
@@ -19,5 +20,9 @@ public interface IRemoteInstanceCommandAppService
         Guid instanceId,
         string transitionKey,
         TransitionInput input,
+        CancellationToken cancellationToken = default);
+
+    Task<Result> CompleteAsync(
+        FlowCompletedInput input,
         CancellationToken cancellationToken = default);
 } 

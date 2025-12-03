@@ -1,22 +1,24 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using BBT.Aether.Aspects;
 using BBT.Aether.Guids;
+using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks.Factory;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Tasks.Persistence;
 using BBT.Workflow.Monitoring;
-using BBT.Workflow.Telemetry;
+using BBT.Workflow.Logging;
 using Microsoft.Extensions.Logging;
-using OpenTelemetry.Trace;
 
 namespace BBT.Workflow.Tasks.Execution;
 
 /// <summary>
 /// Local implementation of IWorkflowTaskExecutor that executes tasks directly without remote calls.
 /// This is used in the Execution service where tasks are executed locally.
+/// Uses Railway Oriented Programming for strategy resolution with Result pattern.
 /// </summary>
 /// <param name="taskExecutorFactory">Factory for creating task executors based on task type.</param>
 /// <param name="guidGenerator">Generator for creating unique identifiers.</param>
@@ -48,8 +50,10 @@ public sealed class LocalTaskExecutor(
     /// - Execution with error handling
     /// - Response processing and context updates
     /// - State transitions (Completed/Faulted)
-    /// - Persistence handling via Strategy Pattern
+    /// - Persistence handling via Strategy Pattern with Result-based error handling
     /// </remarks>
+    [Log]
+    [Trace]
     public async Task ExecuteTaskAsync(
         OnExecuteTask onExecuteTask,
         Guid? instanceTransitionId,
@@ -58,7 +62,11 @@ public sealed class LocalTaskExecutor(
         CancellationToken cancellationToken = default)
     {
         // Use TaskFactory for optimized task creation with proper isolation
-        var task = await taskFactory.CreateExecutionTaskAsync(onExecuteTask.Task, cancellationToken);
+        var taskResult = await taskFactory.CreateExecutionTaskAsync(onExecuteTask.Task, cancellationToken);
+        
+        // Throw if task creation failed - infrastructure errors should bubble up
+        taskResult.ThrowIfFailure();
+        var task = taskResult.Value!;
 
         var taskExecutor = taskExecutorFactory.GetExecutor(task.GetTaskType());
         var instanceTask = new InstanceTask(
@@ -67,136 +75,104 @@ public sealed class LocalTaskExecutor(
             task.Key
         );
 
-        // Get the appropriate persistence strategy based on TaskTrigger
-        var persistenceStrategy = taskPersistenceStrategyFactory.GetStrategy(taskTrigger);
+        // Get the appropriate persistence strategy based on TaskTrigger using Result pattern
+        var strategyResult = taskPersistenceStrategyFactory.GetStrategy(taskTrigger);
+        strategyResult.ThrowIfFailure();
+        var persistenceStrategy = strategyResult.Value!;
 
-        // Handle task creation persistence
-        await persistenceStrategy.HandleCreationAsync(instanceTask, cancellationToken);
+        // Handle task creation persistence - throw on failure as it's infrastructure
+        var creationResult = await persistenceStrategy.HandleCreationAsync(instanceTask, cancellationToken);
+        creationResult.ThrowIfFailure();
 
         var taskType = task.GetTaskType().ToString();
-        var sw = Stopwatch.StartNew();
+        // Create span for task execution
+        var activity = Activity.Current;
+        activity?.SetTag(TelemetryConstants.TagNames.TaskKey, task.Key);
+        activity?.SetTag(TelemetryConstants.TagNames.TaskType, taskType);
+        activity?.SetTag(TelemetryConstants.TagNames.InstanceId, context.Instance.Id.ToString());
+        activity?.SetDisplayName($"[{onExecuteTask.Order}] Task: {task.Key}/{task.Version}");
 
-        // Enrich all logs within this scope with comprehensive workflow context for distributed tracing
-        using (logger.ForTask(
-            domain: context.Workflow.Domain,
-            flow: context.Workflow.Key,
-            flowVersion: context.Workflow.Version,
-            instanceId: context.Instance.Id,
-            transitionKey: context.Transition?.Key,
-            taskKey: task.Key,
-            taskType: taskType,
-            taskTrigger: taskTrigger.ToString()))
+        // Record task execution start 
+        workflowMetrics.RecordTaskExecution(taskType, "started");
+
+        try
         {
-            // Log task execution start
-            logger.TaskExecutionStarted(
-                TelemetryConstants.Prefixes.Execution,
+            // Determine script code to use based on mapping type
+            string scriptCode;
+            if (onExecuteTask.Mapping.Type.Equals(MappingType.Global) && task is IGlobalTask globalTask)
+            {
+                // For global tasks, serialize the IMapping instance type name
+                if (globalTask.Mapping == null)
+                {
+                    scriptCode = string.Empty;
+                }
+                else
+                {
+                    // Serialize IMapping type name to Base64 string
+                    var mappingTypeName = globalTask.Mapping.GetType().AssemblyQualifiedName ??
+                                          globalTask.Mapping.GetType().FullName ?? string.Empty;
+                    var bytes = Encoding.UTF8.GetBytes(mappingTypeName);
+                    scriptCode = Convert.ToBase64String(bytes);
+                }
+            }
+            else
+            {
+                // For local tasks, use the decoded script code from mapping
+                scriptCode = onExecuteTask.Mapping.DecodedCode;
+            }
+
+            var response = await taskExecutor.ExecuteAsync(
+                task,
+                scriptCode,
+                context,
+                cancellationToken);
+            if (response != null)
+            {
+                var variableKey = task.Key.ToVariableName();
+                context.TaskResponse[variableKey] = response;
+                if (taskTrigger != TaskTrigger.Extension && response is ScriptResponse scriptResponse)
+                {
+                    if (scriptResponse.Data != null)
+                    {
+                        // NoTracking Instance
+                        context.Instance.AddData(
+                            guidGenerator.Create(),
+                            new JsonData(JsonSerializer.Serialize(
+                                scriptResponse.Data, JsonSerializerConstants.JsonOptions)),
+                            VersionStrategy.IncreasePatch
+                        );
+                    }
+                }
+            }
+
+            instanceTask.Completed(
+                new JsonData(JsonSerializer.Serialize(response ?? new { }, JsonSerializerConstants.JsonOptions)));
+
+            // Record successful task completion 
+            workflowMetrics.RecordTaskExecution(taskType, "success");
+        }
+        catch (Exception e)
+        {
+            activity?.RecordExceptionWithStatus(e);
+
+            instanceTask.Faulted(e.Message);
+
+            // Log task execution failure
+            logger.TaskExecutionFailed(
+                e,
                 task.Key,
                 taskType,
                 context.Instance.Id);
 
-            // Create span for task execution
-            using var activity = WorkflowActivitySource.Instance.StartActivity(
-                TelemetryConstants.SpanNames.TaskExecution,
-                ActivityKind.Internal);
+            // Record task failure
+            workflowMetrics.RecordTaskExecution(taskType, "failure");
 
-            activity?.SetTag(TelemetryConstants.TagNames.TaskKey, task.Key);
-            activity?.SetTag(TelemetryConstants.TagNames.TaskType, taskType);
-            activity?.SetTag(TelemetryConstants.TagNames.InstanceId, context.Instance.Id.ToString());
-            activity?.SetDisplayName($"Task: {task.Key}");
-
-            // Record task execution start 
-            workflowMetrics.RecordTaskExecution(taskType, "started");
-
-            try
-            {
-                // Determine script code to use based on mapping type
-                string scriptCode;
-                if (onExecuteTask.Mapping.Type.Equals(MappingType.Global) && task is IGlobalTask globalTask)
-                {
-                    // For global tasks, serialize the IMapping instance type name
-                    if (globalTask.Mapping == null)
-                    {
-                        scriptCode = string.Empty;
-                    }
-                    else
-                    {
-                        // Serialize IMapping type name to Base64 string
-                        var mappingTypeName = globalTask.Mapping.GetType().AssemblyQualifiedName ?? globalTask.Mapping.GetType().FullName ?? string.Empty;
-                        var bytes = System.Text.Encoding.UTF8.GetBytes(mappingTypeName);
-                        scriptCode = Convert.ToBase64String(bytes);
-                    }
-                }
-                else
-                {
-                    // For local tasks, use the decoded script code from mapping
-                    scriptCode = onExecuteTask.Mapping.DecodedCode;
-                }
-
-                var response = await taskExecutor.ExecuteAsync(
-                    task,
-                    scriptCode,
-                    context,
-                    cancellationToken);
-                if (response != null)
-                {
-                    var variableKey = task.Key.ToVariableName();
-                    context.TaskResponse[variableKey] = response;
-                    if (taskTrigger != TaskTrigger.Extension && response is ScriptResponse scriptResponse)
-                    {
-                        if (scriptResponse.Data != null)
-                        {
-                            // NoTracking Instance
-                            context.Instance.AddData(
-                                guidGenerator.Create(),
-                                new JsonData(JsonSerializer.Serialize(
-                                    scriptResponse.Data, JsonSerializerConstants.JsonOptions)),
-                                VersionStrategy.IncreasePatch
-                            );
-                        }
-                    }
-                }
-
-                instanceTask.Completed(
-                    new JsonData(JsonSerializer.Serialize(response ?? new { }, JsonSerializerConstants.JsonOptions)));
-
-                sw.Stop();
-
-                // Log task execution completion
-                logger.TaskExecutionCompleted(
-                    TelemetryConstants.Prefixes.Execution,
-                    task.Key,
-                    taskType,
-                    context.Instance.Id,
-                    sw.ElapsedMilliseconds);
-
-                // Record successful task completion 
-                workflowMetrics.RecordTaskExecution(taskType, "success");
-            }
-            catch (Exception e)
-            {
-                sw.Stop();
-
-                activity?.RecordExceptionWithStatus(e);
-
-                instanceTask.Faulted(e.Message);
-
-                // Log task execution failure
-                logger.TaskExecutionFailed(
-                    e,
-                    TelemetryConstants.Prefixes.Execution,
-                    task.Key,
-                    taskType,
-                    context.Instance.Id);
-
-                // Record task failure
-                workflowMetrics.RecordTaskExecution(taskType, "failure");
-
-                throw;
-            }
-
-            // Handle task completion persistence
-            await persistenceStrategy.HandleCompletionAsync(instanceTask, cancellationToken);
+            throw;
         }
+
+        // Handle task completion persistence - throw on failure as it's infrastructure
+        var completionResult = await persistenceStrategy.HandleCompletionAsync(instanceTask, cancellationToken);
+        completionResult.ThrowIfFailure();
     }
 
     /// <summary>

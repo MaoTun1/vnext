@@ -172,23 +172,21 @@ public static class PostgreSqlJsonFilterService
         var sanitizedField = SanitizeFieldName(field);
         var parameters = new List<NpgsqlParameter>();
         
-        // Handle nested JSON paths (e.g., "parent.child.field")
-        var jsonPath = BuildJsonPath(sanitizedField);
-        
+        // Pass sanitizedField directly - condition builders will handle nested vs single level
         return operatorType.ToLower() switch
         {
-            "eq" => BuildEqualsCondition(jsonPath, value, jsonColumnName, parameters, ref parameterIndex),
-            "ne" => BuildNotEqualsCondition(jsonPath, value, jsonColumnName, parameters, ref parameterIndex),
-            "gt" => BuildNumericCondition(jsonPath, value, ">", jsonColumnName, parameters, ref parameterIndex),
-            "ge" => BuildNumericCondition(jsonPath, value, ">=", jsonColumnName, parameters, ref parameterIndex),
-            "lt" => BuildNumericCondition(jsonPath, value, "<", jsonColumnName, parameters, ref parameterIndex),
-            "le" => BuildNumericCondition(jsonPath, value, "<=", jsonColumnName, parameters, ref parameterIndex),
-            "between" => BuildBetweenCondition(jsonPath, value, jsonColumnName, parameters, ref parameterIndex),
-            "match" or "like" => BuildLikeCondition(jsonPath, value, jsonColumnName, parameters, ref parameterIndex),
-            "startswith" => BuildStartsWithCondition(jsonPath, value, jsonColumnName, parameters, ref parameterIndex),
-            "endswith" => BuildEndsWithCondition(jsonPath, value, jsonColumnName, parameters, ref parameterIndex),
-            "in" => BuildInCondition(jsonPath, value, jsonColumnName, parameters, ref parameterIndex),
-            "nin" => BuildNotInCondition(jsonPath, value, jsonColumnName, parameters, ref parameterIndex),
+            "eq" => BuildEqualsCondition(sanitizedField, value, jsonColumnName, parameters, ref parameterIndex),
+            "ne" => BuildNotEqualsCondition(sanitizedField, value, jsonColumnName, parameters, ref parameterIndex),
+            "gt" => BuildNumericCondition(sanitizedField, value, ">", jsonColumnName, parameters, ref parameterIndex),
+            "ge" => BuildNumericCondition(sanitizedField, value, ">=", jsonColumnName, parameters, ref parameterIndex),
+            "lt" => BuildNumericCondition(sanitizedField, value, "<", jsonColumnName, parameters, ref parameterIndex),
+            "le" => BuildNumericCondition(sanitizedField, value, "<=", jsonColumnName, parameters, ref parameterIndex),
+            "between" => BuildBetweenCondition(sanitizedField, value, jsonColumnName, parameters, ref parameterIndex),
+            "match" or "like" => BuildLikeCondition(sanitizedField, value, jsonColumnName, parameters, ref parameterIndex),
+            "startswith" => BuildStartsWithCondition(sanitizedField, value, jsonColumnName, parameters, ref parameterIndex),
+            "endswith" => BuildEndsWithCondition(sanitizedField, value, jsonColumnName, parameters, ref parameterIndex),
+            "in" => BuildInCondition(sanitizedField, value, jsonColumnName, parameters, ref parameterIndex),
+            "nin" => BuildNotInCondition(sanitizedField, value, jsonColumnName, parameters, ref parameterIndex),
             _ => throw new ArgumentException($"Unsupported operator: {operatorType}")
         };
     }
@@ -203,59 +201,126 @@ public static class PostgreSqlJsonFilterService
         return field;
     }
 
-    private static string BuildJsonPath(string field)
+
+    /// <summary>
+    /// Check if the field path is nested (contains dots)
+    /// </summary>
+    private static bool IsNestedPath(string field) => field.Contains('.');
+
+    /// <summary>
+    /// Build nested JSON containment pattern for @> operator
+    /// Example: "parent.child" + "123" (numeric) -> {"parent":{"child":123}}
+    /// Example: "parent.child" + "test" (string) -> {"parent":{"child":"test"}}
+    /// </summary>
+    private static string BuildNestedJsonContainmentPattern(string field, string value, bool isNumeric, bool isBoolean)
     {
-        // Convert "parent.child.field" to PostgreSQL JSON path format
-        // PostgreSQL requires double quotes around field names in JSON paths
-        if (field.Contains('.'))
+        var parts = field.Split('.');
+        
+        // Build the innermost value
+        string innerValue;
+        if (isBoolean && bool.TryParse(value, out var boolVal))
         {
-            var parts = field.Split('.');
-            return string.Join(",", parts.Select(p => $"\"{p}\""));
+            innerValue = boolVal.ToString().ToLower();
         }
-        return $"\"{field}\"";
+        else if (isNumeric && decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var numVal))
+        {
+            innerValue = numVal.ToString(CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            innerValue = $"\"{value}\"";
+        }
+        
+        // Build nested JSON from inside out
+        // For "parent.child.field" with value "123", build: {"parent":{"child":{"field":123}}}
+        var result = $"{{\"{parts[^1]}\":{innerValue}}}";
+        
+        for (int i = parts.Length - 2; i >= 0; i--)
+        {
+            result = $"{{\"{parts[i]}\":{result}}}";
+        }
+        
+        return result;
     }
-    
-    private static string BuildSimpleFieldPath(string field)
+
+    /// <summary>
+    /// Build JSON text accessor expression for PostgreSQL
+    /// Single level: ("Data" ->> 'field')
+    /// Nested: ("Data" #>> ARRAY['parent','child'])
+    /// </summary>
+    private static string BuildJsonTextAccessor(string field, string jsonColumnName)
     {
-        // For simple field access with ->> operator, just return the field name
-        // Nested paths not supported with ->> (use #>> instead)
-        if (field.Contains('.'))
+        if (IsNestedPath(field))
         {
-            throw new ArgumentException($"Nested paths not supported for this operation: {field}. Use simple field names only.");
+            // Use #>> operator with ARRAY syntax for nested fields
+            // ARRAY syntax avoids curly brace issues with FromSqlRaw parameter parsing
+            var parts = field.Split('.');
+            var arrayElements = string.Join(",", parts.Select(p => $"'{p}'"));
+            return $"(\"{jsonColumnName}\" #>> ARRAY[{arrayElements}])";
         }
-        return field;
+        else
+        {
+            // Use ->> operator for single level field (existing behavior)
+            return $"(\"{jsonColumnName}\" ->> '{field}')";
+        }
     }
 
     private static (string, List<NpgsqlParameter>) BuildEqualsCondition(
-        string jsonPath, string value, string jsonColumnName, 
+        string field, string value, string jsonColumnName, 
         List<NpgsqlParameter> parameters, ref int parameterIndex)
     {
         // Use @> JSON containment operator for better performance (can use indexes)
         var conditions = new List<string>();
-        
-        // Convert single field path to proper JSON field name for containment
-        var fieldName = jsonPath.Trim('"'); // Remove quotes from jsonPath
+        var isNested = IsNestedPath(field);
         
         // String comparison - use JSON containment @>
         var stringIndex = parameterIndex++;
-        var stringJsonPattern = $"{{\"{fieldName}\":\"{value}\"}}";
+        string stringJsonPattern;
+        if (isNested)
+        {
+            // Build nested JSON pattern: {"parent":{"child":"value"}}
+            stringJsonPattern = BuildNestedJsonContainmentPattern(field, value, isNumeric: false, isBoolean: false);
+        }
+        else
+        {
+            // Single level: {"field":"value"} (existing behavior)
+            stringJsonPattern = $"{{\"{field}\":\"{value}\"}}";
+        }
         parameters.Add(new NpgsqlParameter { Value = stringJsonPattern, NpgsqlDbType = NpgsqlDbType.Jsonb });
         conditions.Add($"\"{jsonColumnName}\" @> {{{stringIndex}}}");
         
         // Numeric comparison (if value is numeric)
-        if (decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var numValue))
+        if (decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out _))
         {
             var numIndex = parameterIndex++;
-            var numJsonPattern = $"{{\"{fieldName}\":{numValue}}}";
+            string numJsonPattern;
+            if (isNested)
+            {
+                numJsonPattern = BuildNestedJsonContainmentPattern(field, value, isNumeric: true, isBoolean: false);
+            }
+            else
+            {
+                var numValue = decimal.Parse(value, NumberStyles.Number, CultureInfo.InvariantCulture);
+                numJsonPattern = $"{{\"{field}\":{numValue}}}";
+            }
             parameters.Add(new NpgsqlParameter { Value = numJsonPattern, NpgsqlDbType = NpgsqlDbType.Jsonb });
             conditions.Add($"\"{jsonColumnName}\" @> {{{numIndex}}}");
         }
         
         // Boolean comparison (if value is boolean)
-        if (bool.TryParse(value, out var boolValue))
+        if (bool.TryParse(value, out _))
         {
             var boolIndex = parameterIndex++;
-            var boolJsonPattern = $"{{\"{fieldName}\":{boolValue.ToString().ToLower()}}}";
+            string boolJsonPattern;
+            if (isNested)
+            {
+                boolJsonPattern = BuildNestedJsonContainmentPattern(field, value, isNumeric: false, isBoolean: true);
+            }
+            else
+            {
+                var boolValue = bool.Parse(value);
+                boolJsonPattern = $"{{\"{field}\":{boolValue.ToString().ToLower()}}}";
+            }
             parameters.Add(new NpgsqlParameter { Value = boolJsonPattern, NpgsqlDbType = NpgsqlDbType.Jsonb });
             conditions.Add($"\"{jsonColumnName}\" @> {{{boolIndex}}}");
         }
@@ -265,35 +330,59 @@ public static class PostgreSqlJsonFilterService
     }
 
     private static (string, List<NpgsqlParameter>) BuildNotEqualsCondition(
-        string jsonPath, string value, string jsonColumnName,
+        string field, string value, string jsonColumnName,
         List<NpgsqlParameter> parameters, ref int parameterIndex)
     {
         // Use NOT @> JSON containment operator for better performance
         var conditions = new List<string>();
-        
-        // Convert single field path to proper JSON field name for containment
-        var fieldName = jsonPath.Trim('"'); // Remove quotes from jsonPath
+        var isNested = IsNestedPath(field);
         
         // String comparison - use NOT JSON containment
         var stringIndex = parameterIndex++;
-        var stringJsonPattern = $"{{\"{fieldName}\":\"{value}\"}}";
+        string stringJsonPattern;
+        if (isNested)
+        {
+            stringJsonPattern = BuildNestedJsonContainmentPattern(field, value, isNumeric: false, isBoolean: false);
+        }
+        else
+        {
+            stringJsonPattern = $"{{\"{field}\":\"{value}\"}}";
+        }
         parameters.Add(new NpgsqlParameter { Value = stringJsonPattern, NpgsqlDbType = NpgsqlDbType.Jsonb });
         conditions.Add($"NOT (\"{jsonColumnName}\" @> {{{stringIndex}}})");
         
         // Numeric comparison (if value is numeric)
-        if (decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var numValue))
+        if (decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out _))
         {
             var numIndex = parameterIndex++;
-            var numJsonPattern = $"{{\"{fieldName}\":{numValue}}}";
+            string numJsonPattern;
+            if (isNested)
+            {
+                numJsonPattern = BuildNestedJsonContainmentPattern(field, value, isNumeric: true, isBoolean: false);
+            }
+            else
+            {
+                var numValue = decimal.Parse(value, NumberStyles.Number, CultureInfo.InvariantCulture);
+                numJsonPattern = $"{{\"{field}\":{numValue}}}";
+            }
             parameters.Add(new NpgsqlParameter { Value = numJsonPattern, NpgsqlDbType = NpgsqlDbType.Jsonb });
             conditions.Add($"NOT (\"{jsonColumnName}\" @> {{{numIndex}}})");
         }
         
         // Boolean comparison (if value is boolean) 
-        if (bool.TryParse(value, out var boolValue))
+        if (bool.TryParse(value, out _))
         {
             var boolIndex = parameterIndex++;
-            var boolJsonPattern = $"{{\"{fieldName}\":{boolValue.ToString().ToLower()}}}";
+            string boolJsonPattern;
+            if (isNested)
+            {
+                boolJsonPattern = BuildNestedJsonContainmentPattern(field, value, isNumeric: false, isBoolean: true);
+            }
+            else
+            {
+                var boolValue = bool.Parse(value);
+                boolJsonPattern = $"{{\"{field}\":{boolValue.ToString().ToLower()}}}";
+            }
             parameters.Add(new NpgsqlParameter { Value = boolJsonPattern, NpgsqlDbType = NpgsqlDbType.Jsonb });
             conditions.Add($"NOT (\"{jsonColumnName}\" @> {{{boolIndex}}})");
         }
@@ -304,7 +393,7 @@ public static class PostgreSqlJsonFilterService
     }
 
     private static (string, List<NpgsqlParameter>) BuildNumericCondition(
-        string jsonPath, string value, string sqlOperator, string jsonColumnName,
+        string field, string value, string sqlOperator, string jsonColumnName,
         List<NpgsqlParameter> parameters, ref int parameterIndex)
     {
         if (!decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var numValue))
@@ -315,17 +404,17 @@ public static class PostgreSqlJsonFilterService
         var paramIndex = parameterIndex++;
         parameters.Add(new NpgsqlParameter { Value = numValue });
         
-        // Convert jsonPath to simple field name for ->> operator
-        var fieldName = jsonPath.Trim('"'); // Remove quotes: "clientId" -> clientId
+        // Use BuildJsonTextAccessor for proper nested/single level handling
+        var accessor = BuildJsonTextAccessor(field, jsonColumnName);
         
-        // PostgreSQL native numeric comparison using ->> for single field access
-        var condition = $"(\"{jsonColumnName}\" ->> '{fieldName}')::numeric {sqlOperator} {{{paramIndex}}}";
+        // PostgreSQL native numeric comparison
+        var condition = $"{accessor}::numeric {sqlOperator} {{{paramIndex}}}";
         
         return (condition, parameters);
     }
 
     private static (string, List<NpgsqlParameter>) BuildBetweenCondition(
-        string jsonPath, string value, string jsonColumnName,
+        string field, string value, string jsonColumnName,
         List<NpgsqlParameter> parameters, ref int parameterIndex)
     {
         var parts = value.Split(',');
@@ -347,61 +436,61 @@ public static class PostgreSqlJsonFilterService
         parameters.Add(new NpgsqlParameter { Value = minNum });
         parameters.Add(new NpgsqlParameter { Value = maxNum });
         
-        // Convert jsonPath to simple field name for ->> operator
-        var fieldName = jsonPath.Trim('"'); // Remove quotes: "clientId" -> clientId
+        // Use BuildJsonTextAccessor for proper nested/single level handling
+        var accessor = BuildJsonTextAccessor(field, jsonColumnName);
         
-        var condition = $"(\"{jsonColumnName}\" ->> '{fieldName}')::numeric BETWEEN {{{minIndex}}} AND {{{maxIndex}}}";
+        var condition = $"{accessor}::numeric BETWEEN {{{minIndex}}} AND {{{maxIndex}}}";
         
         return (condition, parameters);
     }
 
     private static (string, List<NpgsqlParameter>) BuildLikeCondition(
-        string jsonPath, string value, string jsonColumnName,
+        string field, string value, string jsonColumnName,
         List<NpgsqlParameter> parameters, ref int parameterIndex)
     {
         var paramIndex = parameterIndex++;
         parameters.Add(new NpgsqlParameter { Value = $"%{value}%" });
         
-        // Convert jsonPath to simple field name for ->> operator
-        var fieldName = jsonPath.Trim('"'); // Remove quotes: "clientId" -> clientId
+        // Use BuildJsonTextAccessor for proper nested/single level handling
+        var accessor = BuildJsonTextAccessor(field, jsonColumnName);
         
-        var condition = $"(\"{jsonColumnName}\" ->> '{fieldName}') ILIKE {{{paramIndex}}}";
+        var condition = $"{accessor} ILIKE {{{paramIndex}}}";
         
         return (condition, parameters);
     }
 
     private static (string, List<NpgsqlParameter>) BuildStartsWithCondition(
-        string jsonPath, string value, string jsonColumnName,
+        string field, string value, string jsonColumnName,
         List<NpgsqlParameter> parameters, ref int parameterIndex)
     {
         var paramIndex = parameterIndex++;
         parameters.Add(new NpgsqlParameter { Value = $"{value}%" });
         
-        // Convert jsonPath to simple field name for ->> operator
-        var fieldName = jsonPath.Trim('"'); // Remove quotes: "clientId" -> clientId
+        // Use BuildJsonTextAccessor for proper nested/single level handling
+        var accessor = BuildJsonTextAccessor(field, jsonColumnName);
         
-        var condition = $"(\"{jsonColumnName}\" ->> '{fieldName}') ILIKE {{{paramIndex}}}";
+        var condition = $"{accessor} ILIKE {{{paramIndex}}}";
         
         return (condition, parameters);
     }
 
     private static (string, List<NpgsqlParameter>) BuildEndsWithCondition(
-        string jsonPath, string value, string jsonColumnName,
+        string field, string value, string jsonColumnName,
         List<NpgsqlParameter> parameters, ref int parameterIndex)
     {
         var paramIndex = parameterIndex++;
         parameters.Add(new NpgsqlParameter { Value = $"%{value}" });
         
-        // Convert jsonPath to simple field name for ->> operator
-        var fieldName = jsonPath.Trim('"'); // Remove quotes: "clientId" -> clientId
+        // Use BuildJsonTextAccessor for proper nested/single level handling
+        var accessor = BuildJsonTextAccessor(field, jsonColumnName);
         
-        var condition = $"(\"{jsonColumnName}\" ->> '{fieldName}') ILIKE {{{paramIndex}}}";
+        var condition = $"{accessor} ILIKE {{{paramIndex}}}";
         
         return (condition, parameters);
     }
 
     private static (string, List<NpgsqlParameter>) BuildInCondition(
-        string jsonPath, string value, string jsonColumnName,
+        string field, string value, string jsonColumnName,
         List<NpgsqlParameter> parameters, ref int parameterIndex)
     {
         var values = value.Split(',').Select(v => v.Trim()).ToArray();
@@ -414,16 +503,16 @@ public static class PostgreSqlJsonFilterService
             paramPlaceholders.Add($"{{{paramIndex}}}");
         }
         
-        // Convert jsonPath to simple field name for ->> operator
-        var fieldName = jsonPath.Trim('"'); // Remove quotes: "clientId" -> clientId
+        // Use BuildJsonTextAccessor for proper nested/single level handling
+        var accessor = BuildJsonTextAccessor(field, jsonColumnName);
         
-        var condition = $"(\"{jsonColumnName}\" ->> '{fieldName}') IN ({string.Join(", ", paramPlaceholders)})";
+        var condition = $"{accessor} IN ({string.Join(", ", paramPlaceholders)})";
         
         return (condition, parameters);
     }
 
     private static (string, List<NpgsqlParameter>) BuildNotInCondition(
-        string jsonPath, string value, string jsonColumnName,
+        string field, string value, string jsonColumnName,
         List<NpgsqlParameter> parameters, ref int parameterIndex)
     {
         var values = value.Split(',').Select(v => v.Trim()).ToArray();
@@ -436,11 +525,11 @@ public static class PostgreSqlJsonFilterService
             paramNames.Add($"{{{paramIndex}}}");
         }
         
-        // Convert jsonPath to simple field name for ->> operator
-        var fieldName = jsonPath.Trim('"'); // Remove quotes: "clientId" -> clientId
+        // Use BuildJsonTextAccessor for proper nested/single level handling
+        var accessor = BuildJsonTextAccessor(field, jsonColumnName);
         
-        var condition = $"(\"{jsonColumnName}\" ->> '{fieldName}') IS NOT NULL AND " +
-                       $"(\"{jsonColumnName}\" ->> '{fieldName}') NOT IN ({string.Join(", ", paramNames)})";
+        var condition = $"{accessor} IS NOT NULL AND " +
+                       $"{accessor} NOT IN ({string.Join(", ", paramNames)})";
         
         return (condition, parameters);
     }

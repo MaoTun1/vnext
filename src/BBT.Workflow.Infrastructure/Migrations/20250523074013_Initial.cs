@@ -10,22 +10,15 @@ namespace BBT.Workflow.Migrations
     /// <inheritdoc />
     public partial class Initial : Migration
     {
-        private readonly IDbContextSchema _schema;
-        
-        public Initial(IDbContextSchema schema)
-        {
-            _schema = schema;
-        }
-        
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.EnsureSchema(
-                name: _schema.SchemaName);
+            // migrationBuilder.EnsureSchema(
+            //     name: "public");
 
             migrationBuilder.CreateTable(
                 name: "Instances",
-                schema: _schema.SchemaName,
+                schema: "public",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -47,7 +40,7 @@ namespace BBT.Workflow.Migrations
 
             migrationBuilder.CreateTable(
                 name: "InstanceJobs",
-                schema: _schema.SchemaName,
+                schema: "public",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -68,7 +61,7 @@ namespace BBT.Workflow.Migrations
                     table.ForeignKey(
                         name: "FK_InstanceJobs_Instances_InstanceId",
                         column: x => x.InstanceId,
-                        principalSchema: _schema.SchemaName,
+                        principalSchema: null,
                         principalTable: "Instances",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -76,7 +69,7 @@ namespace BBT.Workflow.Migrations
 
             migrationBuilder.CreateTable(
                 name: "InstancesCorrelations",
-                schema: _schema.SchemaName,
+                schema: "public",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -92,20 +85,20 @@ namespace BBT.Workflow.Migrations
                     table.ForeignKey(
                         name: "FK_InstancesCorrelations_Instances_ParentInstanceId",
                         column: x => x.ParentInstanceId,
-                        principalSchema: _schema.SchemaName,
+                        principalSchema: null,
                         principalTable: "Instances",
                         principalColumn: "Id");
                     table.ForeignKey(
                         name: "FK_InstancesCorrelations_Instances_SubFlowInstanceId",
                         column: x => x.SubFlowInstanceId,
-                        principalSchema: _schema.SchemaName,
+                        principalSchema: null,
                         principalTable: "Instances",
                         principalColumn: "Id");
                 });
 
             migrationBuilder.CreateTable(
                 name: "InstancesData",
-                schema: _schema.SchemaName,
+                schema: "public",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -121,7 +114,7 @@ namespace BBT.Workflow.Migrations
                     table.ForeignKey(
                         name: "FK_InstancesData_Instances_InstanceId",
                         column: x => x.InstanceId,
-                        principalSchema: _schema.SchemaName,
+                        principalSchema: null,
                         principalTable: "Instances",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -129,7 +122,7 @@ namespace BBT.Workflow.Migrations
 
             migrationBuilder.CreateTable(
                 name: "InstanceTransitions",
-                schema: _schema.SchemaName,
+                schema: "public",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -149,7 +142,7 @@ namespace BBT.Workflow.Migrations
                     table.ForeignKey(
                         name: "FK_InstanceTransitions_Instances_InstanceId",
                         column: x => x.InstanceId,
-                        principalSchema: _schema.SchemaName,
+                        principalSchema: null,
                         principalTable: "Instances",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -157,7 +150,7 @@ namespace BBT.Workflow.Migrations
 
             migrationBuilder.CreateTable(
                 name: "InstanceTasks",
-                schema: _schema.SchemaName,
+                schema: "public",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -177,13 +170,13 @@ namespace BBT.Workflow.Migrations
                     table.ForeignKey(
                         name: "FK_InstanceTasks_InstanceTasks_FaultedTaskId",
                         column: x => x.FaultedTaskId,
-                        principalSchema: _schema.SchemaName,
+                        principalSchema: null,
                         principalTable: "InstanceTasks",
                         principalColumn: "Id");
                     table.ForeignKey(
                         name: "FK_InstanceTasks_InstanceTransitions_TransitionId",
                         column: x => x.TransitionId,
-                        principalSchema: _schema.SchemaName,
+                        principalSchema: null,
                         principalTable: "InstanceTransitions",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -191,7 +184,7 @@ namespace BBT.Workflow.Migrations
 
             migrationBuilder.CreateTable(
                 name: "InstanceActions",
-                schema: _schema.SchemaName,
+                schema: "public",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -208,7 +201,7 @@ namespace BBT.Workflow.Migrations
                     table.ForeignKey(
                         name: "FK_InstanceActions_InstanceTasks_TaskId",
                         column: x => x.TaskId,
-                        principalSchema: _schema.SchemaName,
+                        principalSchema: null,
                         principalTable: "InstanceTasks",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -216,57 +209,57 @@ namespace BBT.Workflow.Migrations
 
             migrationBuilder.CreateIndex(
                 name: "IX_InstanceActions_TaskId",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstanceActions",
                 column: "TaskId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_InstanceJobs_InstanceId",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstanceJobs",
                 column: "InstanceId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_InstanceJobs_JobId",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstanceJobs",
                 column: "JobId",
                 unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_InstancesCorrelations_ParentInstanceId",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesCorrelations",
                 column: "ParentInstanceId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_InstancesCorrelations_SubFlowInstanceId",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesCorrelations",
                 column: "SubFlowInstanceId",
                 unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_InstancesData_InstanceId",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstancesData",
                 column: "InstanceId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_InstanceTasks_FaultedTaskId",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstanceTasks",
                 column: "FaultedTaskId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_InstanceTasks_TransitionId",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstanceTasks",
                 column: "TransitionId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_InstanceTransitions_InstanceId",
-                schema: _schema.SchemaName,
+                schema: "public",
                 table: "InstanceTransitions",
                 column: "InstanceId");
         }
@@ -276,31 +269,31 @@ namespace BBT.Workflow.Migrations
         {
             migrationBuilder.DropTable(
                 name: "InstanceActions",
-                schema: _schema.SchemaName);
+                schema: "public");
 
             migrationBuilder.DropTable(
                 name: "InstanceJobs",
-                schema: _schema.SchemaName);
+                schema: "public");
 
             migrationBuilder.DropTable(
                 name: "InstancesCorrelations",
-                schema: _schema.SchemaName);
+                schema: "public");
 
             migrationBuilder.DropTable(
                 name: "InstancesData",
-                schema: _schema.SchemaName);
+                schema: "public");
 
             migrationBuilder.DropTable(
                 name: "InstanceTasks",
-                schema: _schema.SchemaName);
+                schema: "public");
 
             migrationBuilder.DropTable(
                 name: "InstanceTransitions",
-                schema: _schema.SchemaName);
+                schema: "public");
 
             migrationBuilder.DropTable(
                 name: "Instances",
-                schema: _schema.SchemaName);
+                schema: "public");
         }
     }
 }

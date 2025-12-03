@@ -59,9 +59,6 @@ public sealed class HttpMetricsMiddleware
             _workflowMetrics.RecordHttpRequest(method, endpoint, statusCode);
             _workflowMetrics.RecordHttpRequestDuration(method, endpoint, statusCode, stopwatch.Elapsed.TotalSeconds);
             _workflowMetrics.RecordHttpResponseSize(method, endpoint, statusCode, responseSize);
-            
-            _logger.LogDebug("HTTP request completed: {Method} {Endpoint} {StatusCode} in {Duration}ms, {Size} bytes",
-                method, endpoint, statusCode, stopwatch.ElapsedMilliseconds, responseSize);
         }
         catch (Exception ex)
         {

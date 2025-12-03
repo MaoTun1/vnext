@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using BBT.Aether.Domain.Entities;
+using BBT.Aether.Results;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Monitoring;
@@ -40,7 +40,7 @@ public class MetricsAwareComponentCacheStoreTests
     #region GetFlowAsync Tests
 
     [Fact]
-    public async Task GetFlowAsync_ShouldRecordCacheMiss_WhenEntityNotFound()
+    public async Task GetFlowAsync_ShouldRecordCacheMiss_WhenNotFound()
     {
         // Arrange
         var domain = "test-domain";
@@ -48,13 +48,14 @@ public class MetricsAwareComponentCacheStoreTests
 
         _mockInnerStore
             .Setup(x => x.GetFlowAsync(domain, key, null, It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new EntityNotFoundException(typeof(Definitions.Workflow), new { domain, key }));
+            .ReturnsAsync(Result<Definitions.Workflow>.Fail(
+                Error.NotFound("Workflow.NotFound", "Workflow not found")));
 
-        // Act & Assert
-        await Should.ThrowAsync<EntityNotFoundException>(
-            async () => await _store.GetFlowAsync(domain, key, null, CancellationToken.None)
-        );
+        // Act
+        var result = await _store.GetFlowAsync(domain, key, null, CancellationToken.None);
 
+        // Assert
+        result.IsSuccess.ShouldBeFalse();
         _mockWorkflowMetrics.Verify(x => x.RecordCacheMiss("Workflow"), Times.Once);
         _mockWorkflowMetrics.Verify(x => x.RecordCacheHit(It.IsAny<string>()), Times.Never);
     }
@@ -73,7 +74,7 @@ public class MetricsAwareComponentCacheStoreTests
 
         _mockInnerStore
             .Setup(x => x.GetTaskAsync(domain, key, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(task);
+            .ReturnsAsync(Result<WorkflowTask>.Ok(task));
 
         // Act
         await _store.GetTaskAsync(domain, key, null, CancellationToken.None);
@@ -91,13 +92,14 @@ public class MetricsAwareComponentCacheStoreTests
 
         _mockInnerStore
             .Setup(x => x.GetTaskAsync(domain, key, null, It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new EntityNotFoundException(typeof(WorkflowTask), new { domain, key }));
+            .ReturnsAsync(Result<WorkflowTask>.Fail(
+                Error.NotFound("WorkflowTask.NotFound", "Task not found")));
 
-        // Act & Assert
-        await Should.ThrowAsync<EntityNotFoundException>(
-            async () => await _store.GetTaskAsync(domain, key, null, CancellationToken.None)
-        );
+        // Act
+        var result = await _store.GetTaskAsync(domain, key, null, CancellationToken.None);
 
+        // Assert
+        result.IsSuccess.ShouldBeFalse();
         _mockWorkflowMetrics.Verify(x => x.RecordCacheMiss("WorkflowTask"), Times.Once);
     }
 
@@ -118,7 +120,7 @@ public class MetricsAwareComponentCacheStoreTests
 
         _mockInnerStore
             .Setup(x => x.GetSchemaAsync(domain, key, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(schema!);
+            .ReturnsAsync(Result<SchemaDefinition>.Ok(schema!));
 
         // Act
         await _store.GetSchemaAsync(domain, key, null, CancellationToken.None);
@@ -144,7 +146,7 @@ public class MetricsAwareComponentCacheStoreTests
 
         _mockInnerStore
             .Setup(x => x.GetFunctionAsync(domain, key, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(function!);
+            .ReturnsAsync(Result<Function>.Ok(function!));
 
         // Act
         await _store.GetFunctionAsync(domain, key, null, CancellationToken.None);
@@ -170,7 +172,7 @@ public class MetricsAwareComponentCacheStoreTests
 
         _mockInnerStore
             .Setup(x => x.GetViewAsync(domain, key, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(view!);
+            .ReturnsAsync(Result<View>.Ok(view!));
 
         // Act
         await _store.GetViewAsync(domain, key, null, CancellationToken.None);
@@ -196,7 +198,7 @@ public class MetricsAwareComponentCacheStoreTests
 
         _mockInnerStore
             .Setup(x => x.GetExtensionAsync(domain, key, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(extension!);
+            .ReturnsAsync(Result<Extension>.Ok(extension!));
 
         // Act
         await _store.GetExtensionAsync(domain, key, null, CancellationToken.None);
@@ -220,12 +222,13 @@ public class MetricsAwareComponentCacheStoreTests
 
         _mockInnerStore
             .Setup(x => x.SetAsync(workflow!, It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync(Result.Ok());
 
         // Act
-        await _store.SetAsync(workflow!, CancellationToken.None);
+        var result = await _store.SetAsync(workflow!, CancellationToken.None);
 
         // Assert
+        result.IsSuccess.ShouldBeTrue();
         _mockInnerStore.Verify(x => x.SetAsync(workflow!, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -240,12 +243,13 @@ public class MetricsAwareComponentCacheStoreTests
 
         _mockInnerStore
             .Setup(x => x.SetAsync(workflow!, It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync(Result.Ok());
 
         // Act
-        await _store.SetAsync(workflow!, CancellationToken.None);
+        var result = await _store.SetAsync(workflow!, CancellationToken.None);
 
         // Assert
+        result.IsSuccess.ShouldBeTrue();
         _mockWorkflowMetrics.Verify(x => x.SetCacheEntries("Workflow", It.IsAny<int>()), Times.Once);
         _mockWorkflowMetrics.Verify(x => x.SetCacheSize("Workflow", It.IsAny<long>()), Times.Once);
     }
@@ -253,4 +257,3 @@ public class MetricsAwareComponentCacheStoreTests
     #endregion
     
 }
-

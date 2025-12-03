@@ -1,64 +1,57 @@
+using BBT.Aether.AspNetCore.Controllers;
 using BBT.Workflow.Definitions;
-using BBT.Workflow.SubFlow;
+using BBT.Workflow.Runtime;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.Extensions.Options;
 
 namespace BBT.Workflow.Orchestration.Controllers.Utilities;
 
+/// <summary>
+/// Provides utility endpoints for system configuration and cache management operations.
+/// </summary>
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}")]
 [ServiceFilter(typeof(ResponseHeaderFilter))]
 public sealed class UtilityController(
     IAdminAppService adminAppService,
-    ISubflowCompletionService subflowCompletionService,
-    ILogger<UtilityController> logger) : ControllerBase
+    IRuntimeInfoProvider runtimeInfoProvider,
+    IOptions<RuntimeOptions> runtimeOptions) : AetherControllerBase
 {
+    /// <summary>
+    /// Retrieves the current runtime configuration information.
+    /// </summary>
+    /// <returns>Runtime configuration including version and domain information.</returns>
+    /// <response code="200">Returns the runtime configuration.</response>
+    [HttpGet("config")]
+    [ApiExplorerSettings(IgnoreApi = true)]
+    [ProducesResponseType(typeof(RuntimeConfigResponse), StatusCodes.Status200OK)]
+    public IActionResult GetConfig()
+    {
+        var response = new RuntimeConfigResponse
+        {
+            Version = runtimeInfoProvider.Version,
+            Domain = runtimeInfoProvider.Domain,
+            Schemas = runtimeOptions.Value.Schemas.ToDictionary(s => s.Key, s => s.Value.Schema)
+        };
+
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Invalidates the specified cache entry.
+    /// </summary>
+    /// <param name="input">The cache invalidation parameters.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    /// <returns>Result of the cache invalidation operation.</returns>
     [ApiExplorerSettings(IgnoreApi = true)]
     [HttpPost("utilities/invalidate")]
     public async Task<IActionResult> InvalidateCacheAsync(
         [FromBody] InvalidateCacheInput input,
         CancellationToken cancellationToken = default)
     {
-        await adminAppService.InvalidateCacheAsync(input, cancellationToken);
-        return Ok(new { result = "ok" });
-    }
-    
-    /// <summary>
-    /// Handles flow completion events from subflows.
-    /// This endpoint receives notifications when a subflow completes and triggers
-    /// the parent workflow to continue with output mapping and automatic transitions.
-    /// </summary>
-    /// <param name="completedDataEto">The completed flow data containing instance information and final data</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Status indicating the completion handling result</returns>
-    [ApiExplorerSettings(IgnoreApi = true)]
-    [HttpPost("utilities/flow/completed")]
-    public async Task<IActionResult> HandleFlowCompletedAsync(
-        [FromBody] FlowCompletedDataEto completedDataEto,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            logger.LogInformation(
-                "Received flow completion event for instance {InstanceId} in domain {Domain}, workflow {WorkflowName}",
-                completedDataEto.InstanceId, completedDataEto.Domain, completedDataEto.Workflow);
-
-            await subflowCompletionService.HandleSubFlowCompletionAsync(completedDataEto, cancellationToken);
-            
-            logger.LogInformation(
-                "Successfully processed flow completion for instance {InstanceId}",
-                completedDataEto.InstanceId);
-
-            return Ok(new { result = "ok", message = "Flow completion processed successfully" });
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex,
-                "Failed to process flow completion for instance {InstanceId} in domain {Domain}",
-                completedDataEto.InstanceId, completedDataEto.Domain);
-                
-            return StatusCode(500, new { error = "Failed to process flow completion", message = ex.Message });
-        }
+        var result = await adminAppService.InvalidateCacheAsync(input, cancellationToken);
+        return FromResult(result);
     }
 } 

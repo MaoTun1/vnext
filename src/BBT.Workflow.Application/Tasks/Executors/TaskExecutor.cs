@@ -31,19 +31,13 @@ public abstract class TaskExecutor(
         ScriptContext context,
         CancellationToken cancellationToken)
     {
-        Logger.LogDebug("Starting input preparation for task {TaskKey} of type {TaskType}", task.Key, task.GetType().Name);
-        
         try
         {
             var scriptRunner = await ScriptEngine.CompileToInstanceAsync<IMapping>(
                 scriptCode, 
                 cancellationToken: cancellationToken);
             
-            Logger.LogDebug("Script compiled successfully for input preparation on task {TaskKey}", task.Key);
-            
-            var response = await scriptRunner.InputHandler(task, context);
-            
-            Logger.LogDebug("Input preparation completed successfully for task {TaskKey}", task.Key);
+           var response = await scriptRunner.InputHandler(task, context);
             return response;
         }
         catch (Exception ex)
@@ -58,19 +52,13 @@ public abstract class TaskExecutor(
         ScriptContext context,
         CancellationToken cancellationToken)
     {
-        Logger.LogDebug("Starting output processing with script code");
-        
         try
         {
             var scriptRunner = await ScriptEngine.CompileToInstanceAsync<IMapping>(
                 scriptCode, 
                 cancellationToken: cancellationToken);
-            
-            Logger.LogDebug("Script compiled successfully for output processing");
-            
+
             var response = await scriptRunner.OutputHandler(context);
-            
-            Logger.LogDebug("Output processing completed successfully");
             return response;
         }
         catch (Exception ex)
@@ -91,9 +79,6 @@ public abstract class TaskExecutor(
         Dictionary<string, string>? headers = null,
         Dictionary<string, object>? metadata = null)
     {
-        Logger.LogInformation("Creating success response for task type {TaskType} with execution duration {ExecutionDurationMs}ms", 
-            taskType, executionDurationMs);
-        
         return new StandardTaskResponse
         {
             Data = data,
@@ -118,9 +103,6 @@ public abstract class TaskExecutor(
         Exception? exception = null,
         Dictionary<string, object>? metadata = null)
     {
-        Logger.LogError(exception, "Creating error response for task type {TaskType} with message: {ErrorMessage}, execution duration: {ExecutionDurationMs}ms", 
-            taskType, errorMessage, executionDurationMs);
-        
         var response = new StandardTaskResponse
         {
             Data = data,

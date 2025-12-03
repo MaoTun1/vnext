@@ -1,13 +1,11 @@
-using System.Diagnostics;
 using System.Text.Json;
+using BBT.Aether;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Instances.Remote;
 using BBT.Workflow.Scripting;
-using BBT.Workflow.Telemetry;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using OpenTelemetry.Trace;
 
 namespace BBT.Workflow.SubFlow;
 
@@ -37,7 +35,7 @@ public sealed class SubflowStarter(
         CancellationToken cancellationToken = default)
     {
         var subFlowConfig = targetState.SubFlow!;
-        
+
         // Handle input mapping if mapping is configured
         ScriptResponse? inputMappingResult = null;
         if (subFlowConfig.Mapping != null)
@@ -105,137 +103,95 @@ public sealed class SubflowStarter(
         ScriptResponse? inputMappingResult,
         CancellationToken cancellationToken)
     {
-        var sw = Stopwatch.StartNew();
-
-        // Enrich logs with parent workflow context for SubFlow start
-        using (logger.ForSubFlow(
-            parentDomain: workflow.Domain,
-            parentFlow: workflow.Key,
-            parentFlowVersion: workflow.Version,
-            parentInstanceId: parentInstance.Id,
-            transitionKey: transitionKey))
+        try
         {
-            // Log SubFlow start
-            logger.SubFlowStarted(
-                TelemetryConstants.Prefixes.Execution,
-                subFlowReference.Key,
-                correlation.SubFlowInstanceId,
-                parentInstance.Id);
-
-            // Create span for SubFlow start
-            using var activity = WorkflowActivitySource.Instance.StartActivity(
-                TelemetryConstants.SpanNames.SubFlowStart,
-                ActivityKind.Internal);
-            
-            activity?.SetTag(TelemetryConstants.TagNames.SubFlowKey, subFlowReference.Key);
-            activity?.SetTag(TelemetryConstants.TagNames.Domain, subFlowReference.Domain);
-            activity?.SetTag(TelemetryConstants.TagNames.InstanceId, parentInstance.Id.ToString());
-            activity?.SetDisplayName($"SubFlow Start: {subFlowReference.Key}");
-
-            try
+            // Prepare instance creation input
+            var createInstanceInput = new CreateInstanceInput
             {
-                // Prepare instance creation input
-                var createInstanceInput = new CreateInstanceInput
+                Id = correlation.SubFlowInstanceId,
+                Callback = configuration["DAPR_APP_ID"],
+                Key = parentInstance.Key ?? string.Empty,
+                Attributes = inputMappingResult?.Data != null
+                    ? JsonSerializer.SerializeToElement(inputMappingResult.Data)
+                    : null,
+                Tags =
+                [
+                    $"parent.key:{parentInstance.Key}",
+                    $"parent.domain:{workflow.Domain}",
+                    $"parent.flow:{workflow.Key}"
+                ],
+                ExtraProperties = new ExtraPropertyDictionary
                 {
-                    Id = correlation.SubFlowInstanceId,
-                    Callback = configuration["DAPR_APP_ID"],
-                    Key = parentInstance.Key ?? string.Empty,
-                    Attributes = inputMappingResult?.Data != null
-                        ? JsonSerializer.SerializeToElement(inputMappingResult.Data)
-                        : null,
-                    Tags =
-                    [
-                        $"parent.key:{parentInstance.Key}",
-                        $"parent.domain:{workflow.Domain}",
-                        $"parent.flow:{workflow.Key}"
-                    ],
-                    MetaData = new ObjectDictionary
-                    {
-                        [DomainConsts.MetaDataKeys.Id] = parentInstance.Id,
-                        [DomainConsts.MetaDataKeys.Key] = parentInstance.Key ?? string.Empty,
-                        [DomainConsts.MetaDataKeys.Domain] = workflow.Domain,
-                        [DomainConsts.MetaDataKeys.Flow] = workflow.Key,
-                        [DomainConsts.MetaDataKeys.Version] = workflow.Version,
-                        [DomainConsts.MetaDataKeys.State] = stateKey,
-                        [DomainConsts.MetaDataKeys.Transition] = transitionKey,
-                        [DomainConsts.MetaDataKeys.FlowType] = subFlowTypeCode
-                    }
-                };
+                    [DomainConsts.MetaDataKeys.Id] = parentInstance.Id,
+                    [DomainConsts.MetaDataKeys.Key] = parentInstance.Key ?? string.Empty,
+                    [DomainConsts.MetaDataKeys.Domain] = workflow.Domain,
+                    [DomainConsts.MetaDataKeys.Flow] = workflow.Key,
+                    [DomainConsts.MetaDataKeys.Version] = workflow.Version,
+                    [DomainConsts.MetaDataKeys.State] = stateKey,
+                    [DomainConsts.MetaDataKeys.Transition] = transitionKey,
+                    [DomainConsts.MetaDataKeys.FlowType] = subFlowTypeCode
+                }
+            };
 
-                // Apply additional properties from input mapping if available
-                if (inputMappingResult != null)
+            // Apply additional properties from input mapping if available
+            if (inputMappingResult != null)
+            {
+                if (!inputMappingResult.Key.IsNullOrEmpty())
                 {
-                    if (!inputMappingResult.Key.IsNullOrEmpty())
-                    {
-                        createInstanceInput.Key = inputMappingResult.Key;
-                    }
-
-                    if (!inputMappingResult.Tags.IsNullOrEmpty())
-                    {
-                        var existingTags = createInstanceInput.Tags?.ToList() ?? new List<string>();
-                        existingTags.AddRange(inputMappingResult.Tags);
-                        createInstanceInput.Tags = existingTags.ToArray();
-                    }
+                    createInstanceInput.Key = inputMappingResult.Key;
                 }
 
-                var subFlowStartInput = new StartInstanceInput(
-                    subFlowReference.Domain,
-                    subFlowReference.Key,
-                    subFlowReference.Version,
-                    sync: true
-                )
+                if (!inputMappingResult.Tags.IsNullOrEmpty())
                 {
-                    Instance = createInstanceInput,
-                    Headers = inputMappingResult?.Headers ?? new Dictionary<string, string?>(),
-                    RouteValues = inputMappingResult?.RouteValues ?? new Dictionary<string, string?>()
-                };
-
-                var startResult = await remoteInstanceCommandAppService.StartSubAsync(subFlowStartInput, cancellationToken);
-                
-                if (!startResult.IsSuccess)
-                {
-                    sw.Stop();
-                    var error = startResult.Error;
-                    
-                    logger.LogError(
-                        "{Prefix} SubFlow {SubFlowKey} start failed for instance {InstanceId}: {ErrorCode} - {ErrorMessage}",
-                        TelemetryConstants.Prefixes.Execution,
-                        subFlowReference.Key,
-                        parentInstance.Id,
-                        error.Code,
-                        error.Message);
-                    
-                    activity?.SetStatus(ActivityStatusCode.Error, error.Message);
-                    activity?.SetTag("error.code", error.Code);
-                    
-                    throw new InvalidOperationException(
-                        $"Failed to start SubFlow {subFlowReference.Key}: {error.Message}", 
-                        new Exception(error.Code));
+                    var existingTags = createInstanceInput.Tags?.ToList() ?? new List<string>();
+                    existingTags.AddRange(inputMappingResult.Tags);
+                    createInstanceInput.Tags = existingTags.ToArray();
                 }
-                
-                sw.Stop();
-                
-                logger.LogInformation(
-                    "{Prefix} SubFlow {SubFlowKey} started successfully for instance {InstanceId} in {ElapsedMs}ms",
-                    TelemetryConstants.Prefixes.Execution,
+            }
+
+            var subFlowStartInput = new StartInstanceInput(
+                subFlowReference.Domain,
+                subFlowReference.Key,
+                subFlowReference.Version,
+                sync: true
+            )
+            {
+                Instance = createInstanceInput,
+                Headers = inputMappingResult?.Headers ?? new Dictionary<string, string?>(),
+                RouteValues = inputMappingResult?.RouteValues ?? new Dictionary<string, string?>()
+            };
+
+            var startResult = await remoteInstanceCommandAppService.StartSubAsync(subFlowStartInput, cancellationToken);
+
+            if (!startResult.IsSuccess)
+            {
+                var error = startResult.Error;
+
+                logger.LogError(
+                    "SubFlow {SubFlowKey} start failed for instance {InstanceId}: {ErrorCode} - {ErrorMessage}",
                     subFlowReference.Key,
                     parentInstance.Id,
-                    sw.ElapsedMilliseconds);
+                    error.Code,
+                    error.Message);
+
+                throw new InvalidOperationException(
+                    $"Failed to start SubFlow {subFlowReference.Key}: {error.Message}",
+                    new Exception(error.Code));
             }
-            catch (Exception ex)
-            {
-                sw.Stop();
-                
-                activity?.RecordExceptionWithStatus(ex);
-                
-                logger.LogError(ex,
-                    "{Prefix} SubFlow {SubFlowKey} start failed for instance {InstanceId}",
-                    TelemetryConstants.Prefixes.Execution,
-                    subFlowReference.Key,
-                    parentInstance.Id);
-                
-                throw;
-            }
+
+            logger.LogInformation(
+                "SubFlow {SubFlowKey} started successfully for instance {InstanceId}",
+                subFlowReference.Key,
+                parentInstance.Id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "SubFlow {SubFlowKey} start failed for instance {InstanceId}",
+                subFlowReference.Key,
+                parentInstance.Id);
+
+            throw;
         }
     }
 

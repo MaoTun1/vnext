@@ -1,7 +1,6 @@
+using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
-using BBT.Workflow.Domain;
 using BBT.Workflow.Execution.TriggerTransition;
-using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
 using Microsoft.Extensions.Logging;
 
@@ -11,13 +10,11 @@ namespace BBT.Workflow.Tasks;
 /// Executes start tasks that create new workflow instances.
 /// </summary>
 /// <param name="scriptEngine">The script engine used for compiling input/output mapping scripts.</param>
-/// <param name="runtimeInfoProvider">The runtime information provider for domain checks.</param>
 /// <param name="taskExecutorFactory">Factory for creating task executors.</param>
 /// <param name="httpTaskFactory">Factory for creating HTTP tasks.</param>
 /// <param name="logger">The logger instance for logging start task execution details.</param>
 public sealed class StartTaskExecutor(
     IScriptEngine scriptEngine,
-    IRuntimeInfoProvider runtimeInfoProvider,
     ITaskExecutorFactory taskExecutorFactory,
     ITriggerTransitionHttpTaskFactory httpTaskFactory,
     ILogger<StartTaskExecutor> logger) : TaskExecutor(scriptEngine, logger), ITaskExecutor
@@ -42,16 +39,8 @@ public sealed class StartTaskExecutor(
         CancellationToken cancellationToken = default)
     {
         var startTask = (task as StartTask)!;
-
-        Logger.LogInformation("Starting start task execution for task {TaskKey} - Domain: {Domain}, Flow: {Flow}",
-            startTask.Key, startTask.TriggerDomain, startTask.TriggerFlow);
-
         try
         {
-            // Check runtime domain
-            runtimeInfoProvider.Check(context.Runtime.Domain);
-
-            Logger.LogDebug("Preparing input for start task {TaskKey}", startTask.Key);
             await PrepareInputAsync(startTask, scriptCode, context, cancellationToken);
 
             // Execute start logic
@@ -64,11 +53,8 @@ public sealed class StartTaskExecutor(
                     startTask.Key, executionResult.Error.Code, executionResult.Error.Message);
                 throw new InvalidOperationException($"Start execution failed: {executionResult.Error.Message}");
             }
-
-            Logger.LogDebug("Processing output for start task {TaskKey}", startTask.Key);
+            
             var outputResponse = await ProcessOutputAsync(scriptCode, context, cancellationToken);
-
-            Logger.LogInformation("Start task {TaskKey} execution completed, returning processed output", startTask.Key);
             return outputResponse;
         }
         catch (Exception ex)
@@ -103,11 +89,8 @@ public sealed class StartTaskExecutor(
         return await ResultExtensions.TryAsync(
             async ct =>
             {
-                Logger.LogInformation("Handling Start trigger for task {TaskKey} - Domain: {Domain}, Flow: {Flow}",
-                    task.Key, task.TriggerDomain, task.TriggerFlow);
-
                 // Create path using InstanceUrlTemplates.Start format
-                var path = string.Format(InstanceUrlTemplates.Start,
+                var path = InstanceUrlTemplates.Start(
                     task.TriggerDomain,
                     task.TriggerFlow);
                 
@@ -124,8 +107,7 @@ public sealed class StartTaskExecutor(
 
                 if (httpExecutor == null)
                     throw new InvalidOperationException("HttpTaskExecutor not found");
-
-                Logger.LogDebug("Calling HttpTaskExecutor.CallAsync for Start trigger task {TaskKey}", task.Key);
+                
                 await httpExecutor.CallAsync(httpTask, context, ct);
             },
             cancellationToken,

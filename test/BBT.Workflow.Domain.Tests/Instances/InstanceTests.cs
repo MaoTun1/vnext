@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using BBT.Aether;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances.Policies;
 using Xunit;
@@ -531,9 +532,9 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
         instance.SetInfoMetadata(isSync, callback, flowType);
 
         // Assert
-        Assert.Equal("true", instance.MetaData[DomainConsts.MetaDataKeys.Sync]);
-        Assert.Equal(callback, instance.MetaData[DomainConsts.MetaDataKeys.Callback]);
-        Assert.Equal(flowType, instance.MetaData[DomainConsts.MetaDataKeys.FlowType]);
+        Assert.Equal("true", instance.ExtraProperties[DomainConsts.MetaDataKeys.Sync]);
+        Assert.Equal(callback, instance.ExtraProperties[DomainConsts.MetaDataKeys.Callback]);
+        Assert.Equal(flowType, instance.ExtraProperties[DomainConsts.MetaDataKeys.FlowType]);
     }
 
     [Fact]
@@ -549,9 +550,9 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
         instance.SetInfoMetadata(isSync, callback, flowType);
 
         // Assert
-        Assert.Equal("false", instance.MetaData[DomainConsts.MetaDataKeys.Sync]);
-        Assert.Equal(string.Empty, instance.MetaData[DomainConsts.MetaDataKeys.Callback]);
-        Assert.Equal(flowType, instance.MetaData[DomainConsts.MetaDataKeys.FlowType]);
+        Assert.Equal("false", instance.ExtraProperties[DomainConsts.MetaDataKeys.Sync]);
+        Assert.Equal(string.Empty, instance.ExtraProperties[DomainConsts.MetaDataKeys.Callback]);
+        Assert.Equal(flowType, instance.ExtraProperties[DomainConsts.MetaDataKeys.FlowType]);
     }
 
     [Fact]
@@ -559,7 +560,7 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var instance = InstanceFactory.CreateDefault();
-        var userMetadata = new ObjectDictionary
+        var userMetadata = new ExtraPropertyDictionary()
         {
             ["custom.key1"] = "value1",
             ["custom.key2"] = "value2"
@@ -573,13 +574,13 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
 
         // Assert
         // System metadata should be set
-        Assert.Equal("true", instance.MetaData[DomainConsts.MetaDataKeys.Sync]);
-        Assert.Equal(callback, instance.MetaData[DomainConsts.MetaDataKeys.Callback]);
-        Assert.Equal(flowType, instance.MetaData[DomainConsts.MetaDataKeys.FlowType]);
+        Assert.Equal("true", instance.ExtraProperties[DomainConsts.MetaDataKeys.Sync]);
+        Assert.Equal(callback, instance.ExtraProperties[DomainConsts.MetaDataKeys.Callback]);
+        Assert.Equal(flowType, instance.ExtraProperties[DomainConsts.MetaDataKeys.FlowType]);
         
         // User metadata should be preserved
-        Assert.Equal("value1", instance.MetaData["custom.key1"]);
-        Assert.Equal("value2", instance.MetaData["custom.key2"]);
+        Assert.Equal("value1", instance.ExtraProperties["custom.key1"]);
+        Assert.Equal("value2", instance.ExtraProperties["custom.key2"]);
     }
 
     [Fact]
@@ -587,7 +588,7 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var instance = InstanceFactory.CreateDefault();
-        var userMetadata = new ObjectDictionary
+        var userMetadata = new ExtraPropertyDictionary
         {
             [DomainConsts.MetaDataKeys.Sync] = "user-sync-value", // User tries to set system key
             ["custom.key"] = "custom-value"
@@ -601,10 +602,10 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
 
         // Assert
         // System should not override user-provided system keys due to TryAdd behavior
-        Assert.Equal("user-sync-value", instance.MetaData[DomainConsts.MetaDataKeys.Sync]);
-        Assert.Equal(callback, instance.MetaData[DomainConsts.MetaDataKeys.Callback]);
-        Assert.Equal(flowType, instance.MetaData[DomainConsts.MetaDataKeys.FlowType]);
-        Assert.Equal("custom-value", instance.MetaData["custom.key"]);
+        Assert.Equal("user-sync-value", instance.ExtraProperties[DomainConsts.MetaDataKeys.Sync]);
+        Assert.Equal(callback, instance.ExtraProperties[DomainConsts.MetaDataKeys.Callback]);
+        Assert.Equal(flowType, instance.ExtraProperties[DomainConsts.MetaDataKeys.FlowType]);
+        Assert.Equal("custom-value", instance.ExtraProperties["custom.key"]);
     }
 
     [Theory]
@@ -621,7 +622,7 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
         instance.SetInfoMetadata(isSync, callback, flowType);
 
         // Assert
-        Assert.Equal(expectedValue, instance.MetaData[DomainConsts.MetaDataKeys.Sync]);
+        Assert.Equal(expectedValue, instance.ExtraProperties[DomainConsts.MetaDataKeys.Sync]);
     }
 
     [Fact]
@@ -883,7 +884,7 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var instance = InstanceFactory.CreateDefault();
-        instance.MetaData[DomainConsts.MetaDataKeys.FlowType] = "S";
+        instance.ExtraProperties[DomainConsts.MetaDataKeys.FlowType] = "S";
 
         // Act & Assert
         Assert.True(instance.IsSubFlow);
@@ -894,7 +895,7 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var instance = InstanceFactory.CreateDefault();
-        instance.MetaData[DomainConsts.MetaDataKeys.FlowType] = "F"; // Flow (Main Flow)
+        instance.ExtraProperties[DomainConsts.MetaDataKeys.FlowType] = "F"; // Flow (Main Flow)
 
         // Act & Assert
         Assert.False(instance.IsSubFlow);
@@ -905,7 +906,7 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var instance = InstanceFactory.CreateDefault();
-        instance.MetaData[DomainConsts.MetaDataKeys.FlowType] = "S";
+        instance.ExtraProperties[DomainConsts.MetaDataKeys.FlowType] = "S";
 
         // Act & Assert
         Assert.True(instance.IsSubItem);
@@ -916,7 +917,7 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var instance = InstanceFactory.CreateDefault();
-        instance.MetaData[DomainConsts.MetaDataKeys.FlowType] = "P";
+        instance.ExtraProperties[DomainConsts.MetaDataKeys.FlowType] = "P";
 
         // Act & Assert
         Assert.True(instance.IsSubItem);
@@ -927,7 +928,7 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var instance = InstanceFactory.CreateDefault();
-        instance.MetaData[DomainConsts.MetaDataKeys.FlowType] = "F"; // Flow (Main Flow)
+        instance.ExtraProperties[DomainConsts.MetaDataKeys.FlowType] = "F"; // Flow (Main Flow)
 
         // Act & Assert
         Assert.False(instance.IsSubItem);
@@ -938,7 +939,7 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var instance = InstanceFactory.CreateDefault();
-        instance.MetaData[DomainConsts.MetaDataKeys.FlowType] = "S";
+        instance.ExtraProperties[DomainConsts.MetaDataKeys.FlowType] = "S";
         instance.Complete();
 
         // Act & Assert
@@ -950,7 +951,7 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var instance = InstanceFactory.CreateDefault();
-        instance.MetaData[DomainConsts.MetaDataKeys.FlowType] = "S";
+        instance.ExtraProperties[DomainConsts.MetaDataKeys.FlowType] = "S";
 
         // Act & Assert
         Assert.False(instance.ShouldPublishCompletionEvent());
@@ -961,7 +962,7 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
     {
         // Arrange
         var instance = InstanceFactory.CreateDefault();
-        instance.MetaData[DomainConsts.MetaDataKeys.FlowType] = "F"; // Flow (Main Flow)
+        instance.ExtraProperties[DomainConsts.MetaDataKeys.FlowType] = "F"; // Flow (Main Flow)
         instance.Complete();
 
         // Act & Assert
@@ -1130,14 +1131,14 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
     }
 
     [Fact]
-    public void MetaData_ShouldBeInitializedEmpty()
+    public void ExtraProperties_ShouldBeInitializedEmpty()
     {
         // Arrange & Act
         var instance = InstanceFactory.CreateDefault();
 
         // Assert
-        Assert.NotNull(instance.MetaData);
-        Assert.Empty(instance.MetaData);
+        Assert.NotNull(instance.ExtraProperties);
+        Assert.Empty(instance.ExtraProperties);
     }
 
     [Fact]

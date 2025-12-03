@@ -1,789 +1,491 @@
+using System.Collections.Immutable;
 using System.Text.RegularExpressions;
 using BBT.Aether.DistributedCache;
-using BBT.Workflow.Definitions;
-using BBT.Workflow.Runtime;
-using Microsoft.Extensions.DependencyInjection;
+using BBT.Aether.Results;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Caching;
 
+/// <summary>
+/// Provides a thread-safe cache implementation using an immutable snapshot model.
+/// Supports local in-memory caching, distributed caching, and database fallback.
+/// </summary>
+/// <typeparam name="T">The type of entity to cache</typeparam>
 public class CacheSet<T>(
-    Func<IDistributedCacheService> cacheResolver,
-    ILogger logger,
-    IServiceProvider serviceProvider) : ICacheSet<T>
+    IDistributedCacheService distributedCache,
+    ICacheBackend<T> backend,
+    ILogger<CacheSet<T>> logger)
+    : ICacheSet<T>
     where T : class, IDomainEntity, IReferenceSetter
 {
-    private readonly ReaderWriterLockSlim _cacheLock = new();
-    private Dictionary<string, CacheItem<T>> _localCache = new();
-    private readonly Dictionary<string, SortedSet<string>> _index = new();
-    private DateTime _lastCleanupTime = DateTime.UtcNow;
-    private readonly SemaphoreSlim _cleanupSemaphore = new(1, 1); // Cleanup in order
+    private readonly ILogger _logger = logger;
 
-    // Cache configuration
-    private const int DefaultMaxCacheSize = 1000;
-    private const int DefaultCleanupThreshold = 1200; // Trigger cleanup when cache exceeds this size
-    private static readonly TimeSpan DefaultMaxCacheAge = TimeSpan.FromHours(2);
-    private static readonly TimeSpan DefaultCleanupInterval = TimeSpan.FromMinutes(30);
-    private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(10); // Add Lock timeout
+    // Immutable snapshot holding all local cache state
+    private CacheSnapshot<T> _snapshot = new(
+        ImmutableDictionary<string, CacheItem<T>>.Empty,
+        ImmutableDictionary<string, SortedSet<string>>.Empty);
 
-    private static readonly DistributedCacheEntryOptions CacheOptions = new()
+    // Default cache configuration
+    private static readonly TimeSpan DefaultItemTtl = TimeSpan.FromHours(12);
+    private const int DefaultMaxItems = 10_000;
+
+    public Type EntityType => typeof(T);
+
+    // ----------------
+    // Public API
+    // ----------------
+
+    public async Task<Result<T>> GetAsync(string cacheKey, CancellationToken cancellationToken = default)
     {
-        AbsoluteExpiration = DateTimeOffset.UtcNow.AddHours(1),
-    };
+        // 1) Lock-free snapshot read
+        var snap = _snapshot;
+        if (snap.Entries.TryGetValue(cacheKey, out var item))
+        {
+            item.UpdateAccess();
+            return Result<T>.Ok(item.Value);
+        }
 
-    public async Task LoadAllAsync(object data, CancellationToken cancellationToken = default)
+        // 2) Distributed cache - network errors will throw (expected per Railway Pattern)
+        try
+        {
+            var fromDistributed = await distributedCache.GetAsync<T>(cacheKey, cancellationToken);
+            if (fromDistributed is not null)
+            {
+                EnsureReferenceIsSet(fromDistributed, cacheKey);
+                // Asynchronously update local cache
+                _ = UpsertLocalAsync(fromDistributed, cancellationToken);
+                return Result<T>.Ok(fromDistributed);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error reading from distributed cache for {CacheKey}", cacheKey);
+            // Continue to backend fallback
+        }
+
+        // 3) Database backend fallback
+        var parsed = TryParseCacheKey(cacheKey);
+        if (parsed is null)
+        {
+            _logger.LogWarning("Invalid cache key format: {CacheKey}", cacheKey);
+            return Result<T>.Fail(CacheErrors.InvalidCacheKeyFormat(cacheKey));
+        }
+
+        var (domain, key, version) = parsed.Value;
+        var fromDbResult = await backend.LoadAsync(domain, key, version, cancellationToken);
+        
+        if (!fromDbResult.IsSuccess)
+        {
+            return fromDbResult;
+        }
+
+        var fromDb = fromDbResult.Value!;
+        EnsureReferenceIsSet(fromDb, cacheKey);
+        _ = SetAsync(fromDb, cancellationToken); // Async write to both local and distributed
+
+        return Result<T>.Ok(fromDb);
+    }
+
+    public async Task<Result> SetAsync(T entity, CancellationToken cancellationToken = default)
+    {
+        if (entity is null)
+        {
+            return Result.Fail(CacheErrors.EntityCannotBeNull());
+        }
+
+        var cacheKey = CreateCacheKey(entity);
+
+        // 1) Update local cache via snapshot
+        SnapshotUpsert(cacheKey, entity);
+
+        // 2) Write to distributed cache - network errors will throw (expected per Railway Pattern)
+        try
+        {
+            await distributedCache.SetAsync(cacheKey, entity, cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error writing to distributed cache for {CacheKey}", cacheKey);
+            // Local cache is already updated, distributed cache failure is logged but not blocking
+        }
+
+        return Result.Ok();
+    }
+
+    public Task<Result<List<T>>> GetAllByNameAsync(
+        string domain,
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        var snap = _snapshot;
+        var indexKey = CreateIndexKey(domain, name);
+
+        if (!snap.Index.TryGetValue(indexKey, out var versions) || versions.Count == 0)
+            return Task.FromResult(Result<List<T>>.Ok(new List<T>()));
+
+        var result = new List<T>();
+
+        // Filter snapshot entries by domain and key (name), then match versions
+        foreach (var entry in snap.Entries.Values)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var entity = entry.Value;
+            if (string.Equals(entity.Domain, domain, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(entity.Key, name, StringComparison.OrdinalIgnoreCase) &&
+                versions.Contains(entity.Version))
+            {
+                entry.UpdateAccess();
+                result.Add(entity);
+            }
+        }
+
+        return Task.FromResult(Result<List<T>>.Ok(result));
+    }
+
+    public Task<Result<List<T>>> GetAllByDomainAsync(string domain, CancellationToken cancellationToken = default)
+    {
+        var snap = _snapshot;
+
+        var grouped = snap.Entries.Values
+            .Select(ci => ci.Value)
+            .Where(e => string.Equals(e.Domain, domain, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(e => e.Key);
+
+        var result = new List<T>();
+
+        foreach (var group in grouped)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var latest = group
+                .OrderByDescending(e => e.Version, new SemVersionComparer())
+                .FirstOrDefault();
+
+            if (latest is not null)
+                result.Add(latest);
+        }
+
+        return Task.FromResult(Result<List<T>>.Ok(result));
+    }
+
+    public async Task<Result<T>> GetLatestByNameAsync(
+        string domain,
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        var snap = _snapshot;
+        var indexKey = CreateIndexKey(domain, name);
+
+        string? latestVersion = null;
+
+        if (snap.Index.TryGetValue(indexKey, out var versions) && versions.Count > 0)
+        {
+            latestVersion = versions
+                .OrderByDescending(v => v, new SemVersionComparer())
+                .FirstOrDefault();
+        }
+
+        // If we have a latest version from the index, find it in the snapshot
+        if (!string.IsNullOrEmpty(latestVersion))
+        {
+            foreach (var entry in snap.Entries.Values)
+            {
+                var entity = entry.Value;
+                if (string.Equals(entity.Domain, domain, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(entity.Key, name, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(entity.Version, latestVersion, StringComparison.OrdinalIgnoreCase))
+                {
+                    entry.UpdateAccess();
+                    return Result<T>.Ok(entity);
+                }
+            }
+        }
+
+        // Not in snapshot: load from backend
+        var fromDbResult = await backend.LoadAsync(domain, name, version: null, cancellationToken);
+        
+        if (!fromDbResult.IsSuccess)
+        {
+            return fromDbResult;
+        }
+
+        var fromDb = fromDbResult.Value!;
+        var cacheKey = CreateCacheKey(fromDb);
+        EnsureReferenceIsSet(fromDb, cacheKey);
+        _ = SetAsync(fromDb, cancellationToken);
+
+        return Result<T>.Ok(fromDb);
+    }
+
+    public async Task<Result> InvalidateAsync(string cacheKey, CancellationToken cancellationToken = default)
+    {
+        // Remove from snapshot
+        SnapshotRemove(cacheKey);
+
+        // Remove from distributed cache - network errors will throw (expected per Railway Pattern)
+        try
+        {
+            await distributedCache.RemoveAsync(cacheKey, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error removing from distributed cache for {CacheKey}", cacheKey);
+            // Local cache is already removed, distributed cache failure is logged but not blocking
+        }
+
+        return Result.Ok();
+    }
+
+    public Task LoadAllAsync(object data, CancellationToken cancellationToken = default)
     {
         if (data is not IEnumerable<T> entities)
             throw new ArgumentException($"Invalid data type for {typeof(T).Name}");
 
-        var allEntities = new Dictionary<string, CacheItem<T>>();
-        var allIndex = new Dictionary<string, SortedSet<string>>();
+        var entries = new Dictionary<string, CacheItem<T>>();
+        var index = new Dictionary<string, SortedSet<string>>();
+
         foreach (var entity in entities)
         {
-            var cacheKey = entity.CacheKey;
-            try
-            {
-                await cacheResolver().SetAsync(cacheKey, entity, CacheOptions, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to cache entity during load: {CacheKey}. Cache may not be available.", cacheKey);
-            }
-            allEntities[cacheKey] = new CacheItem<T>(entity);
-            UpdateIndex(allIndex, entity);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var cacheKey = CreateCacheKey(entity);
+            EnsureReferenceIsSet(entity, cacheKey);
+
+            var item = new CacheItem<T>(entity);
+            entries[cacheKey] = item;
+            UpdateIndex(index, entity);
         }
 
-        _cacheLock.EnterWriteLock();
-        try
-        {
-            _localCache = allEntities;
-            _index.Clear();
-            foreach (var kvp in allIndex)
-            {
-                _index[kvp.Key] = kvp.Value;
-            }
-        }
-        finally
-        {
-            if (_cacheLock.IsWriteLockHeld)
-            {
-                _cacheLock.ExitWriteLock();
-            }
-        }
+        var newSnapshot = new CacheSnapshot<T>(
+            entries.ToImmutableDictionary(),
+            index.ToImmutableDictionary(kvp => kvp.Key, kvp => new SortedSet<string>(kvp.Value)));
 
-        logger.LogInformation("{EntityType} cached and loaded into memory.", typeof(T).Name);
+        Interlocked.Exchange(ref _snapshot, newSnapshot);
+
+        _logger.LogInformation(
+            "CacheSet<{Type}> initialized. Items: {Count}",
+            typeof(T).Name, entries.Count);
+
+        return Task.CompletedTask;
     }
 
-    public async Task<T?> GetAsync(string cacheKey, CancellationToken cancellationToken = default)
-    {
-        // Step 1: Check memory cache with timeout
-        if (_cacheLock.TryEnterReadLock(LockTimeout))
-        {
-            try
-            {
-                if (_localCache.TryGetValue(cacheKey, out var cachedItem))
-                {
-                    cachedItem.UpdateAccess();
-                    logger.LogDebug("Cache hit in memory for {CacheKey}", cacheKey);
-                    
-                    // Check if cleanup is needed (do this outside the read lock)
-                    var shouldCleanup = ShouldTriggerCleanup();
-                    if (shouldCleanup)
-                    {
-                        // Non-blocking cleanup trigger
-                        _ = TriggerCleanupAsync();
-                    }
-                    
-                    return cachedItem.Value;
-                }
-            }
-            finally
-            {
-                _cacheLock.ExitReadLock();
-            }
-        }
-        else
-        {
-            logger.LogWarning("Failed to acquire read lock for cache key: {CacheKey}. Proceeding without memory cache check.", cacheKey);
-        }
-
-        // Step 2: Check distributed cache
-        try
-        {
-            var distributedCacheValue = await cacheResolver().GetAsync<T>(cacheKey, cancellationToken);
-            if (distributedCacheValue is not null)
-            {
-                logger.LogDebug("Cache hit in distributed cache for {CacheKey}", cacheKey);
-
-                // Ensure reference information is properly set after deserialization
-                EnsureReferenceIsSet(distributedCacheValue, cacheKey);
-                
-                // Try to set in local cache without blocking
-                _ = TrySetLocalCacheAsync(cacheKey, distributedCacheValue);
-                return distributedCacheValue;
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to access distributed cache for {CacheKey}. Cache may not be available.", cacheKey);
-        }
-
-        // Step 3: Database fallback - load from database and cache
-        logger.LogDebug("Cache miss, loading from database for {CacheKey}", cacheKey);
-        var databaseValue = await LoadFromDatabaseAsync(cacheKey, cancellationToken);
-        if (databaseValue is not null)
-        {
-            // Ensure reference information is properly set after database load
-            EnsureReferenceIsSet(databaseValue, cacheKey);
-
-            // Try to cache the entity without blocking the main flow
-            _ = TrySetAsync(databaseValue, cancellationToken);
-            logger.LogInformation("Loaded {EntityType} from database and cached: {CacheKey}", typeof(T).Name, cacheKey);
-            return databaseValue;
-        }
-
-        logger.LogDebug("Entity not found in any cache layer or database for {CacheKey}", cacheKey);
-        return null;
-    }
-
-    public async Task SetAsync(T entity, CancellationToken cancellationToken = default)
-    {
-        var cacheKey = entity.CacheKey;
-
-        // Try to set in distributed cache, but don't fail if cache is unavailable
-        try
-        {
-            await cacheResolver().SetAsync(cacheKey, entity, CacheOptions, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to set entity in distributed cache: {CacheKey}. Cache may not be available.", cacheKey);
-        }
-
-        // LOCAL CACHE - use timeout to prevent blocking
-        if (_cacheLock.TryEnterWriteLock(LockTimeout))
-        {
-            try
-            {
-                _localCache[cacheKey] = new CacheItem<T>(entity);
-                // INDEX
-                UpdateIndex(_index, entity);
-                
-                // Check if we need to trigger cleanup due to size
-                if (_localCache.Count > DefaultCleanupThreshold)
-                {
-                    logger.LogDebug("Cache size exceeded threshold ({Count} > {Threshold}). Triggering cleanup.", 
-                        _localCache.Count, DefaultCleanupThreshold);
-                    
-                    // Non-blocking cleanup trigger
-                    _ = TriggerCleanupAsync();
-                }
-            }
-            finally
-            {
-                _cacheLock.ExitWriteLock();
-            }
-        }
-        else
-        {
-            logger.LogWarning("Failed to acquire write lock for cache key: {CacheKey}. Local cache not updated.", cacheKey);
-        }
-    }
-
-    public async Task<List<T>> GetAllByNameAsync(string domain, string name,
+    /// <summary>
+    /// Performs cleanup of expired and least-used items based on TTL and capacity.
+    /// </summary>
+    public int Cleanup(
+        TimeSpan? ttl = null,
+        int? maxItems = null,
         CancellationToken cancellationToken = default)
     {
-        List<string>? versions;
-        _cacheLock.EnterReadLock();
-        try
-        {
-            if (!_index.TryGetValue(name, out var versionSet))
-                return new List<T>();
+        ttl ??= DefaultItemTtl;
+        maxItems ??= DefaultMaxItems;
 
-            versions = versionSet.ToList();
-        }
-        finally
+        var now = DateTime.UtcNow;
+        var current = _snapshot;
+
+        var keptEntries = new Dictionary<string, CacheItem<T>>();
+        var keptIndex = new Dictionary<string, SortedSet<string>>();
+
+        var removedCount = 0;
+
+        // 1) TTL filter
+        foreach (var (key, item) in current.Entries)
         {
-            if (_cacheLock.IsReadLockHeld)
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var age = now - item.CreatedTime;
+            var idle = now - item.LastAccessTime;
+
+            if (age > ttl.Value || idle > ttl.Value)
             {
-                _cacheLock.ExitReadLock();
-            }
-        }
-
-        if (!versions.Any())
-            return new List<T>();
-
-        // Create tasks for parallel execution
-        var entityTasks = versions.Select(async ver =>
-        {
-            var cacheKey = CreateCacheKey(domain, name, ver);
-            return await GetAsync(cacheKey, cancellationToken);
-        });
-
-        // Execute all entity fetching tasks in parallel
-        var entityResults = await Task.WhenAll(entityTasks);
-
-        // Filter out null results and return valid entities
-        return entityResults.Where(entity => entity != null).ToList()!;
-    }
-
-    /// <summary>
-    /// Retrieves all entities for the specified domain from the cache.
-    /// This method returns the latest version of each entity in the domain.
-    /// </summary>
-    /// <param name="domain">The domain identifier to retrieve entities for.</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>A list of all entities for the specified domain.</returns>
-    public async Task<List<T>> GetAllByDomainAsync(string domain, CancellationToken cancellationToken = default)
-    {
-        Dictionary<string, string> latestVersions;
-
-        _cacheLock.EnterReadLock();
-        try
-        {
-            // Get all entities for the domain and find latest version for each key
-            latestVersions = _index
-                .Where(kvp => kvp.Key.StartsWith($"{domain}:"))
-                .ToDictionary(
-                    kvp => kvp.Key, // domain:key
-                    kvp => kvp.Value.Max ?? string.Empty // latest version
-                );
-        }
-        finally
-        {
-            if (_cacheLock.IsReadLockHeld)
-            {
-                _cacheLock.ExitReadLock();
-            }
-        }
-
-        if (!latestVersions.Any())
-            return new List<T>();
-
-        // Create tasks for parallel execution
-        var entityTasks = latestVersions
-            .Where(kvp => !string.IsNullOrEmpty(kvp.Value))
-            .Select(async kvp =>
-            {
-                // Extract key from "domain:key" format
-                var key = kvp.Key.Substring(domain.Length + 1);
-                var cacheKey = CreateCacheKeyWithT(domain, typeof(T).Name switch
-                {
-                    nameof(Extension) => RuntimeSysSchemaInfo.Extensions,
-                    nameof(Definitions.Workflow) => RuntimeSysSchemaInfo.Flows,
-                    nameof(WorkflowTask) => RuntimeSysSchemaInfo.Tasks,
-                    nameof(Function) => RuntimeSysSchemaInfo.Functions,
-                    nameof(View) => RuntimeSysSchemaInfo.Views,
-                    nameof(SchemaDefinition) => RuntimeSysSchemaInfo.Schemas,
-                    _ => "unknown"
-                }, key, kvp.Value);
-
-                return await GetAsync(cacheKey, cancellationToken);
-            });
-
-        // Execute all entity fetching tasks in parallel
-        var entityResults = await Task.WhenAll(entityTasks);
-
-        // Filter out null results and return valid entities
-        return entityResults.Where(entity => entity != null).ToList()!;
-    }
-
-    public async Task<T?> GetLatestByNameAsync(
-        string domain,
-         string flow,
-        string name,
-        CancellationToken cancellationToken = default)
-    {
-        string? latestVersion;
-
-        // With timeout acquire ReadLock
-        if (_cacheLock.TryEnterReadLock(LockTimeout))
-        {
-            try
-            {
-                string indexKey = CreateIndexKey(domain, name);
-                if (!_index.TryGetValue(indexKey, out var versionSet) || versionSet.Count == 0)
-                {
-                    // Release ReadLock, perform database operation
-                    _cacheLock.ExitReadLock();
-                    
-                    // Load from database
-                    var databaseEntity = await LoadLatestFromDatabaseAsync(domain, flow, name, cancellationToken);
-                    if (databaseEntity != null)
-                    {
-                        // Non-blocking cache set
-                        _ = TrySetAsync(databaseEntity, cancellationToken);
-                        return databaseEntity;
-                    }
-                    return null;
-                }
-                latestVersion = versionSet.Max;
-            }
-            finally
-            {
-                if (_cacheLock.IsReadLockHeld)
-                {
-                    _cacheLock.ExitReadLock();
-                }
-            }
-        }
-        else
-        {
-            logger.LogWarning("Failed to acquire read lock for GetLatestByNameAsync: {Domain}:{Name}. Loading directly from database.", domain, name);
-            // Fallback: Load directly from database
-            var databaseEntity = await LoadLatestFromDatabaseAsync(domain, flow, name, cancellationToken);
-            if (databaseEntity != null)
-            {
-                _ = TrySetAsync(databaseEntity, cancellationToken);
-                return databaseEntity;
-            }
-            return null;
-        }
-
-        if (latestVersion == null)
-            return null;
-
-        var latestCacheKey = CreateCacheKeyWithT(domain, flow, name, latestVersion);
-        return await GetAsync(latestCacheKey, cancellationToken);
-    }
-
-    public async Task InvalidateAsync(string cacheKey, CancellationToken cancellationToken = default)
-    {
-        await cacheResolver().RemoveAsync(cacheKey, cancellationToken);
-        InvalidateLocalCache(cacheKey);
-    }
-    
-    /// <summary>
-    /// Checks if cleanup should be triggered based on cache size and time
-    /// </summary>
-    private bool ShouldTriggerCleanup()
-    {
-        return _localCache.Count > DefaultCleanupThreshold || 
-               DateTime.UtcNow - _lastCleanupTime > DefaultCleanupInterval;
-    }
-
-    // Non-blocking cleanup trigger, trigger cleanup in background
-    private async Task TriggerCleanupAsync()
-    {
-        if (await _cleanupSemaphore.WaitAsync(0)) // Non-blocking wait
-        {
-            try
-            {
-                await Task.Run(() => CleanupExpiredItems());
-            }
-            finally
-            {
-                _cleanupSemaphore.Release();
-            }
-        }
-        else
-        {
-            logger.LogDebug("Cleanup already in progress, skipping...");
-        }
-    }
-
-    // Non-blocking cache set
-    private async Task TrySetAsync(T entity, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await SetAsync(entity, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to cache entity in background: {CacheKey}", entity.CacheKey);
-        }
-    }
-
-    // Non-blocking local cache set
-    private async Task TrySetLocalCacheAsync(string cacheKey, T entity)
-    {
-        await Task.Run(() =>
-        {
-            if (_cacheLock.TryEnterWriteLock(TimeSpan.FromSeconds(1)))
-            {
-                try
-                {
-                    _localCache[cacheKey] = new CacheItem<T>(entity);
-                    UpdateIndex(_index, entity);
-                }
-                finally
-                {
-                    _cacheLock.ExitWriteLock();
-                }
-            }
-            else
-            {
-                logger.LogDebug("Could not acquire write lock for local cache update: {CacheKey}", cacheKey);
-            }
-        });
-    }
-
-    /// <summary>
-    /// Cleans up expired and least recently used items from the cache
-    /// </summary>
-    private void CleanupExpiredItems()
-    {
-        try
-        {
-            if (_cacheLock.TryEnterWriteLock(LockTimeout))
-            {
-                try
-                {
-                    var now = DateTime.UtcNow;
-                    var initialCount = _localCache.Count;
-                    
-                    // Step 1: Remove expired items (based on max age)
-                    var expiredKeys = _localCache
-                        .Where(kvp => now - kvp.Value.LastAccessTime > DefaultMaxCacheAge)
-                        .Select(kvp => kvp.Key)
-                        .ToList();
-                    
-                    foreach (var key in expiredKeys)
-                    {
-                        if (_localCache.Remove(key, out var removedItem))
-                        {
-                            RemoveFromIndex(_index, removedItem.Value);
-                        }
-                    }
-                    
-                    // Step 2: If still over limit, remove least recently used items
-                    if (_localCache.Count > DefaultMaxCacheSize)
-                    {
-                        var itemsToRemove = _localCache.Count - DefaultMaxCacheSize;
-                        var lruKeys = _localCache
-                            .OrderBy(kvp => kvp.Value.LastAccessTime)
-                            .Take(itemsToRemove)
-                            .Select(kvp => kvp.Key)
-                            .ToList();
-                        
-                        foreach (var key in lruKeys)
-                        {
-                            if (_localCache.Remove(key, out var removedItem))
-                            {
-                                RemoveFromIndex(_index, removedItem.Value);
-                            }
-                        }
-                    }
-                    
-                    _lastCleanupTime = now;
-                    
-                    var finalCount = _localCache.Count;
-                    var removedCount = initialCount - finalCount;
-                    
-                    if (removedCount > 0)
-                    {
-                        logger.LogInformation("Cache cleanup completed. Removed {RemovedCount} items. Cache size: {InitialCount} -> {FinalCount}", 
-                            removedCount, initialCount, finalCount);
-                    }
-                }
-                finally
-                {
-                    _cacheLock.ExitWriteLock();
-                }
-            }
-            else
-            {
-                logger.LogWarning("Failed to acquire write lock for cleanup. Skipping cleanup cycle.");
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error during cache cleanup");
-        }
-    }
-
-    /// <summary>
-    /// Loads entity from database using the cache key.
-    /// This method provides database fallback when cache miss occurs.
-    /// </summary>
-    /// <param name="cacheKey">The cache key to parse and load entity from database</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The entity from database or null if not found</returns>
-    private async Task<T?> LoadFromDatabaseAsync(string cacheKey, CancellationToken cancellationToken)
-    {
-        try
-        {
-            // Parse cache key: {EntityType}:{Domain}:{Flow}:{Key}:{Version}
-            var match = Regex.Match(cacheKey, @"^([^:]+):([^:]+):([^:]+):([^:]+):([^:]+)$");
-            if (!match.Success)
-            {
-                logger.LogWarning("Invalid cache key format: {CacheKey}", cacheKey);
-                return null;
+                removedCount++;
+                continue;
             }
 
-            var domain = match.Groups[2].Value;
-            var key = match.Groups[4].Value;
-            var version = match.Groups[5].Value;
-
-            return await LoadEntityFromDatabaseAsync(domain, key, version, cancellationToken);
+            keptEntries[key] = item;
+            UpdateIndex(keptIndex, item.Value);
         }
-        catch (Exception ex)
+
+        // 2) Capacity filter (if needed)
+        if (maxItems > 0 && keptEntries.Count > maxItems.Value)
         {
-            logger.LogError(ex, "Error loading entity from database for cache key: {CacheKey}", cacheKey);
-            return null;
-        }
-    }
+            var overflow = keptEntries.Count - maxItems.Value;
 
-    /// <summary>
-    /// Loads the latest version of an entity from database.
-    /// </summary>
-    /// <param name="domain">Domain identifier</param>
-    /// <param name="flow">Flow identifier</param>
-    /// <param name="key">Entity key</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The latest entity from database or null if not found</returns>
-    private async Task<T?> LoadLatestFromDatabaseAsync(string domain, string flow, string key, CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await LoadEntityFromDatabaseAsync(domain, key, null, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error loading latest entity from database for {Domain}:{Flow}:{Key}", domain, flow, key);
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Core method to load entity from database using RuntimeService.
-    /// Uses the direct key/version method for efficient database access.
-    /// </summary>
-    /// <param name="domain">Domain identifier</param>
-    /// <param name="key">Entity key</param>
-    /// <param name="version">Entity version (null for latest)</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The entity from database or null if not found</returns>
-    private async Task<T?> LoadEntityFromDatabaseAsync(string domain, string key, string? version, CancellationToken cancellationToken)
-    {
-        using var scope = serviceProvider.CreateScope();
-        var runtimeService = scope.ServiceProvider.GetRequiredService<IRuntimeService>();
-        var runtimeInfoProvider = scope.ServiceProvider.GetRequiredService<IRuntimeInfoProvider>();
-
-        // Validate domain access
-        runtimeInfoProvider.Check(domain);
-
-        try
-        {
-            // If version is specified, use direct key/version method - most efficient
-            if (!string.IsNullOrEmpty(version))
-            {
-                logger.LogDebug("Loading entity from database: {EntityType}:{Domain}:{Key}:{Version}", typeof(T).Name, domain, key, version);
-                var entity = await runtimeService.GetAsync<T>(GetSchemaNameForType(), key, version, cancellationToken);
-
-                // Validate the entity belongs to the requested domain
-                if (entity != null && entity.Domain == domain)
-                {
-                    logger.LogDebug("Successfully loaded entity from database: {CacheKey}", entity.CacheKey);
-                    return entity;
-                }
-                logger.LogDebug("Entity not found or domain mismatch: {Domain}:{Key}:{Version}", domain, key, version);
-                return null;
-            }
-
-            // For latest version, we need to get all entities and find the latest
-            // WARNING: This loads ALL entities from schema - use sparingly!
-            logger.LogWarning("Loading ALL entities from schema to find latest version - this may impact performance: {EntityType}:{Domain}:{Key}", typeof(T).Name, domain, key);
-            var entities = await runtimeService.GetAsync<T>(GetSchemaNameForType(), cancellationToken);
-
-            // Filter by domain and key, then get latest version
-            var filteredEntities = entities
-                .Where(e => e != null &&
-                           e.Domain == domain &&
-                           e.Key == key)
+            var ordered = keptEntries
+                .OrderBy(kvp => kvp.Value.AccessCount)
+                .ThenBy(kvp => kvp.Value.LastAccessTime)
                 .ToList();
 
-            if (!filteredEntities.Any())
+            // Remove first 'overflow' items
+            for (var i = 0; i < overflow; i++)
             {
-                logger.LogDebug("No entities found for {Domain}:{Key}", domain, key);
-                return null;
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var (key, _) = ordered[i];
+                keptEntries.Remove(key);
+                removedCount++;
             }
 
-            // Return latest version based on semantic versioning
-            var latestEntity = filteredEntities
-                .OrderByDescending(e => e?.Version ?? string.Empty, new SemVersionComparer())
-                .FirstOrDefault();
-
-            if (latestEntity != null)
+            // Rebuild index
+            keptIndex.Clear();
+            foreach (var kvp in keptEntries)
             {
-                logger.LogDebug("Found latest entity: {CacheKey}", latestEntity.CacheKey);
-            }
-
-            return latestEntity;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error loading entity from database: Domain={Domain}, Key={Key}, Version={Version}", domain, key, version);
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Gets the schema name for the current entity type.
-    /// </summary>
-    /// <returns>Schema name for RuntimeService</returns>
-    private string GetSchemaNameForType()
-    {
-        return typeof(T).Name switch
-        {
-            nameof(Extension) => RuntimeSysSchemaInfo.Extensions,
-            nameof(Definitions.Workflow) => RuntimeSysSchemaInfo.Flows,
-            nameof(WorkflowTask) => RuntimeSysSchemaInfo.Tasks,
-            nameof(Function) => RuntimeSysSchemaInfo.Functions,
-            nameof(View) => RuntimeSysSchemaInfo.Views,
-            nameof(SchemaDefinition) => RuntimeSysSchemaInfo.Schemas,
-            _ => throw new NotSupportedException($"Schema name mapping not found for type: {typeof(T).Name}")
-        };
-    }
-
-    private void SetLocalCache(string cacheKey, T entity)
-    {
-        _cacheLock.EnterWriteLock();
-        try
-        {
-            _localCache[cacheKey] = new CacheItem<T>(entity);
-            UpdateIndex(_index, entity);
-        }
-        finally
-        {
-            if (_cacheLock.IsWriteLockHeld)
-            {
-                _cacheLock.ExitWriteLock();
+                UpdateIndex(keptIndex, kvp.Value.Value);
             }
         }
-    }
 
-    private void InvalidateLocalCache(string cacheKey)
-    {
-        _cacheLock.EnterWriteLock();
-        try
-        {
-            if (_localCache.Remove(cacheKey, out var removedItem) && removedItem != null)
-            {
-                RemoveFromIndex(_index, removedItem.Value);
-            }
-        }
-        finally
-        {
-            if (_cacheLock.IsWriteLockHeld)
-            {
-                _cacheLock.ExitWriteLock();
-            }
-        }
-    }
+        var newSnapshot = new CacheSnapshot<T>(
+            keptEntries.ToImmutableDictionary(),
+            keptIndex.ToImmutableDictionary(kvp => kvp.Key, kvp => new SortedSet<string>(kvp.Value)));
 
-    private void ClearLocalCache()
-    {
-        _cacheLock.EnterWriteLock();
-        try
-        {
-            _localCache.Clear();
-            _index.Clear();
-        }
-        finally
-        {
-            if (_cacheLock.IsWriteLockHeld)
-            {
-                _cacheLock.ExitWriteLock();
-            }
-        }
-    }
+        Interlocked.Exchange(ref _snapshot, newSnapshot);
 
-    private void UpdateIndex(Dictionary<string, SortedSet<string>> index, T entity)
-    {
-        var indexKey = CreateIndexKey(entity);
-        var version = entity.Version;
-
-        if (!index.TryGetValue(indexKey, out var versionSet))
+        if (removedCount > 0)
         {
-            versionSet = new SortedSet<string>(new SemVersionComparer());
-            index[indexKey] = versionSet;
+            _logger.LogInformation(
+                "Cleanup completed for CacheSet<{Type}>. Removed={Removed}, Remaining={Remaining}",
+                typeof(T).Name, removedCount, keptEntries.Count);
         }
 
-        versionSet.Add(version);
-    }
-
-    private void RemoveFromIndex(Dictionary<string, SortedSet<string>> index, T entity)
-    {
-        var indexKey = CreateIndexKey(entity);
-        var version = entity.Version;
-
-        if (index.TryGetValue(indexKey, out var versionSet))
-        {
-            versionSet.Remove(version);
-            if (versionSet.Count == 0)
-            {
-                index.Remove(indexKey);
-            }
-        }
-    }
-    private string CreateCacheKeyWithT(string domain, string flow, string name, string version)
-    {
-        return $"{typeof(T).Name}:{domain}:{flow}:{name}:{version}";
-    }
-    private string CreateCacheKey(string domain, string name, string version)
-    {
-        return $"{domain}:{name}:{version}";
-    }
-
-    private string CreateIndexKey(string domain, string name)
-    {
-        return $"{domain}:{name}";
-    }
-
-    private string CreateIndexKey(T entity)
-    {
-        return $"{entity.Domain}:{entity.Key}";
-    }
-
-    /// <summary>
-    /// Ensures that the reference information is properly set after deserialization.
-    /// This is necessary because some entities may have private setters that don't work during JSON deserialization.
-    /// </summary>
-    /// <param name="entity">The entity to check and update</param>
-    /// <param name="cacheKey">The cache key to parse reference information from</param>
-    private void EnsureReferenceIsSet(T entity, string cacheKey)
-    {
-        // Check if the entity has null reference properties
-        if (string.IsNullOrEmpty(entity.Domain) || string.IsNullOrEmpty(entity.Key) || string.IsNullOrEmpty(entity.Version))
-        {
-            logger.LogDebug("Entity has null reference properties, attempting to set from cache key: {CacheKey}", cacheKey);
-
-            try
-            {
-                // Parse cache key: {EntityType}:{Domain}:{Flow}:{Key}:{Version}
-                // Parse cache key: {EntityType}:{Domain}:{Flow}:{Key}:{Version}
-                var match = Regex.Match(cacheKey, @"^([^:]+):([^:]+):([^:]+):([^:]+):([^:]+)$");
-                if (match.Success)
-                {
-                    var domain = match.Groups[2].Value;
-                    var flow = match.Groups[3].Value;
-                    var key = match.Groups[4].Value;
-                    var version = match.Groups[5].Value;
-
-                    // Create reference and set it
-                    var reference = new Reference(key, domain, flow, version);
-                    entity.SetReference(reference);
-
-                    logger.LogDebug("Successfully set reference for entity: Domain={Domain}, Flow={Flow}, Key={Key}, Version={Version}",
-                        domain, flow, key, version);
-                }
-                else
-                {
-                    logger.LogWarning("Invalid cache key format for reference setting: {CacheKey}", cacheKey);
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Error setting reference for entity from cache key: {CacheKey}", cacheKey);
-            }
-        }
+        return removedCount;
     }
 
     public void Dispose()
     {
-        _cacheLock.Dispose();
-        _cleanupSemaphore.Dispose();
+        // Snapshot only contains managed objects, no cleanup needed
+    }
+
+    // ----------------
+    // Snapshot helpers (CAS-based updates)
+    // ----------------
+
+    private void SnapshotUpsert(string cacheKey, T entity)
+    {
+        while (true)
+        {
+            var current = _snapshot;
+
+            var entries = current.Entries.ToDictionary(k => k.Key, v => v.Value);
+            var index = current.Index.ToDictionary(
+                k => k.Key,
+                v => new SortedSet<string>(v.Value));
+
+            entries[cacheKey] = new CacheItem<T>(entity);
+            UpdateIndex(index, entity);
+
+            var newSnapshot = new CacheSnapshot<T>(
+                entries.ToImmutableDictionary(),
+                index.ToImmutableDictionary(kvp => kvp.Key, kvp => new SortedSet<string>(kvp.Value)));
+
+            var original = Interlocked.CompareExchange(ref _snapshot, newSnapshot, current);
+            if (ReferenceEquals(original, current))
+                break; // CAS succeeded
+        }
+    }
+
+    private void SnapshotRemove(string cacheKey)
+    {
+        while (true)
+        {
+            var current = _snapshot;
+
+            if (!current.Entries.ContainsKey(cacheKey))
+                return;
+
+            var entries = current.Entries.ToDictionary(k => k.Key, v => v.Value);
+            var index = current.Index.ToDictionary(
+                k => k.Key,
+                v => new SortedSet<string>(v.Value));
+
+            if (!entries.Remove(cacheKey, out _))
+                return;
+
+            // Rebuild index
+            index.Clear();
+            foreach (var kvp in entries)
+            {
+                UpdateIndex(index, kvp.Value.Value);
+            }
+
+            var newSnapshot = new CacheSnapshot<T>(
+                entries.ToImmutableDictionary(),
+                index.ToImmutableDictionary(kvp => kvp.Key, kvp => new SortedSet<string>(kvp.Value)));
+
+            var original = Interlocked.CompareExchange(ref _snapshot, newSnapshot, current);
+            if (ReferenceEquals(original, current))
+                break; // CAS succeeded
+        }
+    }
+
+    private Task UpsertLocalAsync(T entity, CancellationToken cancellationToken)
+    {
+        return Task.Run(() =>
+        {
+            var cacheKey = CreateCacheKey(entity);
+            SnapshotUpsert(cacheKey, entity);
+        }, cancellationToken);
+    }
+
+    // ----------------
+    // Key / index / reference helpers
+    // ----------------
+
+    private static string CreateCacheKey(T entity)
+        => $"{(typeof(T) as IDomainEntity)?.ComponentKey}:{entity.Domain}:{entity.Key}:{entity.Version}";
+
+    private static string CreateIndexKey(string domain, string name)
+        => $"{domain}:{name}";
+
+    private void UpdateIndex(Dictionary<string, SortedSet<string>> index, T entity)
+    {
+        var indexKey = CreateIndexKey(entity.Domain, entity.Key);
+        if (!index.TryGetValue(indexKey, out var set))
+        {
+            set = new SortedSet<string>(new SemVersionComparer());
+            index[indexKey] = set;
+        }
+
+        if (!string.IsNullOrEmpty(entity.Version))
+            set.Add(entity.Version);
+    }
+
+    private (string Domain, string Key, string? Version)? TryParseCacheKey(string cacheKey)
+    {
+        var match = Regex.Match(cacheKey, @"^([^:]+):([^:]+):([^:]+):([^:]+)$");
+        if (!match.Success)
+            return null;
+
+        var domain = match.Groups[2].Value;
+        var key = match.Groups[3].Value;
+        var version = match.Groups[4].Value;
+
+        return (domain, key, version);
+    }
+
+    private void EnsureReferenceIsSet(T entity, string cacheKey)
+    {
+        if (!string.IsNullOrEmpty(entity.Domain) &&
+            !string.IsNullOrEmpty(entity.Key) &&
+            !string.IsNullOrEmpty(entity.Version))
+        {
+            return;
+        }
+
+        var parsed = TryParseCacheKey(cacheKey);
+        if (parsed is null)
+            return;
+
+        var (domain, key, version) = parsed.Value;
+
+        try
+        {
+            var reference = new Reference(key, domain, entity.ComponentKey, version!);
+            entity.SetReference(reference);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error setting reference from cache key: {CacheKey}", cacheKey);
+        }
     }
 }

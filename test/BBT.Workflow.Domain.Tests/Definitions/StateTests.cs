@@ -11,7 +11,7 @@ public class StateTests
     public void Create_ShouldInitializeProperties()
     {
         // Arrange & Act
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
 
         // Assert
         Assert.Equal("test-state", state.Key);
@@ -35,7 +35,7 @@ public class StateTests
     public void Create_ShouldAcceptAllStateTypes(StateType stateType)
     {
         // Act
-        var state = State.Create("test-state", stateType, "Patch");
+        var state = State.Create("test-state", stateType, StateSubType.Success, "Patch");
 
         // Assert
         Assert.Equal(stateType, state.StateType);
@@ -48,7 +48,7 @@ public class StateTests
     public void Create_ShouldAcceptAllVersionStrategies(string versionStrategy)
     {
         // Act
-        var state = State.Create("test-state", StateType.Intermediate, versionStrategy);
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, versionStrategy);
 
         // Assert
         Assert.NotNull(state.VersionStrategy);
@@ -63,7 +63,7 @@ public class StateTests
     {
         // Act & Assert
         Assert.Throws<ArgumentException>(() => 
-            State.Create(key!, StateType.Intermediate, VersionStrategy.IncreasePatch.Code));
+            State.Create(key!, StateType.Intermediate, StateSubType.Success, VersionStrategy.IncreasePatch.Code));
     }
 
     [Fact]
@@ -74,14 +74,14 @@ public class StateTests
 
         // Act & Assert
         Assert.Throws<ArgumentException>(() => 
-            State.Create(key, StateType.Intermediate, VersionStrategy.IncreasePatch.Code));
+            State.Create(key, StateType.Intermediate, StateSubType.Success, VersionStrategy.IncreasePatch.Code));
     }
 
     [Fact]
     public void AddLanguage_ShouldAddNewLanguage()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
 
         // Act
         state.AddLanguage("Test State", "en");
@@ -96,7 +96,7 @@ public class StateTests
     public void AddLanguage_ShouldReplaceExistingLanguage()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
         state.AddLanguage("Original Label", "en");
 
         // Act
@@ -111,7 +111,7 @@ public class StateTests
     public void AddLanguage_ShouldAddMultipleLanguages()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
 
         // Act
         state.AddLanguage("English State", "en");
@@ -126,7 +126,7 @@ public class StateTests
     public void AddTransition_ShouldAddTransitionToState()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
         var transition = Transition.Create("submit", "test-state", "next-state", TriggerType.Manual, "Patch");
 
         // Act
@@ -141,7 +141,7 @@ public class StateTests
     public void AddTransition_ShouldAddMultipleTransitions()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
         var transition1 = Transition.Create("submit", "test-state", "next", TriggerType.Manual, "Patch");
         var transition2 = Transition.Create("cancel", "test-state", "cancelled", TriggerType.Manual, "Patch");
 
@@ -157,7 +157,7 @@ public class StateTests
     public void FindTransition_ShouldReturnTransition_WhenExists()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
         var transition = Transition.Create("submit", "test-state", "next-state", TriggerType.Manual, "Patch");
         state.AddTransition(transition);
 
@@ -173,7 +173,7 @@ public class StateTests
     public void FindTransition_ShouldReturnNull_WhenDoesNotExist()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
 
         // Act
         var result = state.FindTransition("non-existent");
@@ -186,7 +186,7 @@ public class StateTests
     public void AutoTransitions_ShouldReturnOnlyAutomaticTransitions()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
         var autoTransition = Transition.Create("auto", "test-state", "next", TriggerType.Automatic, "Patch");
         var manualTransition = Transition.Create("manual", "test-state", "other", TriggerType.Manual, "Patch");
         state.AddTransition(autoTransition);
@@ -204,7 +204,7 @@ public class StateTests
     public void ScheduledTransitions_ShouldReturnOnlyScheduledTransitions()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
         var scheduledTransition = Transition.Create("scheduled", "test-state", "next", TriggerType.Scheduled, "Patch");
         var manualTransition = Transition.Create("manual", "test-state", "other", TriggerType.Manual, "Patch");
         state.AddTransition(scheduledTransition);
@@ -222,7 +222,7 @@ public class StateTests
     public void TransitionKeys_ShouldReturnAllTransitionKeys()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
         var transition1 = Transition.Create("submit", "test-state", "next", TriggerType.Manual, "Patch");
         var transition2 = Transition.Create("cancel", "test-state", "cancelled", TriggerType.Manual, "Patch");
         state.AddTransition(transition1);
@@ -241,9 +241,9 @@ public class StateTests
     public void SetView_ShouldSetViewReference()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
         var viewRef = new Reference("view-1", "domain", "sys-views", "1.0.0");
-        var viewDefinition = new ViewDefinition(Array.Empty<string>(), true, viewRef);
+        var viewDefinition = new ViewDefinition([], true, viewRef);
 
         // Act
         state.SetView(viewDefinition);
@@ -257,7 +257,7 @@ public class StateTests
     public void SetSubFlow_ShouldSetSubFlowConfiguration()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.SubFlow, "Patch");
+        var state = State.Create("test-state", StateType.SubFlow, StateSubType.Success, "Patch");
         var reference = new Reference("sub-flow", "domain", "sys-flows", "1.0.0");
         var mapping = new ScriptCode("location", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("code")));
         var viewOverrides = new Dictionary<string, Reference>()
@@ -278,7 +278,7 @@ public class StateTests
     public void AddOnEntry_ShouldAddOnEntryTask()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
         var taskReference = new Reference("task-1", "domain", "sys-tasks", "1.0.0");
         var mapping = new ScriptCode("location", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("code")));
         var task = OnExecuteTask.Create(1, taskReference, mapping);
@@ -295,7 +295,7 @@ public class StateTests
     public void AddOnExit_ShouldAddOnExitTask()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
         var taskReference = new Reference("task-1", "domain", "sys-tasks", "1.0.0");
         var mapping = new ScriptCode("location", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("code")));
         var task = OnExecuteTask.Create(1, taskReference, mapping);
@@ -312,7 +312,7 @@ public class StateTests
     public void OnEntries_ShouldBeReadOnly()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
 
         // Act & Assert
         Assert.IsAssignableFrom<IReadOnlyCollection<OnExecuteTask>>(state.OnEntries);
@@ -322,7 +322,7 @@ public class StateTests
     public void OnExits_ShouldBeReadOnly()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
 
         // Act & Assert
         Assert.IsAssignableFrom<IReadOnlyCollection<OnExecuteTask>>(state.OnExits);
@@ -332,7 +332,7 @@ public class StateTests
     public void Transitions_ShouldBeReadOnly()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
 
         // Act & Assert
         Assert.IsAssignableFrom<IReadOnlyCollection<Transition>>(state.Transitions);
@@ -342,7 +342,7 @@ public class StateTests
     public void Labels_ShouldBeReadOnly()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
 
         // Act & Assert
         Assert.IsAssignableFrom<IReadOnlyCollection<LanguageLabel>>(state.Labels);
@@ -352,7 +352,7 @@ public class StateTests
     public void Key_ShouldImplementIHasKey()
     {
         // Arrange & Act
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
 
         // Assert
         Assert.IsAssignableFrom<IHasKey>(state);
@@ -366,7 +366,7 @@ public class StateTests
         var key = new string('a', StateConstants.MaxKeyLength);
 
         // Act
-        var state = State.Create(key, StateType.Intermediate, "Patch");
+        var state = State.Create(key, StateType.Intermediate, StateSubType.Success, "Patch");
 
         // Assert
         Assert.Equal(key, state.Key);
@@ -376,7 +376,7 @@ public class StateTests
     public void AutoTransitions_ShouldBeEmpty_WhenNoAutomaticTransitions()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
         var manualTransition = Transition.Create("manual", "test-state", "next", TriggerType.Manual, "Patch");
         state.AddTransition(manualTransition);
 
@@ -391,7 +391,7 @@ public class StateTests
     public void ScheduledTransitions_ShouldBeEmpty_WhenNoScheduledTransitions()
     {
         // Arrange
-        var state = State.Create("test-state", StateType.Intermediate, "Patch");
+        var state = State.Create("test-state", StateType.Intermediate, StateSubType.Success, "Patch");
         var manualTransition = Transition.Create("manual", "test-state", "next", TriggerType.Manual, "Patch");
         state.AddTransition(manualTransition);
 

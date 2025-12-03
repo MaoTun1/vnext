@@ -1,6 +1,6 @@
+using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Definitions.Rules;
-using BBT.Workflow.Domain;
 using BBT.Workflow.Rules;
 using BBT.Workflow.Shared;
 

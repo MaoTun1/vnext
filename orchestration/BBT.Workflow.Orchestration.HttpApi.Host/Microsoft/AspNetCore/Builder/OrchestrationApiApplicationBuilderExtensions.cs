@@ -1,7 +1,3 @@
-using BBT.Workflow.BackgroundJobs;
-using Dapr.Jobs.Extensions;
-using Prometheus;
-
 namespace Microsoft.AspNetCore.Builder;
 
 /// <summary>
@@ -19,26 +15,9 @@ public static class OrchestrationApiApplicationBuilderExtensions
         // Use base Workflow API configuration (already includes UseHttpMetrics and MapMetrics)
         app.UseWorkflowApiBase();
         app.MapAppHealthChecks();
-
-        // Add Orchestration-specific middleware and configurations
-        ConfigureOrchestrationSpecificMiddleware(app);
-
-        // Add Dapr scheduled job handler (Orchestration-specific)
-        app.MapDaprScheduledJobHandler(async (string jobName, ReadOnlyMemory<byte> jobPayload, JobDispatcher dispatcher,
-            CancellationToken cancellationToken) =>
-        {
-            await dispatcher.DispatchAsync(jobName, jobPayload, cancellationToken);
-        });
-
-        // Seed test data
-        WorkflowApiBaseApplicationBuilderExtensions.SeedTestData(app.Services);
-
+        
+        WorkflowApiBaseApplicationBuilderExtensions.MigrateMessagingDbContext(app.Services);
         return app;
-    }
-
-    private static void ConfigureOrchestrationSpecificMiddleware(WebApplication app)
-    {
-        // Add any Orchestration-specific middleware here
     }
 }
  

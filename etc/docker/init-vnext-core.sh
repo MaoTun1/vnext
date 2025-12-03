@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-VERSION="${VNEXT_CORE_RUNTIME_VERSION:-latest}"
+VERSION="${VNEXT_COMPONENT_VERSION:-latest}"
 REGISTRY="${NPM_REGISTRY:-https://registry.npmjs.org/}"
 
 echo "[vnext-init] Using @burgan-tech/vnext-core-runtime version: ${VERSION}"

@@ -1,12 +1,9 @@
 using System.Diagnostics;
+using BBT.Aether.Aspects;
+using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
-using BBT.Workflow.Domain;
 using BBT.Workflow.Instances;
-using BBT.Workflow.Monitoring;
-using BBT.Workflow.SubFlow;
-using BBT.Workflow.Telemetry;
-using Dapr.Client;
-using Microsoft.Extensions.Configuration;
+using BBT.Workflow.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Execution.Pipeline.Steps;
@@ -16,153 +13,79 @@ namespace BBT.Workflow.Execution.Pipeline.Steps;
 /// Manages workflow completion when the target state type is Finish.
 /// This step runs after all other pipeline steps to ensure proper completion.
 /// Uses Result pattern for exception-free error handling.
+/// SubItem completion events are now published as domain events via Instance.Complete().
 /// </summary>
 public sealed class HandleFinishStep(
     IInstanceRepository instanceRepository,
-    DaprClient daprClient,
-    IConfiguration configuration,
-    IWorkflowMetrics workflowMetrics,
     ILogger<HandleFinishStep> logger) : ITransitionStep
 {
     /// <inheritdoc />
     public int Order => LifecycleOrder.Finish;
 
+    /* TODO: 
+     * SubFlow bittiğinde bir hook deneyecek başarız olursa -> Event yayıyor.
+     * long pooling => aynı davranacak.
+    */
+    
     /// <inheritdoc />
-    public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    [Log]
+    [Trace]
+    public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context,
+        CancellationToken cancellationToken)
     {
-        if (context.Target == null)
+        Activity.Current?.SetDisplayName($"[{Order}] {nameof(HandleFinishStep)}");
+        
+        // Check applicability - skip if not finish scenario
+        if (!IsFinishScenario(context))
         {
-            logger.LogWarning("Target state is null for instance {InstanceId}", context.InstanceId);
             return Result<StepOutcome>.Ok(StepOutcome.Continue());
         }
 
-        // Only handle Finish state types
-        if (context.Target.StateType != StateType.Finish)
-        {
-            logger.LogTrace("State {StateName} is not a Finish type, skipping finish handling", 
-                context.Target.Key);
-            return Result<StepOutcome>.Ok(StepOutcome.Continue());
-        }
-
-        logger.LogDebug("Handling finish state {StateName} for instance {InstanceId}",
-            context.Target.Key, context.InstanceId);
-
-        return await ResultExtensions.TryAsync<StepOutcome>(async ct =>
-        {
-            context.Instance.Complete();
-            
-            // Record workflow completion as an event
-            Activity.Current?.AddEvent(new ActivityEvent("workflow.completed",
-                tags: new ActivityTagsCollection
-                {
-                    { TelemetryConstants.TagNames.InstanceId, context.InstanceId.ToString() },
-                    { TelemetryConstants.TagNames.Flow, context.Workflow.Key },
-                    { TelemetryConstants.TagNames.Domain, context.Workflow.Domain },
-                    { "workflow.completed.state", context.Target.Key },
-                    { "workflow.is.subflow", context.Instance.IsSubFlow.ToString() },
-                    { "workflow.duration.ms", context.Instance.Duration?.TotalMilliseconds.ToString() ?? "0" }
-                }));
-            
-            // Update instance state and data changes
-            await instanceRepository.UpdateStatusAsync(context.Instance, ct);
-
-            await HandleFinishStateAsync(context, ct);
-
-            logger.LogDebug("Completed finish handling for state {StateName}", context.Target.Key);
-            
-            return StepOutcome.Continue();
-        },
-        cancellationToken,
-        ex => Error.Failure(
-            WorkflowErrorCodes.ExecutionStepFailed,
-            $"Failed to handle finish state: {ex.Message}",
-            ex.GetType().Name));
+        // Railway chain: Update status -> Persist -> Mark finish
+        return await Result.Ok(context)
+            .Tap(UpdateInstanceStatus)
+            .TapAsync(ctx => instanceRepository.UpdateAsync(ctx.Instance, true, cancellationToken))
+            .Tap(ctx => ctx.Items["IsFinishState"] = true)
+            .Map(_ => StepOutcome.Continue());
     }
 
     /// <summary>
-    /// Handles workflow finishing logic.
+    /// Determines if this is a finish scenario (cancel or finish state).
     /// </summary>
-    private async Task HandleFinishStateAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    private bool IsFinishScenario(TransitionExecutionContext context)
     {
-        logger.LogDebug("Handling finish state for instance {InstanceId}", context.InstanceId);
-
-        // Mark that we're in a finish state - automatic and scheduled transitions will still be processed
-        // but instance status handling will be done later in the pipeline
-        context.Items["IsFinishState"] = true;
-
-        if (context.Instance.ShouldPublishCompletionEvent())
+        var isCancelTransition = context.IsCancelTransition();
+        
+        // Cancel transitions always go through finish
+        if (isCancelTransition)
         {
-            await PublishFlowCompletionEventAsync(context.Instance, context.Workflow, cancellationToken);
+            return true;
         }
+
+        // Check for null target or non-finish state
+        if (context.Target == null)
+        {
+            logger.TargetStateNull(context.InstanceId);
+            return false;
+        }
+
+        return context.Target.StateType == StateType.Finish;
     }
-    
-    private async Task PublishFlowCompletionEventAsync(
-        Instance instance,
-        Definitions.Workflow workflow,
-        CancellationToken cancellationToken = default)
+
+    /// <summary>
+    /// Updates instance status based on transition type.
+    /// </summary>
+    private void UpdateInstanceStatus(TransitionExecutionContext context)
     {
-        try
+        if (context.IsCancelTransition())
         {
-            logger.LogInformation(
-                "Publishing flow completion event for instance {InstanceId} in domain {Domain}, workflow {WorkflowKey}",
-                instance.Id, workflow.Domain, workflow.Key);
-
-            // Get the latest instance data
-            var latestData = instance.LatestData;
-
-            // Prepare the flow completion data
-            var flowCompletedData = new FlowCompletedDataEto
-            {
-                InstanceId = instance.Id,
-                Domain = workflow.Domain,
-                Workflow = workflow.Key,
-                Version = workflow.Version,
-                CompletedState = instance.GetCurrentState,
-                InstanceData = instance.IsSubFlow ? latestData?.Data.JsonElement : null,
-                MetaData = instance.MetaData,
-                CompletedAt = instance.CompletedAt ?? DateTime.UtcNow,
-                Duration = instance.Duration
-            };
-
-            // Publish the event using Dapr pub/sub
-            await daprClient.PublishEventAsync(
-                configuration["DAPR_PUBSUB_STORE_NAME"],
-                string.Format(DomainConsts.FlowCompleted, configuration["ASPNETCORE_ENVIRONMENT"]?.ToLower()),
-                flowCompletedData,
-                cancellationToken: cancellationToken);
-
-            logger.LogInformation(
-                "Successfully published flow completion event for instance {InstanceId}",
-                instance.Id);
-
-            // Record the event publication as a trace event
-            Activity.Current?.AddEvent(new ActivityEvent("completion.event.published",
-                tags: new ActivityTagsCollection
-                {
-                    { TelemetryConstants.TagNames.InstanceId, instance.Id.ToString() },
-                    { TelemetryConstants.TagNames.Flow, workflow.Key },
-                    { TelemetryConstants.TagNames.Domain, workflow.Domain },
-                    { "pubsub.store", configuration["DAPR_PUBSUB_STORE_NAME"] ?? "unknown" },
-                    { "pubsub.topic", string.Format(DomainConsts.FlowCompleted, configuration["ASPNETCORE_ENVIRONMENT"]?.ToLower()) },
-                    { "workflow.completed.state", instance.GetCurrentState },
-                    { "workflow.duration.ms", instance.Duration?.TotalMilliseconds.ToString() ?? "0" }
-                }));
-
-            // Record the event publication in metrics
-            workflowMetrics.RecordDaprPubsubMessagePublished(configuration["DAPR_PUBSUB_STORE_NAME"],
-                string.Format(DomainConsts.FlowCompleted, configuration["ASPNETCORE_ENVIRONMENT"]?.ToLower()),
-                "success");
+            logger.InstanceCanceling(context.Instance.Id);
+            context.Instance.Cancel();
         }
-        catch (Exception ex)
+        else
         {
-            logger.LogError(ex,
-                "Failed to publish flow completion event for instance {InstanceId}",
-                instance.Id);
-
-            // Record the failure in metrics
-            workflowMetrics.RecordDaprPubsubMessagePublished(configuration["DAPR_PUBSUB_STORE_NAME"],
-                string.Format(DomainConsts.FlowCompleted, configuration["ASPNETCORE_ENVIRONMENT"]?.ToLower()),
-                "failed");
+            logger.InstanceCompleting(context.Instance.Id);
+            context.Instance.Complete();
         }
     }
 }

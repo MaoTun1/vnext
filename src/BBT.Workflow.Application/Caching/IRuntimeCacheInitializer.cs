@@ -1,0 +1,18 @@
+namespace BBT.Workflow.Caching;
+
+/// <summary>
+/// Service responsible for initializing the runtime cache with workflow components.
+/// This centralizes the logic for loading all workflow entities (flows, tasks, functions, etc.)
+/// from the database and populating the domain cache context.
+/// </summary>
+public interface IRuntimeCacheInitializer
+{
+    /// <summary>
+    /// Initializes the domain cache context by loading all workflow components from the database.
+    /// This includes workflows, tasks, functions, views, schemas, and extensions.
+    /// </summary>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests</param>
+    /// <returns>A task representing the asynchronous initialization operation</returns>
+    Task InitializeAsync(CancellationToken cancellationToken = default);
+}
+

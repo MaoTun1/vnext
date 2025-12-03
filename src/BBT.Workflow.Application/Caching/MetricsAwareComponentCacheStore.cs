@@ -1,4 +1,5 @@
 using BBT.Aether.Domain.Entities;
+using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Monitoring;
 using Microsoft.Extensions.Logging;
@@ -15,7 +16,7 @@ public sealed class MetricsAwareComponentCacheStore(
     ILogger<MetricsAwareComponentCacheStore> logger)
     : IComponentCacheStore
 {
-    public async Task<Definitions.Workflow> GetFlowAsync(
+    public async Task<Result<Definitions.Workflow>> GetFlowAsync(
         string domain,
         string key,
         string? version,
@@ -26,7 +27,7 @@ public sealed class MetricsAwareComponentCacheStore(
             () => innerStore.GetFlowAsync(domain, key, version, cancellationToken));
     }
 
-    public async Task<WorkflowTask> GetTaskAsync(
+    public async Task<Result<WorkflowTask>> GetTaskAsync(
         string domain,
         string key,
         string? version,
@@ -37,7 +38,7 @@ public sealed class MetricsAwareComponentCacheStore(
             () => innerStore.GetTaskAsync(domain, key, version, cancellationToken));
     }
 
-    public async Task<SchemaDefinition> GetSchemaAsync(
+    public async Task<Result<SchemaDefinition>> GetSchemaAsync(
         string domain,
         string key,
         string? version,
@@ -48,7 +49,7 @@ public sealed class MetricsAwareComponentCacheStore(
             () => innerStore.GetSchemaAsync(domain, key, version, cancellationToken));
     }
 
-    public async Task<Function> GetFunctionAsync(
+    public async Task<Result<Function>> GetFunctionAsync(
         string domain,
         string key,
         string? version,
@@ -59,7 +60,7 @@ public sealed class MetricsAwareComponentCacheStore(
             () => innerStore.GetFunctionAsync(domain, key, version, cancellationToken));
     }
 
-    public async Task<View> GetViewAsync(
+    public async Task<Result<View>> GetViewAsync(
         string domain,
         string key,
         string? version,
@@ -70,7 +71,7 @@ public sealed class MetricsAwareComponentCacheStore(
             () => innerStore.GetViewAsync(domain, key, version, cancellationToken));
     }
 
-    public async Task<Extension> GetExtensionAsync(
+    public async Task<Result<Extension>> GetExtensionAsync(
         string domain,
         string key,
         string? version,
@@ -81,7 +82,7 @@ public sealed class MetricsAwareComponentCacheStore(
             () => innerStore.GetExtensionAsync(domain, key, version, cancellationToken));
     }
 
-    public async Task<IEnumerable<Extension>> GetAllExtensionsAsync(
+    public async Task<Result<IEnumerable<Extension>>> GetAllExtensionsAsync(
         string domain,
         CancellationToken cancellationToken = default)
     {
@@ -90,50 +91,51 @@ public sealed class MetricsAwareComponentCacheStore(
             () => innerStore.GetAllExtensionsAsync(domain, cancellationToken));
     }
 
-    public async Task SetAsync<T>(T entity, CancellationToken cancellationToken = default)
+    public async Task<Result> SetAsync<T>(T entity, CancellationToken cancellationToken = default)
         where T : class, IDomainEntity, IReferenceSetter
     {
-        await innerStore.SetAsync(entity, cancellationToken);
+        var result = await innerStore.SetAsync(entity, cancellationToken);
         
-        var cacheTypeName = typeof(T).Name;
+        if (result.IsSuccess)
+        {
+            var cacheTypeName = typeof(T).Name;
+            
+            // Update cache size metrics after setting
+            UpdateCacheSizeMetrics(cacheTypeName);
+        }
         
-        // Update cache size metrics after setting
-        UpdateCacheSizeMetrics(cacheTypeName);
-        
-        logger.LogDebug("Entity {EntityType} cached with metrics updated", cacheTypeName);
+        return result;
     }
 
     /// <summary>
-    /// Executes cache operation with automatic hit/miss metrics recording
+    /// Executes cache operation with automatic hit/miss metrics recording.
+    /// Uses Result pattern to determine cache hit/miss based on success/failure.
     /// </summary>
-    private async Task<T> ExecuteWithMetricsAsync<T>(string cacheTypeName, Func<Task<T>> operation)
+    private async Task<Result<T>> ExecuteWithMetricsAsync<T>(string cacheTypeName, Func<Task<Result<T>>> operation)
     {
         try
         {
             var result = await operation();
             
-            // Record cache hit (if we got a result without exception)
-            workflowMetrics.RecordCacheHit(cacheTypeName);
-            
-            // Update cache size metrics
-            UpdateCacheSizeMetrics(cacheTypeName);
-            
-            logger.LogDebug("Cache hit for {CacheType}", cacheTypeName);
+            if (result.IsSuccess)
+            {
+                // Record cache hit for successful retrieval
+                workflowMetrics.RecordCacheHit(cacheTypeName);
+                
+                // Update cache size metrics
+                UpdateCacheSizeMetrics(cacheTypeName);
+            }
+            else
+            {
+                // Record cache miss for not found
+                workflowMetrics.RecordCacheMiss(cacheTypeName);
+            }
             
             return result;
         }
-        catch (EntityNotFoundException)
-        {
-            // Record cache miss for entity not found
-            workflowMetrics.RecordCacheMiss(cacheTypeName);
-            
-            logger.LogDebug("Cache miss for {CacheType}", cacheTypeName);
-            
-            throw;
-        }
         catch (Exception ex)
         {
-            // Record cache miss for other errors
+            // Infrastructure exceptions (network, DB) are logged and re-thrown per Railway Pattern
             workflowMetrics.RecordCacheMiss(cacheTypeName);
             
             logger.LogWarning(ex, "Cache operation failed for {CacheType}", cacheTypeName);

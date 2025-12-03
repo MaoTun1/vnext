@@ -1,4 +1,3 @@
-using System.Text.Json;
 using BBT.Aether;
 using BBT.Aether.Auditing;
 using BBT.Aether.Domain.Entities;
@@ -15,57 +14,43 @@ public class InstanceJob : Entity<Guid>, IHasCreatedAt, IHasModifyTime
     internal InstanceJob(
         Guid id,
         string jobName,
-        string jobId,
+        Guid jobId,
         string domain,
         string flowName,
-        Guid instanceId,
-        string expressionValue,
-        JsonElement payload) : base(id)
+        Guid instanceId) : base(id)
     {
         JobName = Check.NotNullOrWhiteSpace(jobName, nameof(JobName), InstanceJobConstants.MaxJobNameLength);
-        JobId = Check.NotNullOrWhiteSpace(jobId, nameof(JobId), InstanceJobConstants.MaxJobIdLength);
+        JobId = jobId;
         Domain = Check.NotNullOrWhiteSpace(domain, nameof(Domain), WorkflowConstants.MaxDomainLength);
         FlowName = Check.NotNullOrWhiteSpace(flowName, nameof(FlowName), WorkflowConstants.MaxFlowLength);
         InstanceId = instanceId;
-        ExpressionValue = Check.NotNullOrWhiteSpace(expressionValue, nameof(ExpressionValue), InstanceJobConstants.MaxExpressionValueLength);
-        Payload = new JsonData(payload);
-        IsTriggered = false;
+        IsActive = true;
         CreatedAt = DateTime.UtcNow;
     }
 
     public string JobName { get; private set; }
-    public string JobId { get; private set; }
+    public Guid JobId { get; private set; }
     public string FlowName { get; private set; }
     public string Domain { get; private set; }
     public Guid InstanceId { get; private set; }
-    public string ExpressionValue { get; private set; }
-    public bool IsTriggered { get; private set; }
-    public JsonData Payload { get; private set; }
+    public bool IsActive { get; private set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? ModifiedAt { get; set; }
 
-    public void Triggered()
+    public void MarkAsProcessed()
     {
-        IsTriggered = true;
+        IsActive = false;
         ModifiedAt = DateTime.UtcNow;
-    }
-
-    public void UpdateTriggerAt(string expressionValue)
-    {
-        ExpressionValue = expressionValue;
-        ModifiedAt = DateTime.UtcNow;   
     }
 
     public static InstanceJob Create(
         Guid id,
         string jobName,
-        string jobId,
+        Guid jobId,
         string domain,
         string flowName,
-        Guid instanceId,
-        string expressionValue,
-        JsonElement payload)
+        Guid instanceId)
     {
-        return new InstanceJob(id, jobName, jobId, domain, flowName, instanceId, expressionValue, payload);
+        return new InstanceJob(id, jobName, jobId, domain, flowName, instanceId);
     }
 }

@@ -1,3 +1,4 @@
+using BBT.Aether.Results;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Monitoring;
@@ -27,20 +28,15 @@ public sealed class PooledTaskFactory(
     /// Creates a task instance suitable for execution, ensuring it's isolated from cached instances.
     /// Uses object pooling for better performance in high-throughput scenarios.
     /// </summary>
-    public async Task<WorkflowTask> CreateExecutionTaskAsync(
+    public async Task<Result<WorkflowTask>> CreateExecutionTaskAsync(
         IReference taskReference,
         CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var cachedTask = await componentCacheStore.GetTaskAsync(taskReference, cancellationToken);
-            return CreateFromCached(cachedTask);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to create execution task for reference: {TaskReference}", taskReference);
-            throw;
-        }
+        return await componentCacheStore.GetTaskAsync(taskReference, cancellationToken)
+            .Then(CreateFromCached)
+            .OnFailure(error => logger.LogWarning(
+                "Failed to create execution task for reference {TaskReference}: {ErrorCode}", 
+                taskReference, error.Code));
     }
 
     /// <summary>
@@ -48,36 +44,24 @@ public sealed class PooledTaskFactory(
     /// Since task properties have private setters, we use the efficient Clone() method
     /// instead of true object pooling, but maintain the pool for future optimization.
     /// </summary>
-    public WorkflowTask CreateFromCached(WorkflowTask cachedTask)
+    public Result<WorkflowTask> CreateFromCached(WorkflowTask cachedTask)
     {
         if (cachedTask == null)
-            throw new ArgumentNullException(nameof(cachedTask));
+            return Result<WorkflowTask>.Fail(
+                Error.Validation("task.null", "Cached task cannot be null"));
 
-        try
+        var taskType = cachedTask.GetType();
+
+        // Use configuration to determine strategy
+        if (ShouldUsePoolingFromConfig(taskType))
         {
-            var taskType = cachedTask.GetType();
-
-            // Use configuration to determine strategy
-            if (ShouldUsePoolingFromConfig(taskType))
-            {
-                // Use real object pooling with the new CopyFromInternal methods
-                return CreateFromPool(cachedTask);
-            }
-
-            // Fall back to direct cloning for non-pooled types
-            var directClonedTask = cachedTask.Clone();
-
-            logger.LogDebug("Successfully cloned task {TaskKey} of type {TaskType}",
-                cachedTask.Key, taskType.Name);
-
-            return directClonedTask;
+            // Use real object pooling with the new CopyFromInternal methods
+            return Result<WorkflowTask>.Ok(CreateFromPool(cachedTask));
         }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to clone task {TaskKey} of type {TaskType}",
-                cachedTask.Key, cachedTask.GetType().Name);
-            throw;
-        }
+
+        // Fall back to direct cloning for non-pooled types
+        var directClonedTask = cachedTask.Clone();
+        return Result<WorkflowTask>.Ok(directClonedTask);
     }
 
     private WorkflowTask CreateFromPool(WorkflowTask template)
@@ -90,37 +74,9 @@ public sealed class PooledTaskFactory(
         workflowMetrics.RecordTaskFactoryPoolRental(taskTypeName);
 
         var pooledTask = pool.Get();
-
-        // Update pool state metrics (approximate tracking)
-        // Note: These are estimates since DefaultObjectPool doesn't expose exact counts
-        UpdatePoolStateMetrics(taskTypeName, isRenting: true);
-
         // Copy properties from template to pooled instance using efficient internal methods
         CopyTaskProperties(template, pooledTask);
-
-        logger.LogDebug("Retrieved and configured task from pool for type {TaskType}", taskType.Name);
-
         return pooledTask;
-    }
-
-    /// <summary>
-    /// Updates pool state metrics to reflect current pool usage.
-    /// This provides approximate tracking since DefaultObjectPool doesn't expose exact counts.
-    /// </summary>
-    private void UpdatePoolStateMetrics(string taskTypeName, bool isRenting)
-    {
-        // Since DefaultObjectPool doesn't expose internal counts, we use estimated values
-        // This is a best-effort tracking mechanism for monitoring purposes
-
-        if (isRenting)
-        {
-            // When renting, we assume available decreases and in-use increases
-            // These are estimates for monitoring trends
-            logger.LogTrace("Object rented from pool for task type {TaskType}", taskTypeName);
-        }
-
-        // For more accurate metrics, consider implementing a custom object pool
-        // that tracks exact counts or using a third-party pool with metrics support
     }
 
     /// <summary>
@@ -161,7 +117,8 @@ public sealed class PooledTaskFactory(
 /// <summary>
 /// Object pool policy for creating workflow task instances.
 /// </summary>
-internal sealed class TaskPooledObjectPolicy(Type taskType, IWorkflowMetrics workflowMetrics) : IPooledObjectPolicy<WorkflowTask>
+internal sealed class TaskPooledObjectPolicy(Type taskType, IWorkflowMetrics workflowMetrics)
+    : IPooledObjectPolicy<WorkflowTask>
 {
     private readonly string _taskTypeName = taskType.Name;
 
@@ -249,7 +206,6 @@ public static class PoolableTaskRegistry
         RegisterPoolableTask<SubProcessTask>(
             SubProcessTask.CreateEmpty,
             (source, target) => ((SubProcessTask)target).CopyFromInternal((SubProcessTask)source));
-
     }
 
     public static void RegisterPoolableTask<T>(
@@ -274,6 +230,7 @@ public static class PoolableTaskRegistry
             copier(source, target);
             return true;
         }
+
         return false;
     }
 }

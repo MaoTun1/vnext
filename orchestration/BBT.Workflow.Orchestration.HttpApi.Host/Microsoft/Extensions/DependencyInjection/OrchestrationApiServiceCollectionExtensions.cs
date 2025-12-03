@@ -1,6 +1,5 @@
-using BBT.Workflow.BackgroundJobs;
-using BBT.Workflow.BackgroundJobs.Handlers;
 using BBT.Workflow.Caching;
+using BBT.Workflow.Orchestration.Services;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks;
 using BBT.Workflow.Tasks.Execution;
@@ -36,15 +35,13 @@ public static class OrchestrationApiServiceCollectionExtensions
 
     private static void ConfigureOrchestrationSpecificServices(IServiceCollection services)
     {
-        // Add IWorkflowTaskExecutor implementation that uses Dapr Service Invocation
+        // Replace default NullTaskExecutor with DaprTaskExecutor for distributed task orchestration
+        // DaprTaskExecutor delegates task execution to the Execution service via Dapr Service Invocation
         services.AddScoped<ITaskOrchestrator, DaprTaskExecutor>();
         
-        // Job Handlers
-        services.AddScoped<IJobHandler, FlowTimeoutJobHandler>();
-        services.AddScoped<IJobHandler, TransitionTimerJobHandler>();
-        services.AddScoped<IJobHandler, TransitionJobHandler>();
-        
         // Add any Orchestration-specific hosted services
+        services.AddHostedService<MultiSchemaMigrationHostedService>();
+        services.AddHostedService<CacheCleanupHostedService>();
         services.AddHostedService<CacheInitializationHostedService>();
         services.AddHostedService<ScriptingInitializationService>();
     }

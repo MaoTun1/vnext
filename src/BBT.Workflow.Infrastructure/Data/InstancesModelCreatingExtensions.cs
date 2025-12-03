@@ -9,7 +9,7 @@ namespace BBT.Workflow.Data;
 public static class InstancesModelCreatingExtensions
 {
     public static void ConfigureInstances(
-        this ModelBuilder builder, string? schema)
+        this ModelBuilder builder, string? schema = null)
     {
         /* Configure all entities here. */
 
@@ -33,10 +33,6 @@ public static class InstancesModelCreatingExtensions
                 .IsRequired()
                 .HasMaxLength(InstanceConstants.MaxStatusLength)
                 .HasConversion(new InstanceStatusConverter());
-            
-            b.Property(m => m.MetaData)
-                .HasConversion(new ObjectDictionaryConverter())
-                .HasColumnType("jsonb");
 
             b.HasMany(m => m.DataList)
                 .WithOne()
@@ -231,8 +227,7 @@ public static class InstancesModelCreatingExtensions
                 .HasMaxLength(InstanceJobConstants.MaxJobNameLength);
 
             b.Property(p => p.JobId)
-                .IsRequired()
-                .HasMaxLength(InstanceJobConstants.MaxJobIdLength);
+                .IsRequired();
 
             b.Property(p => p.Domain)
                 .IsRequired()
@@ -241,18 +236,6 @@ public static class InstancesModelCreatingExtensions
             b.Property(p => p.FlowName)
                 .IsRequired()
                 .HasMaxLength(WorkflowConstants.MaxFlowLength);
-
-            b.Property(p => p.ExpressionValue)
-                .IsRequired()
-                .HasMaxLength(InstanceJobConstants.MaxExpressionValueLength);
-
-            b.OwnsOne(p => p.Payload, d =>
-            {
-                d.Ignore(g => g.JsonElement);
-                d.Property(g => g.Json)
-                    .HasColumnType("jsonb")
-                    .HasColumnName(nameof(InstanceJob.Payload));
-            });
 
             b.HasIndex(i => i.JobId)
                 .IsUnique();

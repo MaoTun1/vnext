@@ -1,7 +1,5 @@
 using BBT.Aether.ExceptionHandling;
 using BBT.Aether.Http;
-using BBT.Workflow.Domain.Extensions;
-using BBT.Workflow.HttpApi.Shared;
 
 namespace BBT.Workflow.ExceptionHandling;
 
@@ -28,47 +26,11 @@ public class WorkflowExceptionToErrorInfoConverter(IServiceProvider serviceProvi
         return exception switch
         {
             NotFoundDomainException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            RuntimeSchemaInvalidException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            DistributedLockAcquisitionException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
+            RuntimeSchemaInvalidException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data), 
             AutoTransitionConditionNotMetException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
             RemoteServiceException ex => ex.ErrorInfo,
-            WorkflowValidationException ex => CreateValidationErrorInfo(ex),
             // Default handling for other exceptions
             _ => base.CreateErrorInfoWithoutCode(exception, options)
         };
-    }
-
-    /// <summary>
-    /// Creates ServiceErrorInfo from WorkflowValidationException with detailed validation errors.
-    /// </summary>
-    private static ServiceErrorInfo CreateValidationErrorInfo(WorkflowValidationException exception)
-    {
-        var errorInfo = new ServiceErrorInfo
-        {
-            Code = exception.Code,
-            Message = exception.Message,
-            Details = exception.Error.Detail,
-            Data = new Dictionary<string, object>()
-        };
-
-        // Add field-level validation errors
-        if (exception.ValidationErrors is { Count: > 0 })
-        {
-            errorInfo.ValidationErrors = exception.ValidationErrors
-                .Select(ve => new ServiceValidationErrorInfo
-                {
-                    Members = ve.MemberNames.ToArray(),
-                    Message = ve.ErrorMessage ?? string.Empty
-                })
-                .ToArray();
-        }
-
-        // Add target field if available
-        if (!string.IsNullOrEmpty(exception.Target))
-        {
-            errorInfo.Data["target"] = exception.Target;
-        }
-
-        return errorInfo;
     }
 }

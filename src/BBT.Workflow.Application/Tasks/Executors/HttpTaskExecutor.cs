@@ -49,20 +49,12 @@ public sealed class HttpTaskExecutor(
     {
         var httpTask = (task as HttpTask)!;
         
-        Logger.LogInformation("Starting HTTP task execution for task {TaskKey} - URL: {Url}, Method: {Method}", 
-            httpTask.Key, httpTask.Url, httpTask.Method);
-
         try
         {
-            Logger.LogDebug("Preparing input for HTTP task {TaskKey}", httpTask.Key);
             await PrepareInputAsync(httpTask, scriptCode, context, cancellationToken);
-            
             await CallAsync(httpTask, context, cancellationToken);
             
-            Logger.LogDebug("Processing output for HTTP task {TaskKey}", httpTask.Key);
             var outputResponse = await ProcessOutputAsync(scriptCode, context, cancellationToken);
-            
-            Logger.LogInformation("HTTP task {TaskKey} execution completed, returning processed output", httpTask.Key);
             return outputResponse;
         }
         catch (Exception ex)
@@ -87,32 +79,20 @@ public sealed class HttpTaskExecutor(
     {
         var httpTask = (task as HttpTask)!;
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        
-        Logger.LogInformation("Calling HTTP endpoint for task {TaskKey} - URL: {Url}, Method: {Method}", 
-            httpTask.Key, httpTask.Url, httpTask.Method);
-            
         StandardTaskResponse standardResponse;
 
         try
         {
             var httpClient = CreateHttpClient(httpTask);
-            
             var request = new HttpRequestMessage(new HttpMethod(httpTask.Method), httpTask.Url);
-
-            Logger.LogDebug("Created HTTP request for {Method} {Url}", httpTask.Method, httpTask.Url);
-
-            if (httpTask.Headers.HasValue)
+           if (httpTask.Headers.HasValue)
             {
                 var headers = httpTask.Headers.Value.Deserialize<Dictionary<string, string>>();
                 if (headers != null)
                 {
-                    Logger.LogDebug("Adding {HeaderCount} headers to HTTP request for task {TaskKey}", 
-                        headers.Count, httpTask.Key);
-                    
                     foreach (var header in headers)
                     {
                         request.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                        Logger.LogDebug("Added header {HeaderKey}: {HeaderValue} to request", header.Key, header.Value);
                     }
                 }
             }
@@ -125,25 +105,15 @@ public sealed class HttpTaskExecutor(
                     System.Text.Encoding.UTF8,
                     "application/json"
                 );
-                
-                Logger.LogDebug("Added request body to HTTP request for task {TaskKey}", httpTask.Key);
             }
 
-            Logger.LogInformation("Sending HTTP request for task {TaskKey}: {Method} {Url}", 
-                httpTask.Key, httpTask.Method, httpTask.Url);
-                
             var response = await httpClient.SendAsync(request, cancellationToken);
             stopwatch.Stop();
-
-            Logger.LogInformation("HTTP request completed for task {TaskKey} - Status: {StatusCode}, Duration: {Duration}ms", 
-                httpTask.Key, response.StatusCode, stopwatch.ElapsedMilliseconds);
 
             // Extract response headers
             var responseHeaders = response.Headers
                 .Concat(response.Content.Headers)
                 .ToDictionary(h => h.Key.ToLower(), h => string.Join(", ", h.Value));
-
-            Logger.LogDebug("Extracted {HeaderCount} response headers from HTTP response", responseHeaders.Count);
 
             var content = await response.ReadDecompressedContentAsync(cancellationToken);
             object? responseData = null;
@@ -153,11 +123,9 @@ public sealed class HttpTaskExecutor(
                 try
                 {
                     responseData = JsonSerializer.Deserialize<object>(content);
-                    Logger.LogDebug("Successfully deserialized response content to object for task {TaskKey}", httpTask.Key);
                 }
-                catch (JsonException ex)
+                catch (JsonException)
                 {
-                    Logger.LogWarning(ex, "Failed to deserialize response content as JSON for task {TaskKey}, treating as raw string", httpTask.Key);
                     responseData = content;
                 }
             }
@@ -165,9 +133,6 @@ public sealed class HttpTaskExecutor(
             // Create standardized response based on HTTP status
             if (response.IsSuccessStatusCode)
             {
-                Logger.LogInformation("HTTP task {TaskKey} completed successfully with status {StatusCode}", 
-                    httpTask.Key, response.StatusCode);
-                    
                 standardResponse = CreateSuccessResponse(
                     data: responseData,
                     taskType: nameof(TaskType.Http),
@@ -183,12 +148,9 @@ public sealed class HttpTaskExecutor(
             }
             else
             {
-                Logger.LogWarning("HTTP task {TaskKey} returned non-success status {StatusCode}: {ReasonPhrase}", 
-                    httpTask.Key, response.StatusCode, response.ReasonPhrase);
-                    
                 standardResponse = CreateErrorResponse(
                     errorMessage: $"HTTP request failed with status {response.StatusCode}: {response.ReasonPhrase}",
-                    taskType: "HttpTask",
+                    taskType: nameof(TaskType.Http),
                     executionDurationMs: stopwatch.ElapsedMilliseconds,
                     statusCode: (int)response.StatusCode,
                     metadata: new Dictionary<string, object>
@@ -200,17 +162,12 @@ public sealed class HttpTaskExecutor(
                     });
             }
             
-            Logger.LogDebug("Setting standard response in context for HTTP task {TaskKey}", httpTask.Key);
             context.SetStandardResponse(standardResponse);
-            
-            Logger.LogDebug("Setting response body in context for HTTP task {TaskKey}", httpTask.Key);
             context.SetBody(responseData);
         }
         catch (TaskCanceledException ex) when (ex.CancellationToken.IsCancellationRequested)
         {
             stopwatch.Stop();
-            Logger.LogWarning("HTTP task {TaskKey} was cancelled after {Duration}ms", 
-                httpTask.Key, stopwatch.ElapsedMilliseconds);
                 
             standardResponse = CreateErrorResponse(
                 errorMessage: "HTTP request was cancelled",
@@ -287,8 +244,6 @@ public sealed class HttpTaskExecutor(
         }
         else
         {
-            Logger.LogDebug("Using standard SSL validation for HTTP task {TaskKey} - URL: {Url}", 
-                httpTask.Key, httpTask.Url);
             clientName = DefaultHttpClientName;
         }
 
@@ -297,9 +252,6 @@ public sealed class HttpTaskExecutor(
         
         // Override timeout for this specific request
         httpClient.Timeout = TimeSpan.FromSeconds(httpTask.TimeoutSeconds);
-        
-        Logger.LogDebug("Created HttpClient '{ClientName}' with {Timeout}s timeout for task {TaskKey}", 
-            clientName, httpTask.TimeoutSeconds, httpTask.Key);
             
         return httpClient;
     }

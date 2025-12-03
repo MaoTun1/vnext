@@ -18,5 +18,5 @@ public class CreateSubInstanceDto : CreateInstanceDto
 {
     public Guid? Id  { get; set; }
     public string? Callback { get; set; }
-    public Dictionary<string, object?> MetaData { get; set; }
+    public Dictionary<string, object?> ExtraProperties { get; set; }
 }

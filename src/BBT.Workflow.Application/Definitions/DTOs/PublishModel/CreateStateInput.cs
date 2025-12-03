@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using System.Text.Json;
 using BBT.Workflow.Shared;
 
 namespace BBT.Workflow.Definitions;
@@ -20,6 +19,12 @@ public sealed class CreateStateInput
     /// </summary>
     [EnumValueValidation(typeof(StateType))]
     public StateType StateType { get; set; }
+
+    /// <summary>
+    /// <see cref="SubType"/>
+    /// </summary>
+    [EnumValueValidation(typeof(StateSubType))]
+    public StateSubType SubType { get; set; }
     
     [Required]
     [StringLength(TransitionConstants.MaxVersionStrategyLength)]

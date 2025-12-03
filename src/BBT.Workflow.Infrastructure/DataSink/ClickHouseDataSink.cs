@@ -67,8 +67,6 @@ public class ClickHouseInstanceDataSink : AbstractDataSink<Instance>, IDataSink
         var data = MapInstanceToClickHouse(entity, DataSinkOperation.Insert);
         _queue.Enqueue(data);
 
-        Logger.LogDebug("Queued instance {InstanceId} for ClickHouse transfer. Operation: Insert", entity.Id);
-
         // Check if we need to flush immediately
         if (_queue.Count >= _configuration.BatchSize)
         {
@@ -86,9 +84,7 @@ public class ClickHouseInstanceDataSink : AbstractDataSink<Instance>, IDataSink
     {
         var data = MapInstanceToClickHouse(entity, DataSinkOperation.Update);
         _queue.Enqueue(data);
-
-        Logger.LogDebug("Queued instance {InstanceId} for ClickHouse transfer. Operation: Update", entity.Id);
-
+        
         // Check if we need to flush immediately
         if (_queue.Count >= _configuration.BatchSize)
         {
@@ -106,9 +102,7 @@ public class ClickHouseInstanceDataSink : AbstractDataSink<Instance>, IDataSink
     {
         var data = MapInstanceToClickHouse(entity, DataSinkOperation.Delete);
         _queue.Enqueue(data);
-
-        Logger.LogDebug("Queued instance {InstanceId} for ClickHouse transfer. Operation: Delete", entity.Id);
-
+        
         // Check if we need to flush immediately
         if (_queue.Count >= _configuration.BatchSize)
         {
@@ -137,7 +131,6 @@ public class ClickHouseInstanceDataSink : AbstractDataSink<Instance>, IDataSink
             if (dataToFlush.Any())
             {
                 await SendDataToClickHouseAsync(_configuration.Tables.Instances, dataToFlush, cancellationToken);
-                Logger.LogDebug("Flushed {Count} instance records to ClickHouse", dataToFlush.Count);
             }
         }
         finally
@@ -203,8 +196,6 @@ public class ClickHouseInstanceDataSink : AbstractDataSink<Instance>, IDataSink
                 
                 if (response.IsSuccessStatusCode)
                 {
-                    Logger.LogDebug("Successfully sent {Count} instance records to ClickHouse table {TableName}", 
-                        data.Count, tableName);
                     return;
                 }
 

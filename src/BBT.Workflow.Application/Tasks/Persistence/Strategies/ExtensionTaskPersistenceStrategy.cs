@@ -1,3 +1,4 @@
+using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 
@@ -10,7 +11,7 @@ namespace BBT.Workflow.Tasks.Persistence.Strategies;
 /// <remarks>
 /// This strategy is used for extension tasks that should not be persisted to the database.
 /// Extension tasks are typically used for data enrichment purposes and don't need to be
-/// part of the permanent workflow execution history.
+/// part of the permanent workflow execution history. Uses the Result pattern for consistency.
 /// </remarks>
 public sealed class ExtensionTaskPersistenceStrategy : ITaskPersistenceStrategy
 {
@@ -31,11 +32,11 @@ public sealed class ExtensionTaskPersistenceStrategy : ITaskPersistenceStrategy
     /// </summary>
     /// <param name="instanceTask">The InstanceTask (not persisted for Extension tasks).</param>
     /// <param name="cancellationToken">Cancellation token for async operation control.</param>
-    /// <returns>A completed task with no operation performed.</returns>
-    public Task HandleCreationAsync(InstanceTask instanceTask, CancellationToken cancellationToken = default)
+    /// <returns>A successful Result indicating no-op completion.</returns>
+    public Task<Result> HandleCreationAsync(InstanceTask instanceTask, CancellationToken cancellationToken = default)
     {
         // Extension tasks are not persisted to database
-        return Task.CompletedTask;
+        return Task.FromResult(Result.Ok());
     }
 
     /// <summary>
@@ -44,10 +45,10 @@ public sealed class ExtensionTaskPersistenceStrategy : ITaskPersistenceStrategy
     /// </summary>
     /// <param name="instanceTask">The InstanceTask (not persisted for Extension tasks).</param>
     /// <param name="cancellationToken">Cancellation token for async operation control.</param>
-    /// <returns>A completed task with no operation performed.</returns>
-    public Task HandleCompletionAsync(InstanceTask instanceTask, CancellationToken cancellationToken = default)
+    /// <returns>A successful Result indicating no-op completion.</returns>
+    public Task<Result> HandleCompletionAsync(InstanceTask instanceTask, CancellationToken cancellationToken = default)
     {
         // Extension tasks are not persisted to database
-        return Task.CompletedTask;
+        return Task.FromResult(Result.Ok());
     }
 } 

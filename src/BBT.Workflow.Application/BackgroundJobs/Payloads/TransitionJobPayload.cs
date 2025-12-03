@@ -9,6 +9,8 @@ namespace BBT.Workflow.BackgroundJobs.Payloads;
 /// </summary>
 public sealed class TransitionJobPayload
 {
+    public string JobName { get; set; }
+    
     /// <summary>
     /// Gets or sets the instance ID for the transition.
     /// </summary>

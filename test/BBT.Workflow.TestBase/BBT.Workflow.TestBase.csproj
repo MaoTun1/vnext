@@ -4,6 +4,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <RootNamespace>BBT.Workflow</RootNamespace>
+    <NoWarn>$(NoWarn);CS1591;CS8618;EF1001;CS1570;xUnit2002;CS8603</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="BBT.Aether.TestBase" Version="$(AetherPackageVersion)" />
