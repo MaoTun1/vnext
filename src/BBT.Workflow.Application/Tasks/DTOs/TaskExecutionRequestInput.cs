@@ -47,6 +47,10 @@ public class TaskScriptContextModel
     /// Request headers
     /// </summary>
     public Dictionary<string, string?>? Headers { get; set; }
+    /// <summary>
+    /// Request query paremeters
+    /// </summary>
+    public Dictionary<string, object?>? QueryParameters { get; set; }
 
     /// <summary>
     /// Route values
