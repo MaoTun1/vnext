@@ -8,6 +8,7 @@ using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks;
+using BBT.Workflow.Tasks.Coordinator;
 
 namespace BBT.Workflow.Functions;
 
@@ -20,7 +21,7 @@ public sealed class FunctionAppService(
     IInstanceRepository instanceRepository,
     IScriptContextFactory scriptContextFactory,
     IComponentCacheStore componentCacheStore,
-    ITaskOrchestrationService taskExecutionService) : ApplicationService(serviceProvider), IFunctionAppService
+    ITaskCoordinator taskCoordinator) : ApplicationService(serviceProvider), IFunctionAppService
 {
     /// <inheritdoc />
     public async Task<Result<Dictionary<string, dynamic?>>> GetFunctionByFunctionKeyAsync(
@@ -80,12 +81,13 @@ public sealed class FunctionAppService(
             .BindAsync(function =>
                 componentCacheStore.GetFlowAsync(domain, flow, null, cancellationToken)
                     .MapAsync(workflow => (function, workflow)))
-            .ThenAsync(data => ExecuteFunctionAsync(data.function, data.workflow, instance, headers, queryParameters,
+            .BindAsync(data => ExecuteFunctionAsync(data.function, data.workflow, instance, headers, queryParameters,
                 cancellationToken));
     }
 
     /// <summary>
     /// Executes the function tasks and extracts the response.
+    /// Uses Railway pattern to propagate task execution errors.
     /// </summary>
     private async Task<Result<Dictionary<string, dynamic?>>> ExecuteFunctionAsync(
         Function function,
@@ -95,7 +97,7 @@ public sealed class FunctionAppService(
         Dictionary<string, string?>? queryParameters = null,
         CancellationToken cancellationToken = default)
     {
-        var scriptContext = await scriptContextFactory.NewBuilder()
+        var scriptContext = await scriptContextFactory.NewBuilder(instanceRepository)
             .WithWorkflow(workflow)
             .WithInstance(instance)
             .WithRuntime(runtimeInfoProvider)
@@ -104,12 +106,18 @@ public sealed class FunctionAppService(
             .WithQueryParameters(queryParameters)
             .BuildAsync(cancellationToken);
 
-        await taskExecutionService.ExecuteAsync(
+        // Execute tasks and propagate errors
+        var executeResult = await taskCoordinator.ExecuteAsync(
             function.GetExecuteTasks(),
             null,
             TaskTrigger.Extension,
             scriptContext,
             cancellationToken);
+
+        if (!executeResult.IsSuccess)
+        {
+            return Result<Dictionary<string, dynamic?>>.Fail(executeResult.Error);
+        }
 
         var response = ExtractFunctionResponse(function, scriptContext);
         return Result<Dictionary<string, dynamic?>>.Ok(response);

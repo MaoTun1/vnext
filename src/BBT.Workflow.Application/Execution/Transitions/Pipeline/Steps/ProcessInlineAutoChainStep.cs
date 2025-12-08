@@ -21,7 +21,6 @@ public sealed class ProcessInlineAutoChainStep(
     private const int MaxInlineHops = 10;
 
     /// <inheritdoc />
-    [Log]
     [Trace]
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext ctx, CancellationToken ct)
     {

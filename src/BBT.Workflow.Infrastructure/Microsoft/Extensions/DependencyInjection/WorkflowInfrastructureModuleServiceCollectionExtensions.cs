@@ -3,11 +3,13 @@ using BBT.Aether.MultiSchema.EntityFrameworkCore.Interceptors;
 using BBT.Workflow.Data;
 using BBT.Workflow.Infrastructure.DataSink;
 using BBT.Workflow.Infrastructure.HostedServices;
+using BBT.Workflow.Infrastructure.Scripting;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Instances.Events;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Remote.Extensions;
 using BBT.Workflow.Schemas;
+using BBT.Workflow.Scripting;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -24,7 +26,6 @@ public static class WorkflowInfrastructureModuleServiceCollectionExtensions
     public static IServiceCollection AddInfrastructureModule(
         this IServiceCollection services)
     {
-        services.AddApplicationModule();
         services.AddAetherInfrastructure();
         
         // DbContext
@@ -59,6 +60,17 @@ public static class WorkflowInfrastructureModuleServiceCollectionExtensions
         
         // Event Hooks
         services.AddEventHook<InstanceSubCompletedEvent, InstanceSubCompletedEventHook>();
+        
+        // Embedded Script Services
+        services.AddEmbeddedScriptServices();
+        services.ConfigureEmbeddedScripts(opt =>
+        {
+            // Script is embedded in BBT.Workflow.Domain assembly
+            opt.Add(
+                NotificationScriptProvider.DefaultKey,
+                "BBT.Workflow.Tasks.Scripting.NotificationMapping.csx",
+                typeof(EmbeddedScriptEntry).Assembly);
+        });
         
         return services;
     }

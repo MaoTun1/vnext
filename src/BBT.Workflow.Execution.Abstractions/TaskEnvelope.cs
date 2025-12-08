@@ -1,0 +1,74 @@
+using System.Text.Json;
+
+namespace BBT.Workflow.Execution;
+
+/// <summary>
+/// Raw task envelope for deserialization routing.
+/// Contains the task type and binding as raw JSON for dynamic deserialization.
+/// </summary>
+public sealed class TaskEnvelope
+{
+    /// <summary>
+    /// Task type discriminator for invoker resolution (e.g., "http", "daprservice").
+    /// </summary>
+    public required string TaskType { get; init; }
+    
+    /// <summary>
+    /// Version of the binding schema.
+    /// </summary>
+    public string Version { get; init; } = "1.0.0";
+    
+    /// <summary>
+    /// Task key for logging and tracing.
+    /// </summary>
+    public string TaskKey { get; init; }
+    
+    /// <summary>
+    /// Raw binding configuration as JsonElement for dynamic deserialization.
+    /// The actual type depends on TaskType.
+    /// </summary>
+    public required JsonElement Binding { get; init; }
+}
+
+/// <summary>
+/// Trace context for distributed tracing (minimal, no workflow state).
+/// </summary>
+public sealed class TaskTraceContext
+{
+    /// <summary>
+    /// Instance ID for tracing.
+    /// </summary>
+    public Guid InstanceId { get; init; }
+    
+    /// <summary>
+    /// Workflow domain for tracing.
+    /// </summary>
+    public string Domain { get; init; } = string.Empty;
+    
+    /// <summary>
+    /// Workflow key for tracing.
+    /// </summary>
+    public string WorkflowKey { get; init; } = string.Empty;
+    
+    /// <summary>
+    /// Workflow version for tracing.
+    /// </summary>
+    public string? WorkflowVersion { get; init; }
+}
+
+/// <summary>
+/// Request wrapper containing envelope and trace context.
+/// </summary>
+public sealed class TaskInvokeRequest
+{
+    /// <summary>
+    /// The task envelope containing type, version, and binding.
+    /// </summary>
+    public required TaskEnvelope Envelope { get; init; }
+    
+    /// <summary>
+    /// Trace context for distributed tracing.
+    /// </summary>
+    public TaskTraceContext? TraceContext { get; init; }
+}
+

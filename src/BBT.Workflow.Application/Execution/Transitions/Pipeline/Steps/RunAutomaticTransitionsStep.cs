@@ -19,7 +19,6 @@ public sealed class RunAutomaticTransitionsStep(
     public int Order => LifecycleOrder.Auto;
 
     /// <inheritdoc />
-    [Log]
     [Trace]
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
@@ -31,11 +30,36 @@ public sealed class RunAutomaticTransitionsStep(
             return Result<StepOutcome>.Ok(StepOutcome.Continue());
         }
 
-        // Railway chain: Evaluate all transitions -> Find winner -> Enqueue
+        // Railway chain: Evaluate all transitions -> Process winner (if exists)
         return await EvaluateAllTransitionsAsync(context, cancellationToken)
-            .Bind(evaluations => FindWinningTransition(context, evaluations))
-            .Tap(winner => EnqueueWinningTransition(context, winner))
-            .Map(_ => StepOutcome.Continue());
+            .Map(evaluations => ProcessEvaluationResults(context, evaluations));
+    }
+
+    /// <summary>
+    /// Processes evaluation results and enqueues the winning transition if found.
+    /// Returns Continue regardless of whether a winner was found (soft-fail behavior).
+    /// </summary>
+    private StepOutcome ProcessEvaluationResults(
+        TransitionExecutionContext context,
+        List<AutoConditionEvaluation> evaluations)
+    {
+        var winner = evaluations.FirstOrDefault(e => e.Status == AutoConditionStatus.Satisfied);
+
+        if (winner.TransitionKey is null)
+        {
+            logger.AutoTransitionConditionNotSatisfied(
+                context.Target!.Key,
+                context.InstanceId,
+                string.Join(", ", evaluations.Select(e => e.TransitionKey)));
+
+            // No winner found - continue pipeline, stay in current state
+            return StepOutcome.Continue();
+        }
+
+        logger.AutoTransitionSelected(winner.TransitionKey, context.Target!.Key, context.InstanceId);
+        EnqueueWinningTransition(context, winner);
+
+        return StepOutcome.Continue();
     }
 
     /// <summary>
@@ -63,31 +87,6 @@ public sealed class RunAutomaticTransitionsStep(
         }
 
         return Result<List<AutoConditionEvaluation>>.Ok(evaluations);
-    }
-
-    /// <summary>
-    /// Finds the first satisfied transition from evaluations.
-    /// </summary>
-    private Result<AutoConditionEvaluation> FindWinningTransition(
-        TransitionExecutionContext context,
-        List<AutoConditionEvaluation> evaluations)
-    {
-        var winner = evaluations.FirstOrDefault(e => e.Status == AutoConditionStatus.Satisfied);
-
-        if (winner.TransitionKey is null)
-        {
-            logger.AutoTransitionConditionNotSatisfied(
-                context.Target!.Key,
-                context.InstanceId,
-                string.Join(", ", evaluations.Select(e => e.TransitionKey)));
-
-            return Result<AutoConditionEvaluation>.Fail(
-                ExecutionErrors.NoAutoTransitionConditionSatisfied(context.Target.Key));
-        }
-
-        logger.AutoTransitionSelected(winner.TransitionKey, context.Target!.Key, context.InstanceId);
-
-        return Result<AutoConditionEvaluation>.Ok(winner);
     }
 
     /// <summary>

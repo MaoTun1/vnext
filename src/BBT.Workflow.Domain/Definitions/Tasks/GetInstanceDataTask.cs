@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using BBT.Workflow.Scripting;
 
 namespace BBT.Workflow.Definitions;
 
@@ -37,30 +36,41 @@ public sealed class GetInstanceDataTask : WorkflowTask
     /// <summary>
     /// InstanceId of the target workflow (optional)
     /// </summary>
-    public string? TriggerInstanceId { get; private set; }
+    public Guid? TriggerInstanceId { get; private set; }
 
     /// <summary>
     /// Extensions to request for data enrichment (optional)
     /// </summary>
     public string[]? Extensions { get; private set; }
 
-    public void SetInstance(string instanceId)
+    public string? Identifier => TriggerInstanceId.HasValue ? TriggerInstanceId.Value.ToString() : TriggerKey;
+
+    public void SetInstance(string? instanceId)
     {
-        TriggerInstanceId = instanceId;
+        if (!instanceId.IsNullOrWhiteSpace())
+        {
+            TriggerInstanceId = Guid.TryParse(instanceId,  out var guid) ? guid : null;    
+        }
+        else
+        {
+            TriggerInstanceId = null;
+        }
     }
 
-    public void SetKey(string key)
+    public void SetKey(string? key)
     {
         TriggerKey = key;
     }
 
     public void SetDomain(string domain)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(domain, nameof(domain));
         TriggerDomain = domain;
     }
 
     public void SetFlow(string flow)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(flow, nameof(flow));
         TriggerFlow = flow;
     }
 
@@ -75,7 +85,7 @@ public sealed class GetInstanceDataTask : WorkflowTask
     internal void SetTriggerDomainInternal(string triggerDomain) => TriggerDomain = triggerDomain;
     internal void SetTriggerFlowInternal(string triggerFlow) => TriggerFlow = triggerFlow;
     internal void SetTriggerKeyInternal(string? triggerKey) => TriggerKey = triggerKey;
-    internal void SetTriggerInstanceIdInternal(string? triggerInstanceId) => TriggerInstanceId = triggerInstanceId;
+    internal void SetTriggerInstanceIdInternal(Guid? triggerInstanceId) => TriggerInstanceId = triggerInstanceId;
     internal void SetExtensionsInternal(string[]? extensions) => Extensions = extensions;
 
     protected override void Configure(JsonElement config)
@@ -98,7 +108,7 @@ public sealed class GetInstanceDataTask : WorkflowTask
             TriggerKey = keyElement.GetString();
 
         if (config.TryGetProperty("instanceId", out var instanceIdElement))
-            TriggerInstanceId = instanceIdElement.GetString();
+            TriggerInstanceId = instanceIdElement.TryGetGuid(out var instanceId) ? instanceId : null;
 
         if (config.TryGetProperty("extensions", out var extensionsElement)&&extensionsElement.ValueKind== JsonValueKind.Array)
         {

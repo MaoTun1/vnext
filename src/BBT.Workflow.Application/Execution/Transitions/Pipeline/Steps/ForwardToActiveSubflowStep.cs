@@ -18,7 +18,6 @@ public class ForwardToActiveSubflowStep(
     public int Order => LifecycleOrder.ForwardToActiveSubflow;
 
     /// <inheritdoc />
-    [Log]
     [Trace]
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context,
         CancellationToken cancellationToken)

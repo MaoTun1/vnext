@@ -51,13 +51,13 @@ public static class WorkflowHealthCheckMapExtensions
                     .Select(e =>
                         new
                         {
-                            Key = e.Key,
-                            Description = e.Value.Description,
-                            Duration = e.Value.Duration,
+                            e.Key,
+                            e.Value.Description,
+                            e.Value.Duration,
                             Status = Enum.GetName(e.Value.Status),
                             Error = e.Value.Exception?.Message,
-                            Tags = e.Value.Tags,
-                            Data = e.Value.Data
+                            e.Value.Tags,
+                            e.Value.Data
                         })
                     .ToList()
             },

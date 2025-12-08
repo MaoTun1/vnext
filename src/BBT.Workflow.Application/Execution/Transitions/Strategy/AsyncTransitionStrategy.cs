@@ -19,6 +19,7 @@ public sealed class AsyncTransitionStrategy(
     IInstanceJobRepository jobRepository,
     ILogger<AsyncTransitionStrategy> logger) : ITransitionStrategy
 {
+    public ExecMode Mode => ExecMode.Async;
     /// <inheritdoc />
     /// <summary>
     /// Executes transition asynchronously by enqueuing a background job.

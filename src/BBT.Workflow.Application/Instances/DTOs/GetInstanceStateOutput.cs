@@ -1,4 +1,4 @@
-using BBT.Workflow.Definitions;
+using BBT.Workflow.Shared;
 
 namespace BBT.Workflow.Instances;
 

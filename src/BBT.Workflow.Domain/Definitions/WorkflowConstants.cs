@@ -30,6 +30,14 @@ public class ViewConstants
 public class TaskConstants
 {
     public const int MaxKeyLength = WorkflowConstants.MaxKeyLength;
+    /// <summary>
+    /// Named HttpClient for SSL validation enabled requests (default behavior)
+    /// </summary>
+    public const string DefaultHttpClientName = "WorkflowHttpClient";
+    /// <summary>
+    /// Named HttpClient for SSL validation disabled requests
+    /// </summary>
+    public const string NoSslValidationHttpClientName = "WorkflowHttpClient.NoSslValidation";
 }
 
 public class StateConstants

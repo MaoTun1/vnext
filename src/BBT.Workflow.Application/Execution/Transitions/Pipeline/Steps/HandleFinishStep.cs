@@ -21,14 +21,8 @@ public sealed class HandleFinishStep(
 {
     /// <inheritdoc />
     public int Order => LifecycleOrder.Finish;
-
-    /* TODO: 
-     * SubFlow bittiğinde bir hook deneyecek başarız olursa -> Event yayıyor.
-     * long pooling => aynı davranacak.
-    */
     
     /// <inheritdoc />
-    [Log]
     [Trace]
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context,
         CancellationToken cancellationToken)

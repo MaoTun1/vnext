@@ -295,7 +295,7 @@ public sealed class InstanceQueryAppService(
             return response;
         }
 
-        var scriptContext = await scriptContextFactory.NewBuilder()
+        var scriptContext = await scriptContextFactory.NewBuilder(instanceRepository)
             .WithWorkflow(flow)
             .WithInstance(instance)
             .WithRuntime(runtimeInfoProvider)
@@ -346,7 +346,7 @@ public sealed class InstanceQueryAppService(
                         Etag = instance.LatestData?.ETag ?? string.Empty
                     };
 
-                    var scriptContext = await scriptContextFactory.NewBuilder()
+                    var scriptContext = await scriptContextFactory.NewBuilder(instanceRepository)
                         .WithWorkflow(flow)
                         .WithInstance(instance)
                         .WithRuntime(runtimeInfoProvider)

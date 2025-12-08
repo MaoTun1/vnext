@@ -1,4 +1,3 @@
-using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 
@@ -11,7 +10,7 @@ namespace BBT.Workflow.Tasks.Persistence.Strategies;
 /// <remarks>
 /// This strategy is responsible for persisting InstanceTask entities to the database
 /// for all TaskTrigger types except Extension. It ensures proper audit trail and
-/// workflow execution history is maintained. Uses the Result pattern for error handling.
+/// workflow execution history is maintained.
 /// </remarks>
 public sealed class StandardTaskPersistenceStrategy(
     IInstanceTaskRepository instanceTaskRepository) : ITaskPersistenceStrategy
@@ -32,11 +31,9 @@ public sealed class StandardTaskPersistenceStrategy(
     /// </summary>
     /// <param name="instanceTask">The InstanceTask to be inserted into the database.</param>
     /// <param name="cancellationToken">Cancellation token for async operation control.</param>
-    /// <returns>A Result indicating success or failure of the insert operation.</returns>
-    public async Task<Result> HandleCreationAsync(InstanceTask instanceTask, CancellationToken cancellationToken = default)
+    public async Task HandleCreationAsync(InstanceTask instanceTask, CancellationToken cancellationToken = default)
     {
         await instanceTaskRepository.InsertAsync(instanceTask, true, cancellationToken);
-        return Result.Ok();
     }
 
     /// <summary>
@@ -44,10 +41,8 @@ public sealed class StandardTaskPersistenceStrategy(
     /// </summary>
     /// <param name="instanceTask">The InstanceTask to be updated in the database.</param>
     /// <param name="cancellationToken">Cancellation token for async operation control.</param>
-    /// <returns>A Result indicating success or failure of the update operation.</returns>
-    public async Task<Result> HandleCompletionAsync(InstanceTask instanceTask, CancellationToken cancellationToken = default)
+    public async Task HandleCompletionAsync(InstanceTask instanceTask, CancellationToken cancellationToken = default)
     {
         await instanceTaskRepository.UpdateAsync(instanceTask, true, cancellationToken);
-        return Result.Ok();
     }
-} 
+}

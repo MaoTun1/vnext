@@ -13,8 +13,10 @@
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" Version="$(MicrosoftPackageVersion)" />
     <PackageReference Include="AspNetCore.HealthChecks.Redis" Version="$(MicrosoftPackageVersion)" />
     <PackageReference Include="Dapr.AspNetCore" Version="$(DaprPackageVersion)" />
-    <ProjectReference Include="..\BBT.Workflow.Infrastructure\BBT.Workflow.Infrastructure.csproj" />
     <PackageReference Include="prometheus-net.AspNetCore" Version="$(PrometheusVersion)" />
     <PackageReference Include="prometheus-net.AspNetCore.HealthChecks" Version="$(PrometheusVersion)" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\BBT.Workflow.Infrastructure\BBT.Workflow.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

@@ -11,6 +11,7 @@ using BBT.Workflow.Instances;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Shared;
 using BBT.Workflow.Tasks;
+using BBT.Workflow.Tasks.Coordinator;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
@@ -231,7 +232,7 @@ public class AutomaticTransitionHandlerTests
 
         // Assert
         _mockScriptContextFactory.Verify(
-            x => x.NewBuilder(),
+            x => x.NewBuilder(It.IsAny<IInstanceRepository>()),
             Times.Never);
     }
 
@@ -339,7 +340,7 @@ public class AutomaticTransitionHandlerTests
             .ReturnsAsync(scriptContext);
 
         _mockScriptContextFactory
-            .Setup(x => x.NewBuilder())
+            .Setup(x => x.NewBuilder(It.IsAny<IInstanceRepository>()))
             .Returns(mockBuilder.Object);
     }
 
@@ -350,7 +351,7 @@ public class AutomaticTransitionHandlerTests
                 It.IsAny<ScriptCode>(),
                 It.IsAny<ScriptContext>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(conditionResult);
+            .ReturnsAsync(Result<bool>.Ok(conditionResult));
     }
 
     private TransitionExecutionContext CreateValidTransitionContext()

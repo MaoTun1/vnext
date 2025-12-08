@@ -1,33 +1,40 @@
 using BBT.Aether.Results;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace BBT.Workflow.Execution.Strategies;
 
 /// <summary>
 /// Factory implementation for creating appropriate execution strategies based on execution mode.
 /// Uses dependency injection to resolve strategies.
+/// Falls back to SyncTransitionStrategy if no strategy is found for the given mode.
 /// </summary>
 public sealed class ExecutionStrategyFactory(
-    IServiceProvider serviceProvider) : IExecutionStrategyFactory
+    IEnumerable<ITransitionStrategy> strategies) : IExecutionStrategyFactory
 {
+    private readonly IEnumerable<ITransitionStrategy> _strategies = strategies;
+
     /// <inheritdoc />
     public Result<ITransitionStrategy> Get(ExecMode mode)
     {
-        ITransitionStrategy? strategy = mode switch
+        // Try to find strategy for the requested mode
+        var strategy = _strategies.FirstOrDefault(s => s.Mode == mode);
+        if (strategy != null)
         {
-            ExecMode.Sync => serviceProvider.GetService<SyncTransitionStrategy>(),
-            ExecMode.Async => serviceProvider.GetService<AsyncTransitionStrategy>(),
-            ExecMode.Resume => serviceProvider.GetService<SyncTransitionStrategy>(), // Resume mode uses Sync strategy
-            _ => null
-        };
+            return Result<ITransitionStrategy>.Ok(strategy);
+        }
 
-        return strategy != null
-            ? Result<ITransitionStrategy>.Ok(strategy)
-            : Result<ITransitionStrategy>.Fail(
-                Error.NotSupported(
-                    WorkflowErrorCodes.ExecutionStrategyNotSupported,
-                    $"No execution strategy found for mode {mode}"
-                )
-            );
+        // Fallback to Sync strategy as default
+        var defaultStrategy = _strategies.FirstOrDefault(s => s.Mode == ExecMode.Sync);
+        if (defaultStrategy != null)
+        {
+            return Result<ITransitionStrategy>.Ok(defaultStrategy);
+        }
+
+        // This should never happen if SyncTransitionStrategy is registered
+        return Result<ITransitionStrategy>.Fail(
+            Error.NotSupported(
+                WorkflowErrorCodes.ExecutionStrategyNotSupported,
+                $"No execution strategy found for mode {mode} and no default Sync strategy available"
+            )
+        );
     }
 }

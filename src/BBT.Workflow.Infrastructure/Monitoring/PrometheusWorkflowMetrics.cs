@@ -95,10 +95,6 @@ public sealed class PrometheusWorkflowMetrics : IWorkflowMetrics
             case var s when s == InstanceStatus.Passive.Code: // Passive (Suspended)
                 WorkflowMetrics.SuspendedInstances.WithLabels(workflow).Dec();
                 break;
-            default:
-                // Completed and Faulted instances are not tracked in gauges
-                // as they represent final states - no action needed
-                break;
         }
     }
 
@@ -117,10 +113,6 @@ public sealed class PrometheusWorkflowMetrics : IWorkflowMetrics
                 break;
             case var s when s == InstanceStatus.Passive.Code: // Passive (Suspended)
                 WorkflowMetrics.SuspendedInstances.WithLabels(workflow).Inc();
-                break;
-            default:
-                // Completed and Faulted instances are not tracked in gauges
-                // as they represent final states - no action needed
                 break;
         }
     }

@@ -18,6 +18,7 @@
     <ProjectReference Include="..\BBT.Workflow.Events.Contracts\BBT.Workflow.Events.Contracts.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Remove="Definitions\Validators\ValidationResult.cs" />
+    <EmbeddedResource Include="Tasks\Scripting\NotificationMapping.csx"
+                      LogicalName="BBT.Workflow.Tasks.Scripting.NotificationMapping.csx"/>
   </ItemGroup>
 </Project>

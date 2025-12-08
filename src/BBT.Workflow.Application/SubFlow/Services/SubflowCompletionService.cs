@@ -141,7 +141,7 @@ public sealed class SubflowCompletionService(
         var parentState = parentStateResult.Value!;
 
         // Create script context for output mapping with completed SubFlow data
-        var scriptContextBuilder = scriptContextFactory.NewBuilder()
+        var scriptContextBuilder = scriptContextFactory.NewBuilder(instanceRepository)
             .WithWorkflow(parentWorkflow)
             .WithInstance(parentInstance)
             .WithRuntime(runtimeInfoProvider)

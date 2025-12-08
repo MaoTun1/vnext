@@ -8,11 +8,11 @@ using BBT.Aether.MultiSchema.EntityFrameworkCore.Interceptors;
 using BBT.Workflow;
 using BBT.Workflow.BackgroundJobs.Handlers;
 using BBT.Workflow.Data;
+using BBT.Workflow.Definitions;
 using BBT.Workflow.Headers;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
-using BBT.Workflow.Tasks;
 using Dapr.Jobs.Extensions;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.EntityFrameworkCore;
@@ -28,29 +28,14 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class WorkflowApiBaseServiceCollectionExtensions
 {
     /// <summary>
-    /// Adds base Workflow API services common to all host applications
+    /// Registers the centralized JsonSerializerOptions as a singleton in DI.
+    /// This allows services to inject JsonSerializerOptions for consistent JSON handling.
     /// </summary>
     /// <param name="services">The service collection</param>
     /// <returns>The service collection for chaining</returns>
-    public static IServiceCollection AddWorkflowApiBase(this IServiceCollection services)
+    public static IServiceCollection AddJsonSerializerOptions(this IServiceCollection services)
     {
-        var configuration = services.GetConfiguration();
-
-        ConfigureBaseModules(services, configuration);
-        ConfigureEventBus(services, configuration);
-        ConfigureDbContext(services, configuration);
-        ConfigureMapper(services);
-        ConfigureTelemetry(services, configuration);
-        ConfigureRedis(services);
-        ConfigureDistributedCache(services, configuration);
-        ConfigureDistributedLock(services, configuration);
-        ConfigureBackgroundJob(services);
-        ConfigureRoute(services);
-        ConfigureExceptionHandling(services);
-        ConfigureBaseHost(services);
-
-        services.AddAetherAmbientServiceProvider();
-
+        services.AddSingleton(JsonSerializerConstants.JsonOptions);
         return services;
     }
 
@@ -59,7 +44,7 @@ public static class WorkflowApiBaseServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The service collection</param>
     /// <returns>The service collection for chaining</returns>
-    public static IServiceCollection AddWorkflowDaprClients(this IServiceCollection services)
+    public static IServiceCollection AddDaprClients(this IServiceCollection services)
     {
         services.AddDaprClient();
         services.AddDaprJobsClient();
@@ -74,7 +59,7 @@ public static class WorkflowApiBaseServiceCollectionExtensions
     public static IServiceCollection AddWorkflowHttpClient(this IServiceCollection services)
     {
         // Default HTTP client with SSL validation enabled
-        services.AddHttpClient(HttpTaskExecutor.DefaultHttpClientName, client =>
+        services.AddHttpClient(TaskConstants.DefaultHttpClientName, client =>
             {
                 // Default timeout - will be overridden per request
                 client.Timeout = TimeSpan.FromSeconds(30);
@@ -86,7 +71,7 @@ public static class WorkflowApiBaseServiceCollectionExtensions
             });
 
         // HTTP client with SSL validation disabled
-        services.AddHttpClient(HttpTaskExecutor.NoSslValidationHttpClientName, client =>
+        services.AddHttpClient(TaskConstants.NoSslValidationHttpClientName, client =>
             {
                 // Default timeout - will be overridden per request
                 client.Timeout = TimeSpan.FromSeconds(30);
@@ -100,19 +85,45 @@ public static class WorkflowApiBaseServiceCollectionExtensions
 
         return services;
     }
-
-    private static void ConfigureBaseModules(IServiceCollection services, IConfiguration configuration)
+    
+    public static IServiceCollection AddAspNetCoreModules(this IServiceCollection services, IConfiguration configuration)
     {
+        services.AddAetherAmbientServiceProvider();
+        services.AddJsonSerializerOptions();
         services.AddAetherCore(options =>
         {
             options.Environment ??= Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
             options.ApplicationName ??= configuration.GetValue<string?>("ApplicationName") ?? "vNext";
         });
-        services.AddInfrastructureModule();
         services.AddAetherAspNetCore();
+        
+        services.AddEndpointsApiExplorer();
+        services.AddAetherApiVersioning(apiTitle: "vNext API");
+
+        services.AddControllers()
+            .AddJsonOptions(options =>
+            {
+                // Use centralized JSON configuration from JsonSerializerConstants
+                var centralOptions = JsonSerializerConstants.JsonOptions;
+                
+                options.JsonSerializerOptions.WriteIndented = centralOptions.WriteIndented;
+                options.JsonSerializerOptions.PropertyNamingPolicy = centralOptions.PropertyNamingPolicy;
+                options.JsonSerializerOptions.DictionaryKeyPolicy = centralOptions.DictionaryKeyPolicy;
+                options.JsonSerializerOptions.PropertyNameCaseInsensitive = centralOptions.PropertyNameCaseInsensitive;
+                options.JsonSerializerOptions.DefaultIgnoreCondition = centralOptions.DefaultIgnoreCondition;
+                options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+                
+                // Add converters from centralized configuration
+                foreach (var converter in centralOptions.Converters)
+                {
+                    options.JsonSerializerOptions.Converters.Add(converter);
+                }
+            });
+        
+        return services;
     }
 
-    private static void ConfigureDbContext(IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddDbContext(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddSchemaResolution(options =>
         {
@@ -161,9 +172,24 @@ public static class WorkflowApiBaseServiceCollectionExtensions
         services.AddAetherInbox<MessagingDbContext>();
 
         #endregion
+        
+        return services;
     }
 
-    private static void ConfigureMapper(IServiceCollection services)
+    public static IServiceCollection AddBackgroundJob(this IServiceCollection services)
+    {
+        services.AddAetherBackgroundJob<WorkflowDbContext>(options =>
+        {
+            options.AddHandler<FlowTimeoutJobHandler>(FlowTimeoutJobHandler.HandlerName);
+            options.AddHandler<TransitionJobHandler>(TransitionJobHandler.HandlerName);
+            options.AddHandler<TransitionTimerJobHandler>(TransitionTimerJobHandler.HandlerName);
+        });
+        
+        services.AddDaprJobScheduler();
+        return services;
+    }
+    
+    public static IServiceCollection AppMapper(this IServiceCollection services)
     {
         services.AddAetherAutoMapperMapper(
         [
@@ -171,24 +197,28 @@ public static class WorkflowApiBaseServiceCollectionExtensions
             typeof(WorkflowDomainModuleServiceCollectionExtensions), // Domain
             typeof(WorkflowApplicationModuleServiceCollectionExtensions) // Application
         ]);
+        return services;
     }
 
-    private static void ConfigureTelemetry(IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddTelemetry(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddAetherTelemetry(configuration);
+        return services;
     }
 
-    private static void ConfigureDistributedCache(IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddDistributedCache(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddDaprDistributedCache(configuration["DAPR_STATE_STORE_NAME"]!);
+        return services;
     }
 
-    private static void ConfigureDistributedLock(IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddDistributedLock(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddDaprDistributedLock(configuration["DAPR_LOCK_STORE_NAME"]!);
+        return services;
     }
 
-    private static void ConfigureEventBus(IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddEventBus(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddEventBusWithHooks(options =>
             {
@@ -198,38 +228,16 @@ public static class WorkflowApiBaseServiceCollectionExtensions
                 options.PubSubName = configuration["DAPR_PUBSUB_STORE_NAME"]!;
             }
         );
+        return services;
     }
-
-    private static void ConfigureBackgroundJob(IServiceCollection services)
+    
+    public static IServiceCollection ConfigureRoute(this IServiceCollection services)
     {
-        services.AddAetherBackgroundJob<WorkflowDbContext>(options =>
-        {
-            options.AddHandler<FlowTimeoutJobHandler>(FlowTimeoutJobHandler.HandlerName);
-            options.AddHandler<TransitionJobHandler>(TransitionJobHandler.HandlerName);
-            options.AddHandler<TransitionTimerJobHandler>(TransitionTimerJobHandler.HandlerName);
-        });
-        services.AddDaprJobScheduler();
+        
+        return services;
     }
 
-    private static void ConfigureRedis(IServiceCollection services)
-    {
-        services.AddRedis();
-    }
-
-    private static void ConfigureRoute(IServiceCollection services)
-    {
-        services.AddEndpointsApiExplorer();
-        services.AddAetherApiVersioning(apiTitle: "vNext API");
-
-        services.AddControllers()
-            .AddJsonOptions(options =>
-            {
-                options.JsonSerializerOptions.WriteIndented = false;
-                options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
-            });
-    }
-
-    private static void ConfigureExceptionHandling(IServiceCollection services)
+    public static IServiceCollection AddExceptionHandling(this IServiceCollection services)
     {
         // Configure Aether's error code to HTTP status code mapping
         // This is the central place for all error code mappings in the application
@@ -259,14 +267,23 @@ public static class WorkflowApiBaseServiceCollectionExtensions
             opt.Map(WorkflowErrorCodes.TaskContextCreation, HttpStatusCode.InternalServerError);
             opt.Map(WorkflowErrorCodes.TaskExecution, HttpStatusCode.InternalServerError);
         });
+        return services;
     }
-
-    private static void ConfigureBaseHost(IServiceCollection services)
+    
+    public static IServiceCollection AddRuntimeMiddleware(this IServiceCollection services)
     {
         services.AddScoped<WorkflowRuntimeMiddleware>();
+       
+        return services;
+    }
+
+    public static IServiceCollection AddHeaderService(this IServiceCollection services)
+    {
         services.AddScoped<ResponseHeaderFilter>();
         services.AddScoped<IHeaderService, HttpContextHeaderService>();
         services
             .ReplaceSchemaResolver<HeaderSchemaResolutionStrategy, WorkflowHeaderSchemaResolutionStrategy>();
+        
+        return services;
     }
 }

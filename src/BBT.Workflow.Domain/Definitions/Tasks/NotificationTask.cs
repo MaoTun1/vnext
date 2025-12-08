@@ -1,13 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using BBT.Workflow.Scripting;
 
 namespace BBT.Workflow.Definitions;
 
 /// <summary>
-/// SignalR Task Definition
+/// Notification Task Definition for sending notifications through various channels
+/// (SignalR, MQTT, Kafka, HTTP webhook, etc.)
 /// </summary>
-public sealed class NotificationTask : WorkflowTask, IGlobalTask
+public sealed class NotificationTask : WorkflowTask
 {
     private NotificationTask()
     {
@@ -21,19 +21,58 @@ public sealed class NotificationTask : WorkflowTask, IGlobalTask
     }
 
     /// <summary>
-    /// Gets the mapping instance for this task. Returns null as NotificationTask uses script-based mapping.
+    /// The notification message body/payload. Set by mapping during execution.
     /// </summary>
-    public IMapping? Mapping => null;
+    public object? Body { get; private set; }
 
     /// <summary>
-    /// Additional metadata for notification sending (e.g., componentName, topic, headers)
+    /// The notification subject/title. Set by mapping during execution.
+    /// </summary>
+    public string? Subject { get; private set; }
+
+    /// <summary>
+    /// The recipients of the notification. Set by mapping during execution.
+    /// Can be user IDs, email addresses, topic names, etc. depending on the binding type.
+    /// </summary>
+    public string[]? To { get; private set; }
+
+    /// <summary>
+    /// Additional metadata for notification sending (e.g., componentName, topic, headers).
+    /// Configured in workflow definition.
     /// </summary>
     public JsonElement? Metadata { get; private set; }
+
+    /// <summary>
+    /// Sets the notification body/payload. Called by mapping during execution.
+    /// </summary>
+    /// <param name="body">The notification body object.</param>
+    public void SetBody(object? body) => Body = body;
+
+    /// <summary>
+    /// Sets the notification subject/title. Called by mapping during execution.
+    /// </summary>
+    /// <param name="subject">The notification subject.</param>
+    public void SetSubject(string? subject) => Subject = subject;
+
+    /// <summary>
+    /// Sets the notification recipients. Called by mapping during execution.
+    /// </summary>
+    /// <param name="to">The recipients array.</param>
+    public void SetTo(string[]? to) => To = to;
+
+    /// <summary>
+    /// Sets a single recipient. Called by mapping during execution.
+    /// </summary>
+    /// <param name="to">The single recipient.</param>
+    public void SetTo(string? to) => To = string.IsNullOrEmpty(to) ? null : new[] { to };
 
     /// <summary>
     /// Internal property setters for object pooling
     /// </summary>
     internal void SetMetadataInternal(JsonElement? metadata) => Metadata = metadata;
+    internal void SetBodyInternal(object? body) => Body = body;
+    internal void SetSubjectInternal(string? subject) => Subject = subject;
+    internal void SetToInternal(string[]? to) => To = to;
 
     protected override void Configure(JsonElement config)
     {
@@ -43,6 +82,28 @@ public sealed class NotificationTask : WorkflowTask, IGlobalTask
         {
             var metadataRaw = metadataElement.GetRawText();
             Metadata = string.IsNullOrWhiteSpace(metadataRaw) ? null : metadataElement;
+        }
+
+        // Subject and To can be configured statically in workflow definition
+        if (config.TryGetProperty("subject", out var subjectElement))
+        {
+            Subject = subjectElement.GetString();
+        }
+
+        if (config.TryGetProperty("to", out var toElement))
+        {
+            if (toElement.ValueKind == JsonValueKind.Array)
+            {
+                To = toElement.EnumerateArray()
+                    .Select(e => e.GetString())
+                    .Where(s => !string.IsNullOrEmpty(s))
+                    .ToArray()!;
+            }
+            else if (toElement.ValueKind == JsonValueKind.String)
+            {
+                var toValue = toElement.GetString();
+                To = string.IsNullOrEmpty(toValue) ? null : new[] { toValue };
+            }
         }
     }
 
@@ -61,7 +122,7 @@ public sealed class NotificationTask : WorkflowTask, IGlobalTask
     }
 
     /// <summary>
-    /// Creates a typed deep copy of the current SignalRTask instance.
+    /// Creates a typed deep copy of the current NotificationTask instance.
     /// </summary>
     public NotificationTask CloneTyped()
     {
@@ -69,6 +130,9 @@ public sealed class NotificationTask : WorkflowTask, IGlobalTask
         CopyBaseTo(cloned);
 
         cloned.Metadata = Metadata;
+        cloned.Body = Body;
+        cloned.Subject = Subject;
+        cloned.To = To;
 
         return cloned;
     }
@@ -81,6 +145,9 @@ public sealed class NotificationTask : WorkflowTask, IGlobalTask
     {
         source.CopyBaseToInternal(this);
         SetMetadataInternal(source.Metadata);
+        SetBodyInternal(source.Body);
+        SetSubjectInternal(source.Subject);
+        SetToInternal(source.To);
     }
 
     /// <summary>
@@ -90,6 +157,9 @@ public sealed class NotificationTask : WorkflowTask, IGlobalTask
     {
         base.Reset();
         Metadata = null;
+        Body = null;
+        Subject = null;
+        To = null;
     }
 
     /// <summary>

@@ -1,6 +1,5 @@
 using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace BBT.Workflow.Execution.Handlers;
 
@@ -9,17 +8,14 @@ namespace BBT.Workflow.Execution.Handlers;
 /// Uses dependency injection to resolve handlers and provides fallback behavior.
 /// </summary>
 public sealed class TransitionHandlerFactory(
-    IServiceProvider serviceProvider) : ITransitionHandlerFactory
+    IEnumerable<ITransitionHandler> handlers) : ITransitionHandlerFactory
 {
     /// <inheritdoc />
     public Result<ITransitionHandler> Get(TriggerType triggerType)
     {
         // Get all registered transition handlers
-        var handlers = serviceProvider.GetServices<ITransitionHandler>();
-
-        // Find the handler that can handle this trigger type
-        var handler = handlers.FirstOrDefault(h => h.CanHandle(triggerType));
-
+        var handler = handlers.FirstOrDefault(s => s.CanHandle(triggerType));
+        
         return handler != null
             ? Result<ITransitionHandler>.Ok(handler)
             : Result<ITransitionHandler>.Fail(
