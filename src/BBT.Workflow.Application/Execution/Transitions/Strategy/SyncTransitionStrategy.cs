@@ -17,12 +17,13 @@ public sealed class SyncTransitionStrategy(
     ITransitionContextFactory contextFactory,
     TransitionPipeline pipeline) : ITransitionStrategy
 {
+     public ExecMode Mode => ExecMode.Sync;
+     
     /// <inheritdoc />
     /// <summary>
     /// Executes transition synchronously.
     /// Railway chain: Resolve Handler → Create Context → Execute Lifecycle
     /// </summary>
-    [Log]
     [Trace]
     public Task<Result<TransitionExecutionContext>> ExecuteAsync(
         WorkflowExecutionContext context,

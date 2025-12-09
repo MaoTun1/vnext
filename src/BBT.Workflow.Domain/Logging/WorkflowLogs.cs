@@ -189,6 +189,19 @@ public static partial class WorkflowLogs
         Guid instanceId,
         string transitionKeys);
 
+    /// <summary>
+    /// Logs when inline transition execution fails during re-entry.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10050,
+        Level = LogLevel.Error,
+        Message = "Inline execution failed for instance {InstanceId}, chain {ExecutionChainId}: {ErrorMessage}")]
+    public static partial void InlineExecutionFailed(
+        this ILogger logger,
+        string errorMessage,
+        Guid instanceId,
+        string? executionChainId);
+
     #endregion
 
     #region Task Execution
@@ -205,6 +218,144 @@ public static partial class WorkflowLogs
         Exception exception,
         string taskKey,
         string taskType,
+        Guid instanceId);
+
+    /// <summary>
+    /// Logs when task input mapping/handler fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10072,
+        Level = LogLevel.Error,
+        Message = "Task input handler failed. TaskKey={TaskKey}, TaskType={TaskType}, InstanceId={InstanceId}, Error={ErrorMessage}")]
+    public static partial void TaskInputHandlerFailed(
+        this ILogger logger,
+        string taskKey,
+        string taskType,
+        Guid instanceId,
+        string errorMessage);
+
+    /// <summary>
+    /// Logs when task output mapping/handler fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10073,
+        Level = LogLevel.Error,
+        Message = "Task output handler failed. TaskKey={TaskKey}, TaskType={TaskType}, InstanceId={InstanceId}, Error={ErrorMessage}")]
+    public static partial void TaskOutputHandlerFailed(
+        this ILogger logger,
+        string taskKey,
+        string taskType,
+        Guid instanceId,
+        string errorMessage);
+
+    /// <summary>
+    /// Logs when task envelope creation fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10075,
+        Level = LogLevel.Error,
+        Message = "Task envelope creation failed. TaskKey={TaskKey}, TaskType={TaskType}, InstanceId={InstanceId}, Error={ErrorMessage}")]
+    public static partial void TaskEnvelopeCreationFailed(
+        this ILogger logger,
+        string taskKey,
+        string taskType,
+        Guid instanceId,
+        string errorMessage);
+
+    /// <summary>
+    /// Logs when task invocation fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10076,
+        Level = LogLevel.Error,
+        Message = "Task invocation failed. TaskKey={TaskKey}, TaskType={TaskType}, InstanceId={InstanceId}, Error={ErrorMessage}")]
+    public static partial void TaskInvocationFailed(
+        this ILogger logger,
+        string taskKey,
+        string taskType,
+        Guid instanceId,
+        string errorMessage);
+
+    /// <summary>
+    /// Logs when task instance resolution fails (for DirectTrigger, GetInstanceData).
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10077,
+        Level = LogLevel.Error,
+        Message = "Task instance resolution failed. TaskKey={TaskKey}, TaskType={TaskType}, InstanceId={InstanceId}, Error={ErrorMessage}")]
+    public static partial void TaskInstanceResolutionFailed(
+        this ILogger logger,
+        string taskKey,
+        string taskType,
+        Guid instanceId,
+        string errorMessage);
+
+    /// <summary>
+    /// Logs when local task execution fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10078,
+        Level = LogLevel.Error,
+        Message = "Local task execution failed. TaskKey={TaskKey}, TaskType={TaskType}, InstanceId={InstanceId}, Error={ErrorMessage}")]
+    public static partial void TaskLocalExecutionFailed(
+        this ILogger logger,
+        string taskKey,
+        string taskType,
+        Guid instanceId,
+        string errorMessage);
+
+    /// <summary>
+    /// Logs when remote task execution fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10079,
+        Level = LogLevel.Error,
+        Message = "Remote task execution failed. TaskKey={TaskKey}, TaskType={TaskType}, InstanceId={InstanceId}, Error={ErrorMessage}")]
+    public static partial void TaskRemoteExecutionFailed(
+        this ILogger logger,
+        string taskKey,
+        string taskType,
+        Guid instanceId,
+        string errorMessage);
+
+    /// <summary>
+    /// Logs when task script compilation fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10080,
+        Level = LogLevel.Error,
+        Message = "Task script compilation failed. TaskKey={TaskKey}, TaskType={TaskType}, InstanceId={InstanceId}, Error={ErrorMessage}")]
+    public static partial void TaskScriptCompilationFailed(
+        this ILogger logger,
+        string taskKey,
+        string taskType,
+        Guid instanceId,
+        string errorMessage);
+
+    /// <summary>
+    /// Logs when task correlation creation fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10081,
+        Level = LogLevel.Error,
+        Message = "Task correlation creation failed. TaskKey={TaskKey}, TaskType={TaskType}, InstanceId={InstanceId}, Error={ErrorMessage}")]
+    public static partial void TaskCorrelationFailed(
+        this ILogger logger,
+        string taskKey,
+        string taskType,
+        Guid instanceId,
+        string errorMessage);
+
+    /// <summary>
+    /// Logs when notification default script retrieval fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10082,
+        Level = LogLevel.Warning,
+        Message = "Notification default script retrieval failed. TaskKey={TaskKey}, InstanceId={InstanceId}")]
+    public static partial void NotificationScriptRetrievalFailed(
+        this ILogger logger,
+        string taskKey,
         Guid instanceId);
 
     #endregion

@@ -20,7 +20,6 @@ public sealed class FinalizeTransitionStep(
     public int Order => LifecycleOrder.Finalize;
 
     /// <inheritdoc />
-    [Log]
     [Trace]
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context,
         CancellationToken cancellationToken)

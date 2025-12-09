@@ -17,7 +17,6 @@ public sealed class HandleCancelPreflightStep(
     public int Order => LifecycleOrder.Preflight;
 
     /// <inheritdoc />
-    [Log]
     [Trace]
     public Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {

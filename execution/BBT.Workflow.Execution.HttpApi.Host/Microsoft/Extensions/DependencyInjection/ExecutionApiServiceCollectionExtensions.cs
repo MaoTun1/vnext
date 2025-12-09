@@ -1,50 +1,58 @@
-using BBT.Workflow.Caching;
-using BBT.Workflow.Tasks.Execution;
-using BBT.Workflow.Tasks;
-using BBT.Workflow.Scripting;
-using BBT.Workflow.Runtime;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Prometheus;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
-/// Service collection extensions specific to Execution API
+/// Service collection extensions specific to Execution API.
+/// The Execution service is now completely independent of Domain.
 /// </summary>
 public static class ExecutionApiServiceCollectionExtensions
 {
     /// <summary>
-    /// Adds Execution API specific services
+    /// Adds Execution API specific services.
     /// </summary>
-    /// <param name="services">The service collection</param>
-    /// <returns>The service collection for chaining</returns>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddExecutionApiModule(this IServiceCollection services)
     {
-        // Add Execution-specific services
+        var configuration = services.GetConfiguration();
         services
-            .AddWorkflowApiBase()
-            .AddWorkflowDaprClients()
+            .AddAetherDomain()
+            .AddAetherApplication()
+            .AddAetherInfrastructure()
+            .AddAspNetCoreModules(configuration)
+            .AddDaprClients()
+            .AddAetherEventBus(opt =>
+            {
+                opt.DefaultSource =
+                    $"urn:vnext:{configuration.GetValue<string?>("ApplicationName")?.ToLowerInvariant()}";
+                opt.PrefixEnvironmentToTopic = true;
+                opt.PubSubName = configuration["DAPR_PUBSUB_STORE_NAME"]!;
+            })
+            .AppMapper()
+            .AddTelemetry(configuration)
+            .AddDistributedCache(configuration)
+            .AddDistributedLock(configuration)
+            .AddRedis()
+            .AddExceptionHandling()
             .AddWorkflowHttpClient()
-            .AddAppHealthChecks();
-
-        // Add Execution-specific configurations
-        ConfigureExecutionSpecificServices(services);
-        
+            .AddExecutionHealthChecks()
+            .AddDaprNotification(configuration)
+            .AddTaskInvokers();
         return services;
     }
-
-    private static void ConfigureExecutionSpecificServices(IServiceCollection services)
+    
+    private static IServiceCollection AddExecutionHealthChecks(this IServiceCollection services)
     {
-        // Bind RuntimeOptions from appsettings.json "Runtime" section
-        // This will override domain-level defaults with execution-specific configuration
-        services.AddOptions<RuntimeOptions>()
-            .BindConfiguration(RuntimeOptions.SectionName)
-            .ValidateOnStart();
-
-        // Replace default NullTaskExecutor with LocalTaskExecutor for direct task execution
-        // LocalTaskExecutor executes tasks directly within this service without remote calls
-        services.AddScoped<ITaskOrchestrator, LocalTaskExecutor>();
+        var healthChecksBuilder = services
+            .AddHealthChecks()
+            .ForwardToPrometheus();
+            
+        // Add standard health checks for Workflow APIs
+        healthChecksBuilder
+            .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"]); // Self health check
         
-        // Add any Execution-specific hosted services
-        services.AddHostedService<CacheInitializationHostedService>();
-        services.AddHostedService<ScriptingInitializationService>();
+        return services;
     }
 }

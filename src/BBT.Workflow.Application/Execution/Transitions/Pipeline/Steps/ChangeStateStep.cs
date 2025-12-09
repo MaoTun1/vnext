@@ -21,7 +21,6 @@ public sealed class ChangeStateStep(
     public int Order => LifecycleOrder.ChangeState;
 
     /// <inheritdoc />
-    [Log]
     [Trace]
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context,
         CancellationToken cancellationToken)

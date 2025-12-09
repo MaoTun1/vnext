@@ -21,7 +21,6 @@ public sealed class ProcessInlineAutoChainStep(
     private const int MaxInlineHops = 10;
 
     /// <inheritdoc />
-    [Log]
     [Trace]
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext ctx, CancellationToken ct)
     {
@@ -56,7 +55,6 @@ public sealed class ProcessInlineAutoChainStep(
         CancellationToken ct)
     {
         var state = new ChainProcessingState();
-        
         while (ctx.Directives.InlineAutoQueue.Count > 0 && state.Hops++ < MaxInlineHops)
         {
             var cmd = ctx.Directives.InlineAutoQueue.Dequeue();

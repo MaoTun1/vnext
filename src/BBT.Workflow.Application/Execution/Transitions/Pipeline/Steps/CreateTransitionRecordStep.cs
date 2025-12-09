@@ -25,7 +25,6 @@ public sealed class CreateTransitionRecordStep(
     public int Order => LifecycleOrder.CreateTransition;
 
     /// <inheritdoc />
-    [Log]
     [Trace]
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context,
         CancellationToken cancellationToken)

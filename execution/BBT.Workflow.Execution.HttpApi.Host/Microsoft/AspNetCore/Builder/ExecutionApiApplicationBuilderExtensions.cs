@@ -1,3 +1,5 @@
+using Prometheus;
+
 namespace Microsoft.AspNetCore.Builder;
 
 /// <summary>
@@ -12,8 +14,29 @@ public static class ExecutionApiApplicationBuilderExtensions
     /// <returns>The web application for chaining</returns>
     public static WebApplication UseExecutionApiModule(this WebApplication app)
     {
-        // Use base Workflow API configuration
-        app.UseWorkflowApiBase();
+        app.UseAetherAmbientServiceProvider();
+        if (app.Environment.IsDevelopment())
+        {
+            app.UseDeveloperExceptionPage();
+        }
+        else
+        {
+            app.UseHsts();
+        }
+        app.UseExceptionHandler();
+        app.UseAppResponseCompression();
+        app.UseCloudEvents();
+        app.MapSubscribeHandler();
+        app.UseHttpsRedirection();
+        app.UseCorrelationId();
+        app.UseSecurityHeaders();
+        app.UseCurrentUser();
+        app.UseStaticFiles();
+        app.UseAetherApiVersioning();
+        app.UseRouting();
+        app.UseHttpMetrics();
+        app.MapMetrics(); 
+        app.MapControllers();
         app.MapAppHealthChecks();
 
         return app;

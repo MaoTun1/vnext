@@ -15,6 +15,14 @@ public interface IRemoteInstanceQueryAppService
         CancellationToken cancellationToken = default);
     
     /// <summary>
+    /// Retrieves only the instance data (attributes) with optional ETag support and extensions
+    /// GET {baseUrl}/api/v{version}/{domain}/workflows/{workflow}/instances/{instance}/data
+    /// </summary>
+    Task<ConditionalResult<GetInstanceDataOutput>> GetInstanceDataAsync(
+        GetInstanceDataInput input,
+        CancellationToken cancellationToken = default);
+    
+    /// <summary>
     /// Retrieves the complete history of an instance (all data transitions)
     /// </summary>
     Task<Result<GetInstanceHistoryOutput>> GetInstanceHistoryAsync(

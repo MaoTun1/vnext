@@ -16,7 +16,6 @@ public sealed class ClearBusyOnResumeStep(
     public int Order => LifecycleOrder.ClearBusyOnResumeStep;
 
     /// <inheritdoc />
-    [Log]
     [Trace]
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context,
         CancellationToken cancellationToken)

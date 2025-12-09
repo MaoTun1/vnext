@@ -1,3 +1,5 @@
+using Prometheus;
+
 namespace Microsoft.AspNetCore.Builder;
 
 /// <summary>
@@ -12,11 +14,37 @@ public static class OrchestrationApiApplicationBuilderExtensions
     /// <returns>The web application for chaining</returns>
     public static WebApplication UseOrchestrationApiModule(this WebApplication app)
     {
-        // Use base Workflow API configuration (already includes UseHttpMetrics and MapMetrics)
-        app.UseWorkflowApiBase();
+        app.UseAetherAmbientServiceProvider();
+        if (app.Environment.IsDevelopment())
+        {
+            app.UseDeveloperExceptionPage();
+        }
+        else
+        {
+            app.UseHsts();
+        }
+        app.UseExceptionHandler();
+        app.UseAppResponseCompression();
+        app.UseCloudEvents();
+        app.MapSubscribeHandler();
+        app.UseHttpsRedirection();
+        app.UseRuntime();
+        app.UseCorrelationId();
+        app.UseSecurityHeaders();
+        app.UseCurrentUser();
+        app.UseStaticFiles();
+        app.UseAetherApiVersioning();
+        app.UseRouting();
+        app.UseSchemaResolution();
+        app.UseAetherUnitOfWork();
+        app.UseWorkflowHttpMetrics();
+        app.UseHttpMetrics();
+        app.MapMetrics(); 
+        app.MapControllers();
+        app.UseDaprScheduledJobHandler();
         app.MapAppHealthChecks();
         
-        WorkflowApiBaseApplicationBuilderExtensions.MigrateMessagingDbContext(app.Services);
+        app.Services.MigrateMessagingDbContext();
         return app;
     }
 }

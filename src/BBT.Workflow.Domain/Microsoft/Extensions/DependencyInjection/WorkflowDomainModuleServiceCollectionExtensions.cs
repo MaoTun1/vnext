@@ -35,9 +35,9 @@ public static class WorkflowDomainModuleServiceCollectionExtensions
 
         services.AddSingleton<IRuntimeInfoProvider, RuntimeInfoProvider>();
         services.AddSingleton<WorkflowValidator>();
-        services.AddScoped<IResultRuleEngine<State>, ResultRuleEngine<State>>();
-        services.AddScoped<StateTransitionPolicy>();
-        services.AddScoped<IScriptContextFactory, ScriptContextFactory>();
+        services.AddSingleton<IResultRuleEngine<State>, ResultRuleEngine<State>>();
+        services.AddSingleton<StateTransitionPolicy>();
+        services.AddSingleton<IScriptContextFactory, ScriptContextFactory>();
         services.AddSingleton<IJsonSchemaValidator, JsonSchemaValidator>();
         return services;
     }

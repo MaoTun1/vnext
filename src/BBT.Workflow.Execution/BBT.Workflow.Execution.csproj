@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\common.props" />
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>BBT.Workflow.Execution</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- No Domain dependency! Execution is completely independent -->
+    <PackageReference Include="Dapr.Client" Version="$(DaprPackageVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+    <ProjectReference Include="..\BBT.Workflow.Execution.Abstractions\BBT.Workflow.Execution.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

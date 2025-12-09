@@ -12,7 +12,8 @@ namespace BBT.Workflow.Execution.Transitions.Services;
 /// </summary>
 public sealed class TransitionDataMapper(
     IScriptEngine scriptEngine,
-    IScriptContextFactory scriptContextFactory) : ITransitionDataMapper
+    IScriptContextFactory scriptContextFactory,
+    IInstanceRepository instanceRepository) : ITransitionDataMapper
 {
     /// <inheritdoc />
     /// <summary>
@@ -93,7 +94,7 @@ public sealed class TransitionDataMapper(
         IReadOnlyDictionary<string, string?>? headers,
         CancellationToken cancellationToken)
     {
-        return scriptContextFactory.NewBuilder()
+        return scriptContextFactory.NewBuilder(instanceRepository)
             .WithRuntime(runtimeInfoProvider)
             .WithWorkflow(workflow)
             .WithInstance(instance)

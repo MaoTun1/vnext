@@ -93,6 +93,56 @@ public sealed class RemoteInstanceQueryAppService(
             return ConditionalResult<GetInstanceOutput>.Fail(Error.Transient("remote_network_error", ex.Message));
         }
     }
+
+    /// <summary>
+    /// Retrieves only the instance data (attributes) with optional ETag support and extensions
+    /// GET {baseUrl}/api/v{version}/{domain}/workflows/{workflow}/instances/{instance}/data
+    /// </summary>
+    public async Task<ConditionalResult<GetInstanceDataOutput>> GetInstanceDataAsync(
+        GetInstanceDataInput input,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var url = InstanceUrlTemplates.Data(input.Domain, input.Workflow, input.Instance, ApiVersionPrefix);
+
+            var queryParams = new List<string>();
+            if (input.Extensions?.Length > 0)
+            {
+                foreach (var ext in input.Extensions)
+                {
+                    queryParams.Add($"extension={Uri.EscapeDataString(ext)}");
+                }
+            }
+
+            if (queryParams.Count > 0)
+                url += "?" + string.Join("&", queryParams);
+
+            var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
+
+            // Add If-None-Match header for ETag support
+            if (!string.IsNullOrEmpty(input.IfNoneMatch))
+            {
+                requestMessage.Headers.TryAddWithoutValidation("If-None-Match", input.IfNoneMatch);
+            }
+
+            var response = await httpClient.SendAsync(requestMessage, cancellationToken);
+
+            // Handle 304 Not Modified - special case for conditional requests
+            if (response.StatusCode == System.Net.HttpStatusCode.NotModified)
+            {
+                return ConditionalResult<GetInstanceDataOutput>.NotModified();
+            }
+
+            // Status code → Result.Fail (per Railway Pattern)
+            return await HandleConditionalResponseAsync<GetInstanceDataOutput>(response, cancellationToken);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
+        {
+            // Network errors → Transient error (per Railway Pattern)
+            return ConditionalResult<GetInstanceDataOutput>.Fail(Error.Transient("remote_network_error", ex.Message));
+        }
+    }
     
     /// <summary>
     /// Retrieves the complete history of an instance (all data transitions)

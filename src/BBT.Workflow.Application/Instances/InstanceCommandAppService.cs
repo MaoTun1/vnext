@@ -33,7 +33,7 @@ public sealed class InstanceCommandAppService(
     ITransitionDataMapper transitionDataMapper,
     ITransitionValidationService transitionValidationService,
     IDistributedLockService distributedLockService,
-    ISchemaMigrationOrchestrator  schemaMigrationOrchestrator,
+    ISchemaMigrationOrchestrator schemaMigrationOrchestrator,
     ILogger<InstanceCommandAppService> logger)
     : ApplicationService(serviceProvider), IInstanceCommandAppService
 {
@@ -44,25 +44,24 @@ public sealed class InstanceCommandAppService(
     {
         runtimeInfoProvider.Check(input.Domain);
         // Set schema context once at the beginning
-            return await LoadWorkflowAsync(input, cancellationToken)
-                .OnSuccessAsync(async _ => 
-                    await schemaMigrationOrchestrator.MigrateSchemaWithLockAsync(input.Workflow, cancellationToken))
-                .ThenAsync(workflow => PrepareInstanceAsync(workflow, input, cancellationToken))
-                .ThenAsync(async data => 
-                {
-                    await ScheduleWorkflowTimeoutIfConfiguredAsync(data.Workflow, data.Instance, cancellationToken);
-                    return Result<(Definitions.Workflow Workflow, Instance Instance)>.Ok(data);
-                })
-                .ThenAsync(data => ExecuteStartTransitionAsync(data, input, cancellationToken))
-                .OnSuccess(output => AddWorkflowHeader(output, input));
-        
+        return await LoadWorkflowAsync(input, cancellationToken)
+            .OnSuccessAsync(async _ =>
+                await schemaMigrationOrchestrator.MigrateSchemaWithLockAsync(input.Workflow, cancellationToken))
+            .ThenAsync(workflow => PrepareInstanceAsync(workflow, input, cancellationToken))
+            .ThenAsync(async data =>
+            {
+                await ScheduleWorkflowTimeoutIfConfiguredAsync(data.Workflow, data.Instance, cancellationToken);
+                return Result<(Definitions.Workflow Workflow, Instance Instance)>.Ok(data);
+            })
+            .ThenAsync(data => ExecuteStartTransitionAsync(data, input, cancellationToken))
+            .OnSuccess(output => AddWorkflowHeader(output, input));
     }
 
     /// <summary>
     /// Step 2: Loads the workflow definition.
     /// </summary>
     private Task<Result<Definitions.Workflow>> LoadWorkflowAsync(
-        StartInstanceInput input, 
+        StartInstanceInput input,
         CancellationToken cancellationToken)
     {
         return componentCacheStore.GetFlowAsync(
@@ -203,7 +202,7 @@ public sealed class InstanceCommandAppService(
 
         return lockOutcome.Result;
     }
-    
+
     /// <summary>
     /// Schedules a workflow timeout job if the workflow has a timeout configuration.
     /// </summary>
@@ -232,7 +231,7 @@ public sealed class InstanceCommandAppService(
 
             // Parse ISO 8601 duration string to TimeSpan
             var timeoutDuration = System.Xml.XmlConvert.ToTimeSpan(workflow.Timeout.Timer.Duration);
-            
+
             // Calculate timeout schedule - workflow timeout should be evaluated from creation time
             var timeoutDateTime = DateTime.UtcNow.Add(timeoutDuration);
             var schedule = DaprJobSchedule.FromDateTime(timeoutDateTime).ExpressionValue;
@@ -359,7 +358,9 @@ public sealed class InstanceCommandAppService(
         CancellationToken cancellationToken = default)
     {
         // Check for existing active instance first
-        var existingInstance = await instanceRepository.FindByIdentifierAsync(instanceId.ToString(), cancellationToken);
+        var existingInstance = !instanceKey.IsNullOrWhiteSpace()
+            ? await instanceRepository.FindByIdentifierAsync(instanceKey, cancellationToken)
+            : await instanceRepository.FindByIdentifierAsync(instanceId.ToString(), cancellationToken);
         if (existingInstance is { IsCompleted: false })
             return Result<Instance>.Fail(WorkflowErrors.InstanceAlreadyExists(
                 instanceKey.IsNullOrWhiteSpace() ? instanceId.ToString() : instanceKey)

@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using BBT.Workflow.Scripting;
 
 namespace BBT.Workflow.Definitions;
 
@@ -22,7 +21,7 @@ public sealed class DirectTriggerTask : WorkflowTask
     /// <summary>
     /// Transition name to execute (required)
     /// </summary>
-    public string? TransitionName { get; private set; }
+    public string TransitionName { get; private set; } = string.Empty;
 
     /// <summary>
     /// Domain of the target workflow
@@ -42,77 +41,120 @@ public sealed class DirectTriggerTask : WorkflowTask
     /// <summary>
     /// InstanceId of the target workflow (optional)
     /// </summary>
-    public string? TriggerInstanceId { get; private set; }
+    public Guid? TriggerInstanceId { get; private set; }
+    
+    /// <summary>
+    /// Sync of the transition request
+    /// </summary>
+    public bool TriggerSync { get; private set; } = true;
+
+    /// <summary>
+    /// Version of the target workflow (optional)
+    /// </summary>
+    public string? TriggerVersion { get; private set; }
+
+    /// <summary>
+    /// Tags of the target workflow (optional)
+    /// </summary>
+    public string[]? TriggerTags { get; private set; }
 
     /// <summary>
     /// Body data to send with the transition request
     /// </summary>
     public JsonElement? Body { get; private set; }
 
+    public string? Identifier => TriggerInstanceId.HasValue ? TriggerInstanceId.Value.ToString() : TriggerKey;
+
+    public void SetTags(string[] tags)
+    {
+        TriggerTags = tags;
+    }
+
+    public void SetSync(bool sync)
+    {
+        TriggerSync = sync;
+    }
+
     public void SetBody(dynamic body)
     {
         Body = JsonSerializer.SerializeToElement(body);
     }
 
-    public void SetInstance(string instanceId)
+    public void SetInstance(string? instanceId)
     {
-        TriggerInstanceId = instanceId;
+        if (!instanceId.IsNullOrWhiteSpace())
+        {
+            TriggerInstanceId = Guid.TryParse(instanceId,  out var guid) ? guid : null;    
+        }
+        else
+        {
+            TriggerInstanceId = null;
+        }
     }
 
-    public void SetKey(string key)
+    public void SetKey(string? key)
     {
         TriggerKey = key;
     }
 
     public void SetDomain(string domain)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(domain, nameof(domain));
         TriggerDomain = domain;
     }
 
     public void SetFlow(string flow)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(flow, nameof(flow));
         TriggerFlow = flow;
     }
 
     public void SetTransitionName(string transitionName)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(transitionName, nameof(transitionName));
         TransitionName = transitionName;
     }
 
     /// <summary>
     /// Internal property setters for object pooling
     /// </summary>
-    internal void SetTransitionNameInternal(string? transitionName) => TransitionName = transitionName;
+    internal void SetTransitionNameInternal(string transitionName) => TransitionName = transitionName;
     internal void SetTriggerDomainInternal(string triggerDomain) => TriggerDomain = triggerDomain;
     internal void SetTriggerFlowInternal(string triggerFlow) => TriggerFlow = triggerFlow;
     internal void SetTriggerKeyInternal(string? triggerKey) => TriggerKey = triggerKey;
-    internal void SetTriggerInstanceIdInternal(string? triggerInstanceId) => TriggerInstanceId = triggerInstanceId;
+    internal void SetTriggerInstanceIdInternal(Guid? triggerInstanceId) => TriggerInstanceId = triggerInstanceId;
     internal void SetBodyInternal(JsonElement? body) => Body = body;
+    internal void SetTriggerSyncInternal(bool sync) => TriggerSync = sync;
+    internal void SetTriggerTagsInternal(string[]? tags) => TriggerTags = tags;
+    internal void SetTriggerVersionInternal(string? version) => TriggerVersion = version;
 
     protected override void Configure(JsonElement config)
     {
         base.Configure(config);
 
         if (config.TryGetProperty("transitionName", out var transitionNameElement))
-            TransitionName = transitionNameElement.GetString();
+            TransitionName = transitionNameElement.GetString() ?? throw new ArgumentException($"Property 'transitionName' is required for DirectTriggerTask (Key={Key}).", nameof(config));
 
         if (config.TryGetProperty("domain", out var triggerDomainElement))
-            TriggerDomain = triggerDomainElement.GetString() ?? string.Empty;
-
-        if (string.IsNullOrWhiteSpace(TriggerDomain))
-            throw new ArgumentException("Property 'domain' is required for DirectTriggerTask.", nameof(config));
+            TriggerDomain = triggerDomainElement.GetString() ?? throw new ArgumentException($"Property 'domain' is required for DirectTriggerTask (Key={Key}).", nameof(config));
 
         if (config.TryGetProperty("flow", out var triggerFlowElement))
-            TriggerFlow = triggerFlowElement.GetString() ?? string.Empty;
-
-        if (string.IsNullOrWhiteSpace(TriggerFlow))
-            throw new ArgumentException("Property 'flow' is required for DirectTriggerTask.", nameof(config));
-
+            TriggerFlow = triggerFlowElement.GetString() ?? throw new ArgumentException($"Property 'flow' is required for DirectTriggerTask (Key={Key}).", nameof(config));
+        
         if (config.TryGetProperty("key", out var keyElement))
             TriggerKey = keyElement.GetString();
 
         if (config.TryGetProperty("instanceId", out var instanceIdElement))
-            TriggerInstanceId = instanceIdElement.GetString();
+            TriggerInstanceId = instanceIdElement.TryGetGuid(out var instanceId) ? instanceId : null;
+
+        if (config.TryGetProperty("sync", out var triggerSyncElement))
+            TriggerSync = triggerSyncElement.GetBoolean();
+
+        if (config.TryGetProperty("version", out var triggerVersionElement))
+            TriggerVersion = triggerVersionElement.GetString();
+
+        if (config.TryGetProperty("tags", out var triggerTagsElement))
+            TriggerTags = triggerTagsElement.GetArrayLength() > 0 ? triggerTagsElement.EnumerateArray().Select(e => e.GetString() ?? string.Empty).ToArray() : null;
 
         if (config.TryGetProperty("body", out var bodyElement))
         {
@@ -148,7 +190,9 @@ public sealed class DirectTriggerTask : WorkflowTask
         cloned.TriggerKey = TriggerKey;
         cloned.TriggerInstanceId = TriggerInstanceId;
         cloned.Body = Body;
-
+        cloned.TriggerSync = TriggerSync;
+        cloned.TriggerVersion = TriggerVersion;
+        cloned.TriggerTags = TriggerTags;
         return cloned;
     }
 
@@ -165,6 +209,9 @@ public sealed class DirectTriggerTask : WorkflowTask
         SetTriggerKeyInternal(source.TriggerKey);
         SetTriggerInstanceIdInternal(source.TriggerInstanceId);
         SetBodyInternal(source.Body);
+        SetTriggerSyncInternal(source.TriggerSync);
+        SetTriggerVersionInternal(source.TriggerVersion);
+        SetTriggerTagsInternal(source.TriggerTags);
     }
 
     /// <summary>
@@ -173,12 +220,15 @@ public sealed class DirectTriggerTask : WorkflowTask
     public override void Reset()
     {
         base.Reset();
-        TransitionName = null;
+        TransitionName = string.Empty;
         TriggerDomain = string.Empty;
         TriggerFlow = string.Empty;
         TriggerKey = null;
         TriggerInstanceId = null;
         Body = null;
+        TriggerSync = true;
+        TriggerVersion = null;
+        TriggerTags = null;
     }
 
     /// <summary>

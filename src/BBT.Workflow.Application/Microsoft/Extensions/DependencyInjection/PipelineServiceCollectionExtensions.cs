@@ -1,0 +1,83 @@
+using BBT.Workflow.Execution;
+using BBT.Workflow.Execution.Handlers;
+using BBT.Workflow.Execution.Pipeline;
+using BBT.Workflow.Execution.Pipeline.Steps;
+using BBT.Workflow.Execution.ReEntry;
+using BBT.Workflow.Execution.Services;
+using BBT.Workflow.Execution.Strategies;
+using BBT.Workflow.Execution.Transitions.Factory;
+using BBT.Workflow.Execution.Transitions.Services;
+using BBT.Workflow.Execution.Validation;
+
+namespace Microsoft.Extensions.DependencyInjection;
+
+public static class PipelineServiceCollectionExtensions
+{
+    /// <summary>
+    /// Adds the new transition pipeline architecture services to the dependency injection container.
+    /// </summary>
+    /// <param name="services">The service collection to configure.</param>
+    /// <returns>The service collection for method chaining.</returns>
+    public static IServiceCollection AddPipelineServices(this IServiceCollection services)
+    {
+        // Core execution service
+        services.AddScoped<IWorkflowExecutionService, WorkflowExecutionService>();
+        
+        // Execution Strategies
+        services.AddScoped<IExecutionStrategyFactory, ExecutionStrategyFactory>();
+        services.AddScoped<ITransitionStrategy, SyncTransitionStrategy>();
+        services.AddScoped<ITransitionStrategy, AsyncTransitionStrategy>();
+        
+        // Context Factory
+        services.AddScoped<ITransitionContextFactory, TransitionContextFactory>();
+        services.AddScoped<IContextRefresher, ContextRefresher>();
+
+        // Transition Data Mapping Service
+        services.AddScoped<ITransitionDataMapper, TransitionDataMapper>();
+
+        // Validation Services
+        services.AddSingleton<ITransitionValidationService, TransitionValidationService>();
+
+        // Evaluation Services
+        services.AddScoped<IAutoConditionEvaluator, AutoConditionEvaluator>();
+
+        // Trigger Handlers
+        services.AddScoped<ITransitionHandler, ManualTransitionHandler>();
+        services.AddScoped<ITransitionHandler, AutomaticTransitionHandler>();
+        services.AddScoped<ITransitionHandler, ScheduledTransitionHandler>();
+        services.AddScoped<ITransitionHandler, EventTransitionHandler>();
+        services.AddScoped<ITransitionHandlerFactory, TransitionHandlerFactory>();
+
+        // Pipeline Steps (registered in execution order)
+        services.AddScoped<ITransitionStep, HandleCancelPreflightStep>();
+        services.AddScoped<ITransitionStep, ForwardToActiveSubflowStep>();
+        services.AddScoped<ITransitionStep, CreateTransitionRecordStep>();
+        services.AddScoped<ITransitionStep, RunOnExecuteTasksStep>();
+        services.AddScoped<ITransitionStep, RunOnExitTasksStep>();
+        services.AddScoped<ITransitionStep, ChangeStateStep>();
+        services.AddScoped<ITransitionStep, RunOnEntryTasksStep>();
+        services.AddScoped<ITransitionStep, HandleSubFlowStep>();
+        services.AddScoped<ITransitionStep, ClearBusyOnResumeStep>();
+        services.AddScoped<ITransitionStep, ScheduleTransitionsStep>();
+        services.AddScoped<ITransitionStep, RunAutomaticTransitionsStep>();
+        services.AddScoped<ITransitionStep, HandleFinishStep>();
+        services.AddScoped<ITransitionStep, FinalizeTransitionStep>();
+        services.AddScoped<ITransitionStep, ProcessInlineAutoChainStep>();
+
+        // Pipeline
+        services.AddScoped<TransitionPipeline>();
+
+        // Re-entry System
+        services.AddScoped<IReentryDispatcher, DefaultReentryDispatcher>();
+
+        // Configure Re-entry Options
+        services.Configure<ReentryOptions>(options =>
+        {
+            options.MaxAutoHops = 12;
+            options.AllowInlineAuto = true;
+            options.LockTimeout = TimeSpan.FromSeconds(30);
+        });
+
+        return services;
+    }
+}

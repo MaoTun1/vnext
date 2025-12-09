@@ -29,7 +29,6 @@ public class TransitionPipeline
     /// <param name="context">The transition execution context.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>A Result indicating success or failure of the pipeline execution.</returns>
-    [Log]
     [Trace]
     public async Task<Result> RunAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {

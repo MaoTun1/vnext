@@ -14,17 +14,34 @@ public static class InboxWorkerServiceCollectionExtensions
     /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddWorkerInboxModule(this IServiceCollection services)
     {
+        var configuration = services.GetConfiguration();
         services
-            .AddWorkflowApiBase()
-            .AddWorkflowDaprClients()
-            .AddWorkflowHttpClient();
-        
-        // Add health checks separately to avoid ambiguity
-        services.AddAppHealthChecks();
-        
-        // Register hosted service
-        services.AddHostedService<InboxProcessorHostedService>();
-
+            .AddDomainModule()
+            .AddApplicationModule()
+            .AddInfrastructureModule()
+            .AddAspNetCoreModules(configuration)
+            .AddDaprClients()
+            .AddEventBus(configuration)
+            .AddDbContext(configuration)
+            .AppMapper()
+            .AddTelemetry(configuration)
+            .AddDistributedCache(configuration)
+            .AddDistributedLock(configuration)
+            .AddBackgroundJob()
+            .AddRedis()
+            .AddExceptionHandling()
+            .AddRuntimeMiddleware()
+            .AddHeaderService()
+            .AddWorkflowHttpClient() // TODO: Düşün!!!!
+            .AddHostedServices()
+            .AddAppHealthChecks();
         return services;
     }
+    
+    private static IServiceCollection AddHostedServices(this IServiceCollection services)
+    {
+        services.AddHostedService<InboxProcessorHostedService>();
+        return services;
+    }
+
 }
