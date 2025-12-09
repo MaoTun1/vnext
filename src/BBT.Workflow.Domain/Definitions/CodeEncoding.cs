@@ -6,7 +6,7 @@ namespace BBT.Workflow.Definitions;
 /// Encoding type for script code content (Base64 or Native/Plain text).
 /// </summary>
 [JsonConverter(typeof(IEquatableJsonConverter<CodeEncoding>))]
-public class CodeEncoding : IEquatable<CodeEncoding>
+public sealed class CodeEncoding : IEquatable<CodeEncoding>
 {
     /// <summary>
     /// Code content is Base64 encoded. Default for backward compatibility.
@@ -45,7 +45,6 @@ public class CodeEncoding : IEquatable<CodeEncoding>
     /// </summary>
     /// <param name="code">The encoding code (B64 or NAT).</param>
     /// <returns>The corresponding CodeEncoding instance.</returns>
-    /// <exception cref="ArgumentException">Thrown when the code is unknown.</exception>
     public static CodeEncoding FromCode(string? code)
     {
         return code switch

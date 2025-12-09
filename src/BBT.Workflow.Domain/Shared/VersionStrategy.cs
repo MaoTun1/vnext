@@ -5,10 +5,10 @@ namespace BBT.Workflow;
 [JsonConverter(typeof(IEquatableJsonConverter<VersionStrategy>))]
 public sealed class VersionStrategy: IEquatable<VersionStrategy>
 {
-    public static readonly VersionStrategy None = new VersionStrategy("None", "None");
-    public static readonly VersionStrategy IncreaseMinor = new VersionStrategy("Minor", "Increase Minor");
-    public static readonly VersionStrategy IncreaseMajor = new VersionStrategy("Major", "Increase Minor");
-    public static readonly VersionStrategy IncreasePatch = new VersionStrategy("Patch", "Increase Patch");
+    public static readonly VersionStrategy None = new("None", "None");
+    public static readonly VersionStrategy IncreaseMinor = new("Minor", "Increase Minor");
+    public static readonly VersionStrategy IncreaseMajor = new("Major", "Increase Minor");
+    public static readonly VersionStrategy IncreasePatch = new("Patch", "Increase Patch");
 
     public string Code { get; }
     public string Description { get; }

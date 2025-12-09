@@ -6,10 +6,10 @@ namespace BBT.Workflow.Definitions;
 /// Mapping type for script code execution (Global or Local)
 /// </summary>
 [JsonConverter(typeof(IEquatableJsonConverter<MappingType>))]
-public class MappingType : IEquatable<MappingType>
+public sealed class MappingType : IEquatable<MappingType>
 {
-    public static readonly MappingType Global = new MappingType("G", "Global");
-    public static readonly MappingType Local = new MappingType("L", "Local");
+    public static readonly MappingType Global = new("G", "Global");
+    public static readonly MappingType Local = new("L", "Local");
 
     public string Code { get; }
     public string Description { get; }
