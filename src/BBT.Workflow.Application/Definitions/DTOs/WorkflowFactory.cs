@@ -140,7 +140,7 @@ public static class WorkflowFactory
                 BindingTransition(input.StartTransition)
             );
         }
-        
+
         if (input.Cancel != null)
         {
             workflow.SetCancel(
@@ -195,8 +195,7 @@ public static class WorkflowFactory
         if (transitionInput.Mapping is { HasValue: true })
         {
             transition.SetMapping(
-                transitionInput.Mapping.Location ?? "./",
-                transitionInput.Mapping.Code!
+                transitionInput.Mapping.ToScriptCode()
             );
         }
 
@@ -210,8 +209,7 @@ public static class WorkflowFactory
                     OnExecuteTask.Create(
                         taskInput.Order,
                         taskInput.Task,
-                        new ScriptCode(taskInput.Mapping.Location ?? "./", taskInput.Mapping.Code ?? string.Empty,
-                            taskInput.Mapping.Type)
+                        taskInput.Mapping.ToScriptCode()
                     )
                 );
             }
@@ -263,7 +261,7 @@ public static class WorkflowFactory
                         OnExecuteTask.Create(
                             taskInput.Order,
                             taskInput.Task,
-                            new ScriptCode(taskInput.Mapping.Location ?? "./", taskInput.Mapping.Code ?? string.Empty, taskInput.Mapping.Type)
+                            taskInput.Mapping.ToScriptCode()
                         )
                     );
                 }
@@ -274,7 +272,7 @@ public static class WorkflowFactory
                     state.AddOnExit(OnExecuteTask.Create(
                             taskInput.Order,
                             taskInput.Task,
-                            new ScriptCode(taskInput.Mapping.Location ?? "./", taskInput.Mapping.Code ?? string.Empty, taskInput.Mapping.Type)
+                            taskInput.Mapping.ToScriptCode()
                         )
                     );
                 }
@@ -289,7 +287,7 @@ public static class WorkflowFactory
                 state.SetSubFlow(
                     stateInput.SubFlow.Type,
                     stateInput.SubFlow.Process,
-                    new ScriptCode(stateInput.SubFlow.Mapping.Location ?? "./", stateInput.SubFlow.Mapping.Code ?? string.Empty),
+                    stateInput.SubFlow.Mapping.ToScriptCode(),
                     stateInput.SubFlow.ViewOverrides);
             }
 

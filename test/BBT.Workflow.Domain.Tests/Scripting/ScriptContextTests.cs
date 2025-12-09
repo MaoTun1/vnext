@@ -288,7 +288,7 @@ public class ScriptContextTests
         };
 
         // Act
-        context.SetStandardResponse(response);
+        context.SetStandardResponse(response, "taskKey");
 
         // Assert
         Assert.NotNull(context.Body);
@@ -370,7 +370,7 @@ public class ScriptContextTests
         var response = new StandardTaskResponse();
 
         // Act & Assert
-        Assert.Throws<ObjectDisposedException>(() => context.SetStandardResponse(response));
+        Assert.Throws<ObjectDisposedException>(() => context.SetStandardResponse(response, "taskKey"));
     }
 
     [Fact]

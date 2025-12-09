@@ -24,13 +24,12 @@ public class MappingType : IEquatable<MappingType>
         Description = description ?? throw new ArgumentNullException(nameof(description));
     }
 
-    public static MappingType FromCode(string code)
+    public static MappingType FromCode(string? code)
     {
         return code switch
         {
             "G" => Global,
-            "L" => Local,
-            _ => throw new ArgumentException($"Unknown mapping type code: {code}")
+            _ => Local
         };
     }
 

@@ -164,9 +164,7 @@ public sealed class DaprPubSubTaskExecutor : TaskExecutorBase<DaprPubSubTask>
             Metadata = result.Metadata
         };
         
-        context.TaskResponse[variableKey] = response;
-        context.SetStandardResponse(response);
-        // context.SetBody(result.Data);
+        context.SetStandardResponse(response, variableKey);
     }
 }
 

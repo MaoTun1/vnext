@@ -314,9 +314,9 @@ public sealed class TaskCoordinator : ITaskCoordinator
         TaskTrigger taskTrigger,
         ScriptContext context)
     {
-        // Store in TaskResponse
-        var variableKey = task.Key.ToVariableName();
-        context.TaskResponse[variableKey] = response;
+        // Store in TaskResponse WARN: No needed
+        // var variableKey = task.Key.ToVariableName();
+        // context.TaskResponse[variableKey] = response;
 
         // Add to instance data if not an extension task and has data
         if (taskTrigger != TaskTrigger.Extension && response.Data is not null)

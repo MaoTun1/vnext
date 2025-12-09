@@ -75,7 +75,13 @@ public sealed class DefaultReentryDispatcher(
         var result = await ExecutionService.ExecuteTransitionAsync(input, cancellationToken);
         if (!result.IsSuccess)
         {
-            logger.InlineExecutionFailed(result.Error.Message, command.InstanceId, command.ExecutionChainId);
+            logger.InlineExecutionFailed(
+                result.Error.Message ?? "Unknown error",
+                command.InstanceId,
+                command.ExecutionChainId,
+                command.WorkflowKey,
+                command.TransitionKey,
+                command.TriggerType.ToString());
         }
         return result.IsSuccess;
     }
