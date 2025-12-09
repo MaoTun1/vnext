@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using BBT.Aether.Application.Services;
+using BBT.Aether.MultiSchema;
 using BBT.Aether.Results;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
@@ -21,6 +22,7 @@ public sealed class FunctionAppService(
     IInstanceRepository instanceRepository,
     IScriptContextFactory scriptContextFactory,
     IComponentCacheStore componentCacheStore,
+    ICurrentSchema currentSchema,
     ITaskCoordinator taskCoordinator) : ApplicationService(serviceProvider), IFunctionAppService
 {
     /// <inheritdoc />
@@ -33,6 +35,7 @@ public sealed class FunctionAppService(
         CancellationToken cancellationToken = default)
     {
         runtimeInfoProvider.Check(domain);
+        currentSchema.Use(flow);
         Instance? instance = await instanceRepository.FindByIdentifierAsync(key, cancellationToken);
         return await BuildFunctionResponseAsync(instance, key, flow, domain, headers, queryParameters, cancellationToken);
     }
