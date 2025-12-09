@@ -107,17 +107,11 @@ public sealed class StartTask : WorkflowTask
         base.Configure(config);
 
         if (config.TryGetProperty("domain", out var triggerDomainElement))
-            TriggerDomain = triggerDomainElement.GetString() ?? string.Empty;
-
-        if (string.IsNullOrWhiteSpace(TriggerDomain))
-            throw new ArgumentException("Property 'domain' is required for StartTask.", nameof(config));
-
+            TriggerDomain = triggerDomainElement.GetString() ?? throw new ArgumentException($"Property 'domain' is required for StartTask (Key={Key}).", nameof(config));
+        
         if (config.TryGetProperty("flow", out var triggerFlowElement))
-            TriggerFlow = triggerFlowElement.GetString() ?? string.Empty;
-
-        if (string.IsNullOrWhiteSpace(TriggerFlow))
-            throw new ArgumentException("Property 'flow' is required for StartTask.", nameof(config));
-
+            TriggerFlow = triggerFlowElement.GetString() ?? throw new ArgumentException($"Property 'flow' is required for StartTask (Key={Key}).", nameof(config));
+        
         if (config.TryGetProperty("body", out var bodyElement))
         {
             var body = bodyElement.GetRawText();

@@ -207,6 +207,6 @@ public sealed class NotificationTaskExecutor : TaskExecutorBase<NotificationTask
         
         context.TaskResponse[variableKey] = response;
         context.SetStandardResponse(response);
-        context.SetBody(result.Data);
+        // context.SetBody(result.Data);
     }
 }

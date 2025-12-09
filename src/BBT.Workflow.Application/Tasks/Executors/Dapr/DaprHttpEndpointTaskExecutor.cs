@@ -166,7 +166,7 @@ public sealed class DaprHttpEndpointTaskExecutor : TaskExecutorBase<DaprHttpEndp
         
         context.TaskResponse[variableKey] = response;
         context.SetStandardResponse(response);
-        context.SetBody(result.Data);
+        // context.SetBody(result.Data);
     }
 }
 

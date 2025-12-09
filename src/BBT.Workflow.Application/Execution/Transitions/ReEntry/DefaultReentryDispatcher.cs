@@ -1,6 +1,6 @@
+using BBT.Aether.DependencyInjection;
 using BBT.Workflow.Execution.Services;
 using BBT.Workflow.Logging;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -11,11 +11,14 @@ namespace BBT.Workflow.Execution.ReEntry;
 /// Handles automatic and scheduled transitions by either executing inline or enqueuing as background jobs.
 /// </summary>
 public sealed class DefaultReentryDispatcher(
-    IServiceScopeFactory serviceScopeFactory,
+    ILazyServiceProvider lazyServiceProvider,
     IOptions<ReentryOptions> options,
     ILogger<DefaultReentryDispatcher> logger) : IReentryDispatcher
 {
     private readonly ReentryOptions _options = options.Value;
+
+    private IWorkflowExecutionService ExecutionService =>
+        lazyServiceProvider.LazyGetRequiredService<IWorkflowExecutionService>();
 
     /// <inheritdoc />
     /// <summary>
@@ -65,12 +68,15 @@ public sealed class DefaultReentryDispatcher(
     /// </summary>
     private async Task<bool> ExecuteInNewScopeAsync(ReentryCommand command, CancellationToken cancellationToken)
     {
-        using var scope = serviceScopeFactory.CreateScope();
-        var executionService = scope.ServiceProvider.GetRequiredService<IWorkflowExecutionService>();
+        // using var scope = serviceScopeFactory.CreateScope();
+        // var executionService = scope.ServiceProvider.GetRequiredService<IWorkflowExecutionService>();
 
         var input = WorkflowExecutionContext.From(command);
-        var result = await executionService.ExecuteTransitionAsync(input, cancellationToken);
-
+        var result = await ExecutionService.ExecuteTransitionAsync(input, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            logger.InlineExecutionFailed(result.Error.Message, command.InstanceId, command.ExecutionChainId);
+        }
         return result.IsSuccess;
     }
 }

@@ -124,6 +124,10 @@
         {
           "type": "route",
           "uuid": "f5902d1f-4bc2-4c32-b3c6-a63ea9c03346"
+        },
+        {
+          "type": "route",
+          "uuid": "c5d7a37f-1e69-4dba-99cd-0a5a287b400b"
         }
       ]
     },
@@ -134,6 +138,20 @@
         {
           "type": "route",
           "uuid": "33336829-43d0-49b6-af2a-253884596824"
+        }
+      ]
+    },
+    {
+      "uuid": "996942da-01d2-4572-b4fd-dc6c7c8c8f08",
+      "name": "contract",
+      "children": [
+        {
+          "type": "route",
+          "uuid": "b0676c5e-9873-444c-b765-368c78081679"
+        },
+        {
+          "type": "route",
+          "uuid": "c122d71d-6193-4400-b26f-a1c5e211747b"
         }
       ]
     }
@@ -1629,6 +1647,190 @@
       "responseMode": null,
       "streamingMode": null,
       "streamingInterval": 0
+    },
+    {
+      "uuid": "b0676c5e-9873-444c-b765-368c78081679",
+      "type": "http",
+      "documentation": "Fetch Contracts",
+      "method": "post",
+      "endpoint": "api/contract/get-documents",
+      "responses": [
+        {
+          "uuid": "b31a2f72-475b-48e7-8eeb-58da8fa1aaa1",
+          "body": "{\n  \"statusCode\": 200,\n  \"data\": {\n    \"groupCode\": \"{{body 'groupCode'}}\",\n    \"contracts\": [\n      {\n        \"contractId\": \"{{faker 'string.uuid'}}\",\n        \"contractType\": \"account-opening\",\n        \"contractName\": \"Hesap Açılış Sözleşmesi\",\n        \"templateId\": \"TPL-ACCOUNT-001\",\n        \"contractData\": {\n          \"accountType\": \"demand-deposit\",\n          \"currency\": \"TRY\"\n        }\n      },\n      {\n        \"contractId\": \"{{faker 'string.uuid'}}\",\n        \"contractType\": \"terms-conditions\",\n        \"contractName\": \"Genel Hüküm ve Koşullar\",\n        \"templateId\": \"TPL-TERMS-001\",\n        \"contractData\": {\n          \"version\": \"2.0\"\n        }\n      },\n      {\n        \"contractId\": \"{{faker 'string.uuid'}}\",\n        \"contractType\": \"kvkk\",\n        \"contractName\": \"KVKK Aydınlatma Metni\",\n        \"templateId\": \"TPL-KVKK-001\",\n        \"contractData\": {\n          \"consentDate\": \"{{now 'yyyy-MM-dd'}}\"\n        }\n      }\n    ],\n    \"totalContracts\": 3,\n    \"retrievedAt\": \"{{now}}\"\n  }\n}",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "Contracts Retrieved Successfully",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        },
+        {
+          "uuid": "1caca7d5-d08b-459d-aeeb-e6a2529d4e9c",
+          "body": "{\n  \"statusCode\": 404,\n  \"data\": {\n    \"error\": {\n      \"message\": \"Contract group not found\",\n      \"code\": \"group_not_found\",\n      \"description\": \"The specified contract group code does not exist\"\n    }\n  }\n}",
+          "latency": 0,
+          "statusCode": 404,
+          "label": "Contract Group Not Found",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": false,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null,
+      "streamingMode": null,
+      "streamingInterval": 0
+    },
+    {
+      "uuid": "c122d71d-6193-4400-b26f-a1c5e211747b",
+      "type": "http",
+      "documentation": "Render Document",
+      "method": "post",
+      "endpoint": "api/contract/render-document",
+      "responses": [
+        {
+          "uuid": "2dbaa98a-9890-4b3f-a5a6-b6e1b44c018a",
+          "body": "{\n  \"statusCode\": 200,\n  \"data\": {\n    \"documentId\": \"{{faker 'string.uuid'}}\",\n    \"documentUrl\": \"https://cdn.example.com/contracts/{{faker 'string.alphanumeric' 32}}.pdf\",\n    \"documentSize\": {{faker 'number.int' min=50000 max=500000}},\n    \"pageCount\": {{faker 'number.int' min=1 max=10}},\n    \"checksum\": \"{{faker 'string.alphanumeric' 64}}\",\n    \"expiresAt\": \"{{faker 'date.future'}}\",\n    \"renderedAt\": \"{{now}}\",\n    \"format\": \"pdf\",\n    \"templateVersion\": \"1.0.0\"\n  }\n}",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "Document Rendered Successfully",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        },
+        {
+          "uuid": "c04b7472-fd71-4534-88fe-785fa3fd8df3",
+          "body": "{\n  \"statusCode\": 500,\n  \"data\": {\n    \"error\": {\n      \"message\": \"Document rendering failed\",\n      \"code\": \"render_failed\",\n      \"description\": \"Unable to render the contract document\"\n    }\n  }\n}",
+          "latency": 0,
+          "statusCode": 500,
+          "label": "",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": false,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null,
+      "streamingMode": null,
+      "streamingInterval": 0
+    },
+    {
+      "uuid": "c5d7a37f-1e69-4dba-99cd-0a5a287b400b",
+      "type": "http",
+      "documentation": "Task Test HTTP Endpoint - Test for HttpTask type",
+      "method": "post",
+      "endpoint": "api/task-test/list-items",
+      "responses": [
+        {
+          "uuid": "84921ae2-0ef7-4296-9634-c7b4b48ce12f",
+          "body": "[\n  {\n    \"id\": \"{{faker 'string.uuid'}}\",\n    \"name\": \"item_{{faker 'string.alphanumeric' 10}}\",\n    \"isActive\": true\n  },\n  {\n    \"id\": \"{{faker 'string.uuid'}}\",\n    \"name\": \"item_{{faker 'string.alphanumeric' 10}}\",\n    \"isActive\": true\n  },\n  {\n    \"id\": \"{{faker 'string.uuid'}}\",\n    \"name\": \"item_{{faker 'string.alphanumeric' 10}}\",\n    \"isActive\": true\n  },\n  {\n    \"id\": \"{{faker 'string.uuid'}}\",\n    \"name\": \"item_{{faker 'string.alphanumeric' 10}}\",\n    \"isActive\": true\n  }\n]",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "Success Response",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "X-Task-Type",
+              "value": "HttpTasks"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        },
+        {
+          "uuid": "92018329-603a-4242-a0c1-415df7f78565",
+          "body": "{\n  \"statusCode\": 500,\n  \"success\": false,\n  \"error\": {\n    \"code\": \"INTERNAL_ERROR\",\n    \"message\": \"Task test HTTP endpoint error\",\n    \"timestamp\": \"{{now}}\"\n  }\n}",
+          "latency": 0,
+          "statusCode": 500,
+          "label": "Error Response",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": false,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null,
+      "streamingMode": null,
+      "streamingInterval": 0
     }
   ],
   "rootChildren": [
@@ -1655,6 +1857,10 @@
     {
       "type": "folder",
       "uuid": "f643b1f6-1e55-4bcb-89d9-94aad6af9013"
+    },
+    {
+      "type": "folder",
+      "uuid": "996942da-01d2-4572-b4fd-dc6c7c8c8f08"
     }
   ],
   "proxyMode": false,

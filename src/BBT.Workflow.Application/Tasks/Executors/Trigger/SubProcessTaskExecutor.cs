@@ -100,12 +100,6 @@ public sealed class SubProcessTaskExecutor : TriggerTaskExecutorBase<SubProcessT
         TaskExecutorContext context,
         CancellationToken cancellationToken)
     {
-        // Only create correlation if subprocess started successfully
-        if (!invocationResult.IsSuccess)
-        {
-            return Result.Ok();
-        }
-
         // Extract IDs from result metadata
         if (invocationResult.Metadata == null ||
             !invocationResult.Metadata.TryGetValue("SubFlowInstanceId", out var subFlowIdObj) ||
@@ -118,7 +112,7 @@ public sealed class SubProcessTaskExecutor : TriggerTaskExecutorBase<SubProcessT
         var subFlowInstanceId = subFlowIdObj is Guid subGuid ? subGuid : Guid.Parse(subFlowIdObj.ToString()!);
         var correlationId = correlationIdObj is Guid corrGuid ? corrGuid : Guid.Parse(correlationIdObj.ToString()!);
 
-        // Create and persist correlation - ALWAYS LOCAL
+        // Create and persist correlation
         return await CreateCorrelationAsync(context, task, correlationId, subFlowInstanceId, cancellationToken);
     }
 
@@ -134,12 +128,15 @@ public sealed class SubProcessTaskExecutor : TriggerTaskExecutorBase<SubProcessT
         var input = BuildStartInstanceInput(task, context.ScriptContext, subFlowInstanceId);
         using (_currentSchema.Use(input.Workflow))
         {
-            await using (var uow = await _unitOfWorkManager.BeginRequiresNew(cancellationToken))
+            await using (var uow = await _unitOfWorkManager.BeginAsync(new UnitOfWorkOptions
+                         {
+                             Scope = UnitOfWorkScopeOption.RequiresNew
+                         }, cancellationToken))
             {
                 var result = await LocalCommandService.StartAsync(input, cancellationToken);
                 await uow.SaveChangesAsync(cancellationToken);
                 await uow.CommitAsync(cancellationToken);
-                
+
                 if (!result.IsSuccess)
                 {
                     Logger.TaskLocalExecutionFailed(
@@ -174,7 +171,6 @@ public sealed class SubProcessTaskExecutor : TriggerTaskExecutorBase<SubProcessT
                         ["CorrelationId"] = correlationId
                     });
             }
-
         }
     }
 
@@ -252,12 +248,12 @@ public sealed class SubProcessTaskExecutor : TriggerTaskExecutorBase<SubProcessT
             domain: task.TriggerDomain,
             workflow: task.TriggerFlow,
             version: task.TriggerVersion,
-            sync: task.TriggerSync)
+            sync: false) // Always async
         {
             Instance = new CreateInstanceInput
             {
                 Id = subFlowInstanceId,
-                Key = task.Key,
+                Key = task.TriggerKey,
                 Attributes = task.Body,
                 Tags = task.TriggerTags,
                 Callback = GetCallbackAppId(),
@@ -276,13 +272,13 @@ public sealed class SubProcessTaskExecutor : TriggerTaskExecutorBase<SubProcessT
             Workflow = task.TriggerFlow,
             Version = task.TriggerVersion,
             InstanceId = subFlowInstanceId,
-            Key = task.Key,
+            Key = task.TriggerKey,
             Callback = GetCallbackAppId(),
             Body = task.Body,
             Tags = task.TriggerTags,
             Headers = headers != null ? JsonSerializer.Serialize(headers) : null,
             ExtraProperties = BuildExtraPropertiesAsDictionary(context, task),
-            Sync = task.TriggerSync
+            Sync = false // Always Async
         };
     }
 

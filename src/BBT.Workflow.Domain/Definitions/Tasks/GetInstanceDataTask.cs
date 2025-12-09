@@ -93,16 +93,10 @@ public sealed class GetInstanceDataTask : WorkflowTask
         base.Configure(config);
 
         if (config.TryGetProperty("domain", out var triggerDomainElement))
-            TriggerDomain = triggerDomainElement.GetString() ?? string.Empty;
-
-        if (string.IsNullOrWhiteSpace(TriggerDomain))
-            throw new ArgumentException("Property 'domain' is required for GetInstanceDataTask.", nameof(config));
-
+            TriggerDomain = triggerDomainElement.GetString() ?? throw new ArgumentException($"Property 'domain' is required for GetInstanceDataTask (Key={Key}).", nameof(config));
+        
         if (config.TryGetProperty("flow", out var triggerFlowElement))
-            TriggerFlow = triggerFlowElement.GetString() ?? string.Empty;
-
-        if (string.IsNullOrWhiteSpace(TriggerFlow))
-            throw new ArgumentException("Property 'flow' is required for GetInstanceDataTask.", nameof(config));
+            TriggerFlow = triggerFlowElement.GetString() ?? throw new ArgumentException($"Property 'flow' is required for GetInstanceDataTask (Key={Key}).", nameof(config));
 
         if (config.TryGetProperty("key", out var keyElement))
             TriggerKey = keyElement.GetString();

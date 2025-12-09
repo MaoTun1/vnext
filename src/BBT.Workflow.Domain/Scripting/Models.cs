@@ -402,6 +402,7 @@ public class ScriptContext(ILogger<ScriptContext> logger) : IDisposable
     /// <summary>
     /// Merges the provided object into the existing Body using the specified JSON options.
     /// If Body is null, it initializes it with the new content.
+    /// Supports both JSON objects and JSON arrays with full merge capabilities.
     /// </summary>
     /// <param name="content">The content to merge into Body.</param>
     /// <param name="jsonOptions">The JSON serialization options to use.</param>
@@ -413,36 +414,16 @@ public class ScriptContext(ILogger<ScriptContext> logger) : IDisposable
         }
 
         var serializedContent = JsonSerializer.Serialize(content, jsonOptions);
-        var newExpando = JsonSerializer.Deserialize<ExpandoObject>(serializedContent, JsonScriptBodyOptions);
+        using var document = JsonDocument.Parse(serializedContent);
+        var newValue = document.RootElement.ToDynamic();
 
-        if (newExpando == null)
+        if (newValue == null)
         {
             return;
         }
 
-        Body = Body == null ? newExpando : MergeExpandoObjects(Body, newExpando);
-    }
-
-    /// <summary>
-    /// Merges two ExpandoObject instances, with properties from the source taking precedence.
-    /// Handles all nested structures including JsonElement objects and arrays.
-    /// </summary>
-    /// <param name="target">The target ExpandoObject to merge into.</param>
-    /// <param name="source">The source ExpandoObject to merge from.</param>
-    /// <returns>The merged ExpandoObject.</returns>
-    private static ExpandoObject MergeExpandoObjects(ExpandoObject target, ExpandoObject source)
-    {
-        var targetDict = (IDictionary<string, object?>)target;
-        var sourceDict = (IDictionary<string, object?>)source;
-
-        foreach (var kvp in sourceDict)
-        {
-            targetDict[kvp.Key] = targetDict.TryGetValue(kvp.Key, out var existingValue)
-            ? ObjectMerger.MergeValues(existingValue, kvp.Value)
-            : kvp.Value;
-        }
-
-        return target;
+        // Use ObjectMerger for all merge operations - handles arrays, objects, and mixed types
+        Body = ObjectMerger.MergeValues(Body, newValue);
     }
 
     public sealed class Builder(ILogger<ScriptContext> logger)

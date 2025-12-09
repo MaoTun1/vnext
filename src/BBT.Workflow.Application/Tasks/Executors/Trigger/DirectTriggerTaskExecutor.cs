@@ -23,7 +23,8 @@ public sealed class DirectTriggerTaskExecutor : TriggerTaskExecutorBase<DirectTr
 {
     private readonly ILazyServiceProvider _lazyServiceProvider;
     private readonly ICurrentSchema _currentSchema;
-    private readonly IUnitOfWorkManager  _unitOfWorkManager;
+    private readonly IUnitOfWorkManager _unitOfWorkManager;
+
     private IInstanceCommandAppService LocalCommandService =>
         _lazyServiceProvider.LazyGetRequiredService<IInstanceCommandAppService>();
 
@@ -104,7 +105,7 @@ public sealed class DirectTriggerTaskExecutor : TriggerTaskExecutorBase<DirectTr
         CancellationToken cancellationToken)
     {
         Logger.LogDebug("Using local IInstanceCommandAppService for DirectTrigger task {TaskKey}", task.Key);
-        
+
         var headers = ExtractHeaders(context.ScriptContext);
 
         var transitionData = task.Body.HasValue
@@ -127,12 +128,16 @@ public sealed class DirectTriggerTaskExecutor : TriggerTaskExecutorBase<DirectTr
 
         using (_currentSchema.Use(input.Workflow))
         {
-            await using (var uow = await _unitOfWorkManager.BeginRequiresNew(cancellationToken))
+            await using (var uow = await _unitOfWorkManager.BeginAsync(new UnitOfWorkOptions
+                         {
+                             Scope = UnitOfWorkScopeOption.RequiresNew
+                         }, cancellationToken))
             {
-                var result = await LocalCommandService.TransitionAsync(instanceIdentifier, task.TransitionName, input, cancellationToken);
+                var result = await LocalCommandService.TransitionAsync(instanceIdentifier, task.TransitionName, input,
+                    cancellationToken);
                 await uow.SaveChangesAsync(cancellationToken);
                 await uow.CommitAsync(cancellationToken);
-                
+
                 if (!result.IsSuccess)
                 {
                     Logger.TaskLocalExecutionFailed(

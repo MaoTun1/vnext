@@ -166,7 +166,7 @@ public sealed class DaprBindingTaskExecutor : TaskExecutorBase<DaprBindingTask>
         
         context.TaskResponse[variableKey] = response;
         context.SetStandardResponse(response);
-        context.SetBody(result.Data);
+        // context.SetBody(result.Data);
     }
 }
 

@@ -230,12 +230,6 @@ public static class WorkflowApiBaseServiceCollectionExtensions
         );
         return services;
     }
-    
-    public static IServiceCollection ConfigureRoute(this IServiceCollection services)
-    {
-        
-        return services;
-    }
 
     public static IServiceCollection AddExceptionHandling(this IServiceCollection services)
     {

@@ -170,7 +170,7 @@ public sealed class HttpTaskExecutor : TaskExecutorBase<HttpTask>
         
         context.TaskResponse[variableKey] = response;
         context.SetStandardResponse(response);
-        context.SetBody(result.Data);
+        // context.SetBody(result.Data);
     }
 }
 

@@ -133,23 +133,14 @@ public sealed class DirectTriggerTask : WorkflowTask
         base.Configure(config);
 
         if (config.TryGetProperty("transitionName", out var transitionNameElement))
-            TransitionName = transitionNameElement.GetString() ?? string.Empty;
-
-        if (string.IsNullOrWhiteSpace(TransitionName))
-            throw new ArgumentException("Property 'transitionName' is required for DirectTriggerTask.", nameof(config));
+            TransitionName = transitionNameElement.GetString() ?? throw new ArgumentException($"Property 'transitionName' is required for DirectTriggerTask (Key={Key}).", nameof(config));
 
         if (config.TryGetProperty("domain", out var triggerDomainElement))
-            TriggerDomain = triggerDomainElement.GetString() ?? string.Empty;
-
-        if (string.IsNullOrWhiteSpace(TriggerDomain))
-            throw new ArgumentException("Property 'domain' is required for DirectTriggerTask.", nameof(config));
+            TriggerDomain = triggerDomainElement.GetString() ?? throw new ArgumentException($"Property 'domain' is required for DirectTriggerTask (Key={Key}).", nameof(config));
 
         if (config.TryGetProperty("flow", out var triggerFlowElement))
-            TriggerFlow = triggerFlowElement.GetString() ?? string.Empty;
-
-        if (string.IsNullOrWhiteSpace(TriggerFlow))
-            throw new ArgumentException("Property 'flow' is required for DirectTriggerTask.", nameof(config));
-
+            TriggerFlow = triggerFlowElement.GetString() ?? throw new ArgumentException($"Property 'flow' is required for DirectTriggerTask (Key={Key}).", nameof(config));
+        
         if (config.TryGetProperty("key", out var keyElement))
             TriggerKey = keyElement.GetString();
 

@@ -189,6 +189,19 @@ public static partial class WorkflowLogs
         Guid instanceId,
         string transitionKeys);
 
+    /// <summary>
+    /// Logs when inline transition execution fails during re-entry.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10050,
+        Level = LogLevel.Error,
+        Message = "Inline execution failed for instance {InstanceId}, chain {ExecutionChainId}: {ErrorMessage}")]
+    public static partial void InlineExecutionFailed(
+        this ILogger logger,
+        string errorMessage,
+        Guid instanceId,
+        string? executionChainId);
+
     #endregion
 
     #region Task Execution

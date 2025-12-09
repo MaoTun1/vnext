@@ -140,7 +140,7 @@ public abstract class TriggerTaskExecutorBase<TTask>(
         
         context.TaskResponse[variableKey] = response;
         context.SetStandardResponse(response);
-        context.SetBody(result.Data);
+        // context.SetBody(result.Data);
     }
 
     /// <summary>

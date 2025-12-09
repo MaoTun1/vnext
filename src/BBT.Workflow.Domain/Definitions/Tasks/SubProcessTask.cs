@@ -44,11 +44,6 @@ public sealed class SubProcessTask : WorkflowTask
     public JsonElement? Body { get; private set; }
 
     /// <summary>
-    /// Sync of the instance to start
-    /// </summary>
-    public bool TriggerSync { get; private set; } = true;
-
-    /// <summary>
     /// Tags of the instance to start
     /// </summary>
     public string[]? TriggerTags { get; private set; }
@@ -80,11 +75,6 @@ public sealed class SubProcessTask : WorkflowTask
         TriggerVersion = version;
     }
 
-    public void SetSync(bool sync)
-    {
-        TriggerSync = sync;
-    }
-
     public void SetTags(string[] tags)
     {
         TriggerTags = tags;
@@ -99,7 +89,6 @@ public sealed class SubProcessTask : WorkflowTask
     internal void SetTriggerKeyInternal(string? triggerKey) => TriggerKey = triggerKey;
     internal void SetTriggerVersionInternal(string? triggerVersion) => TriggerVersion = triggerVersion;
     internal void SetBodyInternal(JsonElement? body) => Body = body;
-    internal void SetTriggerSyncInternal(bool sync) => TriggerSync = sync;
     internal void SetTriggerTagsInternal(string[]? tags) => TriggerTags = tags;
 
     protected override void Configure(JsonElement config)
@@ -107,16 +96,10 @@ public sealed class SubProcessTask : WorkflowTask
         base.Configure(config);
 
         if (config.TryGetProperty("domain", out var triggerDomainElement))
-            TriggerDomain = triggerDomainElement.GetString() ?? string.Empty;
-
-        if (string.IsNullOrWhiteSpace(TriggerDomain))
-            throw new ArgumentException("Property 'domain' is required for SubProcessTask.", nameof(config));
-
+            TriggerDomain = triggerDomainElement.GetString() ?? throw new ArgumentException($"Property 'domain' is required for SubProcessTask (Key={Key}).", nameof(config));
+        
         if (config.TryGetProperty("flow", out var triggerFlowElement))
-            TriggerFlow = triggerFlowElement.GetString() ?? string.Empty;
-
-        if (string.IsNullOrWhiteSpace(TriggerFlow))
-            throw new ArgumentException("Property 'flow' is required for SubProcessTask.", nameof(config));
+            TriggerFlow = triggerFlowElement.GetString() ?? throw new ArgumentException($"Property 'flow' is required for SubProcessTask (Key={Key}).", nameof(config));
 
         if (config.TryGetProperty("key", out var keyElement))
             TriggerKey = keyElement.GetString() ?? string.Empty;
@@ -129,10 +112,7 @@ public sealed class SubProcessTask : WorkflowTask
             var body = bodyElement.GetRawText();
             Body = string.IsNullOrWhiteSpace(body) ? null : bodyElement;
         }
-
-        if (config.TryGetProperty("sync", out var triggerSyncElement))
-            TriggerSync = triggerSyncElement.GetBoolean();
-
+        
         if (config.TryGetProperty("tags", out var triggerTagsElement))
             TriggerTags = triggerTagsElement.GetArrayLength() > 0
                 ? triggerTagsElement.EnumerateArray().Select(e => e.GetString() ?? string.Empty).ToArray()
@@ -165,7 +145,6 @@ public sealed class SubProcessTask : WorkflowTask
         cloned.TriggerKey = TriggerKey;
         cloned.TriggerVersion = TriggerVersion;
         cloned.Body = Body;
-        cloned.TriggerSync = TriggerSync;
         cloned.TriggerTags = TriggerTags;
         return cloned;
     }
@@ -182,7 +161,6 @@ public sealed class SubProcessTask : WorkflowTask
         SetTriggerKeyInternal(source.TriggerKey);
         SetTriggerVersionInternal(source.TriggerVersion);
         SetBodyInternal(source.Body);
-        SetTriggerSyncInternal(source.TriggerSync);
         SetTriggerTagsInternal(source.TriggerTags);
     }
 
@@ -197,7 +175,6 @@ public sealed class SubProcessTask : WorkflowTask
         TriggerKey = null;
         TriggerVersion = null;
         Body = null;
-        TriggerSync = true;
         TriggerTags = null;
     }
 

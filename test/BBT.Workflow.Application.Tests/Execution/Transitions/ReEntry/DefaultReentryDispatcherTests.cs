@@ -2,14 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using BBT.Aether.DependencyInjection;
 using BBT.Aether.Results;
-using BBT.Workflow.Domain;
 using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Execution;
 using BBT.Workflow.Execution.ReEntry;
 using BBT.Workflow.Execution.Services;
 using BBT.Workflow.Instances;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -24,8 +23,7 @@ namespace BBT.Workflow.Application.Tests.Execution.Transitions.ReEntry;
 /// </summary>
 public class DefaultReentryDispatcherTests
 {
-    private readonly Mock<IServiceScopeFactory> _mockScopeFactory;
-    private readonly Mock<IServiceScope> _mockScope;
+    private readonly Mock<ILazyServiceProvider> _mockLazyServiceProvider;
     private readonly Mock<IWorkflowExecutionService> _mockExecutionService;
     private readonly Mock<ILogger<DefaultReentryDispatcher>> _mockLogger;
     private readonly ReentryOptions _options;
@@ -33,9 +31,7 @@ public class DefaultReentryDispatcherTests
 
     public DefaultReentryDispatcherTests()
     {
-        _mockScopeFactory = new Mock<IServiceScopeFactory>();
-        _mockScope = new Mock<IServiceScope>();
-        var mockServiceProvider = new Mock<IServiceProvider>();
+        _mockLazyServiceProvider = new Mock<ILazyServiceProvider>();
         _mockExecutionService = new Mock<IWorkflowExecutionService>();
         _mockLogger = new Mock<ILogger<DefaultReentryDispatcher>>();
 
@@ -47,21 +43,13 @@ public class DefaultReentryDispatcherTests
 
         var optionsWrapper = Options.Create(_options);
 
-        // Setup scope factory chain
-        _mockScopeFactory
-            .Setup(x => x.CreateScope())
-            .Returns(_mockScope.Object);
-
-        _mockScope
-            .Setup(x => x.ServiceProvider)
-            .Returns(mockServiceProvider.Object);
-
-        mockServiceProvider
-            .Setup(x => x.GetService(typeof(IWorkflowExecutionService)))
+        // Setup lazy service provider to return execution service
+        _mockLazyServiceProvider
+            .Setup(x => x.LazyGetRequiredService<IWorkflowExecutionService>())
             .Returns(_mockExecutionService.Object);
 
         _dispatcher = new DefaultReentryDispatcher(
-            _mockScopeFactory.Object,
+            _mockLazyServiceProvider.Object,
             optionsWrapper,
             _mockLogger.Object);
     }
@@ -268,7 +256,7 @@ public class DefaultReentryDispatcherTests
     }
 
     [Fact]
-    public async Task DispatchAutoAsync_ShouldCreateNewScope()
+    public async Task DispatchAutoAsync_ShouldUseLazyServiceProvider()
     {
         // Arrange
         var command = CreateAutoCommand();
@@ -278,8 +266,9 @@ public class DefaultReentryDispatcherTests
         await _dispatcher.DispatchAutoAsync(command, CancellationToken.None);
 
         // Assert
-        _mockScopeFactory.Verify(x => x.CreateScope(), Times.Once);
-        _mockScope.Verify(x => x.Dispose(), Times.Once);
+        _mockLazyServiceProvider.Verify(
+            x => x.LazyGetRequiredService<IWorkflowExecutionService>(),
+            Times.Once);
     }
 
     [Fact]
