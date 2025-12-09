@@ -7,8 +7,8 @@
     <RootNamespace>BBT.Workflow</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="BBT.Aether.Domain" Version="$(AetherPackageVersion)" />
     <PackageReference Include="BBT.Aether.Aspects" Version="$(AetherPackageVersion)" />
+    <PackageReference Include="BBT.Aether.Domain" Version="$(AetherPackageVersion)" />
     <PackageReference Include="Dapr.Jobs" Version="$(DaprPackageVersion)" />
     <PackageReference Include="Ulid" Version="$(UlidPackageVersion)" />
     <PackageReference Include="JsonSchema.Net" Version="$(JsonSchemaNetPackageVersion)" />
@@ -18,7 +18,6 @@
     <ProjectReference Include="..\BBT.Workflow.Events.Contracts\BBT.Workflow.Events.Contracts.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="Tasks\Scripting\NotificationMapping.csx"
-                      LogicalName="BBT.Workflow.Tasks.Scripting.NotificationMapping.csx"/>
+    <EmbeddedResource Include="Tasks\Scripting\NotificationMapping.csx" LogicalName="BBT.Workflow.Tasks.Scripting.NotificationMapping.csx" />
   </ItemGroup>
 </Project>
