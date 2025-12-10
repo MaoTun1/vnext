@@ -195,12 +195,15 @@ public static partial class WorkflowLogs
     [LoggerMessage(
         EventId = 10050,
         Level = LogLevel.Error,
-        Message = "Inline execution failed for instance {InstanceId}, chain {ExecutionChainId}: {ErrorMessage}")]
+        Message = "Inline execution failed for instance {InstanceId}, chain {ExecutionChainId}, workflow {WorkflowKey}, transition {TransitionKey}, trigger {TriggerType}: {ErrorMessage}")]
     public static partial void InlineExecutionFailed(
         this ILogger logger,
         string errorMessage,
         Guid instanceId,
-        string? executionChainId);
+        string? executionChainId,
+        string workflowKey,
+        string transitionKey,
+        string triggerType);
 
     #endregion
 

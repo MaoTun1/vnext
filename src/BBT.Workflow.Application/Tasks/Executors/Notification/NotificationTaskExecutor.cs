@@ -205,8 +205,6 @@ public sealed class NotificationTaskExecutor : TaskExecutorBase<NotificationTask
             Metadata = result.Metadata
         };
         
-        context.TaskResponse[variableKey] = response;
-        context.SetStandardResponse(response);
-        // context.SetBody(result.Data);
+        context.SetStandardResponse(response, variableKey);
     }
 }

@@ -3,10 +3,10 @@ using System.Text.Json.Serialization;
 namespace BBT.Workflow.Definitions;
 
 [JsonConverter(typeof(IEquatableJsonConverter<SubFlowType>))]
-public class SubFlowType: IEquatable<SubFlowType>
+public sealed class SubFlowType: IEquatable<SubFlowType>
 {
-    public static readonly SubFlowType SubFlow = new SubFlowType("S", "Sub Flow");
-    public static readonly SubFlowType SubProcess = new SubFlowType("P", "Sub Process");
+    public static readonly SubFlowType SubFlow = new("S", "Sub Flow");
+    public static readonly SubFlowType SubProcess = new("P", "Sub Process");
 
     public string Code { get; }
     public string Description { get; }
