@@ -100,20 +100,26 @@ public sealed class SubProcessTaskExecutor : TriggerTaskExecutorBase<SubProcessT
         TaskExecutorContext context,
         CancellationToken cancellationToken)
     {
-        // Extract IDs from result metadata
-        if (invocationResult.Metadata == null ||
-            !invocationResult.Metadata.TryGetValue("SubFlowInstanceId", out var subFlowIdObj) ||
-            !invocationResult.Metadata.TryGetValue("CorrelationId", out var correlationIdObj))
+        if (invocationResult.IsSuccess)
         {
-            Logger.LogWarning("SubProcess task {TaskKey} result missing correlation metadata", task.Key);
-            return Result.Ok();
+            // Extract IDs from result metadata
+            if (invocationResult.Metadata == null ||
+                !invocationResult.Metadata.TryGetValue("SubFlowInstanceId", out var subFlowIdObj) ||
+                !invocationResult.Metadata.TryGetValue("CorrelationId", out var correlationIdObj))
+            {
+                Logger.LogWarning("SubProcess task {TaskKey} result missing correlation metadata", task.Key);
+                return Result.Ok();
+            }
+
+            var subFlowInstanceId = subFlowIdObj is Guid subGuid ? subGuid : Guid.Parse(subFlowIdObj.ToString()!);
+            var correlationId = correlationIdObj is Guid corrGuid ? corrGuid : Guid.Parse(correlationIdObj.ToString()!);
+
+            // Create and persist correlation
+            return await CreateCorrelationAsync(context, task, correlationId, subFlowInstanceId, cancellationToken);
         }
 
-        var subFlowInstanceId = subFlowIdObj is Guid subGuid ? subGuid : Guid.Parse(subFlowIdObj.ToString()!);
-        var correlationId = correlationIdObj is Guid corrGuid ? corrGuid : Guid.Parse(correlationIdObj.ToString()!);
-
-        // Create and persist correlation
-        return await CreateCorrelationAsync(context, task, correlationId, subFlowInstanceId, cancellationToken);
+        Logger.LogWarning("SubProcess task {TaskKey} result ignored correlation", task.Key);
+        return Result.Ok();
     }
 
     private async Task<TaskInvocationResult> ExecuteLocalAsync(
@@ -245,22 +251,22 @@ public sealed class SubProcessTaskExecutor : TriggerTaskExecutorBase<SubProcessT
         Guid subFlowInstanceId)
     {
         return new StartInstanceInput(
-            domain: task.TriggerDomain,
-            workflow: task.TriggerFlow,
-            version: task.TriggerVersion,
-            sync: false) // Always async
-        {
-            Instance = new CreateInstanceInput
+                domain: task.TriggerDomain,
+                workflow: task.TriggerFlow,
+                version: task.TriggerVersion,
+                sync: false) // Always async
             {
-                Id = subFlowInstanceId,
-                Key = task.TriggerKey,
-                Attributes = task.Body,
-                Tags = task.TriggerTags,
-                Callback = GetCallbackAppId(),
-                ExtraProperties = BuildExtraProperties(context, task)
-            },
-            Headers = ExtractHeaders(context) ?? new Dictionary<string, string?>()
-        };
+                Instance = new CreateInstanceInput
+                {
+                    Id = subFlowInstanceId,
+                    Key = task.TriggerKey,
+                    Attributes = task.Body,
+                    Tags = task.TriggerTags,
+                    Callback = GetCallbackAppId(),
+                    ExtraProperties = BuildExtraProperties(context, task)
+                },
+                Headers = ExtractHeaders(context) ?? new Dictionary<string, string?>()
+            };
     }
 
     private SubProcessBinding BuildSubProcessBinding(SubProcessTask task, ScriptContext context, Guid subFlowInstanceId)

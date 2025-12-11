@@ -38,11 +38,6 @@ public sealed class AdminAppService(
     {
         runtimeInfoProvider.Check(input.Domain);
 
-        // Validate schema - returns Result.Fail instead of throwing
-        var schemaValidation = ValidateSchema(input.Key, input.Flow);
-        if (!schemaValidation.IsSuccess)
-            return schemaValidation;
-
         using (currentSchema.Use(input.Flow))
         {
             var instance = await instanceRepository.FindByIdentifierAsync(input.Key, cancellationToken)
@@ -54,22 +49,6 @@ public sealed class AdminAppService(
                 ? await SaveNewInstanceAsync(instance, input, cancellationToken)
                 : await HandleExistingInstanceAsync(instance, input, cancellationToken);
         }
-    }
-
-    /// <summary>
-    /// Validates if the provided schema keys are valid according to runtime options.
-    /// Returns Result.Fail instead of throwing exception.
-    /// </summary>
-    private Result ValidateSchema(params string[] schemaKeys)
-    {
-        foreach (var key in schemaKeys)
-        {
-            if (!runtimeOptions.Value.Schemas.ContainsKey(key))
-            {
-                return Result.Fail(WorkflowErrors.SchemaNotConfigured(key));
-            }
-        }
-        return Result.Ok();
     }
 
     /// <summary>
@@ -247,12 +226,7 @@ public sealed class AdminAppService(
         CancellationToken cancellationToken = default)
     {
         runtimeInfoProvider.Check(input.Domain);
-
-        // Validate schema - returns Result.Fail instead of throwing
-        var schemaValidation = ValidateSchema(input.Flow);
-        if (!schemaValidation.IsSuccess)
-            return schemaValidation;
-
+        
         using (currentSchema.Use(input.Flow))
         {
             var instance = await instanceRepository.FindByIdentifierAsync(input.Key, cancellationToken);

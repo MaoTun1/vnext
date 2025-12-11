@@ -74,7 +74,7 @@ public sealed class HandleFinishStep(
         if (context.IsCancelTransition())
         {
             logger.InstanceCanceling(context.Instance.Id);
-            context.Instance.Cancel();
+            context.Instance.Cancel(context.Domain);
         }
         else
         {

@@ -33,6 +33,8 @@ public static class WorkflowErrorCodes
     public const string InstanceNotFound = "Instance:100017";
     public const string InstanceCompleted = "Instance:100018";
     public const string DuplicateInstanceKey = "Instance:100019";
+    public const string InstanceCancellationFailed = "Instance:100020";
+    public const string ChildSubflowCancellationFailed = "Instance:100021";
     
     #endregion
     

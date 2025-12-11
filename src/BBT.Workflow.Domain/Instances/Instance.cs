@@ -261,7 +261,8 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// Cancels the instance and publishes a cancellation event.
     /// Sets the instance status to Canceled and records the completion time.
     /// </summary>
-    public void Cancel()
+    /// <param name="domain">The domain of the instance.</param>
+    public void Cancel(string domain)
     {
         Status = InstanceStatus.Completed;
         CompletedAt = DateTime.UtcNow;
@@ -271,6 +272,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         AddDistributedEvent(new InstanceCanceledEvent
         {
             InstanceId = Id,
+            Domain = domain,
             Flow = Flow,
             CanceledState = GetCurrentState,
             CanceledAt = CompletedAt.Value,

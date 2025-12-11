@@ -1,6 +1,8 @@
+using BBT.Workflow.Execution.Configuration;
 using BBT.Workflow.Execution.Invokers;
 using BBT.Workflow.Execution.Metrics;
 using BBT.Workflow.Execution.Services;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -14,9 +16,24 @@ public static class ExecutionServiceCollectionExtensions
     /// Adds the task invoker registry and all built-in invokers to the service collection.
     /// </summary>
     /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The configuration for binding options.</param>
     /// <returns>The service collection for chaining.</returns>
-    public static IServiceCollection AddTaskInvokers(this IServiceCollection services)
+    public static IServiceCollection AddTaskInvokers(
+        this IServiceCollection services,
+        IConfiguration? configuration = null)
     {
+        // Register DirectTrigger retry options
+        if (configuration != null)
+        {
+            services.Configure<TriggerRetryOptions>(
+                configuration.GetSection(TriggerRetryOptions.SectionName));
+        }
+        else
+        {
+            // Register default options if no configuration provided
+            services.Configure<TriggerRetryOptions>(_ => { });
+        }
+        
         // Register the registry
         services.AddSingleton<ITaskInvokerRegistry, TaskInvokerRegistry>();
         

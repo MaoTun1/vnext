@@ -51,6 +51,10 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddScoped<ISubflowCompletionService, SubflowCompletionService>();
         services.AddScoped<ISubflowStarter, SubflowStarter>();
         services.AddScoped<ISubflowForwardingService, SubflowForwardingService>();
+        services.AddScoped<IChildSubflowCancellationService, ChildSubflowCancellationService>();
+        
+        // Instance Services
+        services.AddScoped<IInstanceCancellationService, InstanceCancellationService>();
         
         // Runtime Services
         services.AddScoped<IRuntimeService, RuntimeService>();

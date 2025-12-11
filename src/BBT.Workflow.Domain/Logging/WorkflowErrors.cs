@@ -162,5 +162,29 @@ public static class WorkflowErrors
             target: domain);
 
     #endregion
+    
+    #region Cancellation Errors
+
+    /// <summary>
+    /// Instance cancellation processing failed.
+    /// </summary>
+    /// <param name="instanceId">The ID of the instance that failed cancellation.</param>
+    /// <param name="reason">The reason for the failure.</param>
+    public static Error InstanceCancellationFailed(Guid instanceId, string reason)
+        => Error.Failure(
+            WorkflowErrorCodes.InstanceCancellationFailed,
+            $"Failed to process instance cancellation for {instanceId}: {reason}");
+
+    /// <summary>
+    /// Child subflow cancellation failed.
+    /// </summary>
+    /// <param name="instanceId">The ID of the child subflow that failed cancellation.</param>
+    /// <param name="reason">The reason for the failure.</param>
+    public static Error ChildSubflowCancellationFailed(Guid instanceId, string reason)
+        => Error.Failure(
+            WorkflowErrorCodes.ChildSubflowCancellationFailed,
+            $"Failed to cancel child subflow {instanceId}: {reason}");
+
+    #endregion
 }
 

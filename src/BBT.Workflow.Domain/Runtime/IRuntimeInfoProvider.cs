@@ -40,65 +40,46 @@ public interface IRuntimeInfoProvider
     /// </exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="requestDomain"/> is null.</exception>
     void Check(string requestDomain);
+
+    /// <summary>
+    /// Checks if the specified domain matches the configured runtime domain.
+    /// This is a non-throwing alternative to <see cref="Check"/> for scenarios where
+    /// domain mismatch should be handled gracefully (e.g., event filtering).
+    /// </summary>
+    /// <param name="requestDomain">The domain name to compare against the runtime domain.</param>
+    /// <returns>
+    /// <c>true</c> if the <paramref name="requestDomain"/> matches the configured runtime domain (case-insensitive);
+    /// otherwise, <c>false</c>.
+    /// </returns>
+    bool IsDomainMatch(string? requestDomain);
 }
 
-/// <summary>
-/// Provides implementation for runtime information access and domain validation.
-/// This class retrieves runtime configuration from environment variables and assembly metadata,
-/// ensuring secure domain-based access control for the workflow system.
-/// </summary>
+/// <inheritdoc />
 public class RuntimeInfoProvider : IRuntimeInfoProvider
 {
-    /// <summary>
-    /// Gets the current version of the workflow runtime system.
-    /// </summary>
-    /// <value>
-    /// The runtime version obtained from the APP_VERSION environment variable or assembly metadata.
-    /// </value>
+    /// <inheritdoc />
     public string Version { get; }
 
-    /// <summary>
-    /// Gets the domain name that this runtime instance is configured to serve.
-    /// </summary>
-    /// <value>
-    /// The domain name obtained from the APP_DOMAIN environment variable.
-    /// </value>
+    /// <inheritdoc />
     public string Domain { get; }
 
-    /// <summary>
-    /// Validates that the requested domain matches the configured runtime domain.
-    /// This method provides domain-based security by ensuring clients can only access
-    /// workflows within their authorized domain scope.
-    /// </summary>
-    /// <param name="requestDomain">The domain name being requested for access.</param>
-    /// <exception cref="NotFoundDomainException">
-    /// Thrown when the requested domain does not match the configured runtime domain,
-    /// indicating an unauthorized cross-domain access attempt.
-    /// </exception>
+    /// <inheritdoc />
     public void Check(string requestDomain)
     {
-        if (!Domain.Equals(requestDomain))
+        ArgumentException.ThrowIfNullOrWhiteSpace(requestDomain);
+        if (!IsDomainMatch(requestDomain))
         {
             throw new NotFoundDomainException(requestDomain, Domain);
         }
     }
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="RuntimeInfoProvider"/> class.
-    /// This constructor reads configuration from environment variables and validates that
-    /// all required runtime parameters are properly configured.
-    /// </summary>
-    /// <exception cref="AetherException">
-    /// Thrown when required environment variables (APP_VERSION or APP_DOMAIN) are not set
-    /// or when they contain invalid values like "unknown".
-    /// </exception>
-    /// <remarks>
-    /// The constructor attempts to read:
-    /// - Version from APP_VERSION environment variable, falling back to assembly version information
-    /// - Domain from APP_DOMAIN environment variable, falling back to "unknown"
-    /// 
-    /// Both values must be properly configured (not "unknown") for the runtime to initialize successfully.
-    /// </remarks>
+    /// <inheritdoc />
+    public bool IsDomainMatch(string? requestDomain)
+    {
+        return !string.IsNullOrWhiteSpace(requestDomain) &&
+               Domain.Equals(requestDomain, StringComparison.OrdinalIgnoreCase);
+    }
+
     public RuntimeInfoProvider()
     {
         Version = Environment.GetEnvironmentVariable("APP_VERSION") ?? GetAssemblyVersion();

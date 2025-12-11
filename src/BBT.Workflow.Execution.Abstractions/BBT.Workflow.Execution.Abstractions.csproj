@@ -8,7 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Minimal dependencies - just what's needed for contracts -->
-    <PackageReference Include="System.Text.Json" Version="9.0.0" />
+    <PackageReference Include="System.Text.Json" Version="$(MicrosoftPackageVersion)" />
   </ItemGroup>
 </Project>
 

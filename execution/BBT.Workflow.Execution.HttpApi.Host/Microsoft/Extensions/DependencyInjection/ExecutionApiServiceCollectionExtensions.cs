@@ -39,7 +39,7 @@ public static class ExecutionApiServiceCollectionExtensions
             .AddWorkflowHttpClient()
             .AddExecutionHealthChecks()
             .AddDaprNotification(configuration)
-            .AddTaskInvokers();
+            .AddTaskInvokers(configuration);
         return services;
     }
     

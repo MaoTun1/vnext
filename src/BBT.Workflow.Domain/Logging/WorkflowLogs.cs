@@ -392,6 +392,20 @@ public static partial class WorkflowLogs
         string flow);
 
     /// <summary>
+    /// Logs when an event is silently ignored because it belongs to a different domain.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40012,
+        Level = LogLevel.Debug,
+        Message = "Event silently ignored: event domain {EventDomain} does not match current runtime domain {RuntimeDomain}. SubInstance {SubInstanceId}, Parent {ParentInstanceId}")]
+    public static partial void SubFlowEventIgnoredDomainMismatch(
+        this ILogger logger,
+        string eventDomain,
+        string runtimeDomain,
+        Guid subInstanceId,
+        Guid parentInstanceId);
+
+    /// <summary>
     /// Logs when a correlation is not found for a completed SubFlow.
     /// </summary>
     [LoggerMessage(
@@ -565,6 +579,20 @@ public static partial class WorkflowLogs
         string flow);
 
     /// <summary>
+    /// Logs when an InstanceCanceledEvent is silently ignored because it belongs to a different domain.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40021,
+        Level = LogLevel.Debug,
+        Message = "InstanceCanceledEvent silently ignored: event domain {EventDomain} does not match current runtime domain {RuntimeDomain}. Instance {InstanceId}, Flow {Flow}")]
+    public static partial void InstanceCanceledEventIgnoredDomainMismatch(
+        this ILogger logger,
+        string eventDomain,
+        string runtimeDomain,
+        Guid instanceId,
+        string flow);
+
+    /// <summary>
     /// Logs when instance jobs are processed during cancellation.
     /// </summary>
     [LoggerMessage(
@@ -603,6 +631,20 @@ public static partial class WorkflowLogs
         this ILogger logger,
         Guid instanceId,
         string domain,
+        string flow);
+
+    /// <summary>
+    /// Logs when a ChildSubflowCancelRequestedEvent is silently ignored because it belongs to a different domain.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40025,
+        Level = LogLevel.Debug,
+        Message = "ChildSubflowCancelRequestedEvent silently ignored: event domain {EventDomain} does not match current runtime domain {RuntimeDomain}. Instance {InstanceId}, Flow {Flow}")]
+    public static partial void ChildSubflowCancelEventIgnoredDomainMismatch(
+        this ILogger logger,
+        string eventDomain,
+        string runtimeDomain,
+        Guid instanceId,
         string flow);
 
     /// <summary>

@@ -1,11 +1,16 @@
 using System.Diagnostics;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using BBT.Workflow.Execution.Bindings;
+using BBT.Workflow.Execution.Configuration;
 using BBT.Workflow.Execution.Metrics;
 using Dapr.Client;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Polly;
+using Polly.Retry;
 
 namespace BBT.Workflow.Execution.Invokers;
 
@@ -13,16 +18,31 @@ namespace BBT.Workflow.Execution.Invokers;
 /// Remote invoker for DirectTrigger tasks.
 /// Uses Dapr service invocation to call the orchestration app's transition endpoint.
 /// Used for cross-domain transition triggering on existing workflow instances.
+/// Implements retry logic for instance lock scenarios (409 Conflict).
 /// </summary>
-public sealed class DirectTriggerRemoteInvoker(
-    DaprClient daprClient,
-    IConfiguration configuration,
-    ILogger<DirectTriggerRemoteInvoker> logger,
-    ITaskMetrics? metrics = null)
-    : ITaskInvoker<DirectTriggerBinding>
+public sealed class DirectTriggerRemoteInvoker : ITaskInvoker<DirectTriggerBinding>
 {
-    private readonly ITaskMetrics _metrics = metrics ?? NullTaskMetrics.Instance;
-    private readonly string _orchestrationAppId = configuration["OrchestrationApi:AppId"] ?? "vnext-app";
+    private readonly DaprClient _daprClient;
+    private readonly ILogger<DirectTriggerRemoteInvoker> _logger;
+    private readonly ITaskMetrics _metrics;
+    private readonly string _orchestrationAppId;
+    private readonly TriggerRetryOptions _retryOptions;
+    private readonly ResiliencePipeline<HttpResponseMessage> _retryPipeline;
+
+    public DirectTriggerRemoteInvoker(
+        DaprClient daprClient,
+        IConfiguration configuration,
+        ILogger<DirectTriggerRemoteInvoker> logger,
+        IOptions<TriggerRetryOptions>? retryOptions = null,
+        ITaskMetrics? metrics = null)
+    {
+        _daprClient = daprClient;
+        _logger = logger;
+        _metrics = metrics ?? NullTaskMetrics.Instance;
+        _orchestrationAppId = configuration["OrchestrationApi:AppId"] ?? "vnext-app";
+        _retryOptions = retryOptions?.Value ?? new TriggerRetryOptions();
+        _retryPipeline = CreateRetryPipeline();
+    }
 
     /// <inheritdoc />
     public string TaskType => TaskTypes.DirectTrigger;
@@ -50,12 +70,44 @@ public sealed class DirectTriggerRemoteInvoker(
         return await ExecuteAsync(taskKey, typedBinding, cancellationToken);
     }
 
+    private ResiliencePipeline<HttpResponseMessage> CreateRetryPipeline()
+    {
+        var retryStatusCodes = _retryOptions.RetryOnStatusCodes
+            .Select(code => (HttpStatusCode)code)
+            .ToHashSet();
+
+        return new ResiliencePipelineBuilder<HttpResponseMessage>()
+            .AddRetry(new RetryStrategyOptions<HttpResponseMessage>
+            {
+                MaxRetryAttempts = _retryOptions.MaxRetryAttempts,
+                Delay = TimeSpan.FromMilliseconds(_retryOptions.RetryDelayMilliseconds),
+                BackoffType = DelayBackoffType.Constant,
+                UseJitter = _retryOptions.UseJitter,
+                ShouldHandle = new PredicateBuilder<HttpResponseMessage>()
+                    .HandleResult(response => retryStatusCodes.Contains(response.StatusCode)),
+                OnRetry = args =>
+                {
+                    _logger.LogWarning(
+                        "DirectTrigger retry attempt {AttemptNumber}/{MaxAttempts} after {Delay}ms. " +
+                        "Status: {StatusCode}. Reason: Instance is locked.",
+                        args.AttemptNumber,
+                        _retryOptions.MaxRetryAttempts,
+                        args.RetryDelay.TotalMilliseconds,
+                        (int)args.Outcome.Result!.StatusCode);
+                    
+                    return ValueTask.CompletedTask;
+                }
+            })
+            .Build();
+    }
+
     private async Task<TaskInvocationResult> ExecuteAsync(
         string? taskKey,
         DirectTriggerBinding binding,
         CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
+        
         if (string.IsNullOrEmpty(binding.Identifier))
         {
             stopwatch.Stop();
@@ -63,90 +115,61 @@ public sealed class DirectTriggerRemoteInvoker(
                 error: "DirectTrigger task requires either instanceId or key to be specified",
                 executionDurationMs: stopwatch.ElapsedMilliseconds,
                 taskType: TaskType,
-                metadata: new Dictionary<string, object>
-                {
-                    ["Domain"] = binding.Domain,
-                    ["Workflow"] = binding.Workflow,
-                    ["InstanceId"] = string.Empty,
-                    ["TransitionKey"] = binding.TransitionName,
-                    ["OrchestrationAppId"] = _orchestrationAppId,
-                    ["Cancelled"] = true
-                });
+                metadata: CreateMetadata(binding, cancelled: true));
         }
-        
+
         try
         {
-            // Build the endpoint path: /api/v1/{domain}/workflows/{workflow}/instances/{instanceId}/transitions/{transitionKey}
-            var path =
-                $"/api/v1/{binding.Domain}/workflows/{binding.Workflow}/instances/{binding.Identifier}/transitions/{binding.TransitionName}";
-
-            // Add query parameters
-            var queryParams = new List<string>();
-            if (!string.IsNullOrEmpty(binding.Version))
-                queryParams.Add($"version={Uri.EscapeDataString(binding.Version)}");
-            if (binding.Sync)
-                queryParams.Add("sync=true");
-
-            if (queryParams.Count > 0)
-                path += "?" + string.Join("&", queryParams);
-
-            // Build request body (transition data)
-            var requestBody = new
-            {
-                key = binding.Key,
-                tags = binding.Tags,
-                attributes = binding.Body
-            };
-
-            var request = daprClient.CreateInvokeMethodRequest(
-                HttpMethod.Patch,
-                _orchestrationAppId,
-                path);
-
-            // Add body
-            request.Content = new StringContent(
-                JsonSerializer.Serialize(requestBody),
-                Encoding.UTF8,
-                "application/json");
-
-            // Add headers
-            if (!string.IsNullOrEmpty(binding.Headers))
-            {
-                var headers = JsonSerializer.Deserialize<Dictionary<string, string>>(binding.Headers);
-                if (headers != null)
+            // Execute with retry pipeline for 409 Conflict handling
+            var response = await _retryPipeline.ExecuteAsync(
+                async token =>
                 {
-                    foreach (var header in headers.Where(h => h.Value != null))
-                    {
-                        request.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                    }
-                }
+                    var httpRequest = CreateRequest(binding); // Create fresh request for each retry
+                    return await _daprClient.InvokeMethodWithResponseAsync(httpRequest, token);
+                },
+                cancellationToken);
+
+            stopwatch.Stop();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                _metrics.RecordTaskExecution(TaskType, "failure");
+                
+                _logger.LogWarning(
+                    "DirectTrigger failed after retries for task {TaskKey}: {Domain}/{Workflow}/{InstanceId}/{TransitionKey}. " +
+                    "Status: {StatusCode}, Error: {Error}",
+                    taskKey, binding.Domain, binding.Workflow, binding.Identifier, binding.TransitionName,
+                    (int)response.StatusCode, errorContent);
+
+                return TaskInvocationResult.Failure(
+                    error: $"HTTP {(int)response.StatusCode}: {errorContent}",
+                    statusCode: (int)response.StatusCode,
+                    executionDurationMs: stopwatch.ElapsedMilliseconds,
+                    taskType: TaskType,
+                    metadata: CreateMetadata(binding, statusCode: (int)response.StatusCode));
             }
 
-            var response = await daprClient.InvokeMethodAsync<object?>(request, cancellationToken);
-            stopwatch.Stop();
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            var responseData = !string.IsNullOrEmpty(responseBody)
+                ? JsonSerializer.Deserialize<object>(responseBody)
+                : null;
 
             _metrics.RecordTaskExecution(TaskType, "success");
 
             return TaskInvocationResult.Success(
-                data: response,
-                body: response != null ? JsonSerializer.Serialize(response) : null,
-                statusCode: 200,
+                data: responseData,
+                body: responseBody,
+                statusCode: (int)response.StatusCode,
                 executionDurationMs: stopwatch.ElapsedMilliseconds,
                 taskType: TaskType,
-                metadata: new Dictionary<string, object>
-                {
-                    ["Domain"] = binding.Domain,
-                    ["Workflow"] = binding.Workflow,
-                    ["InstanceId"] = binding.Identifier,
-                    ["TransitionKey"] = binding.TransitionName,
-                    ["OrchestrationAppId"] = _orchestrationAppId
-                });
+                metadata: CreateMetadata(binding));
         }
         catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             stopwatch.Stop();
             _metrics.RecordTaskExecution(TaskType, "cancelled");
-            logger.LogWarning(
+            _logger.LogWarning(
                 "DirectTrigger remote invocation was cancelled for task {TaskKey}: {Domain}/{Workflow}/{InstanceId}/{TransitionKey}",
                 taskKey, binding.Domain, binding.Workflow, binding.Identifier, binding.TransitionName);
 
@@ -154,37 +177,97 @@ public sealed class DirectTriggerRemoteInvoker(
                 error: "DirectTrigger remote invocation was cancelled",
                 executionDurationMs: stopwatch.ElapsedMilliseconds,
                 taskType: TaskType,
-                metadata: new Dictionary<string, object>
-                {
-                    ["Domain"] = binding.Domain,
-                    ["Workflow"] = binding.Workflow,
-                    ["InstanceId"] = binding.Identifier,
-                    ["TransitionKey"] = binding.TransitionName,
-                    ["OrchestrationAppId"] = _orchestrationAppId,
-                    ["Cancelled"] = true
-                });
+                metadata: CreateMetadata(binding, cancelled: true));
         }
         catch (Exception ex)
         {
             stopwatch.Stop();
             _metrics.RecordTaskExecution(TaskType, "failure");
-            logger.LogError(ex,
+            _logger.LogError(ex,
                 "DirectTrigger remote invocation failed for task {TaskKey}: {Domain}/{Workflow}/{InstanceId}/{TransitionKey}",
-                taskKey, binding.Domain, binding.Workflow, binding.InstanceId, binding.TransitionName);
+                taskKey, binding.Domain, binding.Workflow, binding.Identifier, binding.TransitionName);
 
             return TaskInvocationResult.Failure(
                 error: ex.Message,
                 executionDurationMs: stopwatch.ElapsedMilliseconds,
                 taskType: TaskType,
-                metadata: new Dictionary<string, object>
-                {
-                    ["Domain"] = binding.Domain,
-                    ["Workflow"] = binding.Workflow,
-                    ["InstanceId"] = binding.Identifier,
-                    ["TransitionKey"] = binding.TransitionName,
-                    ["OrchestrationAppId"] = _orchestrationAppId,
-                    ["ExceptionType"] = ex.GetType().Name
-                });
+                metadata: CreateMetadata(binding, exceptionType: ex.GetType().Name));
         }
+    }
+
+    private HttpRequestMessage CreateRequest(DirectTriggerBinding binding)
+    {
+        // Build the endpoint path
+        var path = $"/api/v1/{binding.Domain}/workflows/{binding.Workflow}/instances/{binding.Identifier}/transitions/{binding.TransitionName}";
+
+        // Add query parameters
+        var queryParams = new List<string>();
+        if (!string.IsNullOrEmpty(binding.Version))
+            queryParams.Add($"version={Uri.EscapeDataString(binding.Version)}");
+        if (binding.Sync)
+            queryParams.Add("sync=true");
+
+        if (queryParams.Count > 0)
+            path += "?" + string.Join("&", queryParams);
+
+        // Build request body
+        var requestBody = new
+        {
+            key = binding.Key,
+            tags = binding.Tags,
+            attributes = binding.Body
+        };
+
+        var request = _daprClient.CreateInvokeMethodRequest(
+            HttpMethod.Patch,
+            _orchestrationAppId,
+            path);
+
+        request.Content = new StringContent(
+            JsonSerializer.Serialize(requestBody),
+            Encoding.UTF8,
+            "application/json");
+
+        // Add headers
+        if (!string.IsNullOrEmpty(binding.Headers))
+        {
+            var headers = JsonSerializer.Deserialize<Dictionary<string, string>>(binding.Headers);
+            if (headers != null)
+            {
+                foreach (var header in headers.Where(h => h.Value != null))
+                {
+                    request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                }
+            }
+        }
+
+        return request;
+    }
+
+    private Dictionary<string, object> CreateMetadata(
+        DirectTriggerBinding binding,
+        bool cancelled = false,
+        int? statusCode = null,
+        string? exceptionType = null)
+    {
+        var metadata = new Dictionary<string, object>
+        {
+            ["Domain"] = binding.Domain,
+            ["Workflow"] = binding.Workflow,
+            ["InstanceId"] = binding.Identifier ?? string.Empty,
+            ["TransitionKey"] = binding.TransitionName,
+            ["OrchestrationAppId"] = _orchestrationAppId
+        };
+
+        if (cancelled)
+            metadata["Cancelled"] = true;
+
+        if (statusCode.HasValue)
+            metadata["StatusCode"] = statusCode.Value;
+
+        if (!string.IsNullOrEmpty(exceptionType))
+            metadata["ExceptionType"] = exceptionType;
+
+        return metadata;
     }
 }
