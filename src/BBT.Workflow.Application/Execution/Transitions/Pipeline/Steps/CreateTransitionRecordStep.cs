@@ -46,7 +46,8 @@ public sealed class CreateTransitionRecordStep(
             .Tap(mappedData => AddMappedDataToInstance(context, mappedData, transition))
             .BindAsync(_ => ValidateAndSetInstanceKeyAsync(context, cancellationToken))
             .TapAsync(_ => instanceRepository.UpdateAsync(context.Instance, true, cancellationToken))
-            .TapAsync(_ => instanceTransitionRepository.InsertAsync(instanceTransition, saveChanges: true, cancellationToken))
+            .TapAsync(_ =>
+                instanceTransitionRepository.InsertAsync(instanceTransition, saveChanges: true, cancellationToken))
             .Tap(_ => UpdateContextItems(context, instanceTransition.Id))
             .Map(_ => StepOutcome.Continue());
     }
@@ -78,7 +79,8 @@ public sealed class CreateTransitionRecordStep(
             new JsonData(context.Data),
             new JsonData(JsonSerializer.Serialize(context.Headers)));
 
-        var transition = context.Workflow.FindTransition(transitionKey);
+        var state = context.Workflow.GetState(context.Instance.GetCurrentState).Value!;
+        var transition = context.Workflow.ResolveTransition(transitionKey, state);
 
         return (instanceTransition, transition);
     }
@@ -116,8 +118,8 @@ public sealed class CreateTransitionRecordStep(
                 new JsonData(mappedData),
                 transition?.VersionStrategy);
         }
-        
-        if(context.Tags != null)
+
+        if (context.Tags != null)
         {
             context.Instance.AddTags(context.Tags);
         }

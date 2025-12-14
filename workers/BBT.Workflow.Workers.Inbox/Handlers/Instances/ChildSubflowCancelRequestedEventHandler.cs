@@ -39,7 +39,7 @@ internal sealed class ChildSubflowCancelRequestedEventHandler(
             eventData.Domain,
             eventData.Flow);
 
-        var scope = scopeFactory.CreateAsyncScope();
+        await using var scope = scopeFactory.CreateAsyncScope();
         var cancellationService = scope.ServiceProvider.GetRequiredService<IChildSubflowCancellationService>();
         await cancellationService.CancelChildSubflowAsync(
             eventData.InstanceId,

@@ -1,8 +1,5 @@
 using BBT.Workflow.Scripting.Functions;
 using Dapr.Client;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Scripting;
 

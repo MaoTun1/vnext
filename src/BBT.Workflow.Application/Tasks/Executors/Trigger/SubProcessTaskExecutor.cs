@@ -1,6 +1,5 @@
 using System.Text.Json;
 using BBT.Aether;
-using BBT.Aether.DependencyInjection;
 using BBT.Aether.Guids;
 using BBT.Aether.MultiSchema;
 using BBT.Aether.Results;
@@ -13,6 +12,7 @@ using BBT.Workflow.Logging;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Tasks.Executors;
@@ -25,38 +25,29 @@ namespace BBT.Workflow.Tasks.Executors;
 /// </summary>
 public sealed class SubProcessTaskExecutor : TriggerTaskExecutorBase<SubProcessTask>
 {
-    private readonly ILazyServiceProvider _lazyServiceProvider;
+    private readonly IServiceScopeFactory  _serviceScopeFactory;
     private readonly IInstanceRepository _instanceRepository;
     private readonly IGuidGenerator _guidGenerator;
     private readonly IConfiguration _configuration;
-    private readonly ICurrentSchema _currentSchema;
-    private readonly IUnitOfWorkManager _unitOfWorkManager;
-
-    private IInstanceCommandAppService LocalCommandService =>
-        _lazyServiceProvider.LazyGetRequiredService<IInstanceCommandAppService>();
 
     /// <summary>
     /// Initializes a new instance of SubProcessTaskExecutor.
     /// </summary>
     public SubProcessTaskExecutor(
+        IServiceScopeFactory scopeFactory,
         IScriptEngine scriptEngine,
         IRuntimeInfoProvider runtimeInfoProvider,
         IRemoteInvokerService remoteInvoker,
-        ILazyServiceProvider lazyServiceProvider,
         IInstanceRepository instanceRepository,
         IGuidGenerator guidGenerator,
         IConfiguration configuration,
-        ICurrentSchema currentSchema,
-        IUnitOfWorkManager unitOfWorkManager,
         ILogger<SubProcessTaskExecutor> logger)
         : base(scriptEngine, runtimeInfoProvider, remoteInvoker, logger)
     {
-        _lazyServiceProvider = lazyServiceProvider;
+        _serviceScopeFactory = scopeFactory;
         _instanceRepository = instanceRepository;
         _guidGenerator = guidGenerator;
         _configuration = configuration;
-        _currentSchema = currentSchema;
-        _unitOfWorkManager = unitOfWorkManager;
     }
 
     /// <inheritdoc />
@@ -132,14 +123,18 @@ public sealed class SubProcessTaskExecutor : TriggerTaskExecutorBase<SubProcessT
         Logger.LogDebug("Using local IInstanceCommandAppService for SubProcess task {TaskKey}", task.Key);
 
         var input = BuildStartInstanceInput(task, context.ScriptContext, subFlowInstanceId);
-        using (_currentSchema.Use(input.Workflow))
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        var currentSchema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
+        var localCommandService = scope.ServiceProvider.GetRequiredService<IInstanceCommandAppService>();
+        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        using (currentSchema.Use(input.Workflow))
         {
-            await using (var uow = await _unitOfWorkManager.BeginAsync(new UnitOfWorkOptions
+            await using (var uow = await unitOfWorkManager.BeginAsync(new UnitOfWorkOptions
                          {
                              Scope = UnitOfWorkScopeOption.RequiresNew
                          }, cancellationToken))
             {
-                var result = await LocalCommandService.StartAsync(input, cancellationToken);
+                var result = await localCommandService.StartAsync(input, cancellationToken);
                 await uow.SaveChangesAsync(cancellationToken);
                 await uow.CommitAsync(cancellationToken);
 

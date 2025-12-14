@@ -17,7 +17,7 @@ public sealed class WorkflowExecutionService(
     /// Chain reads like a scenario: Get Strategy → Execute → Build Output
     /// All errors are returned as Result without throwing exceptions.
     /// </summary>
-    [UnitOfWork]
+    // [UnitOfWork]
     [Log]
     [Trace]
     public Task<Result<TransitionOutput>> ExecuteTransitionAsync(

@@ -120,7 +120,6 @@ public sealed class DirectTriggerRemoteInvoker : ITaskInvoker<DirectTriggerBindi
 
         try
         {
-            // Execute with retry pipeline for 409 Conflict handling
             var response = await _retryPipeline.ExecuteAsync(
                 async token =>
                 {

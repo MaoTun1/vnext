@@ -4,6 +4,7 @@ using BBT.Aether.BackgroundJob;
 using BBT.Aether.DistributedLock;
 using BBT.Aether.Guids;
 using BBT.Aether.Results;
+using BBT.Aether.Uow;
 using BBT.Workflow.BackgroundJobs.Handlers;
 using BBT.Workflow.BackgroundJobs.Payloads;
 using BBT.Workflow.Caching;
@@ -72,12 +73,13 @@ public sealed class InstanceCommandAppService(
     /// Step 3: Prepares the instance (create, configure, persist).
     /// Railway chain: Create Instance → Validate → Map Data → Persist
     /// </summary>
-    private Task<Result<(Definitions.Workflow Workflow, Instance Instance)>> PrepareInstanceAsync(
+    private async Task<Result<(Definitions.Workflow Workflow, Instance Instance)>> PrepareInstanceAsync(
         Definitions.Workflow workflow,
         StartInstanceInput input,
         CancellationToken cancellationToken)
     {
-        return CreateAndPrepareInstanceAsync(
+        await using var uow = await UnitOfWorkManager.BeginRequiresNew(cancellationToken);
+        var result = await CreateAndPrepareInstanceAsync(
                 workflow,
                 input.Instance.Id ?? guidGenerator.Create(),
                 input.Instance.Key,
@@ -89,6 +91,9 @@ public sealed class InstanceCommandAppService(
             .ThenAsync(instance => ValidateStartTransitionAsync(workflow, instance, input, cancellationToken))
             .ThenAsync(instance => MapInstanceDataAsync(workflow, instance, input, cancellationToken))
             .ThenAsync(instance => PersistInstanceAsync(workflow, instance, cancellationToken));
+        
+        await uow.CommitAsync(cancellationToken);
+        return result;
     }
 
     /// <summary>

@@ -9,37 +9,42 @@ using BBT.Workflow.Instances;
 using BBT.Workflow.Logging;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
+using BBT.Workflow.Schemas;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Nito.Disposables;
 
 namespace BBT.Workflow.Definitions;
 
 /// <summary>
 /// Administrative service implementation for workflow management operations.
-/// Uses Railway pattern - returns Result types instead of throwing exceptions for domain errors.
 /// </summary>
-public sealed class AdminAppService(
+public sealed class DefinitionAppService(
     ICurrentSchema currentSchema,
     IRuntimeInfoProvider runtimeInfoProvider,
-    IOptions<RuntimeOptions> runtimeOptions,
     IInstanceRepository instanceRepository,
-    WorkflowValidator workflowValidator,
-    IDomainCacheContext domainCacheContext,
+    ComponentValidatorProcessor componentValidatorProcessor,
     WorkflowCastProcessor castProcessor,
     IWorkflowMetrics workflowMetrics,
     IRuntimeCacheInitializer runtimeCacheInitializer,
+    IServiceScopeFactory  scopeFactory,
     IServiceProvider serviceProvider)
-    : ApplicationService(serviceProvider), IAdminAppService
+    : ApplicationService(serviceProvider), IDefinitionAppService
 {
     /// <inheritdoc />
     public async Task<Result> PublishAsync(PublishInput input, CancellationToken cancellationToken = default)
     {
         runtimeInfoProvider.Check(input.Domain);
-
         using (currentSchema.Use(input.Flow))
         {
+            // Only migrate schema for sys-flows component type
+            if (input.Flow == RuntimeSysSchemaInfo.Flows)
+            {
+                var migrationResult = await MigrateSchemaAsync(input.Key, cancellationToken);
+                if (!migrationResult.IsSuccess)
+                    return migrationResult;
+            }
+
             var instance = await instanceRepository.FindByIdentifierAsync(input.Key, cancellationToken)
                            ?? Instance.Create(GuidGenerator.Create(), input.Flow, input.Key);
 
@@ -51,14 +56,35 @@ public sealed class AdminAppService(
         }
     }
 
-    /// <summary>
-    /// Creates and validates a workflow from the publish input.
-    /// Returns Result instead of throwing exception for validation failures.
-    /// </summary>
-    private Result<Workflow> CreateAndValidateWorkflow(PublishInput input)
+    private async Task<Result> MigrateSchemaAsync(string flow, CancellationToken cancellationToken =  default)
     {
-        var workflow = WorkflowFactory.CreateWorkflow(input);
-        var validationResult = workflowValidator.Validate(workflow);
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var schema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
+        using (schema.Use(flow))
+        {
+            var orchestrator = scope.ServiceProvider.GetRequiredService<ISchemaMigrationOrchestrator>();
+            try
+            {
+                await orchestrator.MigrateSchemaWithLockAsync(flow, cancellationToken);
+                return Result.Ok();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(
+                    ex,
+                    "Migration failed for schema {Schema}. Continuing with remaining schemas",
+                    flow);
+                return Result.Fail(Error.Failure(WorkflowErrorCodes.MigrationFailed, "Migration failed", ex.Message));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Validates a component using the appropriate validator for the component type.
+    /// </summary>
+    private Result ValidateComponent(PublishInput input)
+    {
+        var validationResult = componentValidatorProcessor.Validate(input.Flow, input.Attributes);
 
         if (!validationResult.IsValid)
         {
@@ -66,52 +92,59 @@ public sealed class AdminAppService(
             foreach (var error in validationResult.ValidationErrors)
             {
                 var memberName = error.MemberNames.FirstOrDefault() ?? "unknown";
-                workflowMetrics.RecordValidationFailure("workflow_definition", "AdminAppService", memberName);
+                workflowMetrics.RecordValidationFailure(input.Flow, "AdminAppService", memberName);
             }
 
-            return Result<Workflow>.Fail(
+            return Result.Fail(
                 Error.Validation(
                     WorkflowErrorCodes.InvalidWorkflow,
-                    "Workflow validation failed",
+                    $"Component validation failed for type '{input.Flow}'",
                     validationResult.ValidationErrors));
-        }
-
-        return Result<Workflow>.Ok(workflow);
-    }
-
-    /// <summary>
-    /// Saves a new workflow instance to the repository.
-    /// </summary>
-    private async Task<Result> SaveNewInstanceAsync(
-        Instance instance,
-        PublishInput input,
-        CancellationToken cancellationToken)
-    {
-        var workflowResult = CreateAndValidateWorkflow(input);
-        if (!workflowResult.IsSuccess)
-            return workflowResult.ToResult();
-
-        var workflow = workflowResult.Value!;
-
-        instance.AddDataWithVersion(
-            GuidGenerator.Create(),
-            new JsonData(JsonSerializer.Serialize(workflow, JsonSerializerConstants.JsonOptions)),
-            input.Version
-        );
-
-        await instanceRepository.InsertAsync(instance, true, cancellationToken);
-        await domainCacheContext.Workflows.SetAsync(workflow, cancellationToken);
-
-        if (input.Data?.Any() == true)
-        {
-            await HandleAdditionalDataVersionsAsync(input, cancellationToken);
         }
 
         return Result.Ok();
     }
 
     /// <summary>
-    /// Handles updating an existing workflow instance.
+    /// Saves a new component instance to the repository.
+    /// </summary>
+    private async Task<Result> SaveNewInstanceAsync(
+        Instance instance,
+        PublishInput input,
+        CancellationToken cancellationToken)
+    {
+        var validationResult = ValidateComponent(input);
+        if (!validationResult.IsSuccess)
+            return validationResult;
+
+        instance.AddDataWithVersion(
+            GuidGenerator.Create(),
+            new JsonData(input.Attributes),
+            input.Version
+        );
+
+        await instanceRepository.InsertAsync(instance, true, cancellationToken);
+
+        // Cast to cache via CastProcessor
+        await castProcessor.ProcessAsync(
+            input.Flow,
+            new Reference(input.Key, input.Domain, input.Flow, input.Version),
+            input.Attributes,
+            cancellationToken
+        );
+
+        if (input.Data?.Any() == true)
+        {
+            var seedDataResult = await HandleAdditionalDataVersionsAsync(input, cancellationToken);
+            if (!seedDataResult.IsSuccess)
+                return seedDataResult;
+        }
+
+        return Result.Ok();
+    }
+
+    /// <summary>
+    /// Handles updating an existing component instance.
     /// </summary>
     private async Task<Result> HandleExistingInstanceAsync(
         Instance instance,
@@ -126,30 +159,39 @@ public sealed class AdminAppService(
                 Logger.LogWarning(
                     "Instance {InstanceKey} already has data version {Version}",
                     instance.Key, input.Version);
-                await HandleAdditionalDataVersionsAsync(input, cancellationToken);
+                var seedDataResult = await HandleAdditionalDataVersionsAsync(input, cancellationToken);
+                if (!seedDataResult.IsSuccess)
+                    return seedDataResult;
             }
 
             return Result.Fail(WorkflowErrors.WorkflowVersionConflict());
         }
 
-        var workflowResult = CreateAndValidateWorkflow(input);
-        if (!workflowResult.IsSuccess)
-            return workflowResult.ToResult();
-
-        var workflow = workflowResult.Value!;
+        var validationResult = ValidateComponent(input);
+        if (!validationResult.IsSuccess)
+            return validationResult;
 
         instance.AddDataWithVersion(
             GuidGenerator.Create(),
-            new JsonData(JsonSerializer.Serialize(workflow, JsonSerializerConstants.JsonOptions)),
+            new JsonData(input.Attributes),
             input.Version
         );
 
         await instanceRepository.UpdateAsync(instance, true, cancellationToken);
-        await domainCacheContext.Workflows.SetAsync(workflow, cancellationToken);
+
+        // Cast to cache via CastProcessor
+        await castProcessor.ProcessAsync(
+            input.Flow,
+            new Reference(input.Key, input.Domain, input.Flow, input.Version),
+            input.Attributes,
+            cancellationToken
+        );
 
         if (input.Data?.Any() == true)
         {
-            await HandleAdditionalDataVersionsAsync(input, cancellationToken);
+            var additionalDataResult = await HandleAdditionalDataVersionsAsync(input, cancellationToken);
+            if (!additionalDataResult.IsSuccess)
+                return additionalDataResult;
         }
 
         return Result.Ok();
@@ -158,7 +200,8 @@ public sealed class AdminAppService(
     /// <summary>
     /// Handles processing additional data versions from the publish input.
     /// </summary>
-    private async Task HandleAdditionalDataVersionsAsync(
+    /// <returns>A result containing any validation errors from seed data processing.</returns>
+    private async Task<Result> HandleAdditionalDataVersionsAsync(
         PublishInput input,
         CancellationToken cancellationToken)
     {
@@ -169,17 +212,23 @@ public sealed class AdminAppService(
 
             foreach (var dataItem in input.Data!)
             {
-                await ProcessDataItemAsync(instanceRepo, input, dataItem, cancellationToken);
+                var result = await ProcessDataItemAsync(instanceRepo, input, dataItem, cancellationToken);
+                if (!result.IsSuccess)
+                {
+                    return result;
+                }
             }
 
             scopeProvider.ToAsyncDisposable();
+
+            return Result.Ok();
         }
     }
 
     /// <summary>
     /// Processes a single data item for additional data versions.
     /// </summary>
-    private async Task ProcessDataItemAsync(
+    private async Task<Result> ProcessDataItemAsync(
         IInstanceRepository instanceRepo,
         PublishInput input,
         PublishDataInput dataItem,
@@ -193,8 +242,13 @@ public sealed class AdminAppService(
             Logger.LogWarning(
                 "Instance {InstanceKey} already has data version {Version}",
                 dataItem.Key, dataItem.Version);
-            return;
+            return Result.Ok();
         }
+
+        // Validate seed data using the same validator as the parent component type
+        var validationResult = ValidateSeedData(input.Key, dataItem);
+        if (!validationResult.IsSuccess)
+            return validationResult;
 
         instance.AddTags(dataItem.Tags.ToArray());
         instance.AddDataWithVersion(
@@ -218,6 +272,41 @@ public sealed class AdminAppService(
             dataItem.Attributes,
             cancellationToken
         );
+
+        return Result.Ok();
+    }
+
+    /// <summary>
+    /// Validates seed data using the appropriate validator for the component type.
+    /// Uses TryValidate to gracefully handle component types without dedicated validators.
+    /// </summary>
+    /// <param name="componentType">The component type (e.g., sys-flows, sys-tasks).</param>
+    /// <param name="dataItem">The seed data item to validate.</param>
+    /// <returns>A result indicating validation success or failure.</returns>
+    private Result ValidateSeedData(string componentType, PublishDataInput dataItem)
+    {
+        if (!componentValidatorProcessor.TryValidate(componentType, dataItem.Attributes, out var validationResult))
+        {
+            // No validator found for this component type, skip validation
+            return Result.Ok();
+        }
+
+        if (!validationResult.IsValid)
+        {
+            foreach (var error in validationResult.ValidationErrors)
+            {
+                var memberName = error.MemberNames.FirstOrDefault() ?? "unknown";
+                workflowMetrics.RecordValidationFailure(componentType, "AdminAppService.SeedData", memberName);
+            }
+
+            return Result.Fail(
+                Error.Validation(
+                    WorkflowErrorCodes.InvalidWorkflow,
+                    $"Seed data validation failed for key '{dataItem.Key}' in component type '{componentType}'",
+                    validationResult.ValidationErrors));
+        }
+
+        return Result.Ok();
     }
 
     /// <inheritdoc />
@@ -226,7 +315,7 @@ public sealed class AdminAppService(
         CancellationToken cancellationToken = default)
     {
         runtimeInfoProvider.Check(input.Domain);
-        
+
         using (currentSchema.Use(input.Flow))
         {
             var instance = await instanceRepository.FindByIdentifierAsync(input.Key, cancellationToken);

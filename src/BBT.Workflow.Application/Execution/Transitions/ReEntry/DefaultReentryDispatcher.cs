@@ -17,7 +17,7 @@ public sealed class DefaultReentryDispatcher(
 {
     private readonly ReentryOptions _options = options.Value;
 
-    private IWorkflowExecutionService ExecutionService =>
+    private readonly IWorkflowExecutionService ExecutionService =
         lazyServiceProvider.LazyGetRequiredService<IWorkflowExecutionService>();
 
     /// <inheritdoc />
@@ -68,21 +68,26 @@ public sealed class DefaultReentryDispatcher(
     /// </summary>
     private async Task<bool> ExecuteInNewScopeAsync(ReentryCommand command, CancellationToken cancellationToken)
     {
-        // using var scope = serviceScopeFactory.CreateScope();
-        // var executionService = scope.ServiceProvider.GetRequiredService<IWorkflowExecutionService>();
-
-        var input = WorkflowExecutionContext.From(command);
-        var result = await ExecutionService.ExecuteTransitionAsync(input, cancellationToken);
-        if (!result.IsSuccess)
+        try
         {
-            logger.InlineExecutionFailed(
-                result.Error.Message ?? "Unknown error",
-                command.InstanceId,
-                command.ExecutionChainId,
-                command.WorkflowKey,
-                command.TransitionKey,
-                command.TriggerType.ToString());
+            var input = WorkflowExecutionContext.From(command);
+            var result = await ExecutionService.ExecuteTransitionAsync(input, cancellationToken);
+            if (!result.IsSuccess)
+            {
+                logger.InlineExecutionFailed(
+                    result.Error.Message ?? "Unknown error",
+                    command.InstanceId,
+                    command.ExecutionChainId,
+                    command.WorkflowKey,
+                    command.TransitionKey,
+                    command.TriggerType.ToString());
+            }
+            return result.IsSuccess;
         }
-        return result.IsSuccess;
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            throw;
+        }
     }
 }

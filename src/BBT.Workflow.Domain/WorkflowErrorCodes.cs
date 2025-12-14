@@ -18,6 +18,7 @@ public static class WorkflowErrorCodes
     public const string TransitionHandlerNotSupported = "App:900004";
     public const string InvalidSchema = "App:900005";
     public const string InvalidWorkflow = "App:900006";
+    public const string MigrationFailed = "App:900007";
 
     #endregion
     

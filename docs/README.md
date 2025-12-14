@@ -15,23 +15,28 @@ The BBT Workflow Engine is a comprehensive, domain-driven workflow management sy
 - [Domain Models](./domain-models.md) - Core business entities and aggregates
 - [Strategy Pattern Implementation](./strategy-pattern-implementation.md) - Strategy pattern usage across the system
 
+### Cross-Cutting Concerns
+- [Result Pattern & Railway Programming](./result-pattern-railway.md) - Exception-free error handling with Aether SDK
+- [Aether SDK Aspects](./aether-sdk-aspects.md) - Cross-cutting concerns: UnitOfWork, Log, Trace
+
 ### Application Layer
 - [Application Services](./application-services.md) - Application layer services and interfaces
 - [Task Executors](./task-executors.md) - Task execution system and custom executors
-- [Trigger Transition Tasks](./trigger-transition-tasks.md) - Workflow instance interaction tasks (Start, DirectTrigger, GetInstanceData, SubProcess)
+- [Task Invoker Architecture](./task-invoker-architecture.md) - Execution Service invokers and binding types
 - [Task Factory & Object Pooling](./task-factory-pooling.md) - High-performance task instance creation and memory optimization
 
 ### Scripting & Extensibility
 - [Scripting Engine](./scripting-engine.md) - Dynamic C# script execution, logging, and configuration access
-- [Workflow Development Automation](./workflow-development-automation.md) - Automated workflow development tools and VS Code integration
 
 ### Infrastructure & Integration
 - [Infrastructure Layer](./infrastructure-layer.md) - Data access and external integrations
+- [EventBus Hooks](./eventbus-hooks.md) - Pre-publish hooks for domain events
 - [Multi-Schema Support](./multi-schema-support.md) - Multi-tenant schema management
 - [ClickHouse Integration](./clickhouse-integration.md) - High-performance analytics with ClickHouse
 
 ### Background Processing
 - [Background Jobs](./background-jobs.md) - Asynchronous job processing with Dapr
+- [Inbox/Outbox Workers](./inbox-outbox-workers.md) - Transactional outbox and inbox event processing
 - [Timer Execution Enhancement](./timer-execution-enhancement.md) - Enhanced timer execution and scheduling
 
 ### Performance & Optimization
@@ -130,10 +135,15 @@ vnext/
 │   └── BBT.Workflow.Orchestration.HttpApi.Host/  # Public-facing API for workflow management
 ├── execution/
 │   └── BBT.Workflow.Execution.HttpApi.Host/      # Internal API for task execution
+├── workers/
+│   ├── BBT.Workflow.Workers.Inbox/               # Inbox event processing worker
+│   └── BBT.Workflow.Workers.Outbox/              # Outbox message publishing worker
 ├── src/
 │   ├── BBT.Workflow.Domain/                      # Domain models and business logic
 │   ├── BBT.Workflow.Application/                 # Application services, DTOs, and pipeline
 │   ├── BBT.Workflow.Infrastructure/              # Data access, EF Core, and external integrations
+│   ├── BBT.Workflow.Execution/                   # Task invokers for Execution Service
+│   ├── BBT.Workflow.Execution.Abstractions/      # Bindings and contracts
 │   └── BBT.Workflow.HttpApi.Shared/              # Shared middleware, telemetry, and utilities
 ├── modules/
 │   └── BBT.Workflow.Modules.Scripting/           # Roslyn-based scripting module
@@ -144,7 +154,8 @@ vnext/
 ├── etc/
 │   ├── docker/                                   # Docker Compose configuration
 │   ├── execution/dapr/                           # Dapr configuration for Execution API
-│   └── orchestration/dapr/                       # Dapr configuration for Orchestration API
+│   ├── orchestration/dapr/                       # Dapr configuration for Orchestration API
+│   └── workers/dapr/                             # Dapr configuration for Workers
 └── docs/                                         # Technical documentation
 ```
 

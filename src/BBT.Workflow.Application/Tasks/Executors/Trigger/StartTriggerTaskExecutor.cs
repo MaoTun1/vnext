@@ -1,6 +1,4 @@
 using System.Text.Json;
-using BBT.Aether.Aspects;
-using BBT.Aether.DependencyInjection;
 using BBT.Aether.MultiSchema;
 using BBT.Aether.Results;
 using BBT.Aether.Uow;
@@ -11,6 +9,7 @@ using BBT.Workflow.Instances;
 using BBT.Workflow.Logging;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Tasks.Executors;
@@ -22,29 +21,20 @@ namespace BBT.Workflow.Tasks.Executors;
 /// </summary>
 public sealed class StartTriggerTaskExecutor : TriggerTaskExecutorBase<StartTask>
 {
-    private readonly ILazyServiceProvider _lazyServiceProvider;
-    private readonly ICurrentSchema _currentSchema;
-    private readonly IUnitOfWorkManager _unitOfWorkManager;
-
-    private IInstanceCommandAppService LocalCommandService =>
-        _lazyServiceProvider.LazyGetRequiredService<IInstanceCommandAppService>();
-
+    private readonly IServiceScopeFactory _serviceScopeFactory;
+    
     /// <summary>
     /// Initializes a new instance of StartTriggerTaskExecutor.
     /// </summary>
     public StartTriggerTaskExecutor(
+        IServiceScopeFactory scopeFactory,
         IScriptEngine scriptEngine,
         IRuntimeInfoProvider runtimeInfoProvider,
         IRemoteInvokerService remoteInvoker,
-        ILazyServiceProvider lazyServiceProvider,
-        ICurrentSchema currentSchema,
-        IUnitOfWorkManager unitOfWorkManager,
         ILogger<StartTriggerTaskExecutor> logger)
         : base(scriptEngine, runtimeInfoProvider, remoteInvoker, logger)
     {
-        _lazyServiceProvider = lazyServiceProvider;
-        _currentSchema = currentSchema;
-        _unitOfWorkManager = unitOfWorkManager;
+        _serviceScopeFactory = scopeFactory;
     }
 
     /// <inheritdoc />
@@ -80,14 +70,18 @@ public sealed class StartTriggerTaskExecutor : TriggerTaskExecutorBase<StartTask
         Logger.LogDebug("Using local IInstanceCommandAppService for StartTrigger task {TaskKey}", task.Key);
 
         var input = BuildStartInstanceInput(task, context);
-        using (_currentSchema.Use(input.Workflow))
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        var currentSchema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
+        var localCommandService = scope.ServiceProvider.GetRequiredService<IInstanceCommandAppService>();
+        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        using (currentSchema.Use(input.Workflow))
         {
-            await using ( var uow = await _unitOfWorkManager.BeginRequiresNew(cancellationToken))
+            await using (var uow = await unitOfWorkManager.BeginRequiresNew(cancellationToken))
             {
-                var result = await LocalCommandService.StartAsync(input, cancellationToken);
+                var result = await localCommandService.StartAsync(input, cancellationToken);
                 await uow.SaveChangesAsync(cancellationToken);
                 await uow.CommitAsync(cancellationToken);
-                
+
                 if (!result.IsSuccess)
                 {
                     Logger.TaskLocalExecutionFailed(

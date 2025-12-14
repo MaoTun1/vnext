@@ -6,8 +6,8 @@ namespace BBT.Workflow.Orchestration.Controllers.Definitions;
 
 [ApiController]
 [ApiVersion("1.0")]
-[Route("api/v{version:apiVersion}/admin")]
-public sealed class AdminController(IAdminAppService appService) : AetherControllerBase
+[Route("api/v{version:apiVersion}/definitions")]
+public sealed class DefinitionController(IDefinitionAppService appService) : AetherControllerBase
 {
     [HttpPost("publish")]
     public async Task<IActionResult> PublishAsync(

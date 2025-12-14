@@ -20,6 +20,7 @@ public static class InboxWorkerServiceCollectionExtensions
             .AddApplicationModule()
             .AddInfrastructureModule()
             .AddAspNetCoreModules(configuration)
+            .AddResultResilience(configuration)
             .AddDaprClients()
             .AddEventBus(configuration)
             .AddDbContext(configuration)

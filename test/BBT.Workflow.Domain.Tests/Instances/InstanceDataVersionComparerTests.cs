@@ -413,6 +413,278 @@ public class InstanceDataVersionComparerTests : DomainTestBase<DomainEntryPoint>
             Assert.Equal(0, result);
     }
 
+    #region Extended Version Format Tests (MAJOR.MINOR.PATCH-pkg.PKG_VERSION+PKG_NAME)
+
+    [Theory]
+    [InlineData("1.0.0-pkg.1.2.1+account", "1.0.0-pkg.1.2.2+account", -1)] // Same artifact, lower pkg version
+    [InlineData("1.0.0-pkg.1.2.2+account", "1.0.0-pkg.1.2.1+account", 1)]  // Same artifact, higher pkg version
+    [InlineData("1.0.0-pkg.1.2.0+account", "1.0.0-pkg.1.2.0+account", 0)]  // Same artifact and pkg version
+    [InlineData("2.0.0-pkg.1.3.0+account", "1.0.0-pkg.1.2.2+account", 1)]  // Higher artifact version wins
+    [InlineData("1.0.0-pkg.1.2.2+account", "2.0.0-pkg.1.3.0+account", -1)] // Lower artifact version loses
+    [InlineData("2.0.0-pkg.1.3.1+account", "2.0.0-pkg.1.3.0+account", 1)]  // Same artifact, higher pkg version
+    public void Compare_ShouldHandleExtendedVersionFormat(string version1, string version2, int expected)
+    {
+        // Arrange
+        var data1 = CreateInstanceData(version1);
+        var data2 = CreateInstanceData(version2);
+
+        // Act
+        var result = _comparer.Compare(data1, data2);
+
+        // Assert
+        if (expected < 0)
+            Assert.True(result < 0, $"Expected {version1} < {version2}");
+        else if (expected > 0)
+            Assert.True(result > 0, $"Expected {version1} > {version2}");
+        else
+            Assert.Equal(0, result);
+    }
+
+    [Theory]
+    [InlineData("1.0.0-pkg.1.2.0+account", "1.0.0-pkg.1.2.0+different", 0)] // Build metadata doesn't affect comparison
+    [InlineData("1.0.0-pkg.1.2.0+aaa", "1.0.0-pkg.1.2.0+zzz", 0)]           // Build metadata doesn't affect comparison
+    [InlineData("2.0.0-pkg.1.0.0+app1", "1.0.0-pkg.9.9.9+app2", 1)]         // Artifact version takes priority
+    public void Compare_ShouldIgnoreBuildMetadata(string version1, string version2, int expected)
+    {
+        // Arrange
+        var data1 = CreateInstanceData(version1);
+        var data2 = CreateInstanceData(version2);
+
+        // Act
+        var result = _comparer.Compare(data1, data2);
+
+        // Assert
+        if (expected < 0)
+            Assert.True(result < 0, $"Expected {version1} < {version2}");
+        else if (expected > 0)
+            Assert.True(result > 0, $"Expected {version1} > {version2}");
+        else
+            Assert.Equal(0, result);
+    }
+
+    [Theory]
+    [InlineData("1.0.0", "1.0.0-pkg.1.0.0+account", -1)] // Simple version < extended with pkg
+    [InlineData("1.0.0-pkg.1.0.0+account", "1.0.0", 1)]  // Extended with pkg > simple version
+    [InlineData("2.0.0", "1.0.0-pkg.9.9.9+account", 1)]  // Higher artifact wins
+    public void Compare_ShouldHandleMixedSimpleAndExtendedVersions(string version1, string version2, int expected)
+    {
+        // Arrange
+        var data1 = CreateInstanceData(version1);
+        var data2 = CreateInstanceData(version2);
+
+        // Act
+        var result = _comparer.Compare(data1, data2);
+
+        // Assert
+        if (expected < 0)
+            Assert.True(result < 0, $"Expected {version1} < {version2}");
+        else if (expected > 0)
+            Assert.True(result > 0, $"Expected {version1} > {version2}");
+        else
+            Assert.Equal(0, result);
+    }
+
+    [Fact]
+    public void Compare_WithExtendedVersionList_ShouldSortCorrectly()
+    {
+        // Arrange
+        var list = new List<InstanceData>
+        {
+            CreateInstanceData("1.0.0-pkg.1.2.2+account"),
+            CreateInstanceData("1.0.0-pkg.1.2.0+account"),
+            CreateInstanceData("2.0.0-pkg.1.3.0+account"),
+            CreateInstanceData("1.0.0-pkg.1.2.1+account"),
+            CreateInstanceData("2.0.0-pkg.1.3.1+account")
+        };
+
+        // Act
+        var sorted = list.OrderBy(x => x, _comparer).ToList();
+
+        // Assert - Should be sorted by artifact version first, then by pkg version
+        Assert.Equal("1.0.0-pkg.1.2.0+account", sorted[0].Version);
+        Assert.Equal("1.0.0-pkg.1.2.1+account", sorted[1].Version);
+        Assert.Equal("1.0.0-pkg.1.2.2+account", sorted[2].Version);
+        Assert.Equal("2.0.0-pkg.1.3.0+account", sorted[3].Version);
+        Assert.Equal("2.0.0-pkg.1.3.1+account", sorted[4].Version);
+    }
+
+    [Fact]
+    public void Compare_WithExtendedVersionDescending_ShouldReturnHighestFirst()
+    {
+        // Arrange
+        var list = new List<InstanceData>
+        {
+            CreateInstanceData("1.0.0-pkg.1.2.0+account"),
+            CreateInstanceData("2.0.0-pkg.1.3.0+account"),
+            CreateInstanceData("1.0.0-pkg.1.2.2+account"),
+            CreateInstanceData("2.0.0-pkg.1.3.1+account"),
+            CreateInstanceData("1.0.0-pkg.1.2.1+account")
+        };
+
+        // Act
+        var sorted = list.OrderByDescending(x => x, _comparer).ToList();
+
+        // Assert - Highest version first
+        Assert.Equal("2.0.0-pkg.1.3.1+account", sorted[0].Version);
+        Assert.Equal("2.0.0-pkg.1.3.0+account", sorted[1].Version);
+        Assert.Equal("1.0.0-pkg.1.2.2+account", sorted[2].Version);
+        Assert.Equal("1.0.0-pkg.1.2.1+account", sorted[3].Version);
+        Assert.Equal("1.0.0-pkg.1.2.0+account", sorted[4].Version);
+    }
+
+    [Theory]
+    [InlineData("1.0.0-pkg.1.2.0+account", true)]
+    [InlineData("2.0.0-pkg.10.20.30+myapp", true)]
+    [InlineData("1.0.0", false)]
+    [InlineData("1.0.0+metadata", false)]
+    [InlineData("invalid", false)]
+    public void HasPackageVersion_ShouldDetectPackageVersionCorrectly(string version, bool expected)
+    {
+        // Act
+        var result = InstanceDataVersionComparer.HasPackageVersion(version);
+
+        // Assert
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    [InlineData("1.0.0-pkg.1.2.0+account", "1.0.0")]
+    [InlineData("2.5.3-pkg.10.20.30+myapp", "2.5.3")]
+    [InlineData("1.0.0", "1.0.0")]
+    [InlineData("1.0.0+metadata", "1.0.0")]
+    public void GetArtifactVersion_ShouldExtractArtifactVersionCorrectly(string fullVersion, string expectedArtifact)
+    {
+        // Act
+        var result = InstanceDataVersionComparer.GetArtifactVersion(fullVersion);
+
+        // Assert
+        Assert.Equal(expectedArtifact, result);
+    }
+
+    [Fact]
+    public void ParseVersion_ShouldParseExtendedFormatCorrectly()
+    {
+        // Arrange & Act
+        var parsed = InstanceDataVersionComparer.ParseVersion("1.2.3-pkg.4.5.6+myapp");
+
+        // Assert
+        Assert.Equal("1.2.3", parsed.ArtifactVersion);
+        Assert.Equal("4.5.6", parsed.PackageVersion);
+    }
+
+    [Fact]
+    public void ParseVersion_ShouldParseSimpleVersionCorrectly()
+    {
+        // Arrange & Act
+        var parsed = InstanceDataVersionComparer.ParseVersion("1.2.3");
+
+        // Assert
+        Assert.Equal("1.2.3", parsed.ArtifactVersion);
+        Assert.Null(parsed.PackageVersion);
+    }
+
+    [Fact]
+    public void ParseVersion_ShouldHandleVersionWithOnlyMetadata()
+    {
+        // Arrange & Act
+        var parsed = InstanceDataVersionComparer.ParseVersion("1.2.3+metadata");
+
+        // Assert
+        Assert.Equal("1.2.3", parsed.ArtifactVersion);
+        Assert.Null(parsed.PackageVersion);
+    }
+
+    #endregion
+
+    #region Pre-Release Version Format Tests
+
+    [Theory]
+    [InlineData("1.0.0-alpha.1-pkg.1.17.0+account", "1.0.0-alpha.1", "1.17.0")]
+    [InlineData("1.0.0-beta-pkg.1.2.0+customer", "1.0.0-beta", "1.2.0")]
+    [InlineData("2.0.0-rc.1-pkg.2.5.1+myapp", "2.0.0-rc.1", "2.5.1")]
+    [InlineData("1.0.0-alpha.1.2-pkg.1.0.0+test", "1.0.0-alpha.1.2", "1.0.0")]
+    public void ParseVersion_ShouldParsePreReleaseVersionCorrectly(string version, string expectedArtifact, string expectedPackage)
+    {
+        // Act
+        var parsed = InstanceDataVersionComparer.ParseVersion(version);
+
+        // Assert
+        Assert.Equal(expectedArtifact, parsed.ArtifactVersion);
+        Assert.Equal(expectedPackage, parsed.PackageVersion);
+    }
+
+    [Theory]
+    [InlineData("1.0.0-alpha.1-pkg.1.17.0+account", "1.0.0-alpha.1-pkg.1.17.0+different", 0)] // Same version, different metadata
+    [InlineData("1.0.0-alpha.1-pkg.1.17.0+account", "1.0.0-alpha.1-pkg.1.18.0+account", -1)] // Same artifact, lower pkg
+    [InlineData("1.0.0-alpha.1-pkg.1.18.0+account", "1.0.0-alpha.1-pkg.1.17.0+account", 1)]  // Same artifact, higher pkg
+    [InlineData("1.0.0-beta-pkg.1.0.0+account", "1.0.0-alpha-pkg.1.0.0+account", 1)]         // beta > alpha (string comparison)
+    [InlineData("2.0.0-alpha.1-pkg.1.0.0+account", "1.0.0-pkg.1.0.0+account", 1)]            // 2.0.0-alpha.1 > 1.0.0
+    public void Compare_ShouldHandlePreReleaseVersions(string version1, string version2, int expected)
+    {
+        // Arrange
+        var data1 = CreateInstanceData(version1);
+        var data2 = CreateInstanceData(version2);
+
+        // Act
+        var result = _comparer.Compare(data1, data2);
+
+        // Assert
+        if (expected < 0)
+            Assert.True(result < 0, $"Expected {version1} < {version2}");
+        else if (expected > 0)
+            Assert.True(result > 0, $"Expected {version1} > {version2}");
+        else
+            Assert.Equal(0, result);
+    }
+
+    [Fact]
+    public void Compare_WithPreReleaseVersionList_ShouldSortCorrectly()
+    {
+        // Arrange
+        var list = new List<InstanceData>
+        {
+            CreateInstanceData("1.0.0-alpha.1-pkg.1.17.0+account"),
+            CreateInstanceData("1.0.0-pkg.1.17.0+account"),
+            CreateInstanceData("1.0.0-beta-pkg.1.17.0+account"),
+            CreateInstanceData("1.0.0-alpha.1-pkg.1.18.0+account"),
+            CreateInstanceData("2.0.0-rc.1-pkg.1.0.0+account")
+        };
+
+        // Act
+        var sorted = list.OrderByDescending(x => x, _comparer).ToList();
+
+        // Assert - Higher versions first
+        Assert.StartsWith("2.0.0", sorted[0].Version); // 2.0.0-rc.1 is highest
+    }
+
+    [Theory]
+    [InlineData("1.0.0-pkg.1.17.0+account+build.123", "1.0.0", "1.17.0")] // Multiple build metadata
+    [InlineData("1.0.0-alpha.1-pkg.1.17.0+account+build.456", "1.0.0-alpha.1", "1.17.0")] // Pre-release with multiple metadata
+    public void ParseVersion_ShouldHandleMultipleBuildMetadata(string version, string expectedArtifact, string expectedPackage)
+    {
+        // Act
+        var parsed = InstanceDataVersionComparer.ParseVersion(version);
+
+        // Assert
+        Assert.Equal(expectedArtifact, parsed.ArtifactVersion);
+        Assert.Equal(expectedPackage, parsed.PackageVersion);
+    }
+
+    [Theory]
+    [InlineData("1.0.0-alpha.1-pkg.1.17.0+account", "1.0.0-alpha.1")]
+    [InlineData("1.0.0-beta.2-pkg.1.2.0+customer", "1.0.0-beta.2")]
+    [InlineData("2.0.0-rc.1-pkg.2.5.1+myapp", "2.0.0-rc.1")]
+    public void GetArtifactVersion_ShouldExtractPreReleaseArtifact(string fullVersion, string expectedArtifact)
+    {
+        // Act
+        var result = InstanceDataVersionComparer.GetArtifactVersion(fullVersion);
+
+        // Assert
+        Assert.Equal(expectedArtifact, result);
+    }
+
+    #endregion
+
     private InstanceData CreateInstanceData(string version)
     {
         var instance = InstanceFactory.CreateDefault();

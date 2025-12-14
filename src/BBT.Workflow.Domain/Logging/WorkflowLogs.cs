@@ -699,7 +699,7 @@ public static partial class WorkflowLogs
         Guid instanceId);
 
     /// <summary>
-    /// Logs when a background job fails.
+    /// Logs when a background job fails with an exception.
     /// </summary>
     [LoggerMessage(
         EventId = 40075,
@@ -710,6 +710,19 @@ public static partial class WorkflowLogs
         Exception exception,
         string jobName,
         Guid instanceId);
+
+    /// <summary>
+    /// Logs when a background job fails with an error message (used for Result pattern failures).
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40075,
+        Level = LogLevel.Error,
+        Message = "Job {JobName} failed for instance {InstanceId}: {ErrorMessage}")]
+    public static partial void JobFailed(
+        this ILogger logger,
+        string jobName,
+        Guid instanceId,
+        string errorMessage);
 
     /// <summary>
     /// Logs when a job is cancelled.

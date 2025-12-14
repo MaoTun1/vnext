@@ -1,6 +1,5 @@
 using System.Data;
 using System.Text.Json;
-using BBT.Aether.DependencyInjection;
 using BBT.Aether.MultiSchema;
 using BBT.Aether.Results;
 using BBT.Aether.Uow;
@@ -11,6 +10,7 @@ using BBT.Workflow.Instances;
 using BBT.Workflow.Logging;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Tasks.Executors;
@@ -22,29 +22,20 @@ namespace BBT.Workflow.Tasks.Executors;
 /// </summary>
 public sealed class GetInstanceDataTaskExecutor : TriggerTaskExecutorBase<GetInstanceDataTask>
 {
-    private readonly ILazyServiceProvider _lazyServiceProvider;
-    private readonly ICurrentSchema _currentSchema;
-    private readonly IUnitOfWorkManager _unitOfWorkManager;
-
-    private IInstanceQueryAppService LocalQueryService =>
-        _lazyServiceProvider.LazyGetRequiredService<IInstanceQueryAppService>();
+    private readonly IServiceScopeFactory _serviceScopeFactory;
 
     /// <summary>
     /// Initializes a new instance of GetInstanceDataTaskExecutor.
     /// </summary>
     public GetInstanceDataTaskExecutor(
+        IServiceScopeFactory scopeFactory,
         IScriptEngine scriptEngine,
         IRuntimeInfoProvider runtimeInfoProvider,
         IRemoteInvokerService remoteInvoker,
-        ILazyServiceProvider lazyServiceProvider,
-        ICurrentSchema currentSchema,
-        IUnitOfWorkManager unitOfWorkManager,
         ILogger<GetInstanceDataTaskExecutor> logger)
         : base(scriptEngine, runtimeInfoProvider, remoteInvoker, logger)
     {
-        _lazyServiceProvider = lazyServiceProvider;
-        _currentSchema = currentSchema;
-        _unitOfWorkManager = unitOfWorkManager;
+        _serviceScopeFactory = scopeFactory;
     }
 
     /// <inheritdoc />
@@ -115,16 +106,20 @@ public sealed class GetInstanceDataTaskExecutor : TriggerTaskExecutorBase<GetIns
             Extensions = task.Extensions
         };
 
-        using (_currentSchema.Use(input.Workflow))
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        var currentSchema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
+        var queryService = scope.ServiceProvider.GetRequiredService<IInstanceQueryAppService>();
+        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+        using (currentSchema.Use(input.Workflow))
         {
-            await using (var uow = await _unitOfWorkManager.BeginAsync(new UnitOfWorkOptions()
+            await using (var uow = await unitOfWorkManager.BeginAsync(new UnitOfWorkOptions()
                          {
                              IsolationLevel = IsolationLevel.ReadCommitted,
                              Scope = UnitOfWorkScopeOption.RequiresNew,
                              IsTransactional = false
                          }, cancellationToken))
             {
-                var result = await LocalQueryService.GetInstanceDataAsync(input, cancellationToken);
+                var result = await queryService.GetInstanceDataAsync(input, cancellationToken);
                 await uow.CommitAsync(cancellationToken);
                 if (!result.Result.IsSuccess)
                 {

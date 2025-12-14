@@ -55,7 +55,7 @@ internal sealed class InstanceSubCompletedEventHandler(
                 Duration = eventData.Duration
             };
 
-            var scope = scopeFactory.CreateAsyncScope();
+            await using var scope = scopeFactory.CreateAsyncScope();
             var subflowCompletionService = scope.ServiceProvider.GetRequiredService<ISubflowCompletionService>();
             await subflowCompletionService.CompletionAsync(completedData, cancellationToken);
         }

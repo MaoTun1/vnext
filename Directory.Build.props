@@ -2,7 +2,7 @@
     <PropertyGroup>
 
         <!-- All Prism packages -->
-        <AetherPackageVersion>1.0.13</AetherPackageVersion>
+        <AetherPackageVersion>1.0.14</AetherPackageVersion>
         <!-- Elastic Apm packages -->
         <ElasticApmPackageVersion>1.31.0</ElasticApmPackageVersion>
         <!-- Microsoft packages -->
@@ -15,6 +15,9 @@
         <UlidPackageVersion>1.3.4</UlidPackageVersion>
         <!-- JsonSchema.NET -->
         <JsonSchemaNetPackageVersion>7.3.3</JsonSchemaNetPackageVersion>
+
+        <!-- Polly packages -->
+        <PollyPackageVersion>8.5.0</PollyPackageVersion>
 
         <!-- OpenTelemetry packages -->
         <OpenTelemetryPackageVersion>1.12.0</OpenTelemetryPackageVersion>

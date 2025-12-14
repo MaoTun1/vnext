@@ -7,7 +7,7 @@ namespace BBT.Workflow.Definitions;
 /// Administrative service interface for workflow management operations.
 /// All methods return Result types following Railway pattern - no exceptions for domain errors.
 /// </summary>
-public interface IAdminAppService : IApplicationService
+public interface IDefinitionAppService : IApplicationService
 {
     /// <summary>
     /// Publishes a workflow definition to the system.

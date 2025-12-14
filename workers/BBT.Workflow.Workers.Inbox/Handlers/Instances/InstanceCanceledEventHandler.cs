@@ -41,7 +41,7 @@ internal sealed class InstanceCanceledEventHandler(
 
         using (currentSchema.Use(eventData.Flow))
         {
-            var scope = scopeFactory.CreateAsyncScope();
+            await using var scope = scopeFactory.CreateAsyncScope();
             var cancellationService = scope.ServiceProvider.GetRequiredService<IInstanceCancellationService>();
             var result = await cancellationService.ProcessCancellationAsync(
                 eventData.InstanceId,

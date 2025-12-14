@@ -44,15 +44,19 @@ public sealed class TransitionJobHandler(
             context.Actor = args.ExecutionActor;
 
             // Use the background-specific method that handles pre-reserved instances
-            await workflowExecutionService.ExecuteTransitionAsync(context, cancellationToken);
-
+            var result = await workflowExecutionService.ExecuteTransitionAsync(context, cancellationToken);
             await jobRepository.MarkAsProcessedAsync(args.JobName, cancellationToken);
-            
             logger.JobCompleted(args.JobName, args.TransitionKey, args.InstanceId);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            logger.JobFailed(ex, args.JobName, args.InstanceId);
+            logger.JobCancelled(args.JobName, args.TransitionKey, args.InstanceId);
+            throw; // Re-throw cancellation exceptions
+        }
+        catch (Exception e)
+        {
+            logger.JobFailed(e, args.JobName, args.InstanceId);
+            throw;
         }
     }
 }

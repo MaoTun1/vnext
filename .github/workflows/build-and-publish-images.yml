@@ -230,8 +230,8 @@ jobs:
     - name: Build and push Init Docker image
       uses: docker/build-push-action@v5
       with:
-        context: ./etc/docker
-        file: ./etc/docker/Dockerfile.vnext-core-init
+        context: .
+        file: ./init/VNext.Init.Host/Dockerfile
         platforms: linux/amd64,linux/arm64
         push: true
         tags: ${{ steps.meta-init.outputs.tags }}
@@ -342,9 +342,12 @@ jobs:
           
             init:
               image: ${{ env.REGISTRY }}/${{ env.INIT_IMAGE_NAME }}:${{ steps.version.outputs.version }}
+               ports:
+                - "3005:3000"
               environment:
-                - VNEXT_APP_URL=http://orchestrator:5000
-                - APP_DOMAIN=core
+                - VNEXT_APP_URL=http://vnext-app:4201
+                - PACKAGE_API_PORT=3005
+                - DEFAULT_REGISTRY=https://registry.npmjs.org/
               depends_on:
                 - orchestrator
           

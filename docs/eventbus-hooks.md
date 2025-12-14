@@ -36,79 +36,88 @@ The wrapper is automatically registered in `WorkflowApiBaseServiceCollectionExte
 ## How It Works
 
 1. **Hook Registration**: Hooks are registered in DI using `services.AddEventHook<TEvent, THook>()`
-2. **Hook Discovery**: When an event is published, the wrapper resolves all `IEventPublishHook<TEvent>` from DI
+2. **Hook Discovery**: When an event is published, the `HookedDistributedEventBus` resolves all `IEventPublishHook<TEvent>` via `IEventHookInvoker`
 3. **Execution**: Each hook's `BeforePublishAsync` method is called with strongly-typed event data
 4. **Metadata Enrichment**: Hook results can add metadata to the event
-5. **Publishing**: The event is always published, regardless of hook success/failure
+5. **Publishing Decision**:
+   - If **all hooks succeed**: Event is considered "handled" and is NOT published to the inner bus
+   - If **any hook fails** or no hooks exist: Event is published to the inner bus as fallback
 
 ### Key Behaviors
 
-- **Type-Safe**: Generic interface provides compile-time type checking
+- **Type-Safe**: Generic `IEventPublishHook<TEvent>` interface provides compile-time type checking
 - **No Circular Dependencies**: Hook registration via DI eliminates cross-project dependencies
-- **Non-blocking**: Hook failures never prevent event publishing
-- **Error Handling**: All exceptions are caught and logged
-- **Metadata**: Failed hooks add error information to event metadata
+- **Hook Success = Event Handled**: When all hooks succeed, the event is considered fully processed
+- **Fallback Publishing**: On hook failure, events are published to inner bus for reliability
+- **Error Handling**: All exceptions are caught and logged with structured metadata
+- **Invoker Pattern**: `EventHookInvoker<TEvent>` wraps hooks for runtime type resolution
 
 ## Usage
 
 ### Step 1: Create a Hook Implementation
 
-Create a hook class in the Infrastructure layer:
+Create a hook class using the generic `IEventPublishHook<TEvent>` interface:
 
 ```csharp
 using BBT.Workflow.Events.Hooks;
+using BBT.Workflow.Instances.Events;
 using Microsoft.Extensions.Logging;
 
-namespace BBT.Workflow.Infrastructure.EventHooks;
+namespace BBT.Workflow.Infrastructure.Instances.Events;
 
-public class ParentFlowSyncEventHook : IEventPublishHook
+/// <summary>
+/// Hook that processes InstanceSubCompletedEvent before publishing.
+/// When successful, the event is considered handled and won't be published to the bus.
+/// </summary>
+public sealed class InstanceSubCompletedEventHook(
+    ISubflowCompletionService subflowCompletionService,
+    ICurrentSchema currentSchema,
+    IUnitOfWorkManager unitOfWorkManager) : IEventPublishHook<InstanceSubCompletedEvent>
 {
-    private readonly IParentFlowSyncService _syncService;
-    private readonly ILogger<ParentFlowSyncEventHook> _logger;
-
-    public ParentFlowSyncEventHook(
-        IParentFlowSyncService syncService,
-        ILogger<ParentFlowSyncEventHook> logger)
-    {
-        _syncService = syncService;
-        _logger = logger;
-    }
-
     public async Task<EventHookResult> BeforePublishAsync(
         EventHookContext context,
         CancellationToken cancellationToken = default)
     {
-        // Check if this is the event type we care about
-        if (context.EventData is not InstanceSubCompletedEvent evt)
-        {
-            return EventHookResult.Ok(); // Not applicable to this event
-        }
+        // Context.EventData is already strongly-typed to InstanceSubCompletedEvent
+        var evt = (InstanceSubCompletedEvent)context.EventData;
 
         try
         {
-            // Perform the sync operation
-            await _syncService.NotifyParentAsync(
-                evt.InstanceId,
-                evt.SubInstanceId,
-                cancellationToken);
+            // Switch to appropriate schema
+            using (currentSchema.Use(evt.Flow))
+            {
+                // Begin new unit of work for the completion handling
+                await using (var uow = await unitOfWorkManager.BeginAsync(
+                    new UnitOfWorkOptions { Scope = UnitOfWorkScopeOption.RequiresNew },
+                    cancellationToken))
+                {
+                    var completedData = new FlowCompletedInput
+                    {
+                        SubInstanceId = evt.SubInstanceId,
+                        InstanceId = evt.InstanceId,
+                        Domain = evt.Domain,
+                        Flow = evt.Flow,
+                        CompletedState = evt.CompletedState
+                    };
 
-            // Return success with metadata
+                    await subflowCompletionService.CompletionAsync(completedData, cancellationToken);
+                    await uow.CompleteAsync(cancellationToken);
+                }
+            }
+
+            // Success - event is handled, won't be published to bus
             return EventHookResult.Ok(new Dictionary<string, string>
             {
-                ["parent_sync_status"] = "ok",
-                ["sync_timestamp"] = DateTime.UtcNow.ToString("O")
+                ["hook_status"] = "completed",
+                ["processed_at"] = DateTime.UtcNow.ToString("O")
             });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, 
-                "Failed to sync parent flow for instance {InstanceId}", 
-                evt.InstanceId);
-
-            // Return failure - event will still be published
+            // Failure - event will be published to bus as fallback
             return EventHookResult.Fail(ex, new Dictionary<string, string>
             {
-                ["parent_sync_status"] = "failed"
+                ["hook_status"] = "failed"
             });
         }
     }
@@ -117,7 +126,7 @@ public class ParentFlowSyncEventHook : IEventPublishHook
 
 ### Step 2: Register the Hook in DI
 
-Register your hook in the Infrastructure module:
+Register your hook using the generic extension method:
 
 ```csharp
 // In WorkflowInfrastructureModuleServiceCollectionExtensions.cs
@@ -126,14 +135,21 @@ public static IServiceCollection AddInfrastructureModule(
 {
     // ... existing registrations ...
 
-    // Register event hooks
-    services.AddScoped<IEventPublishHook, ParentFlowSyncEventHook>();
-    // Add more hooks as needed
-    // services.AddScoped<IEventPublishHook, AuditLogEventHook>();
+    // Register event hooks using generic method
+    services.AddEventHook<InstanceSubCompletedEvent, InstanceSubCompletedEventHook>();
+    services.AddEventHook<InstanceCanceledEvent, InstanceCanceledEventHook>();
+    
+    // Alternative: Register with specific lifetime
+    services.AddEventHookSingleton<AuditEvent, AuditEventHook>();  // Singleton
+    services.AddEventHookTransient<MetricEvent, MetricEventHook>(); // Transient
 
     return services;
 }
 ```
+
+The registration helper automatically:
+1. Registers the hook as `IEventPublishHook<TEvent>`
+2. Creates an `EventHookInvoker<TEvent>` wrapper for runtime resolution
 
 ### Step 3: Decorate Events with Hook Attributes
 
@@ -399,8 +415,82 @@ public async Task SaveChangesAsync_ShouldExecuteHooks_WhenEventsArePublished()
 - **Caching**: Cache frequently accessed data in hooks
 - **Monitoring**: Monitor hook execution time and failures
 
+## HookedDistributedEventBus
+
+The `HookedDistributedEventBus` is a decorator that wraps Aether's `IDistributedEventBus`:
+
+```csharp
+public sealed class HookedDistributedEventBus : IDistributedEventBus
+{
+    private readonly IDistributedEventBus _inner;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly ILogger<HookedDistributedEventBus> _logger;
+
+    public async Task PublishAsync<TEvent>(
+        TEvent payload,
+        string? subject = null,
+        bool useOutbox = true,
+        CancellationToken cancellationToken = default)
+        where TEvent : class
+    {
+        // Execute hooks
+        var hookResult = await ExecuteHooksAsync(payload, cancellationToken);
+
+        // If all hooks succeeded, event is handled - don't publish
+        if (hookResult.HooksExecuted && hookResult.AllSucceeded)
+        {
+            return;
+        }
+
+        // If no hooks or any hook failed, publish to inner bus as fallback
+        if (hookResult.HasFailures)
+        {
+            _logger.LogWarning(
+                "Hook(s) failed for event {EventType}, publishing to inner bus as fallback",
+                payload.GetType().Name);
+        }
+
+        await _inner.PublishAsync(payload, subject, useOutbox, cancellationToken);
+    }
+}
+```
+
+### Hook Execution Flow
+
+```
+Event Published
+      │
+      ▼
+┌─────────────────────────────────┐
+│ HookedDistributedEventBus       │
+│ ┌─────────────────────────────┐ │
+│ │ Check [EventHook] attribute │ │
+│ └─────────────────────────────┘ │
+│           │                      │
+│           ▼                      │
+│ ┌─────────────────────────────┐ │
+│ │ Resolve IEventHookInvoker   │ │
+│ │ for each hook type          │ │
+│ └─────────────────────────────┘ │
+│           │                      │
+│           ▼                      │
+│ ┌─────────────────────────────┐ │
+│ │ Execute all hooks           │ │
+│ └─────────────────────────────┘ │
+│           │                      │
+│     ┌─────┴─────┐               │
+│     ▼           ▼               │
+│ All Success    Any Failure      │
+│     │           │               │
+│     ▼           ▼               │
+│  HANDLED    Publish to Inner    │
+│ (No Publish)     Bus            │
+└─────────────────────────────────┘
+```
+
 ## Related Documentation
 
-- [Event-Driven Architecture](./architecture-overview.md)
-- [Aether SDK Documentation](https://github.com/burgan-tech/aether/blob/master/README.md)
+- [Architecture Overview](./architecture-overview.md) - Event-driven architecture
+- [Inbox/Outbox Workers](./inbox-outbox-workers.md) - Event processing workers
+- [Aether SDK Aspects](./aether-sdk-aspects.md) - Cross-cutting concerns
 

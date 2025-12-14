@@ -1,0 +1,225 @@
+### VNext Init Service API Tests
+### This file can be used with VS Code REST Client extension or similar tools
+### Base URL - adjust based on your environment
+### Port 3003 is mapped from container port 3000
+@baseUrl = http://localhost:3005
+@vnextAppUrl = http://host.docker.internal:4201
+
+### Variables
+@runtimePackage = @burgan-tech/vnext-core-runtime
+@version = latest
+@appDomain = core
+@npmRegistry = https://registry.npmjs.org/
+
+############################################################
+### Health Check - Checks API server and vnext app health
+############################################################
+GET {{baseUrl}}/health
+Accept: application/json
+
+############################################################
+###                RUNTIME PACKAGE ENDPOINT                ###
+###        POST /api/package/runtime/publish               ###
+###  - For VNEXT_CORE_RUNTIME_PACKAGE only                 ###
+###  - appDomain is REQUIRED                               ###
+###  - Special ordering (Workflows first, sys-flows first) ###
+###  - ALL domains are replaced                            ###
+############################################################
+
+### Runtime Publish - Basic (appDomain required)
+POST {{baseUrl}}/api/package/runtime/publish
+Content-Type: application/json
+
+{
+  "version": "{{version}}",
+  "appDomain": "{{appDomain}}"
+}
+
+### Runtime Publish - Custom domain
+POST {{baseUrl}}/api/package/runtime/publish
+Content-Type: application/json
+
+{
+  "version": "{{version}}",
+  "appDomain": "my-custom-domain"
+}
+
+### Runtime Publish - Specific version
+POST {{baseUrl}}/api/package/runtime/publish
+Content-Type: application/json
+
+{
+  "version": "1.0.0",
+  "appDomain": "{{appDomain}}"
+}
+
+### Runtime Publish - With npm registry
+POST {{baseUrl}}/api/package/runtime/publish
+Content-Type: application/json
+
+{
+  "version": "{{version}}",
+  "npmRegistry": "{{npmRegistry}}",
+  "appDomain": "{{appDomain}}"
+}
+
+### Runtime Publish - With npm token (private registry)
+POST {{baseUrl}}/api/package/runtime/publish
+Content-Type: application/json
+
+{
+  "version": "{{version}}",
+  "npmRegistry": "{{npmRegistry}}",
+  "npmToken": "your-npm-token-here",
+  "appDomain": "{{appDomain}}"
+}
+
+### Runtime Publish - Complete configuration
+POST {{baseUrl}}/api/package/runtime/publish
+Content-Type: application/json
+
+{
+  "version": "{{version}}",
+  "npmRegistry": "{{npmRegistry}}",
+  "npmToken": "your-npm-token-here",
+  "appDomain": "production"
+}
+
+### Runtime Publish - Error: Missing appDomain (REQUIRED)
+POST {{baseUrl}}/api/package/runtime/publish
+Content-Type: application/json
+
+{
+  "version": "{{version}}"
+}
+
+############################################################
+###              STANDARD PACKAGE ENDPOINT                 ###
+###           POST /api/package/publish                    ###
+###  - For any npm package                                 ###
+###  - appDomain is OPTIONAL                               ###
+###  - If appDomain provided, ALL domains are replaced     ###
+###  - No special ordering                                 ###
+############################################################
+
+### Package Publish - Basic (no domain replacement)
+POST {{baseUrl}}/api/package/publish
+Content-Type: application/json
+
+{
+  "packageName": "@my-org/my-workflow-package",
+  "version": "{{version}}"
+}
+
+### Package Publish - With domain replacement
+POST {{baseUrl}}/api/package/publish
+Content-Type: application/json
+
+{
+  "packageName": "@my-org/my-workflow-package",
+  "version": "{{version}}",
+  "appDomain": "my-custom-domain"
+}
+
+### Package Publish - Specific version
+POST {{baseUrl}}/api/package/publish
+Content-Type: application/json
+
+{
+  "packageName": "@my-org/my-workflow-package",
+  "version": "1.0.0"
+}
+
+### Package Publish - With npm registry
+POST {{baseUrl}}/api/package/publish
+Content-Type: application/json
+
+{
+  "packageName": "@my-org/my-workflow-package",
+  "version": "{{version}}",
+  "npmRegistry": "{{npmRegistry}}"
+}
+
+### Package Publish - With npm token (private registry)
+POST {{baseUrl}}/api/package/publish
+Content-Type: application/json
+
+{
+  "packageName": "@my-org/my-workflow-package",
+  "version": "{{version}}",
+  "npmRegistry": "{{npmRegistry}}",
+  "npmToken": "your-npm-token-here"
+}
+
+### Package Publish - Complete configuration with domain replacement
+POST {{baseUrl}}/api/package/publish
+Content-Type: application/json
+
+{
+  "packageName": "@my-org/my-workflow-package",
+  "version": "{{version}}",
+  "npmRegistry": "{{npmRegistry}}",
+  "npmToken": "your-npm-token-here",
+  "appDomain": "production"
+}
+
+### Package Publish - Error: Missing packageName
+POST {{baseUrl}}/api/package/publish
+Content-Type: application/json
+
+{
+  "version": "{{version}}"
+}
+
+############################################################
+###                   ERROR CASES                          ###
+############################################################
+
+### Error: Invalid endpoint
+GET {{baseUrl}}/api/invalid-endpoint
+Accept: application/json
+
+### CORS preflight request
+OPTIONS {{baseUrl}}/api/package/publish
+Access-Control-Request-Method: POST
+Access-Control-Request-Headers: Content-Type
+Origin: http://localhost:3001
+
+
+############################################################
+###           Environment-specific configurations          ###
+############################################################
+
+### Development Environment (Docker Compose)
+# @baseUrl = http://localhost:3003
+# @vnextAppUrl = http://host.docker.internal:4201
+
+### Docker Compose Internal Network
+# @baseUrl = http://init:3000
+# @vnextAppUrl = http://vnext-app:4201
+
+### Production Environment
+# @baseUrl = http://init-service:3003
+# @vnextAppUrl = http://vnext-app:4201
+
+############################################################
+###                   ENDPOINT SUMMARY                     ###
+############################################################
+# 
+# 1. Runtime Package (Core Runtime Only)
+#    POST /api/package/runtime/publish
+#    - appDomain: REQUIRED
+#    - Domain replacement: ALL domains replaced
+#    - Ordering: Special (Workflows first, sys-flows first)
+#
+# 2. Standard Package (Any npm package)
+#    POST /api/package/publish
+#    - packageName: REQUIRED
+#    - appDomain: OPTIONAL
+#    - Domain replacement: Only if appDomain provided
+#    - Ordering: Standard (no special ordering)
+#
+# 3. Health Check
+#    GET /health
+#
+############################################################

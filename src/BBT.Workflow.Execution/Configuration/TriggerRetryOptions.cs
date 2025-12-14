@@ -16,9 +16,9 @@ public sealed class TriggerRetryOptions
     public int MaxRetryAttempts { get; set; } = 3;
 
     /// <summary>
-    /// Delay between retries in milliseconds (default: 2000ms)
+    /// Delay between retries in milliseconds (default: 50ms)
     /// </summary>
-    public int RetryDelayMilliseconds { get; set; } = 2000;
+    public int RetryDelayMilliseconds { get; set; } = 50;
 
     /// <summary>
     /// HTTP status codes that should trigger a retry (default: [409])
