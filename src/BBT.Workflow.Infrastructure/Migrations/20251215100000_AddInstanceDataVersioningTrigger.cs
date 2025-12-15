@@ -33,6 +33,19 @@ namespace BBT.Workflow.Migrations
                 schema: "public",
                 table: "InstancesData");
 
+            // 0.1) Alter Version column to support longer version strings (180 chars)
+            // This accommodates semantic versioning with build metadata: MAJOR.MINOR.PATCH-pkg.PKG_VERSION+PKG_NAME
+            migrationBuilder.AlterColumn<string>(
+                name: "Version",
+                schema: "public",
+                table: "InstancesData",
+                type: "character varying(180)",
+                maxLength: 180,
+                nullable: false,
+                oldClrType: typeof(string),
+                oldType: "character varying(20)",
+                oldMaxLength: 20);
+
             // 1) Add VersionNo column
             migrationBuilder.AddColumn<long>(
                 name: "VersionNo",
@@ -186,6 +199,18 @@ DROP FUNCTION IF EXISTS set_instance_data_version_and_latest();
                 name: "VersionNo",
                 schema: "public",
                 table: "InstancesData");
+
+            // Revert Version column back to 20 chars
+            migrationBuilder.AlterColumn<string>(
+                name: "Version",
+                schema: "public",
+                table: "InstancesData",
+                type: "character varying(20)",
+                maxLength: 20,
+                nullable: false,
+                oldClrType: typeof(string),
+                oldType: "character varying(180)",
+                oldMaxLength: 180);
 
             // Recreate the original unique index on (InstanceId, Version, HistorySequence)
             migrationBuilder.CreateIndex(
