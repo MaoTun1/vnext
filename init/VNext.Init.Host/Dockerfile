@@ -7,13 +7,16 @@ ENV VNEXT_CORE_RUNTIME_VERSION=latest \
 
 WORKDIR /app
 
-# Tools + permissions
-RUN apk update && apk upgrade && apk add --no-cache bash curl jq \
-    && mkdir -p /app/.npm-cache \
-    && chown -R node:node /app && chmod -R 777 /app
+# Install required packages - avoid apk upgrade for QEMU/multi-arch compatibility
+RUN apk add --no-cache bash curl jq
+
+# Set up directories and permissions
+RUN mkdir -p /app/.npm-cache \
+    && chown -R node:node /app \
+    && chmod -R 777 /app
 
 # API server copy
-COPY init/VNext.Init.Host/package-api-server.js /app/package-api-server.js
+COPY --chown=node:node init/VNext.Init.Host/package-api-server.js /app/package-api-server.js
 RUN chmod +x /app/package-api-server.js
 
 USER node
