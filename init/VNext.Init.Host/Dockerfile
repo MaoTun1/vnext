@@ -9,7 +9,7 @@ WORKDIR /app
 
 # Tools + permissions
 RUN apk update && apk upgrade && apk add --no-cache bash curl jq \
-    && mkdir -p /app/.npm-cache /app/custom-components \
+    && mkdir -p /app/.npm-cache \
     && chown -R node:node /app && chmod -R 777 /app
 
 # API server copy

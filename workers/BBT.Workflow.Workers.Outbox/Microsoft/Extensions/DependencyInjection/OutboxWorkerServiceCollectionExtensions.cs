@@ -22,7 +22,7 @@ public static class OutboxWorkerServiceCollectionExtensions
             .AddAspNetCoreModules(configuration)
             .AddResultResilience(configuration)
             .AddDaprClients()
-            .AddEventBus(configuration)
+            .AddAetherEventBus()
             .AddDbContext(configuration)
             .AppMapper()
             .AddTelemetry(configuration)

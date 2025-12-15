@@ -2,6 +2,7 @@ using BBT.Aether;
 using BBT.Aether.Application;
 using BBT.Aether.Domain.Repositories;
 using BBT.Aether.Results;
+using BBT.Workflow.Instances.DTOs;
 
 namespace BBT.Workflow.Instances;
 
@@ -48,6 +49,14 @@ public interface IInstanceQueryAppService : IApplicationService
     Task<Result<GetViewOutput>> GetPlatformSpecificViewAsync(
         GetViewInput input,
         string? platform,
+        string? transitionKey,
+        CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Retrieves schema for an instance
+    /// </summary>
+    Task<Result<GetSchemaOutput>> GetSchemaAsync(
+        GetSchemaInput input,
         string? transitionKey,
         CancellationToken cancellationToken = default);
 }
