@@ -1,12 +1,12 @@
 using BBT.Aether;
 using BBT.Aether.Application.Services;
 using BBT.Aether.Domain.Entities;
-using BBT.Aether.Domain.Repositories;
 using BBT.Aether.Results;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Logging;
 using BBT.Workflow.Extentions;
+using BBT.Workflow.Instances.DTOs;
 using BBT.Workflow.Instances.Remote;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
@@ -88,8 +88,9 @@ public sealed class InstanceQueryAppService(
 
                     list.Add(instanceOutput);
                 }
-                
-                return new HateoasPagedList<GetInstanceOutput>(list, pagedList.CurrentPage, pagedList.PageSize, pagedList.HasNext);
+
+                return new HateoasPagedList<GetInstanceOutput>(list, pagedList.CurrentPage, pagedList.PageSize,
+                    pagedList.HasNext);
             },
             cancellationToken);
     }
@@ -276,7 +277,7 @@ public sealed class InstanceQueryAppService(
         CancellationToken cancellationToken)
     {
         var flowResult = await componentCacheStore.GetFlowAsync(domain, workflow, null, cancellationToken);
-        
+
         var flow = flowResult.IsSuccess ? flowResult.Value! : null;
 
         var response = new GetInstanceOutput
@@ -471,7 +472,8 @@ public sealed class InstanceQueryAppService(
                 var dataHref = new DataHref
                 {
                     Href = allExtensions.Length > 0
-                        ? InstanceUrlTemplates.DataWithExtensions(input.Domain, input.Workflow, instance.Id.ToString(), string.Join(",", allExtensions))
+                        ? InstanceUrlTemplates.DataWithExtensions(input.Domain, input.Workflow, instance.Id.ToString(),
+                            string.Join(",", allExtensions))
                         : InstanceUrlTemplates.Data(input.Domain, input.Workflow, instance.Id.ToString())
                 };
 
@@ -494,7 +496,8 @@ public sealed class InstanceQueryAppService(
                         SubFlowName = correlation.SubFlowName,
                         SubFlowVersion = correlation.SubFlowVersion,
                         IsCompleted = correlation.IsCompleted,
-                        Href = InstanceUrlTemplates.Data(correlation.SubFlowDomain, correlation.SubFlowName, correlation.SubFlowInstanceId.ToString())
+                        Href = InstanceUrlTemplates.Data(correlation.SubFlowDomain, correlation.SubFlowName,
+                            correlation.SubFlowInstanceId.ToString())
                     }).ToList();
 
                 return new GetInstanceStateOutput
@@ -523,7 +526,81 @@ public sealed class InstanceQueryAppService(
             .BindAsync(instance =>
                 componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, input.Version, cancellationToken)
                     .MapAsync(workflow => (instance, workflow)))
-            .ThenAsync(data => ResolveViewAsync(data.instance, data.workflow, input, platform, transitionKey, cancellationToken));
+            .ThenAsync(data =>
+                ResolveViewAsync(data.instance, data.workflow, input, platform, transitionKey, cancellationToken));
+    }
+
+    /// <summary>
+    /// Gets the schema definition for a specific transition in the workflow instance.
+    /// </summary>
+    /// <param name="input">The schema request input containing domain, workflow, and instance information</param>
+    /// <param name="transitionKey">Optional transition key to get schema for</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Result containing the schema output or error information</returns>
+    public async Task<Result<GetSchemaOutput>> GetSchemaAsync(
+        GetSchemaInput input,
+        string? transitionKey,
+        CancellationToken cancellationToken = default)
+    {
+        runtimeInfoProvider.Check(input.Domain);
+
+        // Railway chain: Get Instance → Get Workflow → Build Schema Output
+        return await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken)
+            .BindAsync(instance =>
+                componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, input.Version, cancellationToken)
+                    .MapAsync(workflow => (instance, workflow)))
+            .ThenAsync(data =>
+                BuildSchemaOutputAsync(data.instance, data.workflow, input, transitionKey, cancellationToken));
+    }
+
+    /// <summary>
+    /// Builds the schema output for a specific transition.
+    /// Handles state resolution and schema lookup using Railway pattern.
+    /// </summary>
+    private async Task<Result<GetSchemaOutput>> BuildSchemaOutputAsync(
+        Instance instance,
+        Definitions.Workflow currentWorkflow,
+        GetSchemaInput input,
+        string? transitionKey,
+        CancellationToken cancellationToken)
+    {
+        // Get current state using Railway pattern
+        var currentStateResult = currentWorkflow.GetState(instance.GetCurrentState);
+        if (!currentStateResult.IsSuccess || currentStateResult.Value == null)
+        {
+            return Result<GetSchemaOutput>.Fail(
+                Error.NotFound("notfound", $"State {instance.CurrentState} not found in workflow {input.Workflow}"));
+        }
+
+        var currentState = currentStateResult.Value;
+
+        if (string.IsNullOrEmpty(transitionKey))
+        {
+            return Result<GetSchemaOutput>.Fail(
+                Error.Validation("validation", "Transition key is required to get schema"));
+        }
+
+        var transition = currentWorkflow.ResolveTransition(transitionKey, currentState);
+
+        if (transition?.Schema == null)
+        {
+            return Result<GetSchemaOutput>.Fail(
+                Error.NotFound("notfound",
+                    $"Schema not found for transition {transitionKey} in state {instance.CurrentState}"));
+        }
+
+        // Fetch and return the schema using Railway pattern
+        return await componentCacheStore.GetSchemaAsync(
+                transition.Schema.Domain,
+                transition.Schema.Key,
+                transition.Schema.Version,
+                cancellationToken)
+            .MapAsync(schema => new GetSchemaOutput
+            {
+                Key = schema.Key,
+                Type = schema.Type,
+                Schema = schema.Schema
+            });
     }
 
     /// <summary>
@@ -570,7 +647,8 @@ public sealed class InstanceQueryAppService(
         if (viewDefinition?.View == null)
         {
             return Result<GetViewOutput>.Fail(
-                Error.NotFound("notfound", $"View not found for state {instance.CurrentState} in workflow {currentWorkflow.Key}"));
+                Error.NotFound("notfound",
+                    $"View not found for state {instance.CurrentState} in workflow {currentWorkflow.Key}"));
         }
 
         // Fetch and return the view
