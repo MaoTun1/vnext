@@ -43,7 +43,7 @@ public sealed class HandleSubFlowStep(
         // Railway chain: Validate config -> Execute operations -> Create outcome
         return await Result.Ok(context)
             .Ensure(
-                ctx => ctx.Target!.SubFlow == null,
+                ctx => ctx.Target!.SubFlow != null,
                 CreateConfigInvalidError(context))
             .TapAsync(ctx => ExecuteSubFlowOperationsAsync(ctx, cancellationToken))
             .Map(CreateStepOutcome);

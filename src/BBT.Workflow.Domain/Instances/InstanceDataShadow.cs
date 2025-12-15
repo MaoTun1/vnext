@@ -6,10 +6,14 @@ public class InstanceDataShadow
     public Guid InstanceId { get; set; }
     public string Version { get; set; }
     public int HistorySequence { get; set; }
+    public int VersionNo { get; set; }
     public dynamic? Data { get; set; }
 
     internal InstanceData Map()
     {
-        return new InstanceData(Id, InstanceId, Version, new JsonData(Data), true, HistorySequence);
+        return new InstanceData(Id, InstanceId, Version, new JsonData(Data), true, HistorySequence)
+        {
+            VersionNo = VersionNo
+        };
     }
 }

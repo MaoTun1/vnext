@@ -1,7 +1,6 @@
 using System.Text.Json;
 using BBT.Aether.MultiSchema;
 using BBT.Aether.Results;
-using BBT.Aether.Uow;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Execution;
 using BBT.Workflow.Execution.Bindings;
@@ -134,7 +133,7 @@ public sealed class DirectTriggerTaskExecutor : TriggerTaskExecutorBase<DirectTr
             Logger.TaskLocalExecutionFailed(
                 task.Key,
                 TaskType.ToString(),
-                context.ScriptContext.Instance.Id,
+                context.ScriptContext.Instance.Id.ToString(),
                 result.Error.Message ?? "DirectTrigger transition failed");
 
             return Result<TaskInvocationResult>.Ok(TaskInvocationResult.Failure(
@@ -163,31 +162,45 @@ public sealed class DirectTriggerTaskExecutor : TriggerTaskExecutorBase<DirectTr
         TransitionInput input,
         CancellationToken cancellationToken)
     {
-        await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        var currentSchema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
-        var localCommandService = scope.ServiceProvider.GetRequiredService<IInstanceCommandAppService>();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-
-        using (currentSchema.Use(input.Workflow))
+        try
         {
-            await using var uow = await unitOfWorkManager.BeginAsync(new UnitOfWorkOptions
+            await using var scope = _serviceScopeFactory.CreateAsyncScope();
+            var currentSchema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
+            var localCommandService = scope.ServiceProvider.GetRequiredService<IInstanceCommandAppService>();
+            using (currentSchema.Use(input.Workflow))
             {
-                Scope = UnitOfWorkScopeOption.RequiresNew
-            }, cancellationToken);
+                var result = await localCommandService.TransitionAsync(
+                    instanceIdentifier,
+                    task.TransitionName,
+                    input,
+                    cancellationToken);
 
-            var result = await localCommandService.TransitionAsync(
-                instanceIdentifier,
-                task.TransitionName,
-                input,
-                cancellationToken);
+                if (!result.IsSuccess)
+                {
+                    Logger.TaskLocalExecutionFailed(
+                        task.Key,
+                        TaskType.ToString(),
+                        instanceIdentifier,
+                        result.Error.Message ?? "DirectTrigger transition failed");
+                    return Result<TransitionOutput>.Fail(result.Error);
+                }
 
-            if (result.IsSuccess)
-            {
-                await uow.SaveChangesAsync(cancellationToken);
-                await uow.CommitAsync(cancellationToken);
+                return result;
             }
-
-            return result;
+        }
+        catch (Exception ex)
+        {
+            Logger.TaskLocalExecutionFailed(
+                task.Key,
+                TaskType.ToString(),
+                instanceIdentifier,
+                ex.Message);
+            
+            return Result<TransitionOutput>.Fail(
+                Error.Failure(
+                    WorkflowErrorCodes.ExecutionStepFailed,
+                    $"DirectTrigger transition execution failed: {ex.Message}",
+                    detail: ex.GetType().Name));
         }
     }
 

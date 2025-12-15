@@ -1,8 +1,6 @@
-using System.Data;
 using System.Text.Json;
 using BBT.Aether.MultiSchema;
 using BBT.Aether.Results;
-using BBT.Aether.Uow;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Execution;
 using BBT.Workflow.Execution.Bindings;
@@ -98,35 +96,28 @@ public sealed class GetInstanceDataTaskExecutor : TriggerTaskExecutorBase<GetIns
     {
         Logger.LogDebug("Using local IInstanceQueryAppService for GetInstanceData task {TaskKey}", task.Key);
 
-        var input = new GetInstanceDataInput
+        try
         {
-            Domain = task.TriggerDomain,
-            Workflow = task.TriggerFlow,
-            Instance = instanceIdentifier,
-            Extensions = task.Extensions
-        };
+            var input = new GetInstanceDataInput
+            {
+                Domain = task.TriggerDomain,
+                Workflow = task.TriggerFlow,
+                Instance = instanceIdentifier,
+                Extensions = task.Extensions
+            };
 
-        await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        var currentSchema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
-        var queryService = scope.ServiceProvider.GetRequiredService<IInstanceQueryAppService>();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-        using (currentSchema.Use(input.Workflow))
-        {
-            await using (var uow = await unitOfWorkManager.BeginAsync(new UnitOfWorkOptions()
-                         {
-                             IsolationLevel = IsolationLevel.ReadCommitted,
-                             Scope = UnitOfWorkScopeOption.RequiresNew,
-                             IsTransactional = false
-                         }, cancellationToken))
+            await using var scope = _serviceScopeFactory.CreateAsyncScope();
+            var currentSchema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
+            var queryService = scope.ServiceProvider.GetRequiredService<IInstanceQueryAppService>();
+            using (currentSchema.Use(input.Workflow))
             {
                 var result = await queryService.GetInstanceDataAsync(input, cancellationToken);
-                await uow.CommitAsync(cancellationToken);
                 if (!result.Result.IsSuccess)
                 {
                     Logger.TaskLocalExecutionFailed(
                         task.Key,
                         TaskType.ToString(),
-                        context.ScriptContext.Instance.Id,
+                        instanceIdentifier,
                         result.Result.Error.Message ?? "GetInstanceData failed");
                     return Result<TaskInvocationResult>.Ok(TaskInvocationResult.Failure(
                         error: result.Result.Error.Message ?? "GetInstanceData failed",
@@ -152,6 +143,20 @@ public sealed class GetInstanceDataTaskExecutor : TriggerTaskExecutorBase<GetIns
                     statusCode: 200,
                     taskType: TaskType.ToString()));
             }
+        }
+        catch (Exception ex)
+        {
+            Logger.TaskLocalExecutionFailed(
+                task.Key,
+                TaskType.ToString(),
+                instanceIdentifier,
+                ex.Message);
+
+            return Result<TaskInvocationResult>.Fail(
+                Error.Failure(
+                    WorkflowErrorCodes.TaskExecution,
+                    $"GetInstanceData execution failed: {ex.Message}",
+                    detail: ex.GetType().Name));
         }
     }
 

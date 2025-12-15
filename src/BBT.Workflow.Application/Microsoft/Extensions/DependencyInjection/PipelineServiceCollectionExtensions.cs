@@ -20,8 +20,13 @@ public static class PipelineServiceCollectionExtensions
     /// <returns>The service collection for method chaining.</returns>
     public static IServiceCollection AddPipelineServices(this IServiceCollection services)
     {
-        // Core execution service
+        // Core execution service (facade + core executor)
         services.AddScoped<IWorkflowExecutionService, WorkflowExecutionService>();
+        services.AddScoped<IWorkflowExecutionCore>(sp => 
+            (IWorkflowExecutionCore)sp.GetRequiredService<IWorkflowExecutionService>());
+        
+        // Transition Runner (owns chaining with isolated scope + UoW per hop)
+        services.AddScoped<ITransitionRunner, TransitionRunner>();
         
         // Execution Strategies
         services.AddScoped<IExecutionStrategyFactory, ExecutionStrategyFactory>();
@@ -62,18 +67,14 @@ public static class PipelineServiceCollectionExtensions
         services.AddScoped<ITransitionStep, RunAutomaticTransitionsStep>();
         services.AddScoped<ITransitionStep, HandleFinishStep>();
         services.AddScoped<ITransitionStep, FinalizeTransitionStep>();
-        services.AddScoped<ITransitionStep, ProcessInlineAutoChainStep>();
 
         // Pipeline
         services.AddScoped<TransitionPipeline>();
-
-        // Re-entry System
-        services.AddScoped<IReentryDispatcher, DefaultReentryDispatcher>();
-
+        
         // Configure Re-entry Options
         services.Configure<ReentryOptions>(options =>
         {
-            options.MaxAutoHops = 12;
+            options.MaxAutoHops = 18;
             options.AllowInlineAuto = true;
             options.LockTimeout = TimeSpan.FromSeconds(30);
         });

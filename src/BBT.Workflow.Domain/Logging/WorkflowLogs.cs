@@ -205,6 +205,32 @@ public static partial class WorkflowLogs
         string transitionKey,
         string triggerType);
 
+    /// <summary>
+    /// Logs when inline execution throws an exception during post-commit auto chain processing.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10051,
+        Level = LogLevel.Error,
+        Message = "Inline execution exception for instance {InstanceId}, chain {ExecutionChainId}, transition {TransitionKey}")]
+    public static partial void InlineExecutionException(
+        this ILogger logger,
+        Exception exception,
+        Guid instanceId,
+        string? executionChainId,
+        string transitionKey);
+
+    /// <summary>
+    /// Logs when auto chain processing fails without any successful transitions.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10052,
+        Level = LogLevel.Warning,
+        Message = "Auto chain processing failed: attempted {AttemptedCount} transitions with {Hops} hops, none succeeded")]
+    public static partial void AutoChainProcessingFailed(
+        this ILogger logger,
+        int attemptedCount,
+        int hops);
+
     #endregion
 
     #region Task Execution
@@ -304,7 +330,7 @@ public static partial class WorkflowLogs
         this ILogger logger,
         string taskKey,
         string taskType,
-        Guid instanceId,
+        string instanceId,
         string errorMessage);
 
     /// <summary>

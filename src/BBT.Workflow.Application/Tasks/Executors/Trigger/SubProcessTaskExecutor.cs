@@ -3,7 +3,6 @@ using BBT.Aether;
 using BBT.Aether.Guids;
 using BBT.Aether.MultiSchema;
 using BBT.Aether.Results;
-using BBT.Aether.Uow;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Execution;
 using BBT.Workflow.Execution.Bindings;
@@ -25,7 +24,7 @@ namespace BBT.Workflow.Tasks.Executors;
 /// </summary>
 public sealed class SubProcessTaskExecutor : TriggerTaskExecutorBase<SubProcessTask>
 {
-    private readonly IServiceScopeFactory  _serviceScopeFactory;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly IInstanceRepository _instanceRepository;
     private readonly IGuidGenerator _guidGenerator;
     private readonly IConfiguration _configuration;
@@ -122,28 +121,22 @@ public sealed class SubProcessTaskExecutor : TriggerTaskExecutorBase<SubProcessT
     {
         Logger.LogDebug("Using local IInstanceCommandAppService for SubProcess task {TaskKey}", task.Key);
 
-        var input = BuildStartInstanceInput(task, context.ScriptContext, subFlowInstanceId);
-        await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        var currentSchema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
-        var localCommandService = scope.ServiceProvider.GetRequiredService<IInstanceCommandAppService>();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-        using (currentSchema.Use(input.Workflow))
+        try
         {
-            await using (var uow = await unitOfWorkManager.BeginAsync(new UnitOfWorkOptions
-                         {
-                             Scope = UnitOfWorkScopeOption.RequiresNew
-                         }, cancellationToken))
+            var input = BuildStartInstanceInput(task, context.ScriptContext, subFlowInstanceId);
+            await using var scope = _serviceScopeFactory.CreateAsyncScope();
+            var currentSchema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
+            var localCommandService = scope.ServiceProvider.GetRequiredService<IInstanceCommandAppService>();
+            using (currentSchema.Use(input.Workflow))
             {
                 var result = await localCommandService.StartAsync(input, cancellationToken);
-                await uow.SaveChangesAsync(cancellationToken);
-                await uow.CommitAsync(cancellationToken);
 
                 if (!result.IsSuccess)
                 {
                     Logger.TaskLocalExecutionFailed(
                         task.Key,
                         TaskType.ToString(),
-                        context.ScriptContext.Instance.Id,
+                        context.ScriptContext.Instance.Id.ToString(),
                         result.Error.Message ?? "SubProcess start failed");
                     return TaskInvocationResult.Failure(
                         error: result.Error.Message ?? "SubProcess start failed",
@@ -172,6 +165,25 @@ public sealed class SubProcessTaskExecutor : TriggerTaskExecutorBase<SubProcessT
                         ["CorrelationId"] = correlationId
                     });
             }
+        }
+        catch (Exception ex)
+        {
+            Logger.TaskLocalExecutionFailed(
+                task.Key,
+                TaskType.ToString(),
+                context.ScriptContext.Instance.Id.ToString(),
+                ex.Message);
+
+            return TaskInvocationResult.Failure(
+                error: $"SubProcess execution failed: {ex.Message}",
+                statusCode: 500,
+                taskType: TaskType.ToString(),
+                metadata: new Dictionary<string, object>
+                {
+                    ["SubFlowInstanceId"] = subFlowInstanceId,
+                    ["CorrelationId"] = correlationId,
+                    ["ExceptionType"] = ex.GetType().Name
+                });
         }
     }
 

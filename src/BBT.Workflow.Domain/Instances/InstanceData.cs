@@ -49,9 +49,16 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
     public int HistorySequence { get; private set; }
 
     /// <summary>
-    /// IsLatest
+    /// Instance-global version number. Auto-incremented by database trigger.
+    /// Provides a monotonically increasing sequence per instance for concurrency control.
     /// </summary>
-    public bool? IsLatest { get; private set; }
+    public long VersionNo { get; internal set; }
+
+    /// <summary>
+    /// Indicates if this is the latest data for the instance.
+    /// Managed by database trigger to ensure only one record per instance has IsLatest = true.
+    /// </summary>
+    public bool IsLatest { get; private set; }
 
     /// <summary>
     /// ETag
@@ -122,6 +129,8 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
             Id = Id,
             InstanceId = InstanceId,
             Version = Version,
+            HistorySequence = HistorySequence,
+            VersionNo = VersionNo,
             IsLatest = IsLatest,
             ETag = ETag,
             DataHash = DataHash,
