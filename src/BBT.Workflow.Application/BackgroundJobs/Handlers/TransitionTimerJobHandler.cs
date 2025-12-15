@@ -1,78 +1,59 @@
-using System.Text.Json;
-using BBT.Workflow.ExceptionHandling;
+using BBT.Aether.BackgroundJob;
+using BBT.Workflow.BackgroundJobs.Payloads;
+using BBT.Workflow.Definitions;
+using BBT.Workflow.Execution.Services;
 using BBT.Workflow.Instances;
-using BBT.Workflow.Schemas;
+using BBT.Workflow.Logging;
+using BBT.Workflow.Shared;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.BackgroundJobs.Handlers;
 
 public sealed class TransitionTimerJobHandler(
-    IJobStore jobStore,
-    IInstanceCommandAppService instanceAppService,
-    ICurrentSchema currentSchema,
-    ILogger<TransitionTimerJobHandler> logger) : IJobHandler
+    IWorkflowExecutionService workflowExecutionService,
+    IInstanceJobRepository jobRepository,
+    ILogger<TransitionTimerJobHandler> logger) : IBackgroundJobHandler<TransitionTimerPayload>
 {
-    public string JobName => BackgroundJobConsts.TransitionTimerJobName;
+    public const string HandlerName = "flow.transition.schedule";
 
-    public async Task HandleAsync(ReadOnlyMemory<byte> jobPayload, CancellationToken cancellationToken)
+    public async Task HandleAsync(TransitionTimerPayload args, CancellationToken cancellationToken)
     {
-        var jobData = JsonSerializer.Deserialize<BackgroundJobInfo<TransitionTimerPayload>>(jobPayload.Span);
-        if (jobData == null)
+        try
         {
-            logger.LogWarning("TransitionTimerJobHandler: Failed to deserialize job payload.");
-            return;
+            var input = new TransitionInput(
+                args.Domain,
+                args.FlowName,
+                args.Version
+            );
+
+            // Convert TransitionInput to WorkflowExecutionContext
+            var executionContext = input.ToExecutionContext(
+                args.InstanceId.ToString(),
+                args.TransitionKey);
+
+            // Override trigger type to Scheduled for timer-based transitions
+            executionContext.TriggerType = TriggerType.Scheduled;
+            executionContext.Actor = ExecutionActor.System;
+            executionContext.IsReentry = true; // Timer transitions are re-entry executions
+
+            await workflowExecutionService.ExecuteTransitionAsync(
+                executionContext,
+                cancellationToken
+            );
+
+            await jobRepository.MarkAsProcessedAsync(args.JobName, cancellationToken);
+
+            logger.JobCompleted(args.JobName, args.TransitionKey, args.InstanceId);
         }
-
-        logger.LogInformation("TransitionTimerJobHandler: {JobName} - {JobId}", JobName, jobData.JobId);
-
-        var flowName = jobData.GetFlowName();
-        if (flowName.IsNullOrEmpty())
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            logger.LogWarning("AutoTransitionJobHandler: Job Flow Name is empty.");
-            return;
+            logger.JobCancelled(args.JobName, args.TransitionKey, args.InstanceId);
+            throw; // Re-throw cancellation exceptions
         }
-
-        using (currentSchema.Change(flowName))
+        catch (Exception e)
         {
-            var jobInfo = await jobStore.GetAsync<TransitionTimerPayload>(jobData.JobId, cancellationToken);
-            if (jobInfo == null)
-            {
-                logger.LogWarning("TransitionTimerJobHandler: Job info not found for JobId {JobId}", jobData.JobId);
-                return;
-            }
-
-            jobInfo.IsTriggered = true;
-            await jobStore.SaveAsync(jobInfo.JobId, jobInfo, cancellationToken);
-
-            try
-            {
-                await instanceAppService.TransitionAsync(
-                    jobInfo.Payload.InstanceId,
-                    jobInfo.Payload.TransitionKey,
-                    new TransitionInput(
-                        jobInfo.Payload.Domain,
-                        jobInfo.Payload.FlowName,
-                        jobInfo.Payload.Version
-                    ),
-                    cancellationToken
-                );
-
-                logger.LogInformation(
-                    "TransitionTimerJobHandler: Successfully executed transition {TransitionKey} for instance {InstanceId}",
-                    jobInfo.Payload.TransitionKey, jobInfo.Payload.InstanceId);
-            }
-            catch (TransitionRuleFailedException e)
-            {
-                logger.LogWarning(
-                    "TransitionTimerJobHandler: Transition rule failed for JobId {JobId}, Reason: {Reason}",
-                    jobData.JobId, e.Message);
-            }
-            catch (Exception e)
-            {
-                logger.LogError(e,
-                    "TransitionTimerJobHandler: Error executing transition {TransitionKey} for instance {InstanceId}",
-                    jobInfo.Payload.TransitionKey, jobInfo.Payload.InstanceId);
-            }
+            logger.JobFailed(e, args.JobName, args.InstanceId);
+            throw;
         }
     }
 }

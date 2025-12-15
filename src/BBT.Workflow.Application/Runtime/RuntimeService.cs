@@ -1,7 +1,7 @@
 using System.Text.Json;
-using BBT.Aether.DistributedCache;
+using BBT.Aether.MultiSchema;
 using BBT.Workflow.Instances;
-using BBT.Workflow.Schemas;
+using BBT.Workflow.Logging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -10,92 +10,20 @@ namespace BBT.Workflow.Runtime;
 public sealed class RuntimeService(
     IInstanceRepository instanceRepository,
     ICurrentSchema currentSchema,
-    ISchemaManager schemaManager,
     IOptions<RuntimeOptions> runtimeOptions,
     IRuntimeInfoProvider runtimeInfoProvider,
-    IDistributedCacheService distributedCache,
     ILogger<RuntimeService> logger) : IRuntimeService
 {
-    private const string SchemaExistsCacheKeyPrefix = "schema_exists_";
-    private static readonly TimeSpan SchemaExistsCacheDuration = TimeSpan.FromDays(1);
-
-    /// <summary>
-    /// Checks if a schema exists with caching to improve performance in read-only scenarios.
-    /// Only caches positive results (schema exists = true) to avoid stale negative caches
-    /// when schemas are created after the initial check.
-    /// </summary>
-    /// <param name="schemaName">The name of the schema to check</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>True if schema exists, false otherwise</returns>
-    private async Task<bool> CheckSchemaExistsWithCacheAsync(string schemaName, CancellationToken cancellationToken = default)
-    {
-        var cacheKey = $"{SchemaExistsCacheKeyPrefix}{schemaName}";
-
-        // Try to get from distributed cache - only check for true values
-        var cachedValue = await distributedCache.GetAsync<string>(cacheKey, cancellationToken);
-        if (!string.IsNullOrEmpty(cachedValue) && bool.TryParse(cachedValue, out bool cachedResult) && cachedResult)
-        {
-            logger.LogDebug("Schema existence check cache hit for schema: {Schema} - schema exists", schemaName);
-            return true;
-        }
-
-        logger.LogDebug("Schema existence check cache miss for schema: {Schema}. Querying database.", schemaName);
-        var exists = await schemaManager.SchemaExistsAsync(schemaName, cancellationToken);
-
-        // Only cache positive results (schema exists = true)
-        // This prevents stale negative caches when schemas are created later
-        if (exists)
-        {
-            var cacheOptions = new DistributedCacheEntryOptions
-            {
-                SlidingExpiration = SchemaExistsCacheDuration
-            };
-
-            await distributedCache.SetAsync(cacheKey, "true", cacheOptions, cancellationToken);
-            logger.LogDebug("Cached positive schema existence result for schema: {Schema}", schemaName);
-        }
-        else
-        {
-            logger.LogDebug("Schema '{Schema}' does not exist - not caching negative result", schemaName);
-        }
-
-        return exists;
-    }
-
-    public async Task<IEnumerable<T?>> GetAsync<T>(string schema, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<T?>> GetAsync<T>(CancellationToken cancellationToken = default)
         where T : class, IDomainEntity, IReferenceSetter
     {
-        var schemaInfo = runtimeOptions.Value.Schemas[schema];
+        var schemaName = runtimeOptions.Value.GetSchemaNameByType(typeof(T));
+        var schemaInfo = runtimeOptions.Value.Schemas[schemaName];
 
-        using (currentSchema.Change(schemaInfo.Schema))
+        using (currentSchema.Use(schemaInfo.Schema))
         {
-            if (runtimeOptions.Value.EnableSchemaMigration)
-            {
-                await schemaManager.EnsureSchemaAndTablesAsync(currentSchema.Name, cancellationToken);
-            }
-            else
-            {
-                // In read-only mode, check if schema exists before proceeding (with caching)
-                if (!await CheckSchemaExistsWithCacheAsync(currentSchema.Name, cancellationToken))
-                {
-                    logger.LogWarning(
-                        "Schema '{Schema}' does not exist and schema migration is disabled. Returning empty collection.",
-                        currentSchema.Name);
-                    return [];
-                }
-            }
-
-            List<InstanceAndDataModel> results;
-            try
-            {
-                results = await instanceRepository.GetActiveDataListAsync(cancellationToken);
-            }
-            catch (Exception e)
-            {
-                logger.LogError(e, "Error getting active data list");
-                return [];
-            }
-
+            var results = await instanceRepository.GetActiveDataListAsync(cancellationToken);
+            
             var flows = results
                 .Select(item =>
                 {
@@ -118,18 +46,12 @@ public sealed class RuntimeService(
                     }
                     catch (JsonException ex)
                     {
-                        logger.LogError(ex,
-                            "Failed to deserialize workflow instance data. Schema: {Schema}, InstanceKey: {InstanceKey}, Version: {Version}, JsonData: {JsonData}",
-                            schema, item.Instance.Key, item.InstanceData.Version, item.InstanceData.Data.JsonElement.GetRawText());
-
+                        logger.InstanceDeserializationFailed(ex, schemaName, item.Instance.Key, item.InstanceData.Version);
                         return null;
                     }
                     catch (Exception ex)
                     {
-                        logger.LogError(ex,
-                            "Unexpected error during workflow instance deserialization. Schema: {Schema}, InstanceKey: {InstanceKey}, Version: {Version}",
-                            schema, item.Instance.Key, item.InstanceData.Version);
-
+                        logger.InstanceDeserializationFailed(ex, schemaName, item.Instance.Key, item.InstanceData.Version);
                         return null;
                     }
                 })
@@ -139,28 +61,13 @@ public sealed class RuntimeService(
         }
     }
 
-    public async Task<T?> GetAsync<T>(string schema, string key, string version,
+    public async Task<T?> GetAsync<T>(string key, string version,
         CancellationToken cancellationToken = default) where T : class, IDomainEntity, IReferenceSetter
     {
-        var schemaInfo = runtimeOptions.Value.Schemas[schema];
-        using (currentSchema.Change(schemaInfo.Schema))
+        var schemaName = runtimeOptions.Value.GetSchemaNameByType(typeof(T));
+        var schemaInfo = runtimeOptions.Value.Schemas[schemaName];
+        using (currentSchema.Use(schemaInfo.Schema))
         {
-            if (runtimeOptions.Value.EnableSchemaMigration)
-            {
-                await schemaManager.EnsureSchemaAndTablesAsync(currentSchema.Name, cancellationToken);
-            }
-            else
-            {
-                // In read-only mode, check if schema exists before proceeding (with caching)
-                if (!await CheckSchemaExistsWithCacheAsync(currentSchema.Name, cancellationToken))
-                {
-                    logger.LogWarning(
-                        "Schema '{Schema}' does not exist and schema migration is disabled. Returning null for key '{Key}', version '{Version}'.",
-                        currentSchema.Name, key, version);
-                    return null;
-                }
-            }
-
             var item = await instanceRepository.FindActiveDataAsync(key, version, cancellationToken);
 
             if (item == null)
@@ -187,18 +94,12 @@ public sealed class RuntimeService(
             }
             catch (JsonException ex)
             {
-                logger.LogError(ex,
-                    "Failed to deserialize specific workflow instance data. Schema: {Schema}, InstanceKey: {InstanceKey}, Version: {Version}, JsonData: {JsonData}",
-                    schema, key, version, item.InstanceData.Data.JsonElement.GetRawText());
-
+                logger.InstanceDeserializationFailed(ex, schemaName, key, version);
                 return null;
             }
             catch (Exception ex)
             {
-                logger.LogError(ex,
-                    "Unexpected error during specific workflow instance deserialization. Schema: {Schema}, InstanceKey: {InstanceKey}, Version: {Version}",
-                    schema, key, version);
-
+                logger.InstanceDeserializationFailed(ex, schemaName, key, version);
                 return null;
             }
         }

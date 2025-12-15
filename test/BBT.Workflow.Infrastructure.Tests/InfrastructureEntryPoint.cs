@@ -3,6 +3,7 @@ using BBT.Aether.Domain.Services;
 using BBT.Aether.Testing;
 using BBT.Aether.Threading;
 using BBT.Workflow.Data;
+using Dapr.Jobs.Extensions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -17,15 +18,15 @@ public class InfrastructureEntryPoint : ModuleEntryPointBase
 
     public override void Load(IServiceCollection services)
     {
+        services.AddDaprClient();
+        services.AddDaprJobsClient();
+
         services.AddInfrastructureModule();
         services.AddAetherAutoMapperMapper([
             typeof(WorkflowDomainModuleServiceCollectionExtensions), // Domain
             typeof(WorkflowApplicationModuleServiceCollectionExtensions) // Application
         ]);
-        services.AddNetCoreDistributedCache(sc =>
-        {
-            sc.AddDistributedMemoryCache();
-        });
+        services.AddNetCoreDistributedCache(sc => { sc.AddDistributedMemoryCache(); });
 
         services.AddSingleton<IDataSeedService, WorkflowTestDataSeedService>();
         ConfigureInMemorySqlite(services);
@@ -55,10 +56,7 @@ public class InfrastructureEntryPoint : ModuleEntryPointBase
     private void ConfigureInMemorySqlite(IServiceCollection services)
     {
         _sqliteConnection = CreateDatabaseAndGetConnection(services);
-        services.AddAetherDbContext<WorkflowDbContext>(options =>
-        {
-            options.UseSqlite(_sqliteConnection);
-        });
+        services.AddAetherDbContext<WorkflowDbContext>(options => { options.UseSqlite(_sqliteConnection); });
     }
 
     private static SqliteConnection CreateDatabaseAndGetConnection(IServiceCollection services)

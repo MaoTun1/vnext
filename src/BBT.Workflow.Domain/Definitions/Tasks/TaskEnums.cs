@@ -15,7 +15,13 @@ public enum TaskType
     Human = 5,
     Http = 6,
     Script = 7,
-    Condition = 8
+    Condition = 8,
+    Timer = 9,
+    Notification = 10,
+    StartTrigger = 11,
+    DirectTrigger = 12,
+    GetInstanceData = 13,
+    SubProcess = 14
 }
 
 /// <summary>

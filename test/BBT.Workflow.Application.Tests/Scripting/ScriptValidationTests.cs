@@ -5,8 +5,6 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using BBT.Workflow.Definitions;
-using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting.Functions;
 using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,6 +13,7 @@ using Xunit;
 using Xunit.Abstractions;
 using IRuntimeInfoProvider = BBT.Workflow.Runtime.IRuntimeInfoProvider;
 using Dapr.Client;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Scripting;
 
@@ -23,6 +22,7 @@ namespace BBT.Workflow.Scripting;
 /// without needing to debug constantly. These tests provide a way to validate
 /// script compilation and basic execution scenarios.
 /// </summary>
+[Collection("ScriptingTests")]
 public class ScriptValidationTests : ApplicationTestBase<ApplicationEntryPoint>
 {
     private readonly IScriptEngine _scriptEngine;
@@ -32,6 +32,13 @@ public class ScriptValidationTests : ApplicationTestBase<ApplicationEntryPoint>
     {
         _scriptEngine = GetRequiredService<IScriptEngine>();
         _output = output;
+    }
+
+    public override void Dispose()
+    {
+        // Reset static state to prevent test interference
+        ScriptHelper.Reset();
+        base.Dispose();
     }
 
     protected override void AddApplication(IServiceCollection services)
@@ -49,100 +56,6 @@ public class ScriptValidationTests : ApplicationTestBase<ApplicationEntryPoint>
         services.AddSingleton(mockDaprClient.Object);
         ScriptHelper.SetDaprClient(mockDaprClient.Object);
         base.AddApplication(services);
-    }
-
-    /// <summary>
-    /// Helper method to validate any script file and provide detailed feedback
-    /// </summary>
-    /// <param name="scriptFilePath">Full path to the script file</param>
-    /// <returns>Validation result with details</returns>
-    public async Task<ScriptValidationResult> ValidateScriptFileAsync(string scriptFilePath)
-    {
-        try
-        {
-            if (!File.Exists(scriptFilePath))
-            {
-                return ScriptValidationResult.Failed($"Script file not found: {scriptFilePath}");
-            }
-
-            var scriptCode = await File.ReadAllTextAsync(scriptFilePath);
-            var result = await ValidateScriptCodeAsync(scriptCode, Path.GetFileName(scriptFilePath));
-            
-            return result;
-        }
-        catch (Exception ex)
-        {
-            return ScriptValidationResult.Failed($"Unexpected error: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// Helper method to validate script code directly
-    /// </summary>
-    /// <param name="scriptCode">The script code to validate</param>
-    /// <param name="scriptName">Optional name for logging</param>
-    /// <returns>Validation result with details</returns>
-    public async Task<ScriptValidationResult> ValidateScriptCodeAsync(string scriptCode, string scriptName = "Unknown")
-    {
-        try
-        {
-            // Clean script code for testing (disable #load directives)
-            var cleanedScript = CleanScriptForTesting(scriptCode);
-            
-            // Basic compilation test
-            var references = new List<MetadataReference>
-            {
-                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(IMapping).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(ScriptHelper).Assembly.Location)
-            };
-
-            var usings = new[]
-            {
-                "System.Collections.Generic",
-                "System.Threading.Tasks",
-                "BBT.Workflow.Scripting",
-                "BBT.Workflow.Definitions",
-                "BBT.Workflow.Scripting.Functions"
-            };
-            
-            // Try to compile as IMapping first
-            try
-            {
-                var mappingInstance = await _scriptEngine.CompileToInstanceAsync<IMapping>(
-                    cleanedScript, references, usings);
-
-                // Test basic execution
-                var testResult = await TestMappingExecution(mappingInstance, scriptName);
-                
-                return ScriptValidationResult.Success(
-                    $"✅ {scriptName} compiled and executed successfully as IMapping", 
-                    mappingInstance, 
-                    testResult);
-            }
-            catch (Exception mappingEx)
-            {
-                // If IMapping fails, try as general compilation
-                try
-                {
-                    var generalResult = await _scriptEngine.EvaluateAsync(cleanedScript);
-                    return ScriptValidationResult.Success(
-                        $"✅ {scriptName} compiled as general script", 
-                        executionResult: generalResult);
-                }
-                catch (Exception generalEx)
-                {
-                    return ScriptValidationResult.Failed(
-                        $"❌ {scriptName} compilation failed:\n" +
-                        $"IMapping Error: {mappingEx.Message}\n" +
-                        $"General Error: {generalEx.Message}");
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            return ScriptValidationResult.Failed($"❌ {scriptName} validation error: {ex.Message}");
-        }
     }
 
     /// <summary>
@@ -242,7 +155,7 @@ public class ScriptValidationTests : ApplicationTestBase<ApplicationEntryPoint>
             var instance = InstanceFactory.CreateDefault();
             instance.AddData(Guid.NewGuid(), new JsonData(JsonSerializer.Serialize(mockInstanceData)), VersionStrategy.IncreaseMajor);
 
-            var context = new ScriptContext.Builder()
+            var context = new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>())
                 .SetWorkflow(WorkflowFactory.CreateDefault())
                 .SetInstance(instance)
                 .SetTransition(TransitionFactory.CreateDefault())

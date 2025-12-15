@@ -33,12 +33,17 @@ public interface IScriptContextBuilder
     /// <summary>
     /// Sets the instance by retrieving it from repository using instance ID.
     /// </summary>
-    IScriptContextBuilder WithInstance(Guid instanceId, bool includeNavigations = true, bool noTracking = false);
+    IScriptContextBuilder WithInstance(Guid instanceId, bool noTracking = false);
+    
+    /// <summary>
+    /// Sets the instance latest data.
+    /// </summary>
+    IScriptContextBuilder WithLatestData(InstanceDataShadow? latestData);
     
     /// <summary>
     /// Sets the instance directly from an existing Instance object.
     /// </summary>
-    IScriptContextBuilder WithInstance(Instance instance);
+    IScriptContextBuilder WithInstance(Instance? instance);
     
     /// <summary>
     /// Sets the transition by finding it in the workflow using transition key.
@@ -48,7 +53,7 @@ public interface IScriptContextBuilder
     /// <summary>
     /// Sets the transition directly from an existing Transition object.
     /// </summary>
-    IScriptContextBuilder WithTransition(Transition transition);
+    IScriptContextBuilder WithTransition(Transition? transition);
     
     /// <summary>
     /// Sets the request body data for the ScriptContext.
@@ -58,7 +63,7 @@ public interface IScriptContextBuilder
     /// <summary>
     /// Sets the request headers for the ScriptContext.
     /// </summary>
-    IScriptContextBuilder WithHeaders(Dictionary<string, string>? headers);
+    IScriptContextBuilder WithHeaders(Dictionary<string, string?>? headers);
     
     /// <summary>
     /// Sets the route values for the ScriptContext.
@@ -69,6 +74,16 @@ public interface IScriptContextBuilder
     /// Sets the route values for the ScriptContext.
     /// </summary>
     IScriptContextBuilder WithRouteValues(Dictionary<string, string?>? routeValues);
+    
+    /// <summary>
+    /// Sets the query parameters for the ScriptContext.
+    /// </summary>
+    IScriptContextBuilder WithQueryParameters(Dictionary<string, object?>? queryParameters);
+    
+    /// <summary>
+    /// Sets the query parameters for the ScriptContext.
+    /// </summary>
+    IScriptContextBuilder WithQueryParameters(Dictionary<string, string?>? queryParameters);
     
     /// <summary>
     /// Sets the task response data for the ScriptContext.

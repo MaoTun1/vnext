@@ -1,7 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using BBT.Aether;
 using BBT.Workflow.Runtime;
+using BBT.Workflow.Shared;
 
 namespace BBT.Workflow.Definitions;
 
@@ -18,12 +20,16 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
     [JsonConstructor]
     private View(
         ViewType type,
-        ViewTarget target,
-        string content): this()
+        string content,
+        string display,
+        LanguageLabel[]? labels,
+        PlatformOverrides? platformOverrides) : this()
     {
         Type = type;
-        Target = target;
-        Content = Check.NotNullOrEmpty(content, nameof(Content));
+        Content = Check.NotNullOrWhiteSpace(content, nameof(Content));
+        Display = display;
+        Labels = labels ?? [];
+        PlatformOverrides = platformOverrides;
     }
 
     /// <summary>
@@ -52,30 +58,27 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
     public ViewType Type { get; private set; }
 
     /// <summary>
-    /// <see cref="ViewTarget"/>
-    /// </summary>
-    public ViewTarget Target { get; private set; }
-
-    /// <summary>
     /// Semantic Version
     /// </summary>
-    public string SemanticVersion => Version.Split('+')[0];
+    public string SemanticVersion => Regex.Match(Version, @"^([^+]+)").Groups[1].Value;
 
     /// <summary>
     /// Content
     /// </summary>
     public string Content { get; private set; } = string.Empty;
-
+    
     /// <summary>
-    /// Json Content
+    /// Display
     /// </summary>
-    public JsonDocument? JsonContent
-    {
-        get => Type == ViewType.Json && !string.IsNullOrEmpty(Content) ? JsonDocument.Parse(Content) : null;
-        set => Content = value?.RootElement.ToString() ?? string.Empty;
-    }
-
-    public string CacheKey => $"{nameof(View)}:{Domain}:{Flow}:{Key}:{Version}";
+    public string Display { get; private set; } = string.Empty;
+    
+    /// <summary>
+    /// Display
+    /// </summary>
+    public LanguageLabel[]? Labels { get; private set; } = [];
+    public PlatformOverrides? PlatformOverrides { get; private set; }
+    
+    public string ComponentKey => RuntimeSysSchemaInfo.Views;
 
     public static string GenerateCacheKey(
         string domain,
@@ -88,17 +91,17 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
 
     private void SetKey(string key)
     {
-        Key = Check.NotNullOrEmpty(key, nameof(Key), ViewConstants.MaxKeyLength);
+        Key = Check.NotNullOrWhiteSpace(key, nameof(Key), ViewConstants.MaxKeyLength);
     }
 
     private void SetDomain(string domain)
     {
-        Domain = Check.NotNullOrEmpty(domain, nameof(Domain), WorkflowConstants.MaxDomainLength);
+        Domain = Check.NotNullOrWhiteSpace(domain, nameof(Domain), WorkflowConstants.MaxDomainLength);
     }
-    
+
     private void SetVersion(string version)
     {
-        Version = Check.NotNullOrEmpty(version, nameof(Version), WorkflowConstants.MaxVersionLength);
+        Version = Check.NotNullOrWhiteSpace(version, nameof(Version), WorkflowConstants.MaxVersionLength);
     }
 
     public void SetReference(IReference reference)

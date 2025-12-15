@@ -226,6 +226,7 @@
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "ASPNETCORE_URLS": "http://localhost:4201",
                 "APP_DOMAIN": "core",
+                "DAPR_APP_ID": "vnext-app",
                 "DAPR_HTTP_PORT": "42110",
                 "DAPR_GRPC_PORT": "42111",
                 "DAPR_PLACEMENT_HOST": "localhost:50005",
@@ -234,6 +235,7 @@
                 "DAPR_SECRET_STORE_NAME": "vnext-secret",
                 "DAPR_STATE_STORE_NAME": "vnext-state",
                 "DAPR_PUBSUB_STORE_NAME": "vnext-pubsub",
+                "DAPR_PUBSUB_BROADCAST_STORE_NAME": "vnext-pubsub-broadcast",
                 "DAPR_LOCK_STORE_NAME": "vnext-lock"
             },
             "group": {
@@ -264,6 +266,7 @@
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "ASPNETCORE_URLS": "http://localhost:4202",
                 "APP_DOMAIN": "core",
+                "DAPR_APP_ID": "vnext-execution-app",
                 "DAPR_HTTP_PORT": "43110",
                 "DAPR_GRPC_PORT": "43111",
                 "DAPR_PLACEMENT_HOST": "localhost:50005",
@@ -272,6 +275,7 @@
                 "DAPR_SECRET_STORE_NAME": "vnext-execution-secret",
                 "DAPR_STATE_STORE_NAME": "vnext-execution-state",
                 "DAPR_PUBSUB_STORE_NAME": "vnext-execution-pubsub",
+                "DAPR_PUBSUB_BROADCAST_STORE_NAME": "vnext-execution-pubsub-broadcast",
                 "DAPR_LOCK_STORE_NAME": "vnext-execution-lock"
             },
             "group": {

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\common.props" />
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>BBT.Workflow.Execution</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Minimal dependencies - just what's needed for contracts -->
+    <PackageReference Include="System.Text.Json" Version="$(MicrosoftPackageVersion)" />
+  </ItemGroup>
+</Project>
+

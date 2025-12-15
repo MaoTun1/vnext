@@ -1,4 +1,3 @@
-using BBT.Workflow.Schemas;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 
@@ -8,8 +7,6 @@ public sealed class WorkflowDbContextDesignFactory : IDesignTimeDbContextFactory
 {
     public WorkflowDbContext CreateDbContext(string[] args)
     {
-        AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
-
         var optionsBuilder = new DbContextOptionsBuilder<WorkflowDbContext>();
 
         optionsBuilder.UseNpgsql(
@@ -17,10 +14,7 @@ public sealed class WorkflowDbContextDesignFactory : IDesignTimeDbContextFactory
             npgsqlOptions => { npgsqlOptions.MigrationsHistoryTable("__Workflow_Migrations"); });
 
         return new WorkflowDbContext(
-            optionsBuilder.Options,
-            new CurrentSchema(
-                AsyncLocalSchemaAccessor.Instance
-            )
+            optionsBuilder.Options
         );
     }
 }

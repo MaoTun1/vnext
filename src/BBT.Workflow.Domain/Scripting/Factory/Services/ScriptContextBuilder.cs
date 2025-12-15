@@ -1,8 +1,9 @@
+using BBT.Aether.Results;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Scripting;
 
@@ -12,15 +13,18 @@ namespace BBT.Workflow.Scripting;
 /// </summary>
 internal sealed class ScriptContextBuilder(
     IComponentCacheStore componentCacheStore,
-    IInstanceRepository instanceRepository) : IScriptContextBuilder
+    IInstanceRepository instanceRepository,
+    ILogger<ScriptContext> logger) : IScriptContextBuilder
 {
     private IRuntimeInfoProvider? _runtimeInfoProvider;
     private Definitions.Workflow? _workflow;
     private Instance? _instance;
+    private InstanceDataShadow? _latestData;
     private Transition? _transition;
     private object? _body;
-    private Dictionary<string, string>? _headers;
+    private Dictionary<string, string?>? _headers;
     private Dictionary<string, object?>? _routeValues;
+    private Dictionary<string, object?>? _queryParameters;
     private Dictionary<string, object?> _taskResponse = new();
     private Dictionary<string, object> _metadata = new();
     private Dictionary<string, object> _definitions = new();
@@ -31,8 +35,7 @@ internal sealed class ScriptContextBuilder(
     private string? _workflowVersion;
     private IReference? _workflowReference;
     private Guid? _instanceId;
-    private bool _includeNavigations = true;
-    private bool _noTracking = false;
+    private bool _noTracking;
     private string? _transitionKey;
 
     public IScriptContextBuilder WithRuntime(IRuntimeInfoProvider runtimeInfoProvider)
@@ -71,31 +74,44 @@ internal sealed class ScriptContextBuilder(
         return this;
     }
 
-    public IScriptContextBuilder WithInstance(Guid instanceId, bool includeNavigations = true, bool noTracking = false)
+    public IScriptContextBuilder WithInstance(Guid instanceId, bool noTracking = false)
     {
         _instanceId = instanceId;
-        _includeNavigations = includeNavigations;
         _noTracking = noTracking;
         _instance = null; // Clear direct instance if set
         return this;
     }
-
-    public IScriptContextBuilder WithInstance(Instance instance)
+    
+    public IScriptContextBuilder WithLatestData(InstanceDataShadow? latestData)
     {
-        _instance = instance;
+        _latestData = latestData;
+        return this;
+    }
+
+    public IScriptContextBuilder WithInstance(Instance? instance)
+    {
+        if (instance == null)
+        {
+            return this;
+        }
+        _instance = instance.CreateSnapshot();
         _instanceId = null; // Clear async retrieval property
         return this;
     }
 
-    public IScriptContextBuilder WithTransition(string transitionKey)
+    public IScriptContextBuilder WithTransition(string? transitionKey)
     {
         _transitionKey = transitionKey;
         _transition = null; // Clear direct transition if set
         return this;
     }
 
-    public IScriptContextBuilder WithTransition(Transition transition)
+    public IScriptContextBuilder WithTransition(Transition? transition)
     {
+        if (transition == null)
+        {
+            return this;
+        }
         _transition = transition;
         _transitionKey = null; // Clear async retrieval property
         return this;
@@ -107,7 +123,7 @@ internal sealed class ScriptContextBuilder(
         return this;
     }
 
-    public IScriptContextBuilder WithHeaders(Dictionary<string, string>? headers)
+    public IScriptContextBuilder WithHeaders(Dictionary<string, string?>? headers)
     {
         _headers = headers;
         return this;
@@ -122,6 +138,18 @@ internal sealed class ScriptContextBuilder(
     public IScriptContextBuilder WithRouteValues(Dictionary<string, string?>? routeValues)
     {
         _routeValues = routeValues?.ToDictionary(kvp => kvp.Key, kvp => (object?)kvp.Value);
+        return this;
+    }
+
+    public IScriptContextBuilder WithQueryParameters(Dictionary<string, object?>? queryParameters)
+    {
+        _queryParameters = queryParameters;
+        return this;
+    }
+
+    public IScriptContextBuilder WithQueryParameters(Dictionary<string, string?>? queryParameters)
+    {
+        _queryParameters = queryParameters?.ToDictionary(kvp => kvp.Key, kvp => (object?)kvp.Value);
         return this;
     }
 
@@ -155,7 +183,7 @@ internal sealed class ScriptContextBuilder(
         var transition = ResolveTransition(workflow);
 
         // Build the ScriptContext using the domain builder
-        return new ScriptContext.Builder()
+        return new ScriptContext.Builder(logger)
             .SetRuntime(_runtimeInfoProvider!)
             .SetWorkflow(workflow)
             .SetInstance(instance)
@@ -163,6 +191,7 @@ internal sealed class ScriptContextBuilder(
             .SetBody(_body)
             .SetHeaders(_headers)
             .SetRouteValues(_routeValues)
+            .SetQueryParameters(_queryParameters)
             .SetTaskResponse(_taskResponse)
             .SetMetadata(_metadata)
             .SetDefinitions(_definitions)
@@ -175,11 +204,17 @@ internal sealed class ScriptContextBuilder(
             return _workflow;
 
         if (_workflowReference != null)
-            return await componentCacheStore.GetFlowAsync(_workflowReference, cancellationToken);
+        {
+            var result = await componentCacheStore.GetFlowAsync(_workflowReference, cancellationToken);
+            return result.GetValueOrThrow();
+        }
 
         if (_workflowDomain != null && _workflowKey != null)
-            return await componentCacheStore.GetFlowAsync(_workflowDomain, _workflowKey, _workflowVersion,
+        {
+            var result = await componentCacheStore.GetFlowAsync(_workflowDomain, _workflowKey, _workflowVersion,
                 cancellationToken);
+            return result.GetValueOrThrow();
+        }
 
         throw new InvalidOperationException("Workflow must be set either directly or through domain/key parameters.");
     }
@@ -191,28 +226,16 @@ internal sealed class ScriptContextBuilder(
 
         if (_instanceId.HasValue)
         {
-            Instance? instance = null;
-            if (_noTracking)
-            {
-                var query = (await instanceRepository.GetQueryableAsync());
-                if (_includeNavigations)
-                {
-                    query = query.Include(i => i.DataList);
-                }
-
-                instance = await query
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(p => p.Id == _instanceId.Value, cancellationToken);
-            }
-            else
-            {
-                instance = await instanceRepository.FindAsync(_instanceId.Value, _includeNavigations,
+            var instance = _noTracking
+                ? await instanceRepository.FindByIdentifierAsReadOnlyAsync(_instanceId.Value.ToString(), cancellationToken)
+                : await instanceRepository.FindByIdentifierAsync(_instanceId.Value.ToString(),
                     cancellationToken);
-            }
-
+            
             if (instance == null)
                 throw new InvalidOperationException($"Instance with ID {_instanceId.Value} not found.");
-            return instance;
+            
+            _instance = instance.CreateSnapshot(_latestData);
+            return _instance;
         }
 
         throw new InvalidOperationException("Instance must be set either directly or through instance ID.");
@@ -223,7 +246,7 @@ internal sealed class ScriptContextBuilder(
         if (_transition != null)
             return _transition;
 
-        if (_transitionKey != null)
+        if (!string.IsNullOrEmpty(_transitionKey))
         {
             var transition = workflow.FindTransitionInContext(_transitionKey);
             if (transition == null)

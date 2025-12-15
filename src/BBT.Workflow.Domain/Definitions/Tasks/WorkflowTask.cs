@@ -16,6 +16,11 @@ namespace BBT.Workflow.Definitions;
 [JsonDerivedType(typeof(HumanTask), typeDiscriminator: "5")]
 [JsonDerivedType(typeof(HttpTask), typeDiscriminator: "6")]
 [JsonDerivedType(typeof(ScriptTask), typeDiscriminator: "7")]
+[JsonDerivedType(typeof(NotificationTask), typeDiscriminator: "10")]
+[JsonDerivedType(typeof(StartTask), typeDiscriminator: "11")]
+[JsonDerivedType(typeof(DirectTriggerTask), typeDiscriminator: "12")]
+[JsonDerivedType(typeof(GetInstanceDataTask), typeDiscriminator: "13")]
+[JsonDerivedType(typeof(SubProcessTask), typeDiscriminator: "14")]
 public abstract class WorkflowTask : IDomainEntity, ITaskReference, IReferenceSetter, ITaskClonable
 {
     protected WorkflowTask()
@@ -62,30 +67,21 @@ public abstract class WorkflowTask : IDomainEntity, ITaskReference, IReferenceSe
     /// </summary>
     public JsonElement Config { get; private set; }
 
-    public string CacheKey => $"{nameof(WorkflowTask)}:{Domain}:{Flow}:{Key}:{Version}";
-
-    public static string GenerateCacheKey(
-        string domain,
-        string flow,
-        string key,
-        string version)
-    {
-        return $"{nameof(WorkflowTask)}:{domain}:{flow}:{key}:{version}";
-    }
+    public string ComponentKey => RuntimeSysSchemaInfo.Tasks;
 
     private void SetKey(string key)
     {
-        Key = Check.NotNullOrEmpty(key, nameof(Key), TaskConstants.MaxKeyLength);
+        Key = Check.NotNullOrWhiteSpace(key, nameof(Key), TaskConstants.MaxKeyLength);
     }
 
     private void SetDomain(string domain)
     {
-        Domain = Check.NotNullOrEmpty(domain, nameof(Domain), WorkflowConstants.MaxDomainLength);
+        Domain = Check.NotNullOrWhiteSpace(domain, nameof(Domain), WorkflowConstants.MaxDomainLength);
     }
 
     private void SetVersion(string version)
     {
-        Version = Check.NotNullOrEmpty(version, nameof(Version), WorkflowConstants.MaxVersionLength);
+        Version = Check.NotNullOrWhiteSpace(version, nameof(Version), WorkflowConstants.MaxVersionLength);
     }
 
     /// <summary>

@@ -1,66 +1,66 @@
+using BBT.Aether.AspNetCore.Controllers;
+using BBT.Workflow.Execution.Services;
+using BBT.Workflow.Logging;
 using Microsoft.AspNetCore.Mvc;
-using BBT.Workflow.Tasks;
 
 namespace BBT.Workflow.Execution.Controllers.Executions;
 
 /// <summary>
-/// Controller for handling direct task execution requests from the Orchestration service via Dapr Service Invocation.
-/// This controller provides endpoints for executing individual workflow tasks without orchestration logic.
+/// Controller for handling stateless task execution requests from the Orchestration service.
+/// Receives task envelopes with strongly-typed bindings via Dapr Service Invocation and executes them.
+/// No database access, pure execution only.
 /// </summary>
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/execution")]
 public sealed class ExecutionController(
-    ITaskCommandAppService taskCommandAppService,
+    ITaskInvokerRegistry invokerRegistry,
     ILogger<ExecutionController> logger)
-    : ControllerBase
+    : AetherControllerBase
 {
     /// <summary>
-    /// Executes a single workflow task directly without orchestration logic.
-    /// Returns context updates that occurred during task execution for synchronization
-    /// with the orchestration service.
+    /// Invokes a task using the envelope-based routing pattern.
+    /// The envelope contains TaskType, Version, TaskKey and strongly-typed Binding.
+    /// The registry routes the invocation to the appropriate invoker based on TaskType.
     /// </summary>
-    /// <param name="input">The task execution request.</param>
+    /// <param name="type">Task type discriminator for invoker resolution (e.g., "http", "daprservice").</param>
+    /// <param name="key">Task key for logging and tracing.</param>
+    /// <param name="request">The task invocation request with envelope and trace context.</param>
     /// <param name="cancellationToken">Cancellation token for the operation.</param>
-    /// <returns>Task execution result with context updates.</returns>
-    [HttpPost("task")]
-    public async Task<IActionResult> ExecuteTaskAsync(
-        [FromBody] TaskExecutionRequestInput input,
+    /// <returns>Task invocation response with result.</returns>
+    /// <response code="200">Task invoked successfully</response>
+    /// <response code="400">Validation error or unknown task type</response>
+    /// <response code="500">Internal server error</response>
+    [HttpPost("invoke/{type}/{key}")]
+    [ProducesResponseType(typeof(TaskInvokeResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> InvokeTaskAsync(
+        [FromRoute] string type,
+        [FromRoute] string key,
+        [FromBody] TaskInvokeRequest request,
         CancellationToken cancellationToken = default)
     {
-        try
-        {
-            logger.LogInformation("Executing task {TaskKey} for instance {InstanceId}", 
-                input.OnExecuteTask.Task.Key, input.Context.InstanceId);
+        var envelope = request.Envelope;
+        var traceContext = request.TraceContext;
 
-            // Execute task and capture context updates for synchronization
-            var contextUpdate = await taskCommandAppService.ExecuteTaskAsync(
-                input,
-                cancellationToken);
-            
-            logger.LogInformation("Successfully executed task {TaskKey} for instance {InstanceId}. Context updates: TaskResponse={TaskResponseCount}, InstanceData={InstanceDataCount}", 
-                input.OnExecuteTask.Task.Key, 
-                input.Context.InstanceId,
-                contextUpdate.TaskResponse.Count,
-                contextUpdate.InstanceDataUpdates.Count);
-            
-            return Ok(new TaskExecutionResponseOutput 
-            { 
-                Success = true, 
-                Message = "Task executed successfully",
-                ContextUpdate = contextUpdate
-            });
-        }
-        catch (Exception ex)
+        using (logger.BeginScope(new Dictionary<string, object>
         {
-            logger.LogError(ex, "Error executing task for instance {InstanceId}", 
-                input.Context.InstanceId);
-            
-            return BadRequest(new TaskExecutionResponseOutput 
-            { 
-                Success = false, 
-                Message = ex.Message 
+            [TelemetryConstants.TagNames.Domain] = traceContext?.Domain ?? "unknown",
+            [TelemetryConstants.TagNames.Flow] = traceContext?.WorkflowKey ?? "unknown",
+            [TelemetryConstants.TagNames.InstanceId] = traceContext?.InstanceId ?? Guid.Empty,
+            [TelemetryConstants.TagNames.TaskKey] = envelope.TaskKey,
+            [TelemetryConstants.TagNames.TaskType] = envelope.TaskType
+        }))
+        {
+            var result = await invokerRegistry.InvokeAsync(envelope, cancellationToken);
+            return Ok(new TaskInvokeResponse
+            {
+                Success = result.IsSuccess,
+                ErrorMessage = result.ErrorMessage,
+                Result = result,
+                ExecutionDurationMs = result.ExecutionDurationMs
             });
         }
     }
-} 
+}

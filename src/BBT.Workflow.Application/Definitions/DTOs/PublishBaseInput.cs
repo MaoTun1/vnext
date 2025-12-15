@@ -33,8 +33,6 @@ public abstract class PublishBaseInput
     /// </summary>
     [Required]
     [StringLength(WorkflowConstants.MaxVersionLength)]
-    [RegularExpression(@"^\d+\.\d+\.\d+$",
-        ErrorMessage = "The Version field must be in the format 'MAJOR.MINOR.PATCH', e.g., '1.0.0'.")]
     public string Version { get; set; }
     
     public List<string> Tags { get; set; } = [];

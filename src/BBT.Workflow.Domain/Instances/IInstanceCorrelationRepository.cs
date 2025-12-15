@@ -19,82 +19,50 @@ public interface IInstanceCorrelationRepository : IRepository<InstanceCorrelatio
     /// A task representing the asynchronous operation.
     /// The result contains a collection of active correlations where the instance is a parent.
     /// </returns>
-    Task<List<InstanceCorrelation>> FindActiveByParentInstanceIdAsync(
+    Task<List<InstanceCorrelation>> GetActiveByParentAsync(
         Guid parentInstanceId, 
         CancellationToken cancellationToken = default);
-
+    
     /// <summary>
-    /// Finds the parent correlation for the specified sub-flow instance.
-    /// This method is used to identify the parent workflow when a sub-flow needs to signal completion.
-    /// </summary>
-    /// <param name="subFlowInstanceId">The unique identifier of the sub-flow instance.</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>
-    /// A task representing the asynchronous operation.
-    /// The result contains the correlation record if found; otherwise, null.
-    /// </returns>
-    Task<InstanceCorrelation?> FindBySubFlowInstanceIdAsync(
-        Guid subFlowInstanceId, 
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Finds all incomplete correlations for the specified parent instance and state.
-    /// This method is used to check if there are any pending sub-flows that block the parent workflow.
-    /// </summary>
-    /// <param name="parentInstanceId">The unique identifier of the parent workflow instance.</param>
-    /// <param name="parentState">The state key where the sub-flows were initiated.</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>
-    /// A task representing the asynchronous operation.
-    /// The result contains a collection of incomplete correlations for the specified criteria.
-    /// </returns>
-    Task<List<InstanceCorrelation>> FindIncompleteByParentAsync(
-        Guid parentInstanceId, 
-        string parentState, 
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Checks if there are any incomplete correlations for the specified parent instance.
-    /// This method provides a quick way to determine if a parent workflow has pending sub-flows.
+    /// Checks whether there are any active SubFlow correlations for the specified parent instance.
+    /// This method provides a fast existence check without retrieving the actual correlation records.
     /// </summary>
     /// <param name="parentInstanceId">The unique identifier of the parent workflow instance.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>
     /// A task representing the asynchronous operation.
-    /// The result is true if there are incomplete correlations; otherwise, false.
+    /// The result contains true if any active SubFlow correlations exist for the parent instance, false otherwise.
     /// </returns>
-    Task<bool> HasIncompleteCorrelationsAsync(
-        Guid parentInstanceId, 
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Checks if there are any active blocking SubFlow instances for the specified parent instance.
-    /// This method performs a database-level join query to check for SubFlow type "S" instances
-    /// without fetching individual instance records for better performance.
-    /// </summary>
-    /// <param name="parentInstanceId">The unique identifier of the parent workflow instance.</param>
-    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
-    /// <returns>
-    /// A task representing the asynchronous operation.
-    /// The result is true if there are active blocking SubFlow instances; otherwise, false.
-    /// </returns>
-    Task<bool> HasActiveBlockingSubFlowsAsync(
+    Task<bool> AnyActiveSubFlowByParentAsync(
         Guid parentInstanceId,
         CancellationToken cancellationToken = default);
-
+    
     /// <summary>
-    /// Finds the first active blocking SubFlow correlation for the specified parent instance and state.
-    /// This method is optimized to directly return blocking SubFlow (Type "S") correlations without additional filtering.
+    /// Finds the active SubFlow correlation for the specified parent instance.
+    /// This method retrieves the correlation record linking a parent workflow to its active SubFlow.
     /// </summary>
     /// <param name="parentInstanceId">The unique identifier of the parent workflow instance.</param>
-    /// <param name="parentState">The state key where the sub-flow was initiated.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>
     /// A task representing the asynchronous operation.
-    /// The result contains the first active blocking SubFlow correlation if found; otherwise, null.
+    /// The result contains the active SubFlow correlation if found, null if no active SubFlow exists for the parent.
     /// </returns>
-    Task<InstanceCorrelation?> FindActiveBlockingSubFlowAsync(
+    Task<InstanceCorrelation?> FindActiveSubFlowByParentAsync(
         Guid parentInstanceId,
-        string parentState,
+        CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Finds a correlation by SubFlow instance ID.
+    /// This method is used when a SubFlow or SubProcess completes to find the correlation record
+    /// linking it to the parent workflow.
+    /// </summary>
+    /// <param name="subInstanceId">The unique identifier of the SubFlow or SubProcess instance.</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
+    /// <returns>
+    /// A task representing the asynchronous operation.
+    /// The result contains the correlation record if found, null otherwise.
+    /// </returns>
+    Task<InstanceCorrelation?> FindBySubInstanceIdAsync(
+        Guid subInstanceId,
         CancellationToken cancellationToken = default);
 } 

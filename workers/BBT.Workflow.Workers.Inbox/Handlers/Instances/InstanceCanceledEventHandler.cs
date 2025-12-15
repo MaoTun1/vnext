@@ -1,0 +1,58 @@
+using BBT.Aether.Events;
+using BBT.Aether.MultiSchema;
+using BBT.Workflow.Instances;
+using BBT.Workflow.Instances.Events;
+using BBT.Workflow.Logging;
+using BBT.Workflow.Runtime;
+
+namespace BBT.Workflow.Workers.Inbox.Handlers;
+
+/// <summary>
+/// Handles InstanceCanceledEvent to propagate cancellation to child flows and cancel active jobs.
+/// This handler delegates the actual cancellation logic to IInstanceCancellationService.
+/// </summary>
+internal sealed class InstanceCanceledEventHandler(
+    ICurrentSchema currentSchema,
+    IRuntimeInfoProvider runtimeInfoProvider,
+    IServiceScopeFactory scopeFactory,
+    ILogger<InstanceCanceledEventHandler> logger) : IEventHandler<InstanceCanceledEvent>
+{
+    /// <summary>
+    /// Handles the InstanceCanceledEvent by delegating cancellation cleanup to the service.
+    /// </summary>
+    public async Task HandleAsync(CloudEventEnvelope<InstanceCanceledEvent> envelope,
+        CancellationToken cancellationToken)
+    {
+        var eventData = envelope.Data;
+
+        if (!runtimeInfoProvider.IsDomainMatch(eventData.Domain))
+        {
+            logger.InstanceCanceledEventIgnoredDomainMismatch(
+                eventData.Domain,
+                runtimeInfoProvider.Domain,
+                eventData.InstanceId,
+                eventData.Flow);
+            return;
+        }
+
+        logger.InstanceCanceledEventReceived(
+            eventData.InstanceId,
+            eventData.Flow);
+
+        using (currentSchema.Use(eventData.Flow))
+        {
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var cancellationService = scope.ServiceProvider.GetRequiredService<IInstanceCancellationService>();
+            var result = await cancellationService.ProcessCancellationAsync(
+                eventData.InstanceId,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                logger.InstanceCanceledProcessingFailed(
+                    new InvalidOperationException(result.Error.Message),
+                    eventData.InstanceId);
+            }
+        }
+    }
+}

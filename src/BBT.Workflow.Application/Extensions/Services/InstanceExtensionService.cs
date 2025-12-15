@@ -1,40 +1,43 @@
+using System.Extensions;
+using System.Text;
+using System.Text.Json;
+using BBT.Aether.MultiSchema;
+using BBT.Aether.Results;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
-using System.Extensions;
-using System.Text;
 using BBT.Workflow.Tasks;
-using BBT.Workflow.Schemas;
+using BBT.Workflow.Tasks.Coordinator;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Extentions;
 
 /// <summary>
-/// Implementation of extension processing service
+/// Implementation of extension processing service using Railway pattern.
 /// </summary>
 public sealed class InstanceExtensionService(
     IComponentCacheStore componentCacheStore,
-    ITaskOrchestrationService taskExecutionService,
+    ITaskCoordinator taskCoordinator,
     IRuntimeInfoProvider runtimeInfoProvider,
-    ICurrentSchema currentSchema) : IInstanceExtensionService
+    ICurrentSchema currentSchema,
+    ILogger<InstanceExtensionService> logger) : IInstanceExtensionService
 {
-    public async Task<Dictionary<string, object>> ProcessExtensionsAsync(
+    /// <inheritdoc />
+    public async Task<Result<Dictionary<string, object>>> ProcessExtensionsAsync(
         string[]? extensionRequested,
         ScriptContext scriptContext,
         Definitions.Workflow workflow,
         ExtensionScope currentScope,
         CancellationToken cancellationToken = default)
     {
-        var responseExtension = new Dictionary<string, object>();
-        var executedExtensionKeys = new HashSet<string>();
+        var context = new ExtensionProcessingContext(
+            new Dictionary<string, object>(),
+            new HashSet<string>());
 
         // Process core system extensions first (runtime-wide, always included)
-        await ProcessCoreExtensionsAsync(
-            scriptContext,
-            currentScope,
-            responseExtension,
-            executedExtensionKeys,
-            cancellationToken);
+        // Core extensions failing should not block workflow extensions
+        await ProcessCoreExtensionsAsync(scriptContext, currentScope, context, cancellationToken);
 
         // Process workflow-specific extensions (excluding already executed core extensions)
         await ProcessWorkflowExtensionsAsync(
@@ -42,205 +45,177 @@ public sealed class InstanceExtensionService(
             scriptContext,
             workflow,
             currentScope,
-            responseExtension,
-            executedExtensionKeys,
+            context,
             cancellationToken);
 
-        return responseExtension;
+        return Result<Dictionary<string, object>>.Ok(context.Response);
     }
 
+    /// <summary>
+    /// Processes core extensions that are runtime-wide and always included in instance responses.
+    /// Core extensions provide essential data like state, createBy, etc.
+    /// Failures here are logged but don't break the flow - the system continues without core extensions.
+    /// </summary>
+    private async Task ProcessCoreExtensionsAsync(
+        ScriptContext scriptContext,
+        ExtensionScope currentScope,
+        ExtensionProcessingContext context,
+        CancellationToken cancellationToken)
+    {
+        var coreExtensionsResult = await GetCoreExtensionsAsync(cancellationToken);
+
+        if (!coreExtensionsResult.IsSuccess || coreExtensionsResult.Value!.Count == 0)
+            return;
+
+        await ExecuteExtensionsInternalAsync(
+            null,
+            scriptContext,
+            coreExtensionsResult.Value,
+            currentScope,
+            context,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Processes workflow-specific extensions excluding already executed core extensions.
+    /// </summary>
     private async Task ProcessWorkflowExtensionsAsync(
         string[]? extensionRequested,
         ScriptContext scriptContext,
         Definitions.Workflow workflow,
         ExtensionScope currentScope,
-        Dictionary<string, object> responseExtension,
-        HashSet<string> executedExtensionKeys,
+        ExtensionProcessingContext context,
         CancellationToken cancellationToken)
     {
-        // Get extension references from workflow and fetch actual Extension objects
         var extensionReferences = workflow.Extensions.ToList();
         var extensions = await FetchExtensionsFromReferencesAsync(extensionReferences, cancellationToken);
 
         // Filter out extensions that were already executed as core extensions
         var filteredExtensions = extensions
-            .Where(ext => !executedExtensionKeys.Contains(ext.Key))
+            .Where(ext => !context.ExecutedKeys.Contains(ext.Key))
             .ToList();
 
-        await ExecuteExtensions(
+        await ExecuteExtensionsInternalAsync(
             extensionRequested,
             scriptContext,
             filteredExtensions,
             currentScope,
-            responseExtension,
-            executedExtensionKeys,
+            context,
             cancellationToken);
     }
 
     /// <summary>
-    /// Processes core extensions that are runtime-wide and always included in instance responses.
-    /// Core extensions provide essential data like state, createBy, etc. that should be available
-    /// in every instance response regardless of specific extension requests.
-    /// </summary>
-    private async Task ProcessCoreExtensionsAsync(
-        ScriptContext scriptContext,
-        ExtensionScope currentScope,
-        Dictionary<string, object> responseExtension,
-        HashSet<string> executedExtensionKeys,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            // Get all runtime-wide core extensions from cache
-            var coreExtensions = await GetCoreExtensionsAsync(cancellationToken);
-
-            if (coreExtensions.Count > 0)
-            {
-                await ExecuteCoreExtensions(
-                    scriptContext,
-                    coreExtensions,
-                    currentScope,
-                    responseExtension,
-                    executedExtensionKeys,
-                    cancellationToken);
-            }
-        }
-        catch
-        {
-            // Core extensions not available - this is acceptable
-            // The system should continue to work even if no core extensions are defined
-        }
-    }
-
-    /// <summary>
-    /// Retrieves all core extensions from the cache.
+    /// Retrieves all core extensions from the cache using Railway pattern.
     /// Core extensions are identified by Global or GlobalAndRequested ExtensionType.
-    /// These extensions are runtime-wide and should be executed for all instances.
     /// </summary>
-    private async Task<List<Extension>> GetCoreExtensionsAsync(CancellationToken cancellationToken)
+    private async Task<Result<List<Extension>>> GetCoreExtensionsAsync(CancellationToken cancellationToken)
     {
-        using (currentSchema.Change(RuntimeSysSchemaInfo.Extensions))
+        using (currentSchema.Use(RuntimeSysSchemaInfo.Extensions))
         {
-            var coreExtensions = new List<Extension>();
+            var allExtensionsResult = await componentCacheStore.GetAllExtensionsAsync(
+                runtimeInfoProvider.Domain,
+                cancellationToken);
 
-            try
-            {
-                // Query all extensions from cache and filter for core extensions
-                // Core extensions are those with Global or GlobalAndRequested type
-                var allExtensions = await componentCacheStore.GetAllExtensionsAsync(
-                    runtimeInfoProvider.Domain,
-                    cancellationToken);
-
-                coreExtensions.AddRange(allExtensions.Where(ext =>
-                    ext.Type == ExtensionType.Global ||
-                    ext.Type == ExtensionType.GlobalAndRequested));
-            }
-            catch
-            {
-                // No extensions found or cache error - continue with empty list
-            }
-
-            return coreExtensions;
+            return allExtensionsResult
+                .Map(extensions => extensions
+                    .Where(ext => ext.Type == ExtensionType.Global || ext.Type == ExtensionType.GlobalAndRequested)
+                    .ToList());
         }
     }
 
     /// <summary>
-    /// Executes core extensions which are always processed regardless of extension requests.
-    /// Core extensions provide essential runtime data like state, createBy, etc.
+    /// Fetches extensions from references in parallel.
+    /// Failed fetches are filtered out - the system continues with available extensions.
     /// </summary>
-    private async Task ExecuteCoreExtensions(
-        ScriptContext scriptContext,
-        List<Extension> coreExtensions,
-        ExtensionScope currentScope,
-        Dictionary<string, object> responseExtension,
-        HashSet<string> executedExtensionKeys,
-        CancellationToken cancellationToken)
-    {
-        var tasks = coreExtensions
-            .Where(ext => ext.Task != null && ext.ShouldExecute(null, currentScope))
-            .Select(ext => ext.Task);
-
-        if (!tasks.Any()) return;
-
-        await taskExecutionService.ExecuteAsync(
-            tasks,
-            null,
-            TaskTrigger.Extension,
-            scriptContext,
-            cancellationToken);
-
-        // Merge task responses into extension dictionary using extension keys
-        foreach (var extension in coreExtensions)
-        {
-            var variableKey = extension.Key.ToVariableName();
-            if (scriptContext.TaskResponse.TryGetValue(variableKey, out var value))
-            {
-                responseExtension[variableKey] = value!;
-                executedExtensionKeys.Add(extension.Key); // Track executed extension
-            }
-        }
-    }
-
     private async Task<List<Extension>> FetchExtensionsFromReferencesAsync(
         List<IReference> extensionReferences,
         CancellationToken cancellationToken)
     {
-        if (!extensionReferences.Any())
-            return new List<Extension>();
+        if (extensionReferences.Count == 0)
+            return [];
 
-        // Create tasks for parallel execution
         var extensionTasks = extensionReferences.Select(async reference =>
         {
-            try
-            {
-                return await componentCacheStore.GetExtensionAsync(reference, cancellationToken);
-            }
-            catch
-            {
-                // Extension not found in cache - return null to indicate failure
-                // This can happen if an extension reference is defined but the actual extension doesn't exist
-                return null;
-            }
+            var result = await componentCacheStore.GetExtensionAsync(reference, cancellationToken);
+            return result.IsSuccess ? result.Value : null;
         });
 
-        // Execute all extension fetching tasks in parallel
         var extensionResults = await Task.WhenAll(extensionTasks);
-
-        // Filter out null results (failed extension fetches) and return valid extensions
         return extensionResults.Where(ext => ext != null).ToList()!;
     }
 
-    private async Task ExecuteExtensions(
+    /// <summary>
+    /// Executes extensions and extracts their responses into the context.
+    /// Extension execution errors are logged but don't propagate - extensions are best-effort enrichment.
+    /// </summary>
+    private async Task ExecuteExtensionsInternalAsync(
         string[]? extensionRequested,
         ScriptContext scriptContext,
         List<Extension> extensions,
         ExtensionScope currentScope,
-        Dictionary<string, object> responseExtension,
-        HashSet<string> executedExtensionKeys,
+        ExtensionProcessingContext context,
         CancellationToken cancellationToken)
     {
-        var tasks = extensions
+        var executableExtensions = extensions
             .Where(ext => ext.Task != null && ext.ShouldExecute(extensionRequested, currentScope))
-            .Select(ext => ext.Task);
+            .ToList();
 
-        if (!tasks.Any()) return;
+        if (executableExtensions.Count == 0)
+            return;
 
-        await taskExecutionService.ExecuteAsync(
+        var tasks = executableExtensions.Select(ext => ext.Task);
+
+        // Execute tasks and log errors (extensions are best-effort, don't fail the chain)
+        var executeResult = await taskCoordinator.ExecuteAsync(
             tasks,
             null,
             TaskTrigger.Extension,
             scriptContext,
             cancellationToken);
 
-        // Merge task responses into extension dictionary using variable naming format
-        foreach (var extension in extensions)
+        if (!executeResult.IsSuccess)
         {
-            var variableKey = extension.Key.ToVariableName();
-            if (scriptContext.TaskResponse.TryGetValue(variableKey, out var value))
-            {
-                responseExtension[variableKey] = value!;
-                executedExtensionKeys.Add(extension.Key); // Track executed extension
-            }
+            logger.LogWarning(
+                "Extension task execution failed: {ErrorCode} - {ErrorMessage}. Extensions are best-effort, continuing.",
+                executeResult.Error.Code,
+                executeResult.Error.Message);
+        }
+
+        // Extract responses from executed extensions (even partial results)
+        foreach (var extension in executableExtensions)
+        {
+            ExtractExtensionResponse(extension, scriptContext, context);
         }
     }
+
+    /// <summary>
+    /// Extracts the response from an executed extension and adds it to the context.
+    /// </summary>
+    private static void ExtractExtensionResponse(
+        Extension extension,
+        ScriptContext scriptContext,
+        ExtensionProcessingContext context)
+    {
+        var variableKeyExtension = extension.Key.ToVariableName();
+        var variableKeyTask = extension.Task.Task.Key.ToVariableName();
+
+        if (!scriptContext.TaskResponse.TryGetValue(variableKeyTask, out var value))
+            return;
+
+        // Extract data property from JsonElement if available, otherwise use raw value
+        var extractedValue = value is JsonElement jsonElement &&
+                             jsonElement.TryGetProperty("data", out var dataProperty)
+            ? dataProperty
+            : value;
+
+        context.Response[variableKeyExtension] = extractedValue!;
+        context.ExecutedKeys.Add(extension.Key);
+    }
+
+    /// <summary>
+    /// Internal context for tracking extension processing state.
+    /// </summary>
+    private sealed record ExtensionProcessingContext(
+        Dictionary<string, object> Response,
+        HashSet<string> ExecutedKeys);
 }

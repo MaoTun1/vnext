@@ -43,6 +43,26 @@ public class RuntimeOptions
     {
         return this.Schemas[name].Type;
     }
+
+    /// <summary>
+    /// Retrieves the schema name associated with the specified .NET type.
+    /// This method performs a reverse lookup from type to schema name.
+    /// </summary>
+    /// <param name="type">The .NET type to get the schema name for.</param>
+    /// <returns>The schema name associated with the specified type.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when no schema is found for the specified type.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="type"/> is null.</exception>
+    public string GetSchemaNameByType(Type type)
+    {
+        ArgumentNullException.ThrowIfNull(type);
+        
+        var schemaInfo = Schemas.Values.FirstOrDefault(s => s.Type == type);
+        if (schemaInfo == null)
+        {
+            throw new InvalidOperationException($"No schema found for type {type.Name}");
+        }
+        return schemaInfo.Name;
+    }
 }
 
 /// <summary>

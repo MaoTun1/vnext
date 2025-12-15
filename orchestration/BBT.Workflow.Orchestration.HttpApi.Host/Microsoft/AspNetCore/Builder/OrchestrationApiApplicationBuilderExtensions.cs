@@ -1,5 +1,4 @@
-using BBT.Workflow.BackgroundJobs;
-using Dapr.Jobs.Extensions;
+using Prometheus;
 
 namespace Microsoft.AspNetCore.Builder;
 
@@ -15,29 +14,38 @@ public static class OrchestrationApiApplicationBuilderExtensions
     /// <returns>The web application for chaining</returns>
     public static WebApplication UseOrchestrationApiModule(this WebApplication app)
     {
-        // Use base Workflow API configuration
-        app.UseWorkflowApiBase();
-        app.MapAppHealthChecks();
-
-        // Add Orchestration-specific middleware and configurations
-        ConfigureOrchestrationSpecificMiddleware(app);
-
-        // Add Dapr scheduled job handler (Orchestration-specific)
-        app.MapDaprScheduledJobHandler(async (string jobName, ReadOnlyMemory<byte> jobPayload, JobDispatcher dispatcher,
-            CancellationToken cancellationToken) =>
+        app.UseAetherAmbientServiceProvider();
+        if (app.Environment.IsDevelopment())
         {
-            await dispatcher.DispatchAsync(jobName, jobPayload, cancellationToken);
-        });
-
-        // Seed test data
-        WorkflowApiBaseApplicationBuilderExtensions.SeedTestData(app.Services);
-
+            app.UseDeveloperExceptionPage();
+        }
+        else
+        {
+            app.UseHsts();
+        }
+        app.UseExceptionHandler();
+        app.UseAppResponseCompression();
+        app.UseCloudEvents();
+        app.MapSubscribeHandler();
+        app.UseHttpsRedirection();
+        app.UseRuntime();
+        app.UseCorrelationId();
+        app.UseSecurityHeaders();
+        app.UseCurrentUser();
+        app.UseStaticFiles();
+        app.UseAetherApiVersioning();
+        app.UseRouting();
+        app.UseSchemaResolution();
+        app.UseAetherUnitOfWork();
+        app.UseWorkflowHttpMetrics();
+        app.UseHttpMetrics();
+        app.MapMetrics(); 
+        app.MapControllers();
+        app.UseDaprScheduledJobHandler();
+        app.MapAppHealthChecks();
+        
+        app.Services.MigrateMessagingDbContext();
         return app;
-    }
-
-    private static void ConfigureOrchestrationSpecificMiddleware(WebApplication app)
-    {
-        // Add any Orchestration-specific middleware here
     }
 }
  

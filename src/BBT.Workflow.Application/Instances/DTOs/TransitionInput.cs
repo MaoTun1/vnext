@@ -1,4 +1,6 @@
 using System.Text.Json;
+using BBT.Workflow.Definitions;
+using BBT.Workflow.Execution;
 
 namespace BBT.Workflow.Instances;
 
@@ -6,30 +8,60 @@ public sealed class TransitionInput(
     string domain,
     string workflow,
     string? version,
-    JsonElement? data = null,
+    TransitionDataInput? data = null,
     bool sync = false)
 {
     public string Domain { get; set; } = domain;
     public string Workflow { get; set; } = workflow;
     public string? Version { get; set; } = version;
-    public JsonElement? Data { get; set; } = data;
-    public Dictionary<string, string> Headers { get; set; } = new();
+    public TransitionDataInput? Data { get; set; } = data;
+    public Dictionary<string, string?> Headers { get; set; } = new();
     public Dictionary<string, string?> RouteValues { get; set; } = new();
     public bool Sync { get; set; } = sync;
+
+    /// <summary>
+    /// Creates a WorkflowExecutionContext from this TransitionInput for manual transition execution.
+    /// </summary>
+    /// <param name="instanceId">The workflow instance identifier</param>
+    /// <param name="transitionKey">The transition key to execute</param>
+    /// <returns>A new WorkflowExecutionContext instance</returns>
+    public WorkflowExecutionContext ToExecutionContext(string instanceId, string transitionKey)
+    {
+        return new WorkflowExecutionContext
+        {
+            Domain = Domain,
+            InstanceId = instanceId,
+            WorkflowKey = Workflow,
+            WorkflowVersion = Version,
+            TransitionKey = transitionKey,
+            TriggerType = TriggerType.Manual, // TransitionInput always represents manual triggers
+            Mode = Sync ? ExecMode.Sync : ExecMode.Async,
+            CorrelationId = Guid.NewGuid().ToString("N"),
+            RequestedAt = DateTimeOffset.UtcNow,
+            Headers = Headers,
+            RouteValues = RouteValues,
+            Data = new TransitionDataInfo(Data?.Key, Data?.Attributes)
+            {
+                Tags = Data?.Tags,
+            },
+            IsReentry = false // Manual transitions are never re-entry
+        };
+    }
 }
 
-public sealed class TransitionOutput
+public sealed class TransitionDataInput
 {
-    public Guid Id { get; set; }
-    public List<string> AvailableTransitions { get; set; } = [];
-    
-    /// <summary>
-    /// Instance status (Active, Busy, Completed, etc.)
-    /// </summary>
-    public string? Status { get; set; }
+    public TransitionDataInput()
+    {
+        
+    }
 
-    /// <summary>
-    /// Current state of the instance
-    /// </summary>
-    public string? CurrentState { get; set; }
+    public TransitionDataInput(JsonElement? attributes)
+    {
+        Attributes = attributes;
+    }
+    
+    public string? Key { get; set; }
+    public string[]? Tags { get; set; }
+    public JsonElement? Attributes { get; set; }
 }

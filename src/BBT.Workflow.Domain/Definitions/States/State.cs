@@ -14,11 +14,13 @@ public sealed class State : IHasKey
 
     private State(
         string key,
-        StateType stateType)
+        StateType stateType,
+        StateSubType subType)
     {
         SetKey(key);
         StateType = stateType;
-
+        SubType = subType;
+    
         labels = [];
         onEntries = [];
         onExits = [];
@@ -28,16 +30,19 @@ public sealed class State : IHasKey
     private State(
         string key,
         StateType stateType,
+        StateSubType subType,
         VersionStrategy versionStrategy,
         List<LanguageLabel>? labels,
         List<OnExecuteTask>? onEntries,
-        List<OnExecuteTask>? onExits)
-        : this(key, stateType)
+        List<OnExecuteTask>? onExits,
+        ViewDefinition view)
+        : this(key, stateType, subType)
     {
         VersionStrategy = versionStrategy;
         this.labels = labels ?? [];
         this.onEntries = onEntries ?? [];
         this.onExits = onExits ?? [];
+        this.view = view;
     }
 
     /// <summary>
@@ -55,6 +60,11 @@ public sealed class State : IHasKey
     /// </summary>
     public StateType StateType { get; private set; }
 
+    /// <summary>
+    /// <see cref="SubType"/>
+    /// </summary>
+    public StateSubType SubType { get; private set; }
+
     [JsonInclude] [JsonPropertyName("labels")]
     private List<LanguageLabel> labels = new();
 
@@ -69,6 +79,8 @@ public sealed class State : IHasKey
 
     [JsonInclude] [JsonPropertyName("subFlow")]
     public SubFlow? SubFlow { get; private set; }
+    [JsonInclude] [JsonPropertyName("view")]
+    public ViewDefinition? view  { get; private set; }
 
     /// <summary>
     /// Languages
@@ -80,7 +92,7 @@ public sealed class State : IHasKey
     /// State view
     /// </summary>
     [JsonIgnore]
-    public Reference? View { get; private set; }
+    public ViewDefinition? View => view;
 
     /// <summary>
     /// Transitions
@@ -102,7 +114,7 @@ public sealed class State : IHasKey
 
     private void SetKey(string key)
     {
-        Key = Check.NotNullOrEmpty(key, nameof(Key), StateConstants.MaxKeyLength);
+        Key = Check.NotNullOrWhiteSpace(key, nameof(Key), StateConstants.MaxKeyLength);
     }
 
     public void AddLanguage(string label, string language)
@@ -129,14 +141,14 @@ public sealed class State : IHasKey
         onExits.Add(task);
     }
 
-    public void SetView(IReference view)
+    public void SetView(ViewDefinition viewDefinition)
     {
-        View = view.ToReference();
+        view = viewDefinition;
     }
     
-    public void SetSubFlow(string type, IReference reference, ScriptCode mapping)
+    public void SetSubFlow(string type, IReference reference, ScriptCode mapping, Dictionary<string, Reference>? viewOverrides)
     {
-        SubFlow = SubFlow.Create(type, reference, mapping);
+        SubFlow = SubFlow.Create(type, reference, mapping, viewOverrides);
     }
 
     public void AddTransition(Transition transition)
@@ -149,30 +161,23 @@ public sealed class State : IHasKey
         return Transitions.FirstOrDefault(t => t.Key == key);
     }
 
-    public IEnumerable<Transition> GetAutoTransitions()
-    {
-        return Transitions.Where(p => p.TriggerType == TriggerType.Automatic);
-    }
+    public IEnumerable<Transition> AutoTransitions => Transitions.Where(p => p.TriggerType == TriggerType.Automatic);
     
-    public IEnumerable<Transition> GetScheduledTransitions()
-    {
-        return Transitions.Where(p => p.TriggerType == TriggerType.Scheduled);
-    }
+    public IEnumerable<Transition> ScheduledTransitions => Transitions.Where(p => p.TriggerType == TriggerType.Scheduled);
 
-    public List<string> TransitionKeys()
-    {
-        return Transitions.Select(t => t.Key).ToList();
-    }
+    public IReadOnlyList<string> TransitionKeys() => Transitions.Select(t => t.Key).ToList();
 
     public static State Create(
         string key,
         StateType stateType,
+        StateSubType stateSubType,
         string versionStrategy
     )
     {
         return new State(
             key,
-            stateType)
+            stateType,
+            stateSubType)
         {
             VersionStrategy = VersionStrategy.FromCode(versionStrategy)
         };

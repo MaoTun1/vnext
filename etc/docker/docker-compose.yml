@@ -1,4 +1,29 @@
 services:
+
+  init:
+    build:
+      context: ../../
+      dockerfile: init/VNext.Init.Host/Dockerfile
+    container_name: init
+    environment:
+      - env.default
+      - PACKAGE_API_PORT=3000
+    volumes:
+      - npm-cache:/app/.npm-cache
+    ports:
+      - "3005:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - bbt-development
+    depends_on:
+      - redis
+      - postgres
+    restart: "no"
   
   vnext-orchestration-dapr:
     image: "daprio/daprd"
@@ -57,6 +82,104 @@ services:
       - dapr-scheduler
       - redis
       - vault
+        
+  vnext-worker-outbox-dapr:
+    image: "daprio/daprd"
+    container_name: vnext-worker-outbox-dapr
+    command: [
+      "./daprd",
+      "--app-id", "vnext-worker-outbox",
+      "--app-port", "4401",
+      "--resources-path", "./components",
+      "--dapr-grpc-port", "44111",
+      "--dapr-http-port", "44110",
+      "--scheduler-host-address", "dapr-scheduler:50007",
+      "--placement-host-address", "dapr-placement:50005",
+      "--app-channel-address", "host.orb.local"
+    ]
+    volumes:
+      - "../../etc/workers/dapr/components:/components"
+    ports:
+      - "44110:44110"
+      - "44111:44111"
+    networks:
+      - bbt-development
+    extra_hosts:
+      - "host.orb.local:host-gateway"
+    depends_on:
+      - dapr-placement
+      - dapr-scheduler
+      - redis
+      - vault
+        
+  vnext-worker-inbox-dapr:
+    image: "daprio/daprd"
+    container_name: vnext-worker-inbox-dapr
+    command: [
+      "./daprd",
+      "--app-id", "vnext-worker-inbox",
+      "--app-port", "4501",
+      "--resources-path", "./components",
+      "--dapr-grpc-port", "45111",
+      "--dapr-http-port", "45110",
+      "--scheduler-host-address", "dapr-scheduler:50007",
+      "--placement-host-address", "dapr-placement:50005",
+      "--app-channel-address", "host.orb.local"
+    ]
+    volumes:
+      - "../../etc/workers/dapr/components:/components"
+    ports:
+      - "45110:45110"
+      - "45111:45111"
+    networks:
+      - bbt-development
+    extra_hosts:
+      - "host.orb.local:host-gateway"
+    depends_on:
+      - dapr-placement
+      - dapr-scheduler
+      - redis
+      - vault
+  
+  # Mockoon API Mock Server
+  mockoon:
+    image: mockoon/cli:latest
+    container_name: migration-mockoon
+    command: ["--data", "/data/migration-api.json", "--port", "3001", "--hostname", "0.0.0.0"]
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./config/mockoon:/data
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - bbt-development
+
+  mockoon-dapr:
+    image: "daprio/daprd:latest"
+    container_name: mockoon-dapr
+    command:
+      [
+        "./daprd",
+        "--app-id", "mockoon",
+        "--app-port", "3001",
+        "--resources-path", "./components",
+        "--dapr-grpc-port", "3501",
+        "--dapr-http-port", "3500",
+        "--scheduler-host-address", "dapr-scheduler:50007",
+        "--placement-host-address", "dapr-placement:50005"
+      ]
+    volumes:
+      - "../mockoon/dapr/components:/components"
+    network_mode: "service:mockoon"
+    depends_on:
+      - mockoon
+      - dapr-placement
+      - dapr-scheduler
 
   dapr-placement:
     image: "daprio/dapr"
@@ -127,21 +250,23 @@ services:
     networks:
       - bbt-development
 
-  pgadmin:
-    container_name: vnext-pgadmin
-    image: dpage/pgadmin4:latest
-    environment:
-      PGADMIN_DEFAULT_EMAIL: "info@info.com"
-      PGADMIN_DEFAULT_PASSWORD: admin
-      PGADMIN_CONFIG_SERVER_MODE: 'False'
-    volumes:
-      - pgadmin:/var/lib/pgadmin
-    ports:
-      - "5502:80"
-    restart: unless-stopped
-    networks:
-      - bbt-development
-        
+#  pgadmin:
+#    container_name: vnext-pgadmin
+#    image: dpage/pgadmin4:latest
+#    environment:
+#      PGADMIN_DEFAULT_EMAIL: "info@info.com"
+#      PGADMIN_DEFAULT_PASSWORD: admin
+#      PGADMIN_CONFIG_SERVER_MODE: 'False'
+#    volumes:
+#      - pgadmin:/var/lib/pgadmin
+#    ports:
+#      - "5502:80"
+#    restart: unless-stopped
+#    networks:
+#      - bbt-development
+#        
+# 
+ 
   vault:
     container_name: vnext-vault
     image: vault:1.13.3
@@ -157,7 +282,19 @@ services:
     cap_add:
       - IPC_LOCK
     healthcheck:
-      retries: 5
+      test:
+        [
+          "CMD",
+          "wget",
+          "--spider",
+          "--proxy",
+          "off",
+          "http://vault:8200/v1/sys/health?standbyok=true",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     command: server -dev -dev-root-token-id="admin"
     networks:
       - bbt-development
@@ -171,67 +308,23 @@ services:
     command: ["sh", "-c", "chmod +x /etc/vault/prepopulate_vault.sh && /etc/vault/prepopulate_vault.sh"]
     networks:
       - bbt-development
-
-  # optional
-  elastic:
-    container_name: vnext-elastic
-    image: elasticsearch:8.8.1
+  
+  # OpenObserve for observability
+  openobserve:
+    container_name: vnext-openobserve
+    image: public.ecr.aws/zinclabs/openobserve:latest
     environment:
-      - xpack.security.enabled=false
-      - "discovery.type=single-node"
+      ZO_ROOT_USER_EMAIL: "root@example.com"
+      ZO_ROOT_USER_PASSWORD: "Complexpass#@123"
+      ZO_DATA_DIR: "/data"
     ports:
-      - 9200:9200
+      - "5080:5080"
+    volumes:
+      - openobserve:/data
     networks:
       - bbt-development
 
-  apm:
-    container_name: vnext-apm
-    image: docker.elastic.co/apm/apm-server:7.17.23
-    networks:
-      - bbt-development
-    ports:
-      - "5200:8200"
-    command: >
-      apm-server -e
-               -E apm-server.ssl.enabled=false
-               -E apm-server.rum.enabled=true
-               -E apm-server.rum.allow_origins=["*"]
-               -E setup.template.settings.index.number_of_replicas=0
-               -E setup.kibana.host=vnext-kibana:5601
-               -E apm-server.kibana.enabled=true
-               -E apm-server.kibana.host=vnext-kibana:5601
-               -E output.elasticsearch.hosts=["vnext-elastic:9200"]
-    depends_on:
-      - elastic
-      - kibana
-
-  # optional
-  kibana:
-    container_name: vnext-kibana
-    image: kibana:8.8.1
-    environment:
-      - ELASTICSEARCH_URL=http://vnext-elastic:9200
-      - ELASTICSEARCH_HOSTS=http://vnext-elastic:9200
-      - xpack.security.enabled=false
-    networks:
-      - bbt-development
-    depends_on:
-      - elastic
-    ports:
-      - 5601:5601
-
-  # optional
-  grafana:
-    container_name: vnext-grafana
-    image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
-    networks:
-      - bbt-development
-    # depends_on:
-    #   - prometheus
-
-  # optional
+  # OpenTelemetry Collector
   otel-collector:
     container_name: vnext-otel-collector
     image: otel/opentelemetry-collector-contrib:latest
@@ -245,21 +338,102 @@ services:
       - "4317:4317" # OTLP gRPC receiver
       - "4318:4318" # OTLP http receiver
       - "55679:55679" # zpages extension
+    depends_on:
+      - openobserve
     networks:
       - bbt-development
-
-  # optional
-  # prometheus:
-  #   container_name: vnext-prometheus
-  #   image: prom/prometheus:latest
-  #   command:
-  #     - "--config.file=/etc/prometheus.yml"
-  #   volumes:
-  #     - ./config/prometheus:/etc
-  #   ports:
-  #     - "9090:9090"
-  #   networks:
-  #     - bbt-development
+        
+ 
+#  prometheus:
+#    container_name: vnext-prometheus
+#    image: prom/prometheus:latest
+#    command:
+#      - "--config.file=/etc/prometheus/prometheus.yml"
+#      - "--storage.tsdb.path=/prometheus"
+#      - "--web.console.libraries=/etc/prometheus/console_libraries"
+#      - "--web.console.templates=/etc/prometheus/consoles"
+#      - "--storage.tsdb.retention.time=200h"
+#      - "--web.enable-lifecycle"
+#    volumes:
+#      - ./config/prometheus:/etc/prometheus
+#      - prometheus:/prometheus
+#    ports:
+#      - "9090:9090"
+#    networks:
+#      - bbt-development
+#    restart: unless-stopped
+#
+#  grafana:
+#    container_name: vnext-grafana
+#    image: grafana/grafana:latest
+#    environment:
+#      GF_SECURITY_ADMIN_USER: admin
+#      GF_SECURITY_ADMIN_PASSWORD: admin
+#      GF_USERS_ALLOW_SIGN_UP: 'false'
+#    volumes:
+#      - grafana:/var/lib/grafana
+#      - ./config/grafana/provisioning:/etc/grafana/provisioning
+#      - ./config/grafana/dashboards:/var/lib/grafana/dashboards
+#    ports:
+#      - "3000:3000"
+#    networks:
+#      - bbt-development
+#    depends_on:
+#      - prometheus
+#    restart: unless-stopped
+#
+#  metabase:
+#    container_name: vnext-metabase
+#    image: metabase/metabase:latest
+#    environment:
+#      MB_DB_TYPE: postgres
+#      MB_DB_DBNAME: metabase
+#      MB_DB_PORT: 5432
+#      MB_DB_USER: postgres
+#      MB_DB_PASS: postgres
+#      MB_DB_HOST: postgres
+#      MB_ENCRYPTION_SECRET_KEY: "vnext-metabase-secret-key-change-this-in-production"
+#      JAVA_OPTS: "-Xmx2g"
+#    ports:
+#      - "3002:3000"
+#    volumes:
+#      - metabase:/metabase.db
+#      - ../../metabase-dashboards:/metabase-dashboards:ro
+#    networks:
+#      - bbt-development
+#    depends_on:
+#      - postgres
+#    restart: unless-stopped
+#    healthcheck:
+#      test: curl --fail -I http://localhost:3000/api/health || exit 1
+#      interval: 30s
+#      timeout: 5s
+#      retries: 5
+#
+#  clickhouse:
+#    container_name: vnext-clickhouse
+#    image: clickhouse/clickhouse-server:latest
+#    environment:
+#      CLICKHOUSE_DB: workflow_analytics
+#      CLICKHOUSE_USER: default
+#      CLICKHOUSE_PASSWORD: ""
+#      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+#    ports:
+#      - "8123:8123"  # HTTP interface
+#      - "9000:9000"  # Native interface
+#    volumes:
+#      - clickhouse:/var/lib/clickhouse
+#      - ./config/clickhouse:/etc/clickhouse-server/config.d
+#      - ./config/clickhouse/users.xml:/etc/clickhouse-server/users.xml
+#      - ./config/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql
+#    networks:
+#      - bbt-development
+#    restart: unless-stopped
+#    healthcheck:
+#      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+#      interval: 30s
+#      timeout: 5s
+#      retries: 3
 
 networks:
   bbt-development:
@@ -269,6 +443,10 @@ volumes:
   redis:
   redis-insight:
   postgres:
-  pgadmin:
-  grafana:
-  # prometheus:
+#  pgadmin:
+  openobserve:
+#  prometheus:
+#  grafana:
+#  metabase:
+#  clickhouse:
+  npm-cache: {}

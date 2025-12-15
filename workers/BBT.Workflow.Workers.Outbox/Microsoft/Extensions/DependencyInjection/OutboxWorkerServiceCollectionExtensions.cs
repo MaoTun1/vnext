@@ -1,0 +1,46 @@
+using BBT.Workflow.Workers.Outbox.HostedServices;
+
+namespace Microsoft.Extensions.DependencyInjection;
+
+/// <summary>
+/// Service collection extensions specific to Worker Outbox
+/// </summary>
+public static class OutboxWorkerServiceCollectionExtensions
+{
+    /// <summary>
+    /// Adds Worker Outbox specific services
+    /// </summary>
+    /// <param name="services">The service collection</param>
+    /// <returns>The service collection for chaining</returns>
+    public static IServiceCollection AddWorkerOutboxModule(this IServiceCollection services)
+    {
+        var configuration = services.GetConfiguration();
+        services
+            .AddDomainModule()
+            .AddApplicationModule()
+            .AddInfrastructureModule()
+            .AddAspNetCoreModules(configuration)
+            .AddResultResilience(configuration)
+            .AddDaprClients()
+            .AddAetherEventBus()
+            .AddDbContext(configuration)
+            .AppMapper()
+            .AddTelemetry(configuration)
+            .AddDistributedCache(configuration)
+            .AddDistributedLock(configuration)
+            .AddBackgroundJob()
+            .AddRedis()
+            .AddExceptionHandling()
+            .AddRuntimeMiddleware()
+            .AddHeaderService()
+            .AddWorkflowHttpClient() // TODO: Düşün!!!!
+            .AddHostedServices()
+            .AddAppHealthChecks();
+        return services;
+    }
+    private static IServiceCollection AddHostedServices(this IServiceCollection services)
+    {
+        services.AddHostedService<OutboxProcessorHostedService>();
+        return services;
+    }
+}

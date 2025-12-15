@@ -1,15 +1,17 @@
 using BBT.Aether.Application;
+using BBT.Aether.Results;
+using BBT.Workflow.Domain;
 
 namespace BBT.Workflow.Instances;
 
 public interface IInstanceCommandAppService : IApplicationService
 {
-    Task<InstanceServiceResponse<StartInstanceOutput>> StartAsync(
+    Task<Result<StartInstanceOutput>> StartAsync(
         StartInstanceInput input,
         CancellationToken cancellationToken = default);
 
-    Task<InstanceServiceResponse<TransitionOutput>> TransitionAsync(
-        Guid instanceId,
+    Task<Result<TransitionOutput>> TransitionAsync(
+        string instance,
         string transitionKey,
         TransitionInput input,
         CancellationToken cancellationToken = default);

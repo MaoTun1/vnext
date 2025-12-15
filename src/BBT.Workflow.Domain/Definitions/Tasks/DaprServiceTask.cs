@@ -36,9 +36,14 @@ public sealed class DaprServiceTask : WorkflowTask
     public string HttpVerb { get; private set; } = string.Empty;
 
     /// <summary>
-    /// Data
+    /// Body
     /// </summary>
-    public JsonElement Data { get; private set; }
+    public JsonElement? Body { get; private set; }
+
+    /// <summary>
+    /// Headers
+    /// </summary>
+    public JsonElement? Headers { get; private set; }
 
     /// <summary>
     /// Query String
@@ -53,9 +58,14 @@ public sealed class DaprServiceTask : WorkflowTask
     public void SetAppId(string appId) => AppId = appId;
     public void SetMethodName(string methodName) => MethodName = methodName;
     public void SetQueryString(string? queryString) => QueryString = queryString;
-    public void SetData(dynamic data)
+    public void SetBody(dynamic body)
     {
-        Data = JsonSerializer.SerializeToElement(data);
+        Body = JsonSerializer.SerializeToElement(body);
+    }
+
+    public void SetHeaders(Dictionary<string, string?> headers)
+    {
+        Headers = JsonSerializer.SerializeToElement(headers);
     }
     
     /// <summary>
@@ -64,9 +74,13 @@ public sealed class DaprServiceTask : WorkflowTask
     internal void SetAppIdInternal(string appId) => AppId = appId;
     internal void SetMethodNameInternal(string methodName) => MethodName = methodName;
     internal void SetHttpVerbInternal(string httpVerb) => HttpVerb = httpVerb;
-    internal void SetDataInternal(JsonElement data) => Data = data;
+    internal void SetBodyInternal(JsonElement? body) => Body = body;
     internal void SetQueryStringInternal(string? queryString) => QueryString = queryString;
     internal void SetTimeoutSecondsInternal(int timeoutSeconds) => TimeoutSeconds = timeoutSeconds;
+    /// <summary>
+    /// Internal property setters for object pooling
+    /// </summary>
+    internal void SetHeadersInternal(JsonElement? headers) => Headers = headers;
 
     protected override void Configure(JsonElement config)
     {
@@ -81,18 +95,23 @@ public sealed class DaprServiceTask : WorkflowTask
         if (config.TryGetProperty("httpVerb", out var httpVerb))
             HttpVerb = httpVerb.GetString() ?? throw new ArgumentNullException(nameof(httpVerb));
 
-        if (config.TryGetProperty("data", out var data))
-            Data = data;
+        if (config.TryGetProperty("body", out var body))
+            Body = body;
 
         if (config.TryGetProperty("queryString", out var queryString))
             QueryString = queryString.GetString();
 
         if (config.TryGetProperty("timeoutSeconds", out var timeout))
             TimeoutSeconds = timeout.GetInt32();
+
+        if (config.TryGetProperty("headers", out var headersElement))
+        {
+            var headers = headersElement.GetRawText();
+            Headers = string.IsNullOrWhiteSpace(headers) ? null : headersElement;
+        }
     }
     
     public static DaprServiceTask Create(
-        string type,
         JsonElement config)
     {
         return new DaprServiceTask(config);
@@ -121,9 +140,10 @@ public sealed class DaprServiceTask : WorkflowTask
         cloned.AppId = AppId;
         cloned.MethodName = MethodName; // This will be the original method name from cache
         cloned.HttpVerb = HttpVerb;
-        cloned.Data = Data; // JsonElement is a struct, so this is safe
+        cloned.Body = Body; // JsonElement is a struct, so this is safe
         cloned.QueryString = QueryString;
         cloned.TimeoutSeconds = TimeoutSeconds;
+        cloned.Headers = Headers;
         
         return cloned;
     }
@@ -138,9 +158,10 @@ public sealed class DaprServiceTask : WorkflowTask
         SetAppIdInternal(source.AppId);
         SetMethodNameInternal(source.MethodName);
         SetHttpVerbInternal(source.HttpVerb);
-        SetDataInternal(source.Data);
+        SetBodyInternal(source.Body);
         SetQueryStringInternal(source.QueryString);
         SetTimeoutSecondsInternal(source.TimeoutSeconds);
+        SetHeadersInternal(source.Headers);
     }
 
     /// <summary>
@@ -152,9 +173,10 @@ public sealed class DaprServiceTask : WorkflowTask
         AppId = string.Empty;
         MethodName = string.Empty;
         HttpVerb = string.Empty;
-        Data = default;
+        Body = null;
         QueryString = null;
         TimeoutSeconds = 30;
+        Headers = null;
     }
 
     /// <summary>

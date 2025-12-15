@@ -49,6 +49,14 @@ public sealed class HttpTask : WorkflowTask
     /// </summary>
     public bool ValidateSSL { get; private set; } = true;
 
+    public void SetUrl(string url)
+    {
+        if(string.IsNullOrWhiteSpace(url))
+            throw new ArgumentNullException(nameof(url));
+        
+        Url = url;
+    }
+    
     public void SetBody(dynamic body)
     {
         Body = JsonSerializer.SerializeToElement(body);
@@ -151,8 +159,8 @@ public sealed class HttpTask : WorkflowTask
         base.Reset();
         Url = string.Empty;
         Method = "GET";
-        Headers = default;
-        Body = default;
+        Headers = null;
+        Body = null;
         TimeoutSeconds = 30;
         ValidateSSL = true;
     }

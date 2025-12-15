@@ -1,12 +1,9 @@
-using BBT.Workflow.BackgroundJobs;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Definitions.Validators;
 using BBT.Workflow.Instances.Policies;
 using BBT.Workflow.Rules;
 using BBT.Workflow.Runtime;
-using BBT.Workflow.Schemas;
 using BBT.Workflow.Scripting;
-using BBT.Workflow.States;
 using BBT.Workflow.Validation;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -38,15 +35,10 @@ public static class WorkflowDomainModuleServiceCollectionExtensions
 
         services.AddSingleton<IRuntimeInfoProvider, RuntimeInfoProvider>();
         services.AddSingleton<WorkflowValidator>();
-        services.AddSingleton<ISchemaAccessor>(AsyncLocalSchemaAccessor.Instance);
-        services.AddScoped<ICurrentSchema, CurrentSchema>();
-        services.AddScoped<IRuleEngine<State>, RuleEngine<State>>();
-        services.AddScoped<StateTransitionPolicy>();
-        services.AddScoped<IStateMachineService, StateMachineService>();
-        services.AddScoped<IScriptContextFactory, ScriptContextFactory>();
+        services.AddSingleton<IResultRuleEngine<State>, ResultRuleEngine<State>>();
+        services.AddSingleton<StateTransitionPolicy>();
+        services.AddSingleton<IScriptContextFactory, ScriptContextFactory>();
         services.AddSingleton<IJsonSchemaValidator, JsonSchemaValidator>();
-        
-        services.AddScoped<JobDispatcher>();
         return services;
     }
 }

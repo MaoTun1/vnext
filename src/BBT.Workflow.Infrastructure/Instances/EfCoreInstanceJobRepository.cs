@@ -1,37 +1,35 @@
 using BBT.Aether.Domain.EntityFrameworkCore;
-using BBT.Aether.Domain.Services;
 using BBT.Workflow.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace BBT.Workflow.Instances;
 
 public sealed class EfCoreInstanceJobRepository(
-    WorkflowDbContext dbContext,
-    IServiceProvider serviceProvider,
-    ITransactionService transactionService)
-    : EfCoreRepository<WorkflowDbContext, InstanceJob, Guid>(dbContext, serviceProvider, transactionService),
+    IDbContextProvider<WorkflowDbContext> dbContext,
+    IServiceProvider serviceProvider)
+    : EfCoreRepository<WorkflowDbContext, InstanceJob, Guid>(dbContext, serviceProvider),
         IInstanceJobRepository
 {
-    public async Task<bool> ExistsAsync(string jobId, CancellationToken cancellationToken = default)
+    public async Task<List<InstanceJob>> GetListActiveAsync(Guid instanceId,
+        CancellationToken cancellationToken = default)
     {
-        return await
-            (await GetQueryableAsync())
-            .AnyAsync(a =>
-                    a.JobId == jobId,
-                cancellationToken: cancellationToken);
+        return await (await GetQueryableAsync())
+            .Where(p => p.InstanceId == instanceId && p.IsActive == true)
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<InstanceJob?> FindByNameAsync(string jobId, CancellationToken cancellationToken = default)
+    public async Task MarkAsProcessedAsync(string jobName, CancellationToken cancellationToken = default)
     {
-        return await
-            (await GetQueryableAsync())
-            .FirstOrDefaultAsync(a =>
-                    a.JobId == jobId,
-                cancellationToken: cancellationToken);
+        var job = await (await GetDbSetAsync()).FirstOrDefaultAsync(p =>
+            p.JobName == jobName, cancellationToken);
+        job!.MarkAsProcessed();
+        await SaveChangesAsync(cancellationToken);
     }
 
-    public Task<List<InstanceJob>> GetListUntriggeredAsync(CancellationToken cancellationToken = default)
+    public async Task<InstanceJob?> FindByJobIdAsReadOnlyAsync(Guid jobId, CancellationToken cancellationToken = default)
     {
-        throw new NotImplementedException();
+        return await (await GetDbSetAsync())
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.JobId == jobId, cancellationToken);
     }
 }

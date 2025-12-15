@@ -1,17 +1,22 @@
-using BBT.Workflow.ExceptionHandling;
+using BBT.Aether.Results;
+using BBT.Workflow.Domain;
+using BBT.Workflow.Logging;
 using BBT.Workflow.Rules;
 
 namespace BBT.Workflow.Definitions.Rules;
 
-public class FromStateRule(Transition transition): BaseRule<State>
+public class FromStateRule(Transition transition): ResultBaseRule<State>
 {
     public override bool IsApplicable(State context)
     {
         return !string.IsNullOrEmpty(transition.From) && transition.From != context.Key;
     }
 
-    public override void Execute(State context)
+    public override Result Validate(State context)
     {
-        throw new InvalidStateException(transition.Key, transition.Target, context.Key);
+        return Result.Fail(WorkflowErrors.InvalidState(
+            transition.Key,
+            transition.From,
+            context.Key));
     }
 }

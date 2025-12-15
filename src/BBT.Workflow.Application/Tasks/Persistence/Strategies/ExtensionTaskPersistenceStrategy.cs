@@ -31,7 +31,6 @@ public sealed class ExtensionTaskPersistenceStrategy : ITaskPersistenceStrategy
     /// </summary>
     /// <param name="instanceTask">The InstanceTask (not persisted for Extension tasks).</param>
     /// <param name="cancellationToken">Cancellation token for async operation control.</param>
-    /// <returns>A completed task with no operation performed.</returns>
     public Task HandleCreationAsync(InstanceTask instanceTask, CancellationToken cancellationToken = default)
     {
         // Extension tasks are not persisted to database
@@ -44,10 +43,9 @@ public sealed class ExtensionTaskPersistenceStrategy : ITaskPersistenceStrategy
     /// </summary>
     /// <param name="instanceTask">The InstanceTask (not persisted for Extension tasks).</param>
     /// <param name="cancellationToken">Cancellation token for async operation control.</param>
-    /// <returns>A completed task with no operation performed.</returns>
     public Task HandleCompletionAsync(InstanceTask instanceTask, CancellationToken cancellationToken = default)
     {
         // Extension tasks are not persisted to database
         return Task.CompletedTask;
     }
-} 
+}

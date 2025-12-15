@@ -1,8 +1,7 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using BBT.Workflow.Definitions;
-using BBT.Workflow.Runtime;
+using BBT.Workflow.Monitoring;
 using BBT.Workflow.Scripting.Functions;
 using Microsoft.CodeAnalysis;
 using Moq;
@@ -10,9 +9,11 @@ using Xunit;
 using IRuntimeInfoProvider = BBT.Workflow.Runtime.IRuntimeInfoProvider;
 using Dapr.Client;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Scripting;
 
+[Collection("ScriptingTests")]
 public class ScriptEngineTests : ApplicationTestBase<ApplicationEntryPoint>
 {
     private readonly IScriptEngine _scriptEngine;
@@ -20,6 +21,13 @@ public class ScriptEngineTests : ApplicationTestBase<ApplicationEntryPoint>
     public ScriptEngineTests()
     {
         _scriptEngine = GetRequiredService<IScriptEngine>();
+    }
+
+    public override void Dispose()
+    {
+        // Reset static state to prevent test interference
+        ScriptHelper.Reset();
+        base.Dispose();
     }
 
     protected override void AddApplication(IServiceCollection services)
@@ -37,35 +45,13 @@ public class ScriptEngineTests : ApplicationTestBase<ApplicationEntryPoint>
             .ReturnsAsync(new Dictionary<string, string> { { "test_key", "mock_secret_value" } });
 
         services.AddSingleton(mockDaprClient.Object);
-        ScriptHelper.SetDaprClient(mockDaprClient.Object);
+        ScriptHelper.SetDaprClient(mockDaprClient.Object); 
+        
+        // Mock IWorkflowMetrics
+        var mockWorkflowMetrics = new Mock<IWorkflowMetrics>();
+        services.AddSingleton(mockWorkflowMetrics.Object);
+        
         base.AddApplication(services);
-    }
-
-    [Fact]
-    public async Task EvaluateAsync_ShouldReturnExpectedValue()
-    {
-        // Arrange
-        string code = "1 + 2";
-
-        // Act
-        var result = await _scriptEngine.EvaluateAsync(code);
-
-        // Assert
-        Assert.Equal(3, result);
-    }
-
-    [Fact]
-    public async Task EvaluateGenericAsync_ShouldReturnExpectedGenericValue()
-    {
-        // Arrange
-        string code = "\"Hello\"";
-        string expected = "Hello";
-
-        // Act
-        var result = await _scriptEngine.EvaluateAsync<string>(code);
-
-        // Assert
-        Assert.Equal(expected, result);
     }
 
     [Fact]
@@ -148,12 +134,12 @@ public class ScriptEngineTests : ApplicationTestBase<ApplicationEntryPoint>
         var httpTask = WorkflowTaskFactory.CreateHttpTask();
         var response = await instance.InputHandler(
             task: httpTask,
-            context: new ScriptContext.Builder()
+            context: new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>())
                 .SetWorkflow(WorkflowFactory.CreateDefault())
                 .SetInstance(InstanceFactory.CreateDefault())
                 .SetTransition(TransitionFactory.CreateDefault())
                 .SetRuntime(Mock.Of<IRuntimeInfoProvider>())
-                .SetDefinitions(new System.Collections.Generic.Dictionary<string, object>())
+                .SetDefinitions(new Dictionary<string, object>())
                 .Build());
 
         // Assert
@@ -222,12 +208,12 @@ public class ScriptEngineTests : ApplicationTestBase<ApplicationEntryPoint>
         var httpTask = WorkflowTaskFactory.CreateHttpTask();
         var response = await instance.InputHandler(
             task: httpTask,
-            context: new ScriptContext.Builder()
+            context: new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>())
                 .SetWorkflow(WorkflowFactory.CreateDefault())
                 .SetInstance(InstanceFactory.CreateDefault())
                 .SetTransition(TransitionFactory.CreateDefault())
                 .SetRuntime(Mock.Of<IRuntimeInfoProvider>())
-                .SetDefinitions(new System.Collections.Generic.Dictionary<string, object>())
+                .SetDefinitions(new Dictionary<string, object>())
                 .Build());
 
         // Assert
@@ -258,7 +244,7 @@ public class ScriptEngineTests : ApplicationTestBase<ApplicationEntryPoint>
                            var httpTask = (task as HttpTask)!;
                            httpTask.Url = "https://httpbin.org/post/" + context.Transition.Key;
                            httpTask.Method = "POST";
-                           
+                          
                            var apiKey = GetSecret("secret_store", "secret", "test_key");
                            return Task.FromResult(new ScriptResponse
                            {
@@ -300,12 +286,12 @@ public class ScriptEngineTests : ApplicationTestBase<ApplicationEntryPoint>
         var httpTask = WorkflowTaskFactory.CreateHttpTask();
         var response = await instance.InputHandler(
             task: httpTask,
-            context: new ScriptContext.Builder()
+            context: new ScriptContext.Builder(Mock.Of<ILogger<ScriptContext>>())
                 .SetWorkflow(WorkflowFactory.CreateDefault())
                 .SetInstance(InstanceFactory.CreateDefault())
                 .SetTransition(TransitionFactory.CreateDefault())
                 .SetRuntime(Mock.Of<IRuntimeInfoProvider>())
-                .SetDefinitions(new System.Collections.Generic.Dictionary<string, object>())
+                .SetDefinitions(new Dictionary<string, object>())
                 .Build());
 
         // Assert

@@ -20,24 +20,3 @@ public enum ViewType
     /// </summary>
     Markdown = 3
 }
-
-/// <summary>
-/// View targets
-/// </summary>
-public enum ViewTarget
-{
-    /// <summary>
-    /// State
-    /// </summary>
-    State = 1,
-
-    /// <summary>
-    /// Transition
-    /// </summary>
-    Transition = 2,
-
-    /// <summary>
-    /// Task
-    /// </summary>
-    Task = 3
-}

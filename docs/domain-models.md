@@ -446,13 +446,13 @@ private void SetKey(string? key)
 
 private void SetFlow(string flow)
 {
-    Flow = Check.NotNull(flow, nameof(Flow), WorkflowConstants.MaxKeyLength);
+    Flow = Check.NotNullOrWhiteSpace(flow, nameof(Flow), WorkflowConstants.MaxKeyLength);
 }
 
 // Workflow validation
 private void SetVersion(string version)
 {
-    Version = Check.NotNullOrEmpty(version, nameof(Version), WorkflowConstants.MaxVersionLength);
+    Version = Check.NotNullOrWhiteSpace(version, nameof(Version), WorkflowConstants.MaxVersionLength);
 }
 ```
 

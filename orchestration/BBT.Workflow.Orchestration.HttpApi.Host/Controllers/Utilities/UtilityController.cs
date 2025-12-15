@@ -1,34 +1,57 @@
-using BBT.Workflow.Instances;
+using BBT.Aether.AspNetCore.Controllers;
+using BBT.Workflow.Definitions;
+using BBT.Workflow.Runtime;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.Extensions.Options;
 
 namespace BBT.Workflow.Orchestration.Controllers.Utilities;
 
+/// <summary>
+/// Provides utility endpoints for system configuration and cache management operations.
+/// </summary>
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}")]
 [ServiceFilter(typeof(ResponseHeaderFilter))]
 public sealed class UtilityController(
-    IInstanceQueryAppService queryAppService) : ControllerBase
+    IDefinitionAppService definitionAppService,
+    IRuntimeInfoProvider runtimeInfoProvider,
+    IOptions<RuntimeOptions> runtimeOptions) : AetherControllerBase
 {
+    /// <summary>
+    /// Retrieves the current runtime configuration information.
+    /// </summary>
+    /// <returns>Runtime configuration including version and domain information.</returns>
+    /// <response code="200">Returns the runtime configuration.</response>
+    [HttpGet("config")]
     [ApiExplorerSettings(IgnoreApi = true)]
-    [HttpGet("{domain}/workflows/{workflow}/instances/{instance}/transitions/available")]
-    public async Task<IActionResult> GetAvailableTransitionsAsync(
-        [FromRoute] string domain,
-        [FromRoute] string workflow,
-        [FromRoute] string instance,
-        [FromQuery] string? version,
-        CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(RuntimeConfigResponse), StatusCodes.Status200OK)]
+    public IActionResult GetConfig()
     {
-        var input = new GetAvailableTransitionInput
+        var response = new RuntimeConfigResponse
         {
-            Domain = domain,
-            Workflow = workflow,
-            Instance = instance,
-            Version = version
+            Version = runtimeInfoProvider.Version,
+            Domain = runtimeInfoProvider.Domain,
+            Schemas = runtimeOptions.Value.Schemas.ToDictionary(s => s.Key, s => s.Value.Schema)
         };
 
-        var response = await queryAppService.GetAvailableTransitionsAsync(input, cancellationToken);
-        return Ok(response.Data);
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Invalidates the specified cache entry.
+    /// </summary>
+    /// <param name="input">The cache invalidation parameters.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    /// <returns>Result of the cache invalidation operation.</returns>
+    [ApiExplorerSettings(IgnoreApi = true)]
+    [HttpPost("utilities/invalidate")]
+    public async Task<IActionResult> InvalidateCacheAsync(
+        [FromBody] InvalidateCacheInput input,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await definitionAppService.InvalidateCacheAsync(input, cancellationToken);
+        return FromResult(result);
     }
 } 

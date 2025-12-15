@@ -1,8 +1,49 @@
+using BBT.Aether.Results;
+
 namespace BBT.Workflow.Instances.Remote;
 
 /// <summary>
 /// This service acts as a client to the InstanceController endpoints for remote workflow instances.
 /// </summary>
-public interface IRemoteInstanceQueryAppService : IInstanceQueryAppService
+public interface IRemoteInstanceQueryAppService
 {
+    /// <summary>
+    /// Retrieves a single instance with optional extensions for data enrichment
+    /// </summary>
+    Task<ConditionalResult<GetInstanceOutput>> GetInstanceAsync(
+        GetInstanceInput input,
+        CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Retrieves only the instance data (attributes) with optional ETag support and extensions
+    /// GET {baseUrl}/api/v{version}/{domain}/workflows/{workflow}/instances/{instance}/data
+    /// </summary>
+    Task<ConditionalResult<GetInstanceDataOutput>> GetInstanceDataAsync(
+        GetInstanceDataInput input,
+        CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Retrieves the complete history of an instance (all data transitions)
+    /// </summary>
+    Task<Result<GetInstanceHistoryOutput>> GetInstanceHistoryAsync(
+        GetInstanceHistoryInput input,
+        CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Retrieves function result for an instance (e.g., "state" function returns GetInstanceStateOutput)
+    /// GET {baseUrl}/api/v{version}/{domain}/workflows/{workflow}/instances/{instance}/functions/{function}
+    /// </summary>
+    Task<Result<GetInstanceStateOutput>> GetFunctionWithStateAsync(
+        GetFunctionWithInstanceInput input,
+        CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Retrieves view function result for an instance (returns GetViewOutput with platform-specific content)
+    /// GET {baseUrl}/api/v{version}/{domain}/workflows/{workflow}/instances/{instance}/functions/view
+    /// </summary>
+    Task<Result<GetViewOutput>> GetFunctionWithViewAsync(
+        GetFunctionWithInstanceInput input,
+        string? platform,
+        string? transitionKey,
+        CancellationToken cancellationToken = default);
 } 

@@ -6,7 +6,7 @@ namespace BBT.Workflow.ExceptionHandling;
 /// <summary>
 /// Custom exception to error info converter for workflow-specific exceptions.
 /// Extends the default Aether exception converter to handle workflow domain exceptions
-/// such as ConflictException, NotFoundDomainException, and RuntimeSchemaInvalidException.
+/// including validation errors, distributed lock failures, auto-transition conditions, and remote service errors.
 /// </summary>
 /// <param name="serviceProvider">Service provider for resolving dependencies</param>
 public class WorkflowExceptionToErrorInfoConverter(IServiceProvider serviceProvider)
@@ -23,20 +23,14 @@ public class WorkflowExceptionToErrorInfoConverter(IServiceProvider serviceProvi
     protected override ServiceErrorInfo CreateErrorInfoWithoutCode(Exception exception,
         AetherExceptionHandlingOptions options)
     {
-        var errorInfo = base.CreateErrorInfoWithoutCode(exception, options);
         return exception switch
         {
-            ConflictException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
             NotFoundDomainException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            RuntimeSchemaInvalidException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            SubFlowBlockedException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            TransitionLockedException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            InstanceNotFoundException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            NotFoundStateException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            InvalidStateException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            NotFoundTransitionException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            TransitionRuleFailedException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
-            _ => errorInfo
+            RuntimeSchemaInvalidException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data), 
+            AutoTransitionConditionNotMetException ex => new ServiceErrorInfo(ex.Message, ex.Details, ex.Code, ex.Data),
+            RemoteServiceException ex => ex.ErrorInfo,
+            // Default handling for other exceptions
+            _ => base.CreateErrorInfoWithoutCode(exception, options)
         };
     }
 }

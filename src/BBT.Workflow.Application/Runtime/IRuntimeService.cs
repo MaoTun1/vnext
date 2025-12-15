@@ -1,10 +1,30 @@
 namespace BBT.Workflow.Runtime;
 
+/// <summary>
+/// Service for accessing runtime workflow entities from the database.
+/// Automatically infers the schema from the entity type being requested.
+/// </summary>
 public interface IRuntimeService
 {
-    Task<IEnumerable<T?>> GetAsync<T>(string schema, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Retrieves all active entities of the specified type.
+    /// The schema is automatically inferred from the entity type.
+    /// </summary>
+    /// <typeparam name="T">The type of entity to retrieve</typeparam>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests</param>
+    /// <returns>A collection of entities of the specified type</returns>
+    Task<IEnumerable<T?>> GetAsync<T>(CancellationToken cancellationToken = default)
         where T : class, IDomainEntity, IReferenceSetter;
 
-    Task<T?> GetAsync<T>(string schema, string key, string version, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Retrieves a specific entity by key and version.
+    /// The schema is automatically inferred from the entity type.
+    /// </summary>
+    /// <typeparam name="T">The type of entity to retrieve</typeparam>
+    /// <param name="key">The entity key</param>
+    /// <param name="version">The entity version</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests</param>
+    /// <returns>The entity if found, otherwise null</returns>
+    Task<T?> GetAsync<T>(string key, string version, CancellationToken cancellationToken = default)
         where T : class, IDomainEntity, IReferenceSetter;
 }

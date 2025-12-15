@@ -58,21 +58,12 @@ public sealed class Extension : IDomainEntity, IExtensionReference, IReferenceSe
 
     [JsonInclude] public OnExecuteTask Task { get; private set; }
 
-    public string CacheKey => $"{nameof(Extension)}:{Domain}:{Flow}:{Key}:{Version}";
-
-    public static string GenerateCacheKey(
-        string domain,
-        string flow,
-        string key,
-        string version)
-    {
-        return $"{nameof(Extension)}:{domain}:{flow}:{key}:{version}";
-    }
+    public string ComponentKey => RuntimeSysSchemaInfo.Extensions;
 
     public void SetReference(IReference reference)
     {
-        Key = Check.NotNullOrEmpty(reference.Key, nameof(Key), ViewConstants.MaxKeyLength);
-        Domain = Check.NotNullOrEmpty(reference.Domain, nameof(Domain), WorkflowConstants.MaxDomainLength);
-        Version = Check.NotNullOrEmpty(reference.Version, nameof(Version), WorkflowConstants.MaxVersionLength);
+        Key = Check.NotNullOrWhiteSpace(reference.Key, nameof(Key), ViewConstants.MaxKeyLength);
+        Domain = Check.NotNullOrWhiteSpace(reference.Domain, nameof(Domain), WorkflowConstants.MaxDomainLength);
+        Version = Check.NotNullOrWhiteSpace(reference.Version, nameof(Version), WorkflowConstants.MaxVersionLength);
     }
 }

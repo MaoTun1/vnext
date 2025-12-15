@@ -3,12 +3,12 @@ using System.Text.Json.Serialization;
 namespace BBT.Workflow.Definitions;
 
 [JsonConverter(typeof(IEquatableJsonConverter<WorkflowType>))]
-public class WorkflowType: IEquatable<WorkflowType>
+public sealed class WorkflowType: IEquatable<WorkflowType>
 {
-    public static readonly WorkflowType Core = new WorkflowType("C", "Core");
-    public static readonly WorkflowType Flow = new WorkflowType("F", "Flow");
-    public static readonly WorkflowType SubFlow = new WorkflowType("S", "Sub Flow");
-    public static readonly WorkflowType SubProcess = new WorkflowType("P", "Sub Process");
+    public static readonly WorkflowType Core = new("C", "Core");
+    public static readonly WorkflowType Flow = new("F", "Flow");
+    public static readonly WorkflowType SubFlow = new("S", "Sub Flow");
+    public static readonly WorkflowType SubProcess = new("P", "Sub Process");
 
     public string Code { get; }
     public string Description { get; }

@@ -1,0 +1,19 @@
+namespace BBT.Workflow.Execution;
+
+/// <summary>
+/// Extension methods for TransitionExecutionContext to enhance workflow operations.
+/// </summary>
+public static class TransitionExecutionContextExtensions
+{
+    /// <summary>
+    /// Determines whether the current transition is a cancel transition.
+    /// A transition is considered a cancel transition if it matches the workflow's configured cancel transition key.
+    /// </summary>
+    /// <param name="ctx">The transition execution context</param>
+    /// <returns>True if this is a cancel transition, false otherwise</returns>
+    public static bool IsCancelTransition(this TransitionExecutionContext ctx)
+    {
+        return ctx.Workflow.Cancel?.Key.Equals(ctx.Transition?.Key, StringComparison.OrdinalIgnoreCase) == true;
+    }
+}
+

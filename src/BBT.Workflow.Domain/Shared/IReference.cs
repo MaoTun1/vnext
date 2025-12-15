@@ -39,6 +39,11 @@ public sealed class Reference(
     /// This is the version information at the time the record is assigned.
     /// </summary>
     public string Version { get; private set; } = version;
+
+    public override string ToString()
+    {
+        return $"{Domain}/{Flow}/{Key}/{Version}";
+    }
 }
 
 public static class ReferenceExtensions

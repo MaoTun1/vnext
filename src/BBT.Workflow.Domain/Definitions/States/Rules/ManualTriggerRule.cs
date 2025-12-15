@@ -1,18 +1,28 @@
-using BBT.Workflow.ExceptionHandling;
+using BBT.Aether.Results;
+using BBT.Workflow.Domain;
+using BBT.Workflow.Logging;
 using BBT.Workflow.Rules;
+using BBT.Workflow.Shared;
 
 namespace BBT.Workflow.Definitions.Rules;
 
-public class ManualTriggerRule(Transition transition) : BaseRule<State>
+public class ManualTriggerRule(Transition transition, ExecutionActor executionActor) : ResultBaseRule<State>
 {
     public override bool IsApplicable(State context)
     {
-        return context.Key == transition.Target &&
-               context.StateType != StateType.Initial;
+        if (transition.TriggerType == TriggerType.Manual)
+        {
+            return executionActor != ExecutionActor.User;
+        }
+
+        return false;
     }
 
-    public override void Execute(State context)
+    public override Result Validate(State context)
     {
-        throw new InvalidStateException(transition.Key, transition.Target, context.Key);
+        return Result.Fail(WorkflowErrors.TransitionUnauthorized(
+            transition.Key,
+            transition.TriggerType,
+            executionActor));
     }
 }

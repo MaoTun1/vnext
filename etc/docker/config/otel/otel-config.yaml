@@ -11,42 +11,40 @@ receivers:
 
 # Configure exporters
 exporters:
-  otlp:
-    endpoint: otelcol:4317
-  
-  # Export prometheus endpoint
-  #  prometheus:
-  #    endpoint: "0.0.0.0:8889"
-  
-  elasticsearch:
-    endpoint: "http://vnext-elastic:9200"
-#    auth:
-#      authenticator: basicauth
-    logs_index: "vnext-workflow"
-    mapping:
-      mode: "ecs"
-    timeout: 5s
-  
-  otlp/elastic:
-    endpoint: "vnext-apm:8200"
+  # OpenObserve HTTP endpoint for traces (OTLP exporter adds /v1/traces automatically)
+  otlphttp/openobserve-traces:
+    endpoint: "http://openobserve:5080/api/default"
+    headers:
+      Authorization: "Basic cm9vdEBleGFtcGxlLmNvbTpDb21wbGV4cGFzcyNAMTIz"
+      stream-name: "vnext"
+      organization: default
     tls:
       insecure: true
   
-  #  zipkin:
-  #    endpoint: localhost:9411
-  #    tls:
-  #      insecure: true
+  # OpenObserve HTTP endpoint for metrics (OTLP exporter adds /v1/metrics automatically)
+  otlphttp/openobserve-metrics:
+    endpoint: "http://openobserve:5080/api/default"
+    headers:
+      Authorization: "Basic cm9vdEBleGFtcGxlLmNvbTpDb21wbGV4cGFzcyNAMTIz"
+      stream-name: "vnext"
+      organization: default
+    tls:
+      insecure: true
+  
+  # OpenObserve HTTP endpoint for logs (OTLP exporter adds /v1/logs automatically)
+  otlphttp/openobserve-logs:
+    endpoint: "http://openobserve:5080/api/default"
+    headers:
+      Authorization: "Basic cm9vdEBleGFtcGxlLmNvbTpDb21wbGV4cGFzcyNAMTIz"
+      stream-name: "vnext"
+      organization: default
+    tls:
+      insecure: true
 
   # log to the console
   debug:
     verbosity: detailed
 
-#extensions:
-#  basicauth:
-#    client_auth:
-#      username: elastic
-#      password: NKUiiila
-      
 # Export to a file
 #  file:
 #    path: /etc/output/logs.json
@@ -62,17 +60,16 @@ processors:
 # https://opentelemetry.io/docs/collector/configuration/#service
 # https://github.com/open-telemetry/opentelemetry-collector/blob/main/docs/design.md#pipelines
 service:
-  # extensions: [basicauth]
   pipelines:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug, otlp/elastic]
+      exporters: [debug, otlphttp/openobserve-traces]
     metrics:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug, otlp/elastic]
+      exporters: [debug, otlphttp/openobserve-metrics]
     logs:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug, elasticsearch]
+      exporters: [debug, otlphttp/openobserve-logs]

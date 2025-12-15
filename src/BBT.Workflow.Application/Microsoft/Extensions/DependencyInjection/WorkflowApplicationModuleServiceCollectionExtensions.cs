@@ -1,22 +1,17 @@
+using BBT.Workflow.Application.Resilience;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Definitions.CastHandlers;
+using BBT.Workflow.Definitions.Validators;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Monitoring;
+using BBT.Workflow.Resilience;
 using BBT.Workflow.Runtime;
-using BBT.Workflow.Scripting;
-using BBT.Workflow.States;
-using BBT.Workflow.Tasks;
-using BBT.Workflow.Tasks.Factory;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using BBT.Workflow.Execution.Rules;
-using BBT.Workflow.Execution.StateMachine;
 using BBT.Workflow.Extentions;
 using BBT.Workflow.SubFlow;
-using BBT.Workflow.Tasks.Persistence;
-using BBT.Workflow.Tasks.Persistence.Strategies;
-using TaskFactory = BBT.Workflow.Tasks.Factory.TaskFactory;
 using BBT.Workflow.Functions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -30,57 +25,80 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The <see cref="IServiceCollection" /> to add services to.</param>
     /// <returns>The <see cref="IServiceCollection" /> so that additional calls can be chained.</returns>
-    public static IServiceCollection AddApplicationModule(
-        this IServiceCollection services)
+    public static IServiceCollection AddApplicationModule(this IServiceCollection services)
     {
-        services.AddDomainModule();
         services.AddAetherApplication();
+        
+        // Add transition pipeline architecture
+        services.AddPipelineServices();
 
-        // You can register your application service here.
-        services.AddSingleton<DomainCacheContext>();
-        services.AddScoped<IAdminAppService, AdminAppService>();
+        // Configure service groups
+        services.AddApplicationServices();
+        services.AddCacheServices();
+        services.AddTaskHandlers();
+        services.AddComponentCacheHandlers();
+        services.AddComponentValidators();
+        
+        return services;
+    }
+    
+    /// <summary>
+    /// Configures core application services.
+    /// </summary>
+    private static void AddApplicationServices(this IServiceCollection services)
+    {
+        // Application Services
+        services.AddScoped<IDefinitionAppService, DefinitionAppService>();
         services.AddScoped<IInstanceCommandAppService, InstanceCommandAppService>();
         services.AddScoped<IInstanceQueryAppService, InstanceQueryAppService>();
-         services.AddScoped<IFunctionAppService, FunctionAppService>();
-        services.AddScoped<ITaskCommandAppService, TaskCommandAppService>();
-        services.AddScoped<IScriptContextFactory, ScriptContextFactory>();
-        // services.AddScoped<IInstanceAppService, InstanceAppService>(); // For backward compatibility
-
-        services.AddScoped<IRuntimeService, RuntimeService>();
-        services.AddSingleton<IComponentCacheStore, ComponentCacheStore>();
-
-        // Instance Services
+        services.AddScoped<IFunctionAppService, FunctionAppService>();
         services.AddScoped<IInstanceExtensionService, InstanceExtensionService>();
+        services.AddScoped<ISubflowCompletionService, SubflowCompletionService>();
+        services.AddScoped<ISubflowStarter, SubflowStarter>();
+        services.AddScoped<ISubflowForwardingService, SubflowForwardingService>();
+        services.AddScoped<IChildSubflowCancellationService, ChildSubflowCancellationService>();
+        
+        // Instance Services
+        services.AddScoped<IInstanceCancellationService, InstanceCancellationService>();
+        
+        // Runtime Services
+        services.AddScoped<IRuntimeService, RuntimeService>();
+        services.AddScoped<IRuntimeCacheInitializer, RuntimeCacheInitializer>();
+    }
 
-        // Task Factory Services - Configuration Driven
-        ConfigureTaskFactory(services);
+    /// <summary>
+    /// Configures component cache store with metrics.
+    /// </summary>
+    private static void AddCacheServices(this IServiceCollection services)
+    {
+        services.AddSingleton<ComponentCacheStore>();
+        services.AddSingleton<IComponentCacheStore>(serviceProvider =>
+        {
+            var originalStore = serviceProvider.GetRequiredService<ComponentCacheStore>();
+            var workflowMetrics = serviceProvider.GetRequiredService<IWorkflowMetrics>();
+            var logger = serviceProvider.GetRequiredService<ILogger<MetricsAwareComponentCacheStore>>();
+            
+            return originalStore.WithMetrics(workflowMetrics, logger);
+        });
+        
+        // Cache Backend Services
+        services.AddSingleton<ICacheBackend<Workflow>, RuntimeCacheBackend<Workflow>>();
+        services.AddSingleton<ICacheBackend<WorkflowTask>, RuntimeCacheBackend<WorkflowTask>>();
+        services.AddSingleton<ICacheBackend<SchemaDefinition>, RuntimeCacheBackend<SchemaDefinition>>();
+        services.AddSingleton<ICacheBackend<Function>, RuntimeCacheBackend<Function>>();
+        services.AddSingleton<ICacheBackend<View>, RuntimeCacheBackend<View>>();
+        services.AddSingleton<ICacheBackend<Extension>, RuntimeCacheBackend<Extension>>();
 
-        // Task Persistence Strategies
-        services.AddScoped<ITaskPersistenceStrategy, StandardTaskPersistenceStrategy>();
-        services.AddScoped<ITaskPersistenceStrategy, ExtensionTaskPersistenceStrategy>();
-        services.AddScoped<ITaskPersistenceStrategyFactory, TaskPersistenceStrategyFactory>();
+        // Domain Cache Context
+        services.AddSingleton<DomainCacheContext>();
+        services.AddSingleton<IDomainCacheContext>(serviceProvider => serviceProvider.GetRequiredService<DomainCacheContext>());
+    }
 
-        // Core workflow execution services - registered with interfaces for better testability and isolation
-        services.AddScoped<IStateMachineExecutor, StateMachineExecutor>();
-        services.AddScoped<ITaskOrchestrationService, TaskOrchestrationService>();
-        services.AddScoped<ISubFlowService, SubFlowService>();
-        services.AddScoped<ITaskExecutorFactory, TaskExecutorFactory>();
-        services.AddScoped<HttpTaskExecutor>();
-        services.AddScoped<DaprBindingTaskExecutor>();
-        services.AddScoped<DaprHttpEndpointTaskExecutor>();
-        services.AddScoped<DaprHumanTaskExecutor>();
-        services.AddScoped<DaprPubSubTaskExecutor>();
-        services.AddScoped<DaprServiceTaskExecutor>();
-        services.AddScoped<ScriptTaskExecutor>();
-        services.AddScoped<ConditionTaskExecutor>();
-
-        // Scripting service
-        services.AddScoped<IScriptEngine, ScriptEngine>();
-
-        // Rule execution service
-        services.AddScoped<IRuleExecutionService, RuleExecutionService>();
-
-        // Cast handlers
+    /// <summary>
+    /// Configures workflow cast handlers.
+    /// </summary>
+    private static void AddComponentCacheHandlers(this IServiceCollection services)
+    {
         services.AddSingleton<IWorkflowCastHandler, FlowCastHandler>();
         services.AddSingleton<IWorkflowCastHandler, TaskWorkflowCastHandler>();
         services.AddSingleton<IWorkflowCastHandler, FunctionWorkflowCastHandler>();
@@ -88,43 +106,44 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddSingleton<IWorkflowCastHandler, SchemaWorkflowCastHandler>();
         services.AddSingleton<IWorkflowCastHandler, ExtensionWorkflowCastHandler>();
         services.AddSingleton<WorkflowCastProcessor>();
-
-        return services;
     }
 
     /// <summary>
-    /// Configures the task factory based on configuration options.
-    /// Selects between standard TaskFactory and PooledTaskFactory based on performance requirements.
+    /// Configures component validators for all component types.
     /// </summary>
-    /// <param name="services">The service collection to configure.</param>
-    private static void ConfigureTaskFactory(IServiceCollection services)
+    private static void AddComponentValidators(this IServiceCollection services)
     {
-        // Configure TaskFactory options from configuration
-        services.AddOptions<TaskFactoryOptions>()
-            .BindConfiguration(TaskFactoryOptions.SectionName)
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
+        services.AddSingleton<IComponentValidator, FlowComponentValidator>();
+        services.AddSingleton<IComponentValidator, TaskComponentValidator>();
+        services.AddSingleton<IComponentValidator, ViewComponentValidator>();
+        services.AddSingleton<IComponentValidator, FunctionComponentValidator>();
+        services.AddSingleton<IComponentValidator, SchemaComponentValidator>();
+        services.AddSingleton<IComponentValidator, ExtensionComponentValidator>();
+        services.AddSingleton<ComponentValidatorProcessor>();
+    }
 
-        // Register TaskFactory implementation based on configuration
-        services.AddScoped<ITaskFactory>(serviceProvider =>
+    /// <summary>
+    /// Adds Result-based resilience pipeline services for retry logic.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">Optional configuration for retry options.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddResultResilience(
+        this IServiceCollection services,
+        IConfiguration? configuration = null)
+    {
+        if (configuration != null)
         {
-            var options = serviceProvider.GetRequiredService<IOptions<TaskFactoryOptions>>();
-            var componentCacheStore = serviceProvider.GetRequiredService<IComponentCacheStore>();
+            services.Configure<ResultRetryOptions>(
+                configuration.GetSection(ResultRetryOptions.SectionName));
+        }
+        else
+        {
+            services.Configure<ResultRetryOptions>(_ => { });
+        }
 
-            if (options.Value.UseObjectPooling)
-            {
-                // Get singleton PooledTaskFactory for object pooling efficiency
-                return serviceProvider.GetRequiredService<PooledTaskFactory>();
-            }
+        services.AddSingleton<IResultResiliencePipelineFactory, ResultResiliencePipelineFactory>();
 
-            var standardLogger = serviceProvider.GetRequiredService<ILogger<TaskFactory>>();
-            return new TaskFactory(componentCacheStore, standardLogger);
-        });
-
-        // Register standard TaskFactory as scoped (stateless)
-        services.AddScoped<TaskFactory>();
-
-        // Register PooledTaskFactory as SINGLETON for efficient object pooling
-        services.AddSingleton<PooledTaskFactory>();
+        return services;
     }
 }

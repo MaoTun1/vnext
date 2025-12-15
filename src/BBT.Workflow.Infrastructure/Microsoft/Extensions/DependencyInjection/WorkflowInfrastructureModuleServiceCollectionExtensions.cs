@@ -1,9 +1,15 @@
-using BBT.Workflow.BackgroundJobs;
+using BBT.Aether.MultiSchema;
+using BBT.Aether.MultiSchema.EntityFrameworkCore.Interceptors;
 using BBT.Workflow.Data;
+using BBT.Workflow.Infrastructure.DataSink;
+using BBT.Workflow.Infrastructure.HostedServices;
+using BBT.Workflow.Infrastructure.Scripting;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Instances.Events;
+using BBT.Workflow.Monitoring;
 using BBT.Workflow.Remote.Extensions;
 using BBT.Workflow.Schemas;
-using Microsoft.EntityFrameworkCore;
+using BBT.Workflow.Scripting;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -20,19 +26,12 @@ public static class WorkflowInfrastructureModuleServiceCollectionExtensions
     public static IServiceCollection AddInfrastructureModule(
         this IServiceCollection services)
     {
-        services.AddApplicationModule();
         services.AddAetherInfrastructure();
-
-        // Schemas
-        services.AddScoped<ISchemaManager, PostgresSchemaManager>();
-        
-        // Background Jobs
-        services.AddScoped<IBackgroundJobService, DaprBackgroundJobService>();
-        services.AddScoped<IJobStore, EfCoreJobStore>();
         
         // DbContext
-        services.AddScoped<IDbContextFactory<WorkflowDbContext>, WorkflowDbContextFactory>();
-
+        services.AddSingleton<NpgsqlSchemaConnectionInterceptor>();
+        services.AddScoped<IMultiSchemaMigrator<WorkflowDbContext>, MultiSchemaMigrator<WorkflowDbContext>>();
+        
         // You can register your repositories here.
         services.AddScoped<IInstanceRepository, EfCoreInstanceRepository>();
         services.AddScoped<IInstanceCorrelationRepository, EfCoreInstanceCorrelationRepository>();
@@ -42,6 +41,37 @@ public static class WorkflowInfrastructureModuleServiceCollectionExtensions
         
         // Remote vnext api
         services.AddVNextApiServices();
+        
+        // Monitoring
+        services.AddSingleton<IWorkflowMetrics, PrometheusWorkflowMetrics>();
+        services.AddSingleton<WorkflowDatabaseInterceptor>();
+        services.AddSingleton<WorkflowTransactionInterceptor>();
+        
+        // Hosted Services
+        services.AddHostedService<SystemHealthMonitoringHostedService>();
+        
+        // DataSink Integration (replaces ClickHouse integration)
+        services.AddDataSinkServices();
+        services.AddClickHouseDataSinks();
+        services.RegisterDataSinks();
+        
+        // Schema Migration Orchestration
+        services.AddScoped<ISchemaMigrationOrchestrator, SchemaMigrationOrchestrator>();
+        
+        // Event Hooks
+        services.AddEventHook<InstanceSubCompletedEvent, InstanceSubCompletedEventHook>();
+        services.AddEventHook<InstanceCanceledEvent, InstanceCanceledEventHook>();
+        
+        // Embedded Script Services
+        services.AddEmbeddedScriptServices();
+        services.ConfigureEmbeddedScripts(opt =>
+        {
+            // Script is embedded in BBT.Workflow.Domain assembly
+            opt.Add(
+                NotificationScriptProvider.DefaultKey,
+                "BBT.Workflow.Tasks.Scripting.NotificationMapping.csx",
+                typeof(EmbeddedScriptEntry).Assembly);
+        });
         
         return services;
     }

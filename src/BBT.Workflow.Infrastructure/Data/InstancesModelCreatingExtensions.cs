@@ -9,7 +9,7 @@ namespace BBT.Workflow.Data;
 public static class InstancesModelCreatingExtensions
 {
     public static void ConfigureInstances(
-        this ModelBuilder builder, string? schema)
+        this ModelBuilder builder, string? schema = null)
     {
         /* Configure all entities here. */
 
@@ -93,9 +93,26 @@ public static class InstancesModelCreatingExtensions
                 .IsRequired()
                 .HasMaxLength(WorkflowConstants.MaxVersionLength);
 
+            b.Property(p => p.HistorySequence)
+                .IsRequired()
+                .HasDefaultValue(0);
+
+            b.Property(p => p.VersionNo)
+                .IsRequired()
+                .HasDefaultValue(0L);
+
+            b.Property(p => p.IsLatest)
+                .IsRequired()
+                .HasDefaultValue(false);
+
             b.Property(p => p.ETag)
                 .IsRequired()
                 .HasMaxLength(WorkflowConstants.MaxETagLength);
+            
+            b.Property(p => p.DataHash)
+                .IsRequired()
+                .HasDefaultValue("99914b932bd37a50b983c5e7c90ae93b") // Default Value: {}
+                .HasMaxLength(WorkflowConstants.MaxDataHashLength);
 
             b.OwnsOne(p => p.Data, d =>
             {
@@ -105,8 +122,18 @@ public static class InstancesModelCreatingExtensions
                     .HasColumnName(nameof(InstanceData.Data));
             });
 
-            b.HasIndex(p => new { p.InstanceId, p.Version })
-                .IsUnique();
+            b.HasIndex(p => p.InstanceId);
+
+            // Unique index: Instance-based VersionNo (for concurrency control)
+            b.HasIndex(p => new { p.InstanceId, p.VersionNo })
+                .IsUnique()
+                .HasDatabaseName("UX_InstancesData_Instance_VersionNo");
+
+            // Partial unique index: Only one record per instance can have IsLatest = true
+            b.HasIndex(p => p.InstanceId)
+                .IsUnique()
+                .HasFilter("\"IsLatest\" = true")
+                .HasDatabaseName("UX_InstancesData_Instance_IsLatest");
         });
 
         builder.Entity<InstanceTransition>(b =>
@@ -216,8 +243,7 @@ public static class InstancesModelCreatingExtensions
                 .HasMaxLength(InstanceJobConstants.MaxJobNameLength);
 
             b.Property(p => p.JobId)
-                .IsRequired()
-                .HasMaxLength(InstanceJobConstants.MaxJobIdLength);
+                .IsRequired();
 
             b.Property(p => p.Domain)
                 .IsRequired()
@@ -227,25 +253,8 @@ public static class InstancesModelCreatingExtensions
                 .IsRequired()
                 .HasMaxLength(WorkflowConstants.MaxFlowLength);
 
-            b.Property(p => p.ExpressionValue)
-                .IsRequired()
-                .HasMaxLength(InstanceJobConstants.MaxExpressionValueLength);
-
-            b.OwnsOne(p => p.Payload, d =>
-            {
-                d.Ignore(g => g.JsonElement);
-                d.Property(g => g.Json)
-                    .HasColumnType("jsonb")
-                    .HasColumnName(nameof(InstanceJob.Payload));
-            });
-
             b.HasIndex(i => i.JobId)
                 .IsUnique();
-
-            b.HasOne<Instance>()
-                .WithMany()
-                .HasForeignKey(p => p.InstanceId)
-                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

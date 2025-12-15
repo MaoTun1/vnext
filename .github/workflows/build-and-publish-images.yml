@@ -22,6 +22,9 @@ env:
   REGISTRY: ghcr.io
   EXECUTION_IMAGE_NAME: ${{ github.repository }}/execution
   ORCHESTRATOR_IMAGE_NAME: ${{ github.repository }}/orchestrator
+  INIT_IMAGE_NAME: ${{ github.repository }}/init
+  INBOX_IMAGE_NAME: ${{ github.repository }}/inbox
+  OUTBOX_IMAGE_NAME: ${{ github.repository }}/outbox
 
 jobs:
   build-and-publish:
@@ -31,12 +34,24 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       execution_image: ${{ steps.meta-execution.outputs.tags }}
       orchestrator_image: ${{ steps.meta-orchestrator.outputs.tags }}
+      init_image: ${{ steps.meta-init.outputs.tags }}
+      inbox_image: ${{ steps.meta-inbox.outputs.tags }}
+      outbox_image: ${{ steps.meta-outbox.outputs.tags }}
     
     steps:
+    # Option 1: GitHub App Token (Recommended)
+    - name: Generate GitHub App Token
+      id: generate_token
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ secrets.APP_ID }}
+        private-key: ${{ secrets.APP_PRIVATE_KEY }}
+    
     - name: Checkout code
       uses: actions/checkout@v4
       with:
         fetch-depth: 0  # Fetch all history for version calculation
+        token: ${{ steps.generate_token.outputs.token }}
     
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
@@ -137,6 +152,39 @@ jobs:
           type=ref,event=branch
           type=sha,prefix={{branch}}-
     
+    - name: Extract metadata for Init image
+      id: meta-init
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.INIT_IMAGE_NAME }}
+        tags: |
+          type=raw,value=${{ steps.version.outputs.version }}
+          type=raw,value=latest
+          type=ref,event=branch
+          type=sha,prefix={{branch}}-
+    
+    - name: Extract metadata for Inbox image
+      id: meta-inbox
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.INBOX_IMAGE_NAME }}
+        tags: |
+          type=raw,value=${{ steps.version.outputs.version }}
+          type=raw,value=latest
+          type=ref,event=branch
+          type=sha,prefix={{branch}}-
+    
+    - name: Extract metadata for Outbox image
+      id: meta-outbox
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.OUTBOX_IMAGE_NAME }}
+        tags: |
+          type=raw,value=${{ steps.version.outputs.version }}
+          type=raw,value=latest
+          type=ref,event=branch
+          type=sha,prefix={{branch}}-
+    
     - name: Build solution
       run: |
         echo "Restoring dependencies..."
@@ -179,6 +227,46 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
     
+    - name: Build and push Init Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./init/VNext.Init.Host/Dockerfile
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta-init.outputs.tags }}
+        labels: ${{ steps.meta-init.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Build and push Inbox Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./workers/BBT.Workflow.Workers.Inbox/Dockerfile
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta-inbox.outputs.tags }}
+        labels: ${{ steps.meta-inbox.outputs.labels }}
+        build-args: |
+          VERSION=${{ steps.version.outputs.version }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Build and push Outbox Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./workers/BBT.Workflow.Workers.Outbox/Dockerfile
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta-outbox.outputs.tags }}
+        labels: ${{ steps.meta-outbox.outputs.labels }}
+        build-args: |
+          VERSION=${{ steps.version.outputs.version }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
     - name: Create Git tag
       run: |
         VERSION="${{ steps.version.outputs.version }}"
@@ -215,6 +303,21 @@ jobs:
           docker pull ${{ env.REGISTRY }}/${{ env.ORCHESTRATOR_IMAGE_NAME }}:${{ steps.version.outputs.version }}
           ```
           
+          #### Init Service
+          ```bash
+          docker pull ${{ env.REGISTRY }}/${{ env.INIT_IMAGE_NAME }}:${{ steps.version.outputs.version }}
+          ```
+          
+          #### Inbox Worker
+          ```bash
+          docker pull ${{ env.REGISTRY }}/${{ env.INBOX_IMAGE_NAME }}:${{ steps.version.outputs.version }}
+          ```
+          
+          #### Outbox Worker
+          ```bash
+          docker pull ${{ env.REGISTRY }}/${{ env.OUTBOX_IMAGE_NAME }}:${{ steps.version.outputs.version }}
+          ```
+          
           ### 🚀 Quick Start
           
           **Using Docker Compose:**
@@ -236,6 +339,31 @@ jobs:
                 - ASPNETCORE_ENVIRONMENT=Production
               depends_on:
                 - execution
+          
+            init:
+              image: ${{ env.REGISTRY }}/${{ env.INIT_IMAGE_NAME }}:${{ steps.version.outputs.version }}
+               ports:
+                - "3005:3000"
+              environment:
+                - VNEXT_APP_URL=http://vnext-app:4201
+                - PACKAGE_API_PORT=3005
+                - DEFAULT_REGISTRY=https://registry.npmjs.org/
+              depends_on:
+                - orchestrator
+          
+            inbox:
+              image: ${{ env.REGISTRY }}/${{ env.INBOX_IMAGE_NAME }}:${{ steps.version.outputs.version }}
+              environment:
+                - ASPNETCORE_ENVIRONMENT=Production
+              depends_on:
+                - orchestrator
+          
+            outbox:
+              image: ${{ env.REGISTRY }}/${{ env.OUTBOX_IMAGE_NAME }}:${{ steps.version.outputs.version }}
+              environment:
+                - ASPNETCORE_ENVIRONMENT=Production
+              depends_on:
+                - orchestrator
           ```
           
           **Using Kubernetes:**
@@ -251,6 +379,21 @@ jobs:
           # Deploy orchestrator service
           kubectl create deployment orchestrator \
             --image=${{ env.REGISTRY }}/${{ env.ORCHESTRATOR_IMAGE_NAME }}:${{ steps.version.outputs.version }} \
+            --namespace=bbt-workflow
+          
+          # Deploy init service
+          kubectl create deployment init \
+            --image=${{ env.REGISTRY }}/${{ env.INIT_IMAGE_NAME }}:${{ steps.version.outputs.version }} \
+            --namespace=bbt-workflow
+          
+          # Deploy inbox worker
+          kubectl create deployment inbox \
+            --image=${{ env.REGISTRY }}/${{ env.INBOX_IMAGE_NAME }}:${{ steps.version.outputs.version }} \
+            --namespace=bbt-workflow
+          
+          # Deploy outbox worker
+          kubectl create deployment outbox \
+            --image=${{ env.REGISTRY }}/${{ env.OUTBOX_IMAGE_NAME }}:${{ steps.version.outputs.version }} \
             --namespace=bbt-workflow
           ```
           
@@ -294,6 +437,27 @@ jobs:
         format: spdx-json
         output-file: orchestrator-sbom.spdx.json
     
+    - name: Generate SBOM for Init image
+      uses: anchore/sbom-action@v0
+      with:
+        image: ${{ env.REGISTRY }}/${{ env.INIT_IMAGE_NAME }}:${{ steps.version.outputs.version }}
+        format: spdx-json
+        output-file: init-sbom.spdx.json
+    
+    - name: Generate SBOM for Inbox image
+      uses: anchore/sbom-action@v0
+      with:
+        image: ${{ env.REGISTRY }}/${{ env.INBOX_IMAGE_NAME }}:${{ steps.version.outputs.version }}
+        format: spdx-json
+        output-file: inbox-sbom.spdx.json
+    
+    - name: Generate SBOM for Outbox image
+      uses: anchore/sbom-action@v0
+      with:
+        image: ${{ env.REGISTRY }}/${{ env.OUTBOX_IMAGE_NAME }}:${{ steps.version.outputs.version }}
+        format: spdx-json
+        output-file: outbox-sbom.spdx.json
+    
     - name: Upload SBOMs as artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -301,6 +465,9 @@ jobs:
         path: |
           execution-sbom.spdx.json
           orchestrator-sbom.spdx.json
+          init-sbom.spdx.json
+          inbox-sbom.spdx.json
+          outbox-sbom.spdx.json
         retention-days: 90
     
     - name: Security scan - Execution image
@@ -316,6 +483,30 @@ jobs:
       id: scan-orchestrator
       with:
         image: ${{ env.REGISTRY }}/${{ env.ORCHESTRATOR_IMAGE_NAME }}:${{ steps.version.outputs.version }}
+        fail-build: false
+        output-format: sarif
+    
+    - name: Security scan - Init image
+      uses: anchore/scan-action@v3
+      id: scan-init
+      with:
+        image: ${{ env.REGISTRY }}/${{ env.INIT_IMAGE_NAME }}:${{ steps.version.outputs.version }}
+        fail-build: false
+        output-format: sarif
+    
+    - name: Security scan - Inbox image
+      uses: anchore/scan-action@v3
+      id: scan-inbox
+      with:
+        image: ${{ env.REGISTRY }}/${{ env.INBOX_IMAGE_NAME }}:${{ steps.version.outputs.version }}
+        fail-build: false
+        output-format: sarif
+    
+    - name: Security scan - Outbox image
+      uses: anchore/scan-action@v3
+      id: scan-outbox
+      with:
+        image: ${{ env.REGISTRY }}/${{ env.OUTBOX_IMAGE_NAME }}:${{ steps.version.outputs.version }}
         fail-build: false
         output-format: sarif
     
@@ -337,6 +528,33 @@ jobs:
             FOUND_FILES="$FOUND_FILES,${{ steps.scan-orchestrator.outputs.sarif }}"
           else
             FOUND_FILES="${{ steps.scan-orchestrator.outputs.sarif }}"
+          fi
+        fi
+        
+        if [ -n "${{ steps.scan-init.outputs.sarif }}" ] && [ -f "${{ steps.scan-init.outputs.sarif }}" ]; then
+          echo "Found init SARIF: ${{ steps.scan-init.outputs.sarif }}"
+          if [ -n "$FOUND_FILES" ]; then
+            FOUND_FILES="$FOUND_FILES,${{ steps.scan-init.outputs.sarif }}"
+          else
+            FOUND_FILES="${{ steps.scan-init.outputs.sarif }}"
+          fi
+        fi
+        
+        if [ -n "${{ steps.scan-inbox.outputs.sarif }}" ] && [ -f "${{ steps.scan-inbox.outputs.sarif }}" ]; then
+          echo "Found inbox SARIF: ${{ steps.scan-inbox.outputs.sarif }}"
+          if [ -n "$FOUND_FILES" ]; then
+            FOUND_FILES="$FOUND_FILES,${{ steps.scan-inbox.outputs.sarif }}"
+          else
+            FOUND_FILES="${{ steps.scan-inbox.outputs.sarif }}"
+          fi
+        fi
+        
+        if [ -n "${{ steps.scan-outbox.outputs.sarif }}" ] && [ -f "${{ steps.scan-outbox.outputs.sarif }}" ]; then
+          echo "Found outbox SARIF: ${{ steps.scan-outbox.outputs.sarif }}"
+          if [ -n "$FOUND_FILES" ]; then
+            FOUND_FILES="$FOUND_FILES,${{ steps.scan-outbox.outputs.sarif }}"
+          else
+            FOUND_FILES="${{ steps.scan-outbox.outputs.sarif }}"
           fi
         fi
         
@@ -385,12 +603,16 @@ jobs:
         if [ -f "./etc/docker/docker-compose.yml" ]; then
           sed -i "s|image: .*execution.*|image: ${{ env.REGISTRY }}/${{ env.EXECUTION_IMAGE_NAME }}:${VERSION}|g" ./etc/docker/docker-compose.yml
           sed -i "s|image: .*orchestrator.*|image: ${{ env.REGISTRY }}/${{ env.ORCHESTRATOR_IMAGE_NAME }}:${VERSION}|g" ./etc/docker/docker-compose.yml
+          sed -i "s|image: .*inbox.*|image: ${{ env.REGISTRY }}/${{ env.INBOX_IMAGE_NAME }}:${VERSION}|g" ./etc/docker/docker-compose.yml
+          sed -i "s|image: .*outbox.*|image: ${{ env.REGISTRY }}/${{ env.OUTBOX_IMAGE_NAME }}:${VERSION}|g" ./etc/docker/docker-compose.yml
           echo "Updated docker-compose.yml with version $VERSION"
         fi
         
         if [ -f "./etc/docker/docker-compose.stage.yml" ]; then
           sed -i "s|image: .*execution.*|image: ${{ env.REGISTRY }}/${{ env.EXECUTION_IMAGE_NAME }}:${VERSION}|g" ./etc/docker/docker-compose.stage.yml
           sed -i "s|image: .*orchestrator.*|image: ${{ env.REGISTRY }}/${{ env.ORCHESTRATOR_IMAGE_NAME }}:${VERSION}|g" ./etc/docker/docker-compose.stage.yml
+          sed -i "s|image: .*inbox.*|image: ${{ env.REGISTRY }}/${{ env.INBOX_IMAGE_NAME }}:${VERSION}|g" ./etc/docker/docker-compose.stage.yml
+          sed -i "s|image: .*outbox.*|image: ${{ env.REGISTRY }}/${{ env.OUTBOX_IMAGE_NAME }}:${VERSION}|g" ./etc/docker/docker-compose.stage.yml
           echo "Updated docker-compose.stage.yml with version $VERSION"
         fi
     
@@ -398,7 +620,7 @@ jobs:
       run: |
         VERSION="${{ steps.version.outputs.version }}"
         
-        # Configure git
+        # Configure git with bot credentials
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         
@@ -407,6 +629,8 @@ jobs:
           git add common.props
           git add etc/docker/docker-compose*.yml || true
           git commit -m "chore: bump version to $VERSION [skip ci]"
+          
+          # Push with the token that has bypass permissions
           git push origin ${{ github.ref_name }}
           echo "Committed and pushed version updates"
         else
@@ -435,6 +659,21 @@ jobs:
         echo "${{ env.REGISTRY }}/${{ env.ORCHESTRATOR_IMAGE_NAME }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Init Service:**" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "${{ env.REGISTRY }}/${{ env.INIT_IMAGE_NAME }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Inbox Worker:**" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "${{ env.REGISTRY }}/${{ env.INBOX_IMAGE_NAME }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Outbox Worker:**" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "${{ env.REGISTRY }}/${{ env.OUTBOX_IMAGE_NAME }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 🎯 Next Steps" >> $GITHUB_STEP_SUMMARY
         echo "1. 🐳 Images are available in GitHub Container Registry" >> $GITHUB_STEP_SUMMARY
         echo "2. 🏷️ Git tag v${{ steps.version.outputs.version }} has been created" >> $GITHUB_STEP_SUMMARY
@@ -448,6 +687,9 @@ jobs:
         echo '```bash' >> $GITHUB_STEP_SUMMARY
         echo "docker pull ${{ env.REGISTRY }}/${{ env.EXECUTION_IMAGE_NAME }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
         echo "docker pull ${{ env.REGISTRY }}/${{ env.ORCHESTRATOR_IMAGE_NAME }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo "docker pull ${{ env.REGISTRY }}/${{ env.INIT_IMAGE_NAME }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo "docker pull ${{ env.REGISTRY }}/${{ env.INBOX_IMAGE_NAME }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo "docker pull ${{ env.REGISTRY }}/${{ env.OUTBOX_IMAGE_NAME }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**Start services:**" >> $GITHUB_STEP_SUMMARY

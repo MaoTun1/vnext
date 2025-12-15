@@ -1,12 +1,15 @@
+using System.Text.Json.Serialization;
+
 namespace BBT.Workflow.Instances;
 
-public class InstanceStatus : IEquatable<InstanceStatus>
+[JsonConverter(typeof(IEquatableJsonConverter<InstanceStatus>))]
+public sealed class InstanceStatus : IEquatable<InstanceStatus>
 {
-    public static readonly InstanceStatus Busy = new InstanceStatus("B", "Busy");
-    public static readonly InstanceStatus Active = new InstanceStatus("A", "Active");
-    public static readonly InstanceStatus Passive = new InstanceStatus("P", "Passive");
-    public static readonly InstanceStatus Completed = new InstanceStatus("C", "Completed");
-    public static readonly InstanceStatus Faulted = new InstanceStatus("F", "Faulted");
+    public static readonly InstanceStatus Busy = new("B", "Busy");
+    public static readonly InstanceStatus Active = new("A", "Active");
+    public static readonly InstanceStatus Passive = new("P", "Passive");
+    public static readonly InstanceStatus Completed = new("C", "Completed");
+    public static readonly InstanceStatus Faulted = new("F", "Faulted");
 
     public string Code { get; }
     public string Description { get; }

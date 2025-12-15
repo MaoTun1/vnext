@@ -451,8 +451,6 @@ node .vscode/scripts/watch-workflows.js
 - Use `Ctrl + Shift + Alt + W` to update all workflows
 - File watcher automatically updates JSON when CSX files change
 
-For detailed information about development automation, see [Workflow Development Automation](./workflow-development-automation.md).
-
 ## Next Steps
 
 1. **Explore the API Documentation**: Check both Swagger UIs to understand available endpoints

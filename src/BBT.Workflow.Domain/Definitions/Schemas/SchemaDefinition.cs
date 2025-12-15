@@ -49,16 +49,7 @@ public sealed class SchemaDefinition : IDomainEntity, ISchemaReference, IReferen
     /// </summary>
     public JsonElement Schema { get; private set; }
 
-    public string CacheKey => $"{nameof(SchemaDefinition)}:{Domain}:{Flow}:{Key}:{Version}";
-
-    public static string GenerateCacheKey(
-        string domain,
-        string flow,
-        string key,
-        string version)
-    {
-        return $"{nameof(SchemaDefinition)}:{domain}:{flow}:{key}:{version}";
-    }
+    public string ComponentKey => RuntimeSysSchemaInfo.Schemas;
 
     private void SetKey(string key)
     {
@@ -72,7 +63,7 @@ public sealed class SchemaDefinition : IDomainEntity, ISchemaReference, IReferen
 
     private void SetVersion(string version)
     {
-        Version = Check.NotNullOrEmpty(version, nameof(Version), WorkflowConstants.MaxVersionLength);
+        Version = Check.NotNullOrWhiteSpace(version, nameof(Version), WorkflowConstants.MaxVersionLength);
     }
 
     public void SetReference(IReference reference)

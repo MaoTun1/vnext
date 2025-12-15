@@ -1,6 +1,5 @@
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
-using TaskStatus = BBT.Workflow.Definitions.TaskStatus;
 
 namespace BBT.Workflow.Tasks.Persistence.Strategies;
 
@@ -32,7 +31,6 @@ public sealed class StandardTaskPersistenceStrategy(
     /// </summary>
     /// <param name="instanceTask">The InstanceTask to be inserted into the database.</param>
     /// <param name="cancellationToken">Cancellation token for async operation control.</param>
-    /// <returns>A task representing the asynchronous database insert operation.</returns>
     public async Task HandleCreationAsync(InstanceTask instanceTask, CancellationToken cancellationToken = default)
     {
         await instanceTaskRepository.InsertAsync(instanceTask, true, cancellationToken);
@@ -43,26 +41,8 @@ public sealed class StandardTaskPersistenceStrategy(
     /// </summary>
     /// <param name="instanceTask">The InstanceTask to be updated in the database.</param>
     /// <param name="cancellationToken">Cancellation token for async operation control.</param>
-    /// <returns>A task representing the asynchronous database update operation.</returns>
     public async Task HandleCompletionAsync(InstanceTask instanceTask, CancellationToken cancellationToken = default)
     {
-        // // FIXED: Create detached copy to avoid EF tracking conflicts
-        // var detachedTask = new InstanceTask(
-        //     instanceTask.Id,
-        //     instanceTask.TransitionId,
-        //     instanceTask.TaskId
-        // );
-        //
-        // // Copy state from original task
-        // if (instanceTask.Status == TaskStatus.Completed)
-        // {
-        //     detachedTask.Completed(instanceTask.Response);
-        // }
-        // else if (instanceTask.Status == TaskStatus.Faulted)
-        // {
-        //     detachedTask.Faulted(instanceTask.Response.Json);
-        // }
-        
         await instanceTaskRepository.UpdateAsync(instanceTask, true, cancellationToken);
     }
-} 
+}

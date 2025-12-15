@@ -32,8 +32,8 @@ public class LanguageLabel : ValueObject, IHasLabel
         string label,
         string language)
     {
-        Label = Check.NotNullOrEmpty(label, nameof(Label), LanguageLabelConstants.MaxLabelLength);
-        Language = Check.NotNullOrEmpty(language, nameof(Language), LanguageLabelConstants.MaxLanguageLength);
+        Label = Check.NotNullOrWhiteSpace(label, nameof(Label), LanguageLabelConstants.MaxLabelLength);
+        Language = Check.NotNullOrWhiteSpace(language, nameof(Language), LanguageLabelConstants.MaxLanguageLength);
     }
 
     /// <summary>

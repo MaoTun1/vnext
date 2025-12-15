@@ -1,48 +1,139 @@
+using BBT.Aether;
+using BBT.Aether.Domain;
 using BBT.Aether.Domain.EntityFrameworkCore;
-using BBT.Aether.Domain.Services;
+using BBT.Aether.Domain.Repositories;
+using BBT.Aether.MultiSchema;
+using BBT.Aether.Results;
 using BBT.Workflow.Data;
+using BBT.Workflow.DataSink;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Monitoring;
+using BBT.Workflow.Runtime;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using System.Text.Json;
 
 namespace BBT.Workflow.Instances;
 
 public sealed class EfCoreInstanceRepository(
-    WorkflowDbContext dbContext,
+    IDbContextProvider<WorkflowDbContext> dbContext,
     IServiceProvider serviceProvider,
-    ITransactionService transactionService,
-    IConfiguration configuration)
-    : EfCoreRepository<WorkflowDbContext, Instance, Guid>(dbContext, serviceProvider, transactionService),
+    IWorkflowMetrics workflowMetrics,
+    IRuntimeInfoProvider runtimeInfoProvider,
+    IDataSinkManager dataSinkManager,
+    ICurrentSchema currentSchema)
+    : EfCoreRepository<WorkflowDbContext, Instance, Guid>(dbContext, serviceProvider),
         IInstanceRepository
 {
     public override async Task<IQueryable<Instance>> WithDetailsAsync()
     {
         return (await base.WithDetailsAsync())
-            .Include(i => i.DataList);
+            .Include(i => i.DataList)
+            .Include(i => i.ChildCorrelations);
     }
 
-    public async Task<Instance?> FindByKeyAsync(
-        string key,
+    /// <summary>
+    /// Inserts a new instance and automatically records metrics
+    /// </summary>
+    public override async Task<Instance> InsertAsync(Instance entity, bool autoSave = false,
         CancellationToken cancellationToken = default)
     {
-        return await (await GetDbSetAsync())
-            .Include(i => i.DataList)
-            .FirstOrDefaultAsync(
-            p => p.Key == key, cancellationToken);
+        var result = await base.InsertAsync(entity, autoSave, cancellationToken);
+
+        // Database metrics are automatically recorded by WorkflowDatabaseInterceptor
+        // Only record business-specific instance metrics here
+        workflowMetrics.RecordInstanceCreated(entity.Flow, runtimeInfoProvider.Domain);
+
+        // Transfer to data sinks (e.g., ClickHouse) if enabled
+        try
+        {
+            await dataSinkManager.HandleInsertAsync(result, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Log error but don't fail the main operation
+            Console.WriteLine($"Failed to transfer instance to data sinks: {ex.Message}");
+        }
+
+        return result;
     }
 
-    public async Task<Instance?> FindByIdAsync(
-        Guid id,
+    /// <summary>
+    /// Updates an instance and automatically records status change metrics
+    /// </summary>
+    public override async Task<Instance> UpdateAsync(Instance entity, bool autoSave = false,
         CancellationToken cancellationToken = default)
     {
-        return await (await GetDbSetAsync())
-            .Include(i => i.DataList)
-            .FirstOrDefaultAsync(
-            p => p.Id == id, cancellationToken);
+        // Get the original entity to compare status changes
+        var originalEntity = await FindAsync(entity.Id, includeDetails: false, cancellationToken);
+        var originalStatus = originalEntity?.Status;
+
+        var result = await base.UpdateAsync(entity, autoSave, cancellationToken);
+
+        // Database metrics are automatically recorded by WorkflowDatabaseInterceptor
+        // Only handle business-specific status change metrics here
+        if (originalStatus != null && !originalStatus.Equals(entity.Status))
+        {
+            await HandleStatusChangeMetrics(entity, originalStatus, entity.Status);
+        }
+
+        // Transfer to data sinks (e.g., ClickHouse) if enabled
+        try
+        {
+            await dataSinkManager.HandleUpdateAsync(result, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Log error but don't fail the main operation
+            Console.WriteLine($"Failed to transfer instance to data sinks: {ex.Message}");
+        }
+
+        return result;
     }
 
+    // Transaction metrics are now automatically handled by WorkflowDatabaseInterceptor
+    // No need for manual transaction tracking helpers
+
+    public async Task<Instance?> FindByIdentifierAsync(
+        string? identifier,
+        CancellationToken cancellationToken = default)
+    {
+        var query = (await WithDetailsAsync())
+            .AsSplitQuery();
+
+        if (Guid.TryParse(identifier, out var instanceId))
+        {
+            return await query
+                .FirstOrDefaultAsync(
+                    p => p.Id == instanceId,
+                    cancellationToken);
+        }
+
+        return await query
+            .FirstOrDefaultAsync(
+                p => p.Key == identifier,
+                cancellationToken);
+    }
+
+    public async Task<Instance?> FindByIdentifierAsReadOnlyAsync(string identifier,
+        CancellationToken cancellationToken = default)
+    {
+        var query = (await WithDetailsAsync())
+            .AsNoTracking()
+            .AsSplitQuery();
+
+        if (Guid.TryParse(identifier, out var instanceId))
+        {
+            return await query
+                .FirstOrDefaultAsync(
+                    p => p.Id == instanceId,
+                    cancellationToken);
+        }
+
+        return await query
+            .FirstOrDefaultAsync(
+                p => p.Key == identifier,
+                cancellationToken);
+    }
 
     public async Task<InstanceAndDataModel?> FindActiveDataAsync(string key, string version,
         CancellationToken cancellationToken = default)
@@ -64,140 +155,94 @@ public sealed class EfCoreInstanceRepository(
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    public async Task<IQueryable<Instance>> GetFilteredQueryAsync(
+    private async Task<IQueryable<Instance>> GetFilteredQueryAsync(
         string[]? filters,
         CancellationToken cancellationToken = default)
     {
-        var context = await GetDbContextAsync();
-        
         // Apply PostgreSQL native JSON filters if provided
-        if (filters != null && filters.Any())
+        if (filters?.Any() == true)
         {
             try
             {
                 // Use ApplyJsonFilters on Instance DbSet - this matches the working pattern
                 // The CTE inside ApplyJsonFilters will handle InstanceData filtering and return Instances
-                var filteredInstances =  (await GetDbSetAsync())
+                var filteredInstances = (await GetDbSetAsync())
                     .ApplyJsonFilters(
                         filters: filters,
                         jsonColumnName: "Data", // InstanceData.Data is the JSON column
                         tableName: "InstancesData", // Filter table name
-                        schema:  dbContext.SchemaName ?? "public" // Default schema
+                        schema: currentSchema.Name ?? "public" // Default schema
                     );
 
                 return filteredInstances
-                .Include(i => i.DataList)
-                ;
+                    .Include(i => i.DataList);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                // Fallback to original implementation if PostgreSQL filter fails
-                Console.WriteLine($"PostgreSQL filter failed, falling back to EF Core filters: {ex.Message}");
-                
                 var dbSet = await GetDbSetAsync();
                 var query = dbSet.Include(i => i.DataList);
                 var filterSpec = new InstanceFilterSpecification(filters);
                 return filterSpec.Apply(query);
             }
         }
-        
+
         // If no filters, use the standard approach with includes
         var standardDbSet = await GetDbSetAsync();
         return standardDbSet.Include(i => i.DataList);
     }
 
-    /// <summary>
-    /// Alternative method that handles DataList loading separately for better performance
-    /// with PostgreSQL native filters on InstanceData table
-    /// </summary>
-    public async Task<IQueryable<Instance>> GetFilteredQueryWithPostgreSqlAsync(
-        string[]? filters,
-        bool includeDataList = true,
-        bool onlyLatest = true,
-        CancellationToken cancellationToken = default)
-    {
-        var context = await GetDbContextAsync();
-        
-        if (filters != null && filters.Any())
-        {
-            // Apply PostgreSQL native JSON filters on Instance DbSet
-            // CTE inside ApplyJsonFilters handles InstanceData filtering and returns Instances
-            var filteredInstances = context.Set<Instance>()
-                .ApplyJsonFilters(
-                    filters: filters,
-                    jsonColumnName: "Data", // InstanceData.Data contains the JSON
-                    tableName: "InstancesData"
-                );
-
-            // Handle DataList inclusion
-            if (includeDataList)
-            {
-                return filteredInstances.Include(i => i.DataList);
-            }
-            
-            return filteredInstances;
-        }
-        
-        // No filters - standard approach
-        var query = context.Instances.AsQueryable();
-        if (includeDataList)
-        {
-            query = query.Include(i => i.DataList);
-        }
-        
-        return query;
-    }
-
-    /// <summary>
-    /// Get filtered InstanceData directly using basic EF Core filters
-    /// For now, this method uses standard EF Core filtering instead of PostgreSQL native filters
-    /// TODO: Implement InstanceData-specific PostgreSQL native filtering if needed
-    /// </summary>
-    public async Task<IQueryable<InstanceData>> GetFilteredInstanceDataAsync(
-        string[]? filters,
-        bool onlyLatest = true,
-        CancellationToken cancellationToken = default)
-    {
-        var context = await GetDbContextAsync();
-        var query = context.Set<InstanceData>().AsQueryable();
-        
-        if (onlyLatest)
-        {
-            query = query.Where(d => d.IsLatest == true);
-        }
-
-        // For now, using basic filtering - can be enhanced later with InstanceData-specific filters
-        if (filters != null && filters.Any())
-        {
-            // Basic filtering could be implemented here if needed
-            // For now, just return the latest data
-            Console.WriteLine("Note: Advanced filtering not implemented for InstanceData-only queries");
-        }
-
-        return query;
-    }
-
-    public async Task<Definitions.PaginationResult<Instance>> GetPagedResultsAsync(
+    public async Task<HateoasPagedList<Instance>> GetPagedResultsAsync(
         int page,
         int pageSize,
-        string route,
-        IQueryCollection? queryParams = null,
-        IQueryable<Instance>? instance = null,
+        string[]? filters,
         CancellationToken cancellationToken = default)
     {
-        var query = instance ?? (await base.GetQueryableAsync()).Include(i => i.DataList);
-        return query.Paginate(page, pageSize, route, configuration, queryParams);
+        var query = (await GetFilteredQueryAsync(filters, cancellationToken))
+            .Include(i => i.DataList)
+            .AsSplitQuery();
+        return await query.ToHateoasPagedListAsync(page, pageSize, cancellationToken);
     }
 
-    public async Task<Instance> GetActiveAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<Result<Instance>> GetActiveAsync(string identifier, CancellationToken cancellationToken = default)
     {
-        var instance = await GetAsync(id, true, cancellationToken);
-        if (instance.Status.Equals(InstanceStatus.Completed))
+        var instanceResult = await GetResultAsync(identifier, includeDetails: true, cancellationToken);
+
+        if (!instanceResult.IsSuccess)
         {
-            throw new InstanceCompletedException(instance.Id);
+            return instanceResult;
         }
 
-        return instance;
+        var instance = instanceResult.Value!;
+
+        if (instance.IsCompleted)
+        {
+            return Result<Instance>.Fail(Error.Validation(
+                WorkflowErrorCodes.InstanceCompleted,
+                $"Instance {identifier} is already completed with status: {instance.Status.Code}",
+                identifier));
+        }
+
+        return Result<Instance>.Ok(instance);
+    }
+
+    /// <summary>
+    /// Gets an instance by ID using Result pattern.
+    /// Returns Result.NotFound if instance doesn't exist.
+    /// </summary>
+    public async Task<Result<Instance>> GetResultAsync(string identifier, bool includeDetails = true,
+        CancellationToken cancellationToken = default)
+    {
+        var instance = await FindByIdentifierAsync(identifier, cancellationToken);
+
+        if (instance is null)
+        {
+            return Result<Instance>.Fail(Error.NotFound(
+                WorkflowErrorCodes.InstanceNotFound,
+                $"Instance with ID {identifier} not found",
+                identifier));
+        }
+
+        return Result<Instance>.Ok(instance);
     }
 
     public async Task<List<InstanceAndDataModel>> GetActiveDataListAsync(CancellationToken cancellationToken = default)
@@ -206,15 +251,58 @@ public sealed class EfCoreInstanceRepository(
 
         // Optimize query with proper indexing and reduced data transfer
         return await (from instance in context.Instances
-                      where instance.Status == InstanceStatus.Active
-                      join data in context.InstancesData on instance.Id equals data.InstanceId
-                      select new InstanceAndDataModel
-                      {
-                          Instance = instance,
-                          InstanceData = data
-                      })
+                where instance.Status == InstanceStatus.Active
+                join data in context.InstancesData on instance.Id equals data.InstanceId
+                select new InstanceAndDataModel
+                {
+                    Instance = instance,
+                    InstanceData = data
+                })
             .AsNoTracking() // Don't track changes for read-only operations
             .AsSplitQuery() // Use split queries for better performance with joins
             .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> AnyActiveByKeyAsync(string key, Guid excludeInstanceId, CancellationToken cancellationToken = default)
+    {
+        return await (await GetDbSetAsync())
+            .AsNoTracking()
+            .AnyAsync(
+                i => i.Key == key 
+                     && i.Id != excludeInstanceId 
+                     && i.Status == InstanceStatus.Active,
+                cancellationToken);
+    }
+
+    /// <summary>
+    /// Handles metrics recording for instance status changes
+    /// </summary>
+    private async Task HandleStatusChangeMetrics(Instance entity, InstanceStatus oldStatus, InstanceStatus newStatus)
+    {
+        // Update status transition metrics (handles all status gauge changes)
+        workflowMetrics.UpdateInstanceStatusMetrics(entity.Flow, oldStatus.Code, newStatus.Code);
+
+        // Record specific completion events with duration
+        if (newStatus.Equals(InstanceStatus.Completed))
+        {
+            var durationSeconds = entity.Duration?.TotalSeconds;
+            workflowMetrics.RecordInstanceCompleted(entity.Flow, runtimeInfoProvider.Domain, durationSeconds);
+        }
+
+        // Record specific error events with duration
+        if (newStatus.Equals(InstanceStatus.Faulted))
+        {
+            var durationSeconds = entity.Duration?.TotalSeconds;
+            workflowMetrics.RecordError("instance_faulted", "High", "Instance");
+
+            // Record duration for faulted instances
+            if (durationSeconds.HasValue)
+            {
+                workflowMetrics.RecordInstanceDuration(entity.Flow, "Faulted", durationSeconds.Value);
+            }
+        }
+
+        await Task.CompletedTask; // For potential future async operations
     }
 }

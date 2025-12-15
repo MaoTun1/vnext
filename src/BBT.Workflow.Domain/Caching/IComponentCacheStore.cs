@@ -1,4 +1,5 @@
 using BBT.Aether.Domain.Entities;
+using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 
 namespace BBT.Workflow.Caching;
@@ -18,10 +19,10 @@ public interface IComponentCacheStore
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>
     /// A <see cref="Task{TResult}"/> representing the asynchronous operation.
-    /// The task result contains the <see cref="Definitions.Workflow"/> if found.
+    /// The task result contains a <see cref="Result{T}"/> with the <see cref="Definitions.Workflow"/> if found,
+    /// or a <see cref="Error.NotFound"/> if the workflow does not exist in cache.
     /// </returns>
-    /// <exception cref="EntityNotFoundException">Thrown when the workflow is not found in cache.</exception>
-    Task<Definitions.Workflow> GetFlowAsync(
+    Task<Result<Definitions.Workflow>> GetFlowAsync(
         string domain,
         string key,
         string? version,
@@ -36,10 +37,10 @@ public interface IComponentCacheStore
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>
     /// A <see cref="Task{TResult}"/> representing the asynchronous operation.
-    /// The task result contains the <see cref="WorkflowTask"/> if found.
+    /// The task result contains a <see cref="Result{T}"/> with the <see cref="WorkflowTask"/> if found,
+    /// or a <see cref="Error.NotFound"/> if the task does not exist in cache.
     /// </returns>
-    /// <exception cref="EntityNotFoundException">Thrown when the task is not found in cache.</exception>
-    Task<WorkflowTask> GetTaskAsync(
+    Task<Result<WorkflowTask>> GetTaskAsync(
         string domain,
         string key,
         string? version,
@@ -54,10 +55,10 @@ public interface IComponentCacheStore
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>
     /// A <see cref="Task{TResult}"/> representing the asynchronous operation.
-    /// The task result contains the <see cref="SchemaDefinition"/> if found.
+    /// The task result contains a <see cref="Result{T}"/> with the <see cref="SchemaDefinition"/> if found,
+    /// or a <see cref="Error.NotFound"/> if the schema does not exist in cache.
     /// </returns>
-    /// <exception cref="EntityNotFoundException">Thrown when the schema is not found in cache.</exception>
-    Task<SchemaDefinition> GetSchemaAsync(
+    Task<Result<SchemaDefinition>> GetSchemaAsync(
         string domain,
         string key,
         string? version,
@@ -72,10 +73,10 @@ public interface IComponentCacheStore
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>
     /// A <see cref="Task{TResult}"/> representing the asynchronous operation.
-    /// The task result contains the <see cref="Function"/> if found.
+    /// The task result contains a <see cref="Result{T}"/> with the <see cref="Function"/> if found,
+    /// or a <see cref="Error.NotFound"/> if the function does not exist in cache.
     /// </returns>
-    /// <exception cref="EntityNotFoundException">Thrown when the function is not found in cache.</exception>
-    Task<Function> GetFunctionAsync(
+    Task<Result<Function>> GetFunctionAsync(
         string domain,
         string key,
         string? version,
@@ -90,10 +91,10 @@ public interface IComponentCacheStore
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>
     /// A <see cref="Task{TResult}"/> representing the asynchronous operation.
-    /// The task result contains the <see cref="View"/> if found.
+    /// The task result contains a <see cref="Result{T}"/> with the <see cref="View"/> if found,
+    /// or a <see cref="Error.NotFound"/> if the view does not exist in cache.
     /// </returns>
-    /// <exception cref="EntityNotFoundException">Thrown when the view is not found in cache.</exception>
-    Task<View> GetViewAsync(
+    Task<Result<View>> GetViewAsync(
         string domain,
         string key,
         string? version,
@@ -108,10 +109,10 @@ public interface IComponentCacheStore
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>
     /// A <see cref="Task{TResult}"/> representing the asynchronous operation.
-    /// The task result contains the <see cref="Extension"/> if found.
+    /// The task result contains a <see cref="Result{T}"/> with the <see cref="Extension"/> if found,
+    /// or a <see cref="Error.NotFound"/> if the extension does not exist in cache.
     /// </returns>
-    /// <exception cref="EntityNotFoundException">Thrown when the extension is not found in cache.</exception>
-    Task<Extension> GetExtensionAsync(
+    Task<Result<Extension>> GetExtensionAsync(
         string domain,
         string key,
         string? version,
@@ -125,9 +126,10 @@ public interface IComponentCacheStore
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>
     /// A <see cref="Task{TResult}"/> representing the asynchronous operation.
-    /// The task result contains a collection of all <see cref="Extension"/> definitions for the domain.
+    /// The task result contains a <see cref="Result{T}"/> with a collection of all <see cref="Extension"/> definitions for the domain.
+    /// Returns an empty collection if no extensions are found (success with empty list).
     /// </returns>
-    Task<IEnumerable<Extension>> GetAllExtensionsAsync(
+    Task<Result<IEnumerable<Extension>>> GetAllExtensionsAsync(
         string domain,
         CancellationToken cancellationToken = default);
 
@@ -138,10 +140,11 @@ public interface IComponentCacheStore
     /// <param name="entity">The entity instance to be cached.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>
-    /// A <see cref="Task"/> representing the asynchronous cache operation.
+    /// A <see cref="Task{TResult}"/> representing the asynchronous cache operation.
+    /// The task result contains a <see cref="Result"/> indicating success or failure.
+    /// Returns validation error if entity is null or invalid.
+    /// Returns not supported error if the entity type is not supported for caching.
     /// </returns>
-    /// <exception cref="ArgumentNullException">Thrown when entity is null.</exception>
-    /// <exception cref="NotSupportedException">Thrown when the entity type is not supported for caching.</exception>
-    public Task SetAsync<T>(T entity, CancellationToken cancellationToken = default)
+    public Task<Result> SetAsync<T>(T entity, CancellationToken cancellationToken = default)
         where T : class, IDomainEntity, IReferenceSetter;
 }

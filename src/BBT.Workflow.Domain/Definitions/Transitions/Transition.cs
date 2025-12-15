@@ -38,12 +38,14 @@ public sealed class Transition : IHasKey
         TriggerType triggerType,
         VersionStrategy versionStrategy,
         List<LanguageLabel> labels,
-        List<OnExecuteTask> onExecutionTasks
+        List<OnExecuteTask> onExecutionTasks,
+        ViewDefinition view
     ) : this(key, from, target, triggerType)
     {
         VersionStrategy = versionStrategy;
         this.labels = labels ?? [];
         this.onExecutionTasks = onExecutionTasks ?? [];
+        this.View = view;
     }
 
     /// <summary>
@@ -70,16 +72,22 @@ public sealed class Transition : IHasKey
     /// <see cref="TriggerType"/>
     /// </summary>
     public TriggerType TriggerType { get; private set; }
-    [JsonInclude] public TimerConfig? Timer { get; private set; }
+    [JsonInclude] public ScriptCode? Timer { get; private set; }
     [JsonInclude] public ScriptCode? Rule { get; private set; }
     [JsonInclude] public Reference? Schema { get; private set; }
     [JsonInclude] public List<string> AvailableIn { get; private set; }
+    [JsonInclude] public ScriptCode? Mapping { get; private set; }
 
-    [JsonInclude] [JsonPropertyName("labels")]
+    [JsonInclude]
+    [JsonPropertyName("labels")]
     private List<LanguageLabel> labels = new();
 
-    [JsonInclude] [JsonPropertyName("onExecutionTasks")]
+    [JsonInclude]
+    [JsonPropertyName("onExecutionTasks")]
     private List<OnExecuteTask> onExecutionTasks = new();
+    [JsonInclude]
+    [JsonPropertyName("view")]
+    public ViewDefinition? View { get; private set; }
 
     /// <summary>
     /// Language
@@ -87,10 +95,11 @@ public sealed class Transition : IHasKey
     [JsonIgnore]
     public IReadOnlyCollection<LanguageLabel> Labels => labels.AsReadOnly();
 
-    /// <summary>
-    /// Transition View
-    /// </summary>
-    public IReference? View { get; private set; }
+    // /// <summary>
+    // /// Transition View
+    // /// </summary>
+    // [JsonIgnore]
+    // public ViewDefinition? View { get; private set; }
 
     /// <summary>
     /// On Execution Tasks
@@ -100,12 +109,12 @@ public sealed class Transition : IHasKey
 
     private void SetKey(string key)
     {
-        Key = Check.NotNullOrEmpty(key, nameof(Key), TransitionConstants.MaxKeyLength);
+        Key = Check.NotNullOrWhiteSpace(key, nameof(Key), TransitionConstants.MaxKeyLength);
     }
 
     private void SetTarget(string target)
     {
-        Target = Check.NotNull(target, nameof(Target), TransitionConstants.MaxTargetLength);
+        Target = Check.NotNullOrWhiteSpace(target, nameof(Target), TransitionConstants.MaxTargetLength);
     }
 
     private void SetFrom(string? from)
@@ -135,9 +144,9 @@ public sealed class Transition : IHasKey
         }
     }
 
-    public void SetView(IReference reference)
+    public void SetView(ViewDefinition viewDefinition)
     {
-        View = reference;
+        View = viewDefinition;
     }
 
     public void AddOnExecutionTask(OnExecuteTask task)
@@ -154,10 +163,15 @@ public sealed class Transition : IHasKey
     {
         Rule = new ScriptCode(location, scriptCode);
     }
-    
-    public void SetTimer(string reset, string duration)
+
+    public void SetTimer(string location, string code)
     {
-        Timer = new TimerConfig(reset, duration);
+        Timer = new ScriptCode(location, code);
+    }
+    
+    public void SetMapping(ScriptCode code)
+    {
+        Mapping = code;
     }
 
     public bool CanExecute(State currentState, StateTransitionPolicy policy)

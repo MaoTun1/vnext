@@ -10,14 +10,17 @@
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development",
         "APP_DOMAIN": "core",
+        "DAPR_APP_ID": "vnext-execution-app",
         "DAPR_HTTP_PORT": "43110",
         "DAPR_GRPC_PORT": "43111",
         "DAPR_PLACEMENT_HOST": "localhost:50005",
-        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
+        "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
         "OTEL_SERVICE_NAME": "vnext-execution-app",
         "DAPR_SECRET_STORE_NAME": "vnext-execution-secret",
         "DAPR_STATE_STORE_NAME": "vnext-execution-state",
         "DAPR_PUBSUB_STORE_NAME": "vnext-execution-pubsub",
+        "DAPR_PUBSUB_BROADCAST_STORE_NAME": "vnext-pubsub-broadcast",
         "DAPR_LOCK_STORE_NAME": "vnext-execution-lock"
       }
     },
@@ -29,14 +32,17 @@
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development",
         "APP_DOMAIN": "core",
+        "DAPR_APP_ID": "vnext-execution-app",
         "DAPR_HTTP_PORT": "43110",
         "DAPR_GRPC_PORT": "43111",
         "DAPR_PLACEMENT_HOST": "localhost:50005",
-        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
+        "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
         "OTEL_SERVICE_NAME": "vnext-execution-app",
         "DAPR_SECRET_STORE_NAME": "vnext-execution-secret",
         "DAPR_STATE_STORE_NAME": "vnext-execution-state",
         "DAPR_PUBSUB_STORE_NAME": "vnext-execution-pubsub",
+        "DAPR_PUBSUB_BROADCAST_STORE_NAME": "vnext-pubsub-broadcast",
         "DAPR_LOCK_STORE_NAME": "vnext-execution-lock"
       }
     }

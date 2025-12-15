@@ -1,60 +1,420 @@
-using System.ComponentModel.DataAnnotations;
-using System.Text.Json;
+using BBT.Aether;
+using BBT.Aether.Application.Dtos;
+using BBT.Aether.AspNetCore.Controllers;
+using BBT.Aether.AspNetCore.Pagination;
+using BBT.Aether.Results;
+using BBT.Workflow.Definitions;
+using BBT.Workflow.Domain.Shared;
 using BBT.Workflow.Functions;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Instances.DTOs;
 using BBT.Workflow.Runtime;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+
 namespace BBT.Workflow.Controllers.Instances;
 
+/// <summary>
+/// Controller for handling workflow function operations
+/// </summary>
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}")]
 [ServiceFilter(typeof(ResponseHeaderFilter))]
 public sealed class FunctionController(
-    IFunctionAppService functionAppService) : ControllerBase
+    IFunctionAppService functionAppService,
+    IInstanceQueryAppService queryAppService,
+    IPaginationLinkGenerator linkGenerator) : AetherControllerBase
 {
     [HttpPatch("{domain}/functions")]
-    public async Task<IActionResult> GetDomainFunctions(
-       [FromRoute] string domain,
-       [FromQuery] bool? async = false,
-       CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetDomainFunctionsAsync(
+        [FromRoute] string domain,
+        CancellationToken cancellationToken = default)
     {
-        var response = await functionAppService.GetDomainFunctions (domain, cancellationToken);
-        return Ok(response);
+        var response = await functionAppService.GetDomainFunctionsAsync(domain, cancellationToken);
+        return FromResult(response);
     }
-    [HttpGet("{domain}/functions/{function}")]
-    public async Task<IActionResult> GetFunctionByKey(
-       [FromRoute] string domain,
-       [FromRoute] string function,
 
-       [FromQuery] bool? async = false,
-       CancellationToken cancellationToken = default)
+    [HttpGet("{domain}/functions/{function}")]
+    public async Task<IActionResult> GetFunctionByKeyAsync(
+        [FromRoute] string domain,
+        [FromRoute] string function,
+        [FromQuery] FunctionListQueryParameters parameters,
+        CancellationToken cancellationToken = default)
     {
-        var response = await functionAppService.GetFunctionByFunctionKey(function, RuntimeSysSchemaInfo.Functions, domain, cancellationToken);
-        return Ok(response);
+        var headers = HttpContext.Request.Headers.ToDictionary(h => h.Key, h => (string?)h.Value.ToString());
+        var queryParams = HttpContext.Request.Query.ToDictionary(q => q.Key, q => (string?)q.Value.ToString());
+
+        var response = await functionAppService.GetFunctionByFunctionKeyAsync(
+            function,
+            RuntimeSysSchemaInfo.Functions,
+            domain,
+            headers,
+            queryParams,
+            cancellationToken);
+        return FromResult(response);
     }
-    [HttpGet("{domain}/workflow/{workflow}/functions/{function}")]
-    public async Task<IActionResult> GetFunctionByKey(
-       [FromRoute] string domain,
-       [FromRoute] string function,
-       [FromRoute] string workflow,
-       [FromQuery] bool? async = false,
-       CancellationToken cancellationToken = default)
+
+    [HttpGet("{domain}/workflows/{workflow}/functions/{function}")]
+    public async Task<IActionResult> GetFunctionByKeyAsync(
+        [FromRoute] string domain,
+        [FromRoute] string function,
+        [FromRoute] string workflow,
+        [FromQuery] FunctionListQueryParameters parameters,
+        CancellationToken cancellationToken = default)
     {
-        var response = await functionAppService.GetFunctionByFunctionKey(function, workflow, domain, cancellationToken);
-        return Ok(response);
+        var getInstanceListInput = new GetInstanceListInput
+        {
+            Domain = domain,
+            Page = parameters.Page,
+            PageSize = parameters.PageSize,
+            PageUrl = InstanceUrlTemplates.FunctionList(domain, workflow, function),
+            Sort = parameters.Sort,
+            Workflow = workflow,
+            Filter = function.ToLowerInvariant() == Definitions.Functions.FunctionTypeConst.Data
+                ? parameters.Filter
+                : []
+        };
+
+        var instanceListResult = await queryAppService.GetInstanceListAsync(getInstanceListInput, cancellationToken);
+
+        if (!instanceListResult.IsSuccess)
+        {
+            return FromResult(instanceListResult);
+        }
+
+        // Process based on function type
+        var functionType = function.ToLowerInvariant();
+
+        if (functionType == Definitions.Functions.FunctionTypeConst.Longpooling)
+        {
+            return FromResult(await ProcessLongpoolingFunctionListAsync(domain, workflow, instanceListResult.Value!,
+                cancellationToken));
+        }
+
+        if (functionType == Definitions.Functions.FunctionTypeConst.View)
+        {
+            return FromResult(await ProcessViewFunctionListAsync(domain, workflow, instanceListResult.Value!,
+                cancellationToken));
+        }
+
+        if (functionType == Definitions.Functions.FunctionTypeConst.Data)
+        {
+            return FromResult(await ProcessDataFunctionListAsync(domain, workflow, instanceListResult.Value!,
+                cancellationToken));
+        }
+
+        if (functionType == Definitions.Functions.FunctionTypeConst.Schema)
+        {
+            return FromResult(await ProcessSchemaFunctionListAsync(domain, workflow, instanceListResult.Value!,
+                cancellationToken));
+        }
+
+        return FromResult(await ProcessCustomFunctionListAsync(function, workflow, domain, instanceListResult.Value!,
+            cancellationToken));
     }
-      [HttpGet("{domain}/workflow/{workflow}/instances/{instance}/functions/{function}")]
-    public async Task<IActionResult> GetFunctionWithInstance(
+
+    [HttpGet("{domain}/workflows/{workflow}/instances/{instance}/functions/{function}")]
+    public async Task<IActionResult> GetFunctionWithInstanceAsync(
         [FromRoute] string domain,
         [FromRoute] string function,
         [FromRoute] string workflow,
         [FromRoute] string instance,
-        [FromQuery] bool? async = false,
+        [FromQuery] FunctionQueryParameters parameters,
+        [FromHeader(Name = "If-None-Match")] string? ifNoneMatch,
         CancellationToken cancellationToken = default)
     {
-        var response = await functionAppService.GetFunctionByInstance(function,workflow,domain,instance, cancellationToken);
-        return Ok(response);
+        var headers = HttpContext.Request.Headers.ToDictionary(h => h.Key, h => (string?)h.Value.ToString());
+        var queryParams = HttpContext.Request.Query.ToDictionary(q => q.Key, q => (string?)q.Value.ToString());
+
+        var functionType = function.ToLowerInvariant();
+
+        if (functionType == Definitions.Functions.FunctionTypeConst.Longpooling)
+        {
+            return FromResult(await ProcessLongpoolingFunctionAsync(domain, workflow, instance, parameters.Version,
+                parameters.Extensions, cancellationToken));
+        }
+
+        if (functionType == Definitions.Functions.FunctionTypeConst.View)
+        {
+            return FromResult(await ProcessViewFunctionAsync(domain, workflow, instance, parameters.Version,
+                parameters.Platform, parameters.TransitionKey, cancellationToken));
+        }
+
+        if (functionType == Definitions.Functions.FunctionTypeConst.Data)
+        {
+            var dataResult = await ProcessDataFunctionAsync(domain, workflow, instance, ifNoneMatch,
+                parameters.Extensions, cancellationToken);
+
+            if (dataResult.IsNotModified)
+            {
+                return StatusCode(304);
+            }
+
+            return FromResult(dataResult.Result);
+        }
+        
+        if (functionType == Definitions.Functions.FunctionTypeConst.Schema)
+        {
+            return FromResult(await ProcessSchemaFunctionAsync(domain, workflow, instance, parameters.Version,
+                parameters.TransitionKey, cancellationToken));
+        }
+
+        return FromResult(await functionAppService.GetFunctionByInstanceAsync(function, workflow, domain, instance,
+            headers, queryParams, cancellationToken));
     }
+
+    #region Private Helper Methods
+
+    private async Task<Result<GetInstanceStateOutput>> ProcessLongpoolingFunctionAsync(
+        string domain,
+        string workflow,
+        string instance,
+        string? version,
+        string[]? extensions,
+        CancellationToken cancellationToken)
+    {
+        var input = new GetInstanceStateInput
+        {
+            Domain = domain,
+            Workflow = workflow,
+            Instance = instance,
+            Version = version,
+            Extensions = extensions
+        };
+        return await queryAppService.GetInstanceStateAsync(input, cancellationToken);
+    }
+
+    private async Task<Result<HateoasPagedResultDto<GetInstanceStateOutput>>> ProcessLongpoolingFunctionListAsync(
+        string domain,
+        string workflow,
+        HateoasPagedList<GetInstanceOutput> instanceListResult,
+        CancellationToken cancellationToken)
+    {
+        var list = new List<GetInstanceStateOutput>();
+
+        foreach (var instance in instanceListResult.Items)
+        {
+            var result = await ProcessLongpoolingFunctionAsync(
+                domain,
+                workflow,
+                instance.Key!,
+                instance.FlowVersion,
+                null,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                continue;
+            }
+
+            list.Add(result.Value!);
+        }
+
+        var route = InstanceUrlTemplates.FunctionList(domain, workflow,
+            Definitions.Functions.FunctionTypeConst.Longpooling, InstanceUrlTemplates.GetApiVersionPrefix("1"));
+        var output = linkGenerator.CreateHateoasResult(instanceListResult, list, route);
+
+        return Result<HateoasPagedResultDto<GetInstanceStateOutput>>.Ok(output);
+    }
+
+    private async Task<Result<GetViewOutput>> ProcessViewFunctionAsync(
+        string domain,
+        string workflow,
+        string instance,
+        string? version,
+        string? platform,
+        string? transitionKey,
+        CancellationToken cancellationToken)
+    {
+        var input = new GetViewInput
+        {
+            Domain = domain,
+            Workflow = workflow,
+            Instance = instance,
+            Version = version
+        };
+
+        return await queryAppService.GetPlatformSpecificViewAsync(
+            input,
+            platform ?? string.Empty,
+            transitionKey ?? string.Empty,
+            cancellationToken);
+    }
+
+    private async Task<Result<GetSchemaOutput>> ProcessSchemaFunctionAsync(
+        string domain,
+        string workflow,
+        string instance,
+        string? version,
+        string? transitionKey,
+        CancellationToken cancellationToken)
+    {
+        var input = new GetSchemaInput
+        {
+            Domain = domain,
+            Workflow = workflow,
+            Instance = instance,
+            Version = version
+        };
+
+        return await queryAppService.GetSchemaAsync(input, transitionKey, cancellationToken);
+    }
+
+    private async Task<Result<HateoasPagedResultDto<GetSchemaOutput>>> ProcessSchemaFunctionListAsync(
+        string domain,
+        string workflow,
+        HateoasPagedList<GetInstanceOutput> instanceListResult,
+        CancellationToken cancellationToken)
+    {
+        var list = new List<GetSchemaOutput>();
+
+        foreach (var instance in instanceListResult.Items)
+        {
+            var result = await ProcessSchemaFunctionAsync(
+                domain,
+                workflow,
+                instance.Key!,
+                instance.FlowVersion,
+                string.Empty,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                continue;
+            }
+
+            list.Add(result.Value!);
+        }
+
+        var route = InstanceUrlTemplates.FunctionList(domain, workflow,
+            Definitions.Functions.FunctionTypeConst.Schema, InstanceUrlTemplates.GetApiVersionPrefix("1"));
+        var output = linkGenerator.CreateHateoasResult(instanceListResult, list, route);
+
+        return Result<HateoasPagedResultDto<GetSchemaOutput>>.Ok(output);
+    }
+
+    private async Task<Result<HateoasPagedResultDto<GetViewOutput>>> ProcessViewFunctionListAsync(
+        string domain,
+        string workflow,
+        HateoasPagedList<GetInstanceOutput> instanceListResult,
+        CancellationToken cancellationToken)
+    {
+        var list = new List<GetViewOutput>();
+
+        foreach (var instance in instanceListResult.Items)
+        {
+            var result = await ProcessViewFunctionAsync(
+                domain,
+                workflow,
+                instance.Key!,
+                instance.FlowVersion,
+                string.Empty,
+                string.Empty,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                continue;
+            }
+
+            list.Add(result.Value!);
+        }
+
+        var route = InstanceUrlTemplates.FunctionList(domain, workflow,
+            Definitions.Functions.FunctionTypeConst.View, InstanceUrlTemplates.GetApiVersionPrefix("1"));
+        var output = linkGenerator.CreateHateoasResult(instanceListResult, list, route);
+
+        return Result<HateoasPagedResultDto<GetViewOutput>>.Ok(output);
+    }
+
+    private async Task<ConditionalResult<GetInstanceDataOutput>> ProcessDataFunctionAsync(
+        string domain,
+        string workflow,
+        string instance,
+        string? ifNoneMatch,
+        string[]? extensions,
+        CancellationToken cancellationToken)
+    {
+        var input = new GetInstanceDataInput
+        {
+            Domain = domain,
+            Workflow = workflow,
+            Instance = instance,
+            IfNoneMatch = ifNoneMatch,
+            Extensions = extensions
+        };
+
+        var response = await queryAppService.GetInstanceDataAsync(input, cancellationToken);
+
+        if (response.Result.IsSuccess && !string.IsNullOrEmpty(response.Result.Value!.Etag))
+        {
+            HttpContext.Response.Headers[HeadersConstants.ETag] = response.Result.Value.Etag;
+        }
+
+        return response;
+    }
+
+    private async Task<Result<HateoasPagedResultDto<GetInstanceDataOutput>>> ProcessDataFunctionListAsync(
+        string domain,
+        string workflow,
+        HateoasPagedList<GetInstanceOutput> instanceListResult,
+        CancellationToken cancellationToken)
+    {
+        var list = new List<GetInstanceDataOutput>();
+
+        foreach (var instance in instanceListResult.Items)
+        {
+            var input = new GetInstanceDataInput
+            {
+                Domain = domain,
+                Workflow = workflow,
+                Instance = instance.Key!,
+            };
+
+            var response = await queryAppService.GetInstanceDataAsync(input, cancellationToken);
+            list.Add(response.Result.Value!);
+        }
+
+        var route = InstanceUrlTemplates.FunctionList(domain, workflow,
+            Definitions.Functions.FunctionTypeConst.Data, InstanceUrlTemplates.GetApiVersionPrefix("1"));
+        var output = linkGenerator.CreateHateoasResult(instanceListResult, list, route);
+        return Result<HateoasPagedResultDto<GetInstanceDataOutput>>.Ok(output);
+    }
+
+    private async Task<Result<HateoasPagedResultDto<Dictionary<string, dynamic?>>>> ProcessCustomFunctionListAsync(
+        string function,
+        string workflow,
+        string domain,
+        HateoasPagedList<GetInstanceOutput> instanceListResult,
+        CancellationToken cancellationToken)
+    {
+        var headers = HttpContext.Request.Headers.ToDictionary(h => h.Key, h => (string?)h.Value.ToString());
+        var queryParams = HttpContext.Request.Query.ToDictionary(q => q.Key, q => (string?)q.Value.ToString());
+
+        var list = new List<Dictionary<string, dynamic?>>();
+
+        foreach (var instance in instanceListResult.Items)
+        {
+            var result = await functionAppService.GetFunctionByInstanceAsync(function, workflow, domain,
+                instance.Key!,
+                headers, queryParams, cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                continue;
+            }
+
+            list.Add(
+                result.Value!
+            );
+        }
+
+        var route = InstanceUrlTemplates.FunctionList(domain, workflow, function,
+            InstanceUrlTemplates.GetApiVersionPrefix("1"));
+        var output = linkGenerator.CreateHateoasResult(instanceListResult, list, route);
+        return Result<HateoasPagedResultDto<Dictionary<string, dynamic?>>>.Ok(output);
+    }
+
+    #endregion
 }

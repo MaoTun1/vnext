@@ -12,25 +12,11 @@ public sealed class GetInstanceOutput
     public string? Flow { get; set; } = string.Empty;
     public string? Domain { get; set; } = string.Empty;
     public string? FlowVersion { get; set; } = string.Empty;
-    public string? Etag { get; set; } = string.Empty;
+    public string? Etag { get => _etag?.Replace("\"", ""); set => _etag = value; }
+    private string? _etag = string.Empty;
     public List<string>? Tags { get; set; } = [];
     public JsonElement? Attributes { get; set; }
     public Dictionary<string, object>? Extensions { get; set; }
-     public string? SortValue { get; set; } = string.Empty;
-}
-
-/// <summary>
-/// Paginated result for instance list retrieval
-/// </summary>
-public sealed class GetInstanceListOutput
-{
-    public List<GetInstanceOutput> Items { get; set; } = [];
-    public int TotalCount { get; set; }
-    public int Page { get; set; }
-    public int PageSize { get; set; }
-    public int TotalPages => (int)Math.Ceiling((double)TotalCount / PageSize);
-    public bool HasNextPage => Page < TotalPages;
-    public bool HasPreviousPage => Page > 1;
 }
 
 /// <summary>
@@ -39,4 +25,15 @@ public sealed class GetInstanceListOutput
 public sealed class GetInstanceHistoryOutput
 {
     public List<GetInstanceOutput> Transitions { get; set; } = [];
-} 
+}
+
+/// <summary>
+/// Output for instance data
+/// </summary>
+public sealed class GetInstanceDataOutput
+{
+    public JsonElement? Data { get; set; }
+    public string? Etag { get => _etag != null ? $"\"{_etag}\"" : string.Empty; set => _etag = value; }
+    private string? _etag = string.Empty;
+    public Dictionary<string, object>? Extensions { get; set; }
+}
