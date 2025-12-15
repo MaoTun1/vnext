@@ -2,53 +2,52 @@
 
 ## Overview
 
-vNext workflow engine uses OpenTelemetry for distributed tracing and structured logging. This document describes the logging architecture, conventions, and usage patterns.
+vNext workflow engine uses OpenTelemetry for distributed tracing and structured logging. Telemetry is now provided by the **Aether SDK** (`BBT.Aether.Telemetry`), with workflow-specific extensions for logging and tracing.
+
+> **Note**: Telemetry infrastructure is now managed by Aether SDK. This document describes the workflow-specific logging patterns and conventions.
 
 ## Architecture Components
 
-### 1. VNextLogEnricherProcessor
+### 1. Aether SDK Telemetry
 
-A custom `BaseProcessor<LogRecord>` that automatically enriches all logs with:
-- **class**: Extracted from logger category name
-- **event.id**: EventId number from LoggerMessage attribute
-- **event.name**: EventId name from LoggerMessage attribute
-- **traceId/spanId**: Automatically correlated with active OpenTelemetry spans
-- **http.header.***: Configured HTTP headers from incoming requests
-- **custom attributes**: User-defined attributes from configuration
+Telemetry is configured using Aether SDK's `AddAetherTelemetry`:
 
-Features:
-- Filters logs based on configured `ExcludedPaths` (regex patterns)
-- Enriches with HTTP request headers (e.g., x-correlation-id, x-request-id)
-- Adds custom attributes defined in configuration
+```csharp
+services.AddAetherTelemetry(configuration);
+```
 
-Located: `BBT.Workflow.HttpApi.Shared/Telemetry/VNextLogEnricherProcessor.cs`
+This provides:
+- OpenTelemetry tracing with automatic instrumentation
+- Structured logging with enrichment
+- OTLP export to collectors
+- Automatic trace context propagation
 
-### 2. LogScope Helper
-
-Provides extension methods to create structured logging scopes with automatic metadata enrichment:
-- `ForTransition()`: For transition execution contexts
-- `ForInstance()`: For instance operations
-- `ForTask()`: For task execution
-- `ForJob()`: For background jobs
-
-Uses `CallerMemberName` and `CallerFilePath` attributes to automatically capture method and class names.
-
-Located: `BBT.Workflow.Application/Telemetry/LogScope.cs`
-
-**Implementation Status**: ✅ **Fully Integrated**
-- TransitionPipeline uses `ForTransition()` for all transition executions
-- Background job handlers (TransitionJobHandler, TransitionTimerJobHandler, FlowTimeoutJobHandler) use `ForJob()`
-- All logs within these scopes automatically include structured metadata (domain, flow, flowVersion, instanceId, transitionKey, jobName, jobId)
-
-### 3. Source-Generated LoggerMessage
+### 2. WorkflowLogs (Source-Generated)
 
 High-performance, zero-allocation logging methods using C# source generators:
-- **WorkflowLogs**: Transition, pipeline, task, instance, and job logs
-- **InfrastructureLogs**: Database, cache, HTTP, and ClickHouse logs
 
-Located: 
-- `BBT.Workflow.Application/Telemetry/WorkflowLogs.cs`
-- `BBT.Workflow.HttpApi.Shared/Telemetry/InfrastructureLogs.cs`
+Located: `BBT.Workflow.Domain/Logging/WorkflowLogs.cs`
+
+Categories of log messages:
+- **Transition Execution**: State changes, transition enqueuing, rule failures
+- **Task Execution**: Task failures, input/output handler errors
+- **SubFlow**: SubFlow events, correlation, completion
+- **Instance Management**: Instance lifecycle, locks, validation
+- **Background Jobs**: Job completion, failures, cancellations
+
+### 3. ActivityExtensions
+
+Helper extensions for OpenTelemetry Activity operations:
+
+Located: `BBT.Workflow.Domain/Logging/ActivityExtensions.cs`
+
+```csharp
+// Set display name for spans
+activity?.SetDisplayName($"[{Order}] {nameof(RunAutomaticTransitionsStep)}");
+
+// Record exception with error status
+activity?.RecordExceptionWithStatus(exception, "Description");
+```
 
 ### 4. EventId Strategy
 
@@ -64,58 +63,26 @@ Within each range:
 - **xx40-xx69**: Warning level
 - **xx70-xx99**: Error level
 
-Located: `BBT.Workflow.Application/Telemetry/WorkflowEventIds.cs`
-
-### 4.1. TelemetryConstants
-
-Centralized constants for OpenTelemetry span tag names:
-- **TagNames**: `vnext.domain`, `vnext.flow.key`, `vnext.flow.version`, `vnext.instance.id`, `vnext.transition.key`, `vnext.trigger.type`, `vnext.handler.name`, `vnext.task.key`, `vnext.task.type`, `vnext.state.from`, `vnext.state.to`
-
-Located: `BBT.Workflow.Domain/Logging/TelemetryConstants.cs`
-
-### 5. TraceContextMiddleware
-
-Middleware that automatically adds OpenTelemetry trace context to HTTP response headers:
-- **X-Trace-Id**: W3C trace ID for locating traces in observability tools
-- **X-Span-Id**: Current span ID for this specific request
-- **traceparent**: W3C standard trace context header
-- **X-Trace-State**: Optional trace state propagation
-
-Automatically registered in `UseWorkflowApiBase()` pipeline, no manual configuration needed.
-
-Located: `BBT.Workflow.HttpApi.Shared/Middlewares/TraceContextMiddleware.cs`
-
 ## Configuration
+
+### Aether SDK Telemetry Setup
+
+Telemetry is configured using Aether SDK:
+
+```csharp
+services.AddAetherTelemetry(configuration);
+```
 
 ### Environment Variables
 
-Service name, version, and OTLP endpoint are configured via environment variables:
+Standard OpenTelemetry environment variables are supported:
 
-- **`OTEL_SERVICE_NAME`**: Service name for telemetry (e.g., `vnext-orchestration`, `vnext-execution-app`)
+- **`OTEL_SERVICE_NAME`**: Service name for telemetry
 - **`OTEL_EXPORTER_OTLP_ENDPOINT`**: OTLP endpoint URL
-  - For **HTTP/Protobuf**: `http://localhost:4318` (signal-specific paths are automatically appended: `/v1/traces`, `/v1/metrics`, `/v1/logs`)
-  - For **gRPC**: `http://localhost:4317` (no paths appended, gRPC services use the base endpoint)
-- **`OTEL_EXPORTER_OTLP_PROTOCOL`**: OTLP protocol - `grpc` or `http/protobuf` (default: `http/protobuf`)
-- **`ASPNETCORE_ENVIRONMENT`**: Environment name (e.g., `Development`, `Production`, `Staging`)
+- **`OTEL_EXPORTER_OTLP_PROTOCOL`**: Protocol (`grpc` or `http/protobuf`)
+- **`ASPNETCORE_ENVIRONMENT`**: Environment name
 
-Service version is automatically read from the assembly version (defined in `common.props`).
-
-**Important Protocol Differences:**
-
-| Protocol | Default Port | Endpoint Format | Signal Paths |
-|----------|--------------|-----------------|--------------|
-| **http/protobuf** | 4318 | `http://localhost:4318` | Automatically appended: `/v1/traces`, `/v1/metrics`, `/v1/logs` |
-| **grpc** | 4317 | `http://localhost:4317` | No paths appended (gRPC services handle routing internally) |
-
-**Benefits of Environment Variable Configuration:**
-- ✅ Follows OpenTelemetry standard conventions
-- ✅ Single source of truth - no duplication between environment variables and configuration files
-- ✅ Service version automatically synced with assembly version from `common.props`
-- ✅ Easier to configure in Docker, Kubernetes, and other deployment environments
-- ✅ No need to update `appsettings.json` when changing service names or endpoints
-- ✅ Consistent with Dapr and other cloud-native tools
-
-**Example launchSettings.json (HTTP/Protobuf):**
+**Example launchSettings.json:**
 ```json
 {
   "profiles": {
@@ -131,190 +98,13 @@ Service version is automatically read from the assembly version (defined in `com
 }
 ```
 
-**Example launchSettings.json (gRPC):**
-```json
-{
-  "profiles": {
-    "http": {
-      "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development",
-        "OTEL_SERVICE_NAME": "vnext-app",
-        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317",
-        "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc"
-      }
-    }
-  }
-}
-```
-
 ### appsettings.json
 
-```json
-{
-  "Telemetry": {
-    "Tracing": {
-      "EnableExcludedPaths": true
-    },
-    "Logging": {
-      "Enabled": true,
-      "EnableConsoleExporter": true,
-      "EnableOtlpExporter": true,
-      "IncludeFormattedMessage": true,
-      "IncludeScopes": true,
-      "ParseStateValues": true,
-      "ExcludedPaths": [
-        "^/swagger(?:/.*)?$",
-        "^/dapr(?:/.*)?$",
-        "^/health$",
-        "^/healthz$",
-        "^/v1/metrics$",
-        "^/metrics$",
-        "^/v1/traces",
-        "^/traces",
-        "^/$",
-        "^/otel-collector",
-        "^/dapr.proto.runtime",
-        "^/v1.0/lock",
-        "^/v1.0/unlock"
-      ],
-      "Enrichers": {
-        "Headers": [
-          "x-correlation-id",
-          "x-request-id"
-        ]
-      }
-    }
-  }
-}
-```
+Refer to Aether SDK documentation for telemetry configuration options.
 
-#### Configuration Options
+### Log Levels (Standard .NET Configuration)
 
-##### Environment Detection
-
-The environment is automatically detected from **`ASPNETCORE_ENVIRONMENT`** environment variable. You don't need to configure it in `appsettings.json`.
-
-**How it works:**
-1. Reads `ASPNETCORE_ENVIRONMENT` from environment variables
-2. Falls back to `"Production"` if not set
-3. Used for:
-   - Resource attributes: `deployment.environment`
-   - Conditional console exporters (enabled in Development)
-   - OpenTelemetry service metadata
-
-**Setting the environment:**
-
-- **Development (launchSettings.json)**:
-  ```json
-  {
-    "profiles": {
-      "http": {
-        "environmentVariables": {
-          "ASPNETCORE_ENVIRONMENT": "Development"
-        }
-      }
-    }
-  }
-  ```
-
-- **Docker / Docker Compose**:
-  ```yaml
-  environment:
-    - ASPNETCORE_ENVIRONMENT=Production
-  ```
-
-- **Kubernetes**:
-  ```yaml
-  env:
-    - name: ASPNETCORE_ENVIRONMENT
-      value: "Production"
-  ```
-
-- **Command Line**:
-  ```bash
-  export ASPNETCORE_ENVIRONMENT=Staging
-  dotnet run
-  ```
-
-**Benefits:**
-- ✅ Standard .NET convention
-- ✅ Single source of truth
-- ✅ Works consistently across all deployment methods
-- ✅ No duplication in configuration
-
-##### Telemetry.Tracing.EnableExcludedPaths
-
-Controls whether path-based filtering is enabled for tracing and logging.
-
-- **`true`** (default): Enables filtering based on `ExcludedPaths` configuration
-- **`false`**: Disables path filtering, all requests are traced and logged
-
-**What gets filtered when enabled:**
-- Paths matching patterns in `Logging.ExcludedPaths` configuration
-- Health check endpoints (`/health`, `/healthz`)
-- Metrics endpoints (`/metrics`, `/v1/metrics`)
-- Swagger UI (`/swagger`)
-- Dapr internal operations (`/dapr`, `/v1.0/lock`, `/v1.0/unlock`)
-- OpenTelemetry collector endpoints (`/otel-collector`)
-
-**Why enable path filtering?**
-- ✅ Reduces log volume from infrastructure endpoints
-- ✅ Cleaner traces showing only business operations
-- ✅ Better signal-to-noise ratio in observability tools
-- 🎯 Focus on what matters: workflow transitions, tasks, and business logic
-
-**When to disable:**
-- Debugging infrastructure or health check issues
-- Investigating performance of system endpoints
-- Development and troubleshooting scenarios
-
-##### Telemetry.Logging.Enabled
-Controls whether OpenTelemetry logging integration is enabled.
-
-- **`true`** (default): Enables OpenTelemetry logging with all configured exporters and enrichers
-- **`false`**: Disables OpenTelemetry logging integration completely. Standard .NET logging will still work with configured providers (Console, Debug, etc.)
-
-When disabled:
-- No logs are sent to OTLP endpoint
-- No log enrichment with trace context
-- No custom attributes or headers are added
-- Standard .NET logging providers continue to work normally
-- Performance impact is minimal as the entire OpenTelemetry logging pipeline is skipped
-
-**Example configurations:**
-
-Disable OpenTelemetry logging while keeping standard .NET logging:
-```json
-{
-  "Logging": {
-    "LogLevel": {
-      "Default": "Information"
-    }
-  },
-  "Telemetry": {
-    "Logging": {
-      "Enabled": false
-    }
-  }
-}
-```
-
-Use only OTLP exporter (no console output):
-```json
-{
-  "Telemetry": {
-    "Logging": {
-      "Enabled": true,
-      "EnableConsoleExporter": false,
-      "EnableOtlpExporter": true
-    }
-  }
-}
-```
-
-##### Log Levels (Standard .NET Configuration)
-
-Log levels are configured using the standard .NET `Logging:LogLevel` section in `appsettings.json`:
+Log levels are configured using the standard .NET `Logging:LogLevel` section:
 
 ```json
 {
@@ -323,201 +113,54 @@ Log levels are configured using the standard .NET `Logging:LogLevel` section in 
       "Default": "Information",
       "Microsoft.AspNetCore": "Warning",
       "Microsoft.EntityFrameworkCore.Database.Command": "Warning",
-      "System.Net.Http.HttpClient": "Warning",
       "BBT.Workflow": "Debug"
     }
   }
 }
 ```
 
-Available log levels:
-- `Trace`: Most verbose, all logs
-- `Debug`: Detailed flow information
-- `Information`: Standard operational logs (recommended default)
-- `Warning`: Warning messages only
-- `Error`: Error messages only
-- `Critical`: Critical errors only
-- `None`: Disable logging for that category
-
-You can configure different log levels for different namespaces:
-- `Default`: Base level for all categories
-- `Microsoft.*`: Framework logs
-- `BBT.Workflow.*`: Application logs
-- `BBT.Workflow.Execution.*`: Execution layer logs only
-
-##### Telemetry.Logging.ExcludedPaths
-
-List of regex patterns to exclude specific HTTP request paths from logging and tracing. Works when `Telemetry.Tracing.EnableExcludedPaths` is set to `true`.
-
-**Default excluded paths:**
-```json
-{
-  "Logging": {
-    "ExcludedPaths": [
-      "^/swagger(?:/.*)?$",      // Swagger UI and documentation
-      "^/dapr(?:/.*)?$",         // Dapr endpoints
-      "^/health$",               // Health check
-      "^/healthz$",              // Kubernetes health check
-      "^/v1/metrics$",           // Metrics endpoint (v1)
-      "^/metrics$",              // Metrics endpoint
-      "^/v1/traces",             // Traces endpoint (v1)
-      "^/traces",                // Traces endpoint
-      "^/$",                     // Root path
-      "^/otel-collector",        // OpenTelemetry collector
-      "^/dapr.proto.runtime",    // Dapr gRPC runtime
-      "^/v1.0/lock",             // Dapr lock operations
-      "^/v1.0/unlock"            // Dapr unlock operations
-    ]
-  }
-}
-```
-
-**Pattern syntax:**
-- `^/health$` - Exact match
-- `^/swagger(?:/.*)?$` - Match swagger and all sub-paths
-- `^/api/v[0-9]+/health$` - Pattern matching with regex
-
-**How it works:**
-- Only active when `Telemetry.Tracing.EnableExcludedPaths` is `true`
-- Each HTTP request path is checked against these regex patterns
-- If a match is found, the request is excluded from both logging and tracing
-- Reduces noise from infrastructure and system endpoints
-
-**Note**: This is different from the standard .NET `Logging:LogLevel` configuration. `ExcludedPaths` filters logs based on HTTP request paths, while `LogLevel` filters based on log severity and category.
-
-##### Telemetry.Logging.Enrichers.Headers
-
-List of HTTP header names to capture and add to log attributes. Headers are prefixed with `http.header.` in the log output.
-
-**Default headers:**
-```json
-{
-  "Enrichers": {
-    "Headers": [
-      "x-correlation-id",
-      "x-request-id"
-    ]
-  }
-}
-```
-
-**Common headers to capture:**
-- `x-correlation-id`: Request correlation across services
-- `x-request-id`: Unique request identifier
-- `x-tenant-id`: Multi-tenant identifier (if using multi-tenancy)
-- `x-user-id`: User identifier (be careful with PII)
-- `x-client-id`: Client application identifier
-
-**How to add more headers:**
-```json
-{
-  "Enrichers": {
-    "Headers": [
-      "x-correlation-id",
-      "x-request-id",
-      "x-tenant-id",
-      "x-client-version"
-    ]
-  }
-}
-```
-
-**Note:** Only headers present in the incoming HTTP request will be added to logs. Missing headers are ignored.
-
-### Program.cs Registration
-
-The telemetry is automatically configured in `WorkflowApiBaseServiceCollectionExtensions`:
-
-```csharp
-// Simple registration (environment auto-detected from ASPNETCORE_ENVIRONMENT)
-services.AddVNextTelemetry(configuration);
-
-// Or with explicit environment (optional)
-services.AddVNextTelemetry(configuration, builder.Environment);
-```
-
-This replaces the previous Aether framework telemetry configuration.
-
-**Environment Resolution:**
-1. If `IHostEnvironment` is passed → uses `environment.EnvironmentName`
-2. Otherwise → reads `ASPNETCORE_ENVIRONMENT` environment variable
-3. Falls back to `"Production"` if not set
-
-### Trace Context in Response Headers
-
-A middleware automatically adds OpenTelemetry trace context to all HTTP response headers. This is configured in `UseWorkflowApiBase()` and runs automatically for all workflow APIs.
-
-The following headers are added to every response:
-- **X-Trace-Id**: W3C trace ID (32 hex characters) - Use this to find the trace in your observability tool
-- **X-Span-Id**: W3C span ID (16 hex characters) - The specific span for this request
-- **traceparent**: W3C standard trace context header (format: `00-traceId-spanId-flags`)
-- **X-Trace-State**: Optional trace state information (if present)
-
-Example response headers:
-```http
-HTTP/1.1 200 OK
-X-Trace-Id: 4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a
-X-Span-Id: 1a2b3c4d5e6f7890
-traceparent: 00-4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a-1a2b3c4d5e6f7890-01
-```
-
-**Usage**: Copy the `X-Trace-Id` value from the response and paste it into your trace viewer (Jaeger, Zipkin, Grafana Tempo) to see the full distributed trace for that request.
-
 ## Usage Patterns
 
-### 1. State Change Logging
+### 1. Using WorkflowLogs Extension Methods
+
+All workflow logging uses source-generated extension methods from `WorkflowLogs`:
 
 ```csharp
-// Log state transitions
-_logger.StateChanged(fromState, toState, context.InstanceId);
+using BBT.Workflow.Logging;
+
+// State change logging
+logger.StateChanged(fromState, toState, instanceId);
+
+// Task execution logging
+logger.TaskExecutionFailed(ex, taskKey, taskType, instanceId);
+logger.TaskInputHandlerFailed(taskKey, taskType, instanceId, errorMessage);
+logger.TaskOutputHandlerFailed(taskKey, taskType, instanceId, errorMessage);
+
+// SubFlow logging
+logger.SubFlowEventReceived(subInstanceId, parentInstanceId, domain, flow);
+logger.SubFlowCorrelationCompleted(subInstanceId, parentInstanceId);
+logger.SubFlowCompletionFailed(ex, subInstanceId, parentInstanceId);
+
+// Transition logging
+logger.TransitionRuleFailed(transitionKey, instanceId, reason);
+logger.AutoTransitionSelected(transitionKey, stateKey, instanceId);
+
+// Job logging
+logger.JobCompleted(jobName, transitionKey, instanceId);
+logger.JobFailed(ex, jobName, instanceId);
 ```
 
-### 2. Task Execution Logging
+### 2. Using ActivityExtensions for Tracing
 
 ```csharp
-// Log task execution failures
-try
-{
-// ... task execution ...
-}
-catch (Exception ex)
-{
-    _logger.TaskExecutionFailed(ex, taskKey, taskType, instanceId);
-    throw;
-}
-```
+using BBT.Workflow.Logging;
+using System.Diagnostics;
 
-### 3. SubFlow Logging
+// Set display name for pipeline steps
+Activity.Current?.SetDisplayName($"[{Order}] {nameof(RunAutomaticTransitionsStep)}");
 
-```csharp
-// Log SubFlow events
-_logger.SubFlowEventReceived(subInstanceId, parentInstanceId, domain, flow);
-_logger.SubFlowCorrelationCompleted(subInstanceId, parentInstanceId);
-_logger.SubFlowParentContinuationStarted(parentInstanceId, currentState);
-_logger.SubFlowOutputMappingStarted(parentInstanceId);
-_logger.SubFlowPipelineResumed(parentInstanceId);
-
-// Log SubFlow errors
-_logger.SubFlowConfigInvalid(stateName, instanceId);
-_logger.SubFlowCorrelationNotFound(subInstanceId);
-_logger.SubFlowCompletionFailed(ex, subInstanceId, parentInstanceId);
-```
-
-### 4. Error Logging
-
-```csharp
-try
-{
-    // ... execution logic ...
-}
-catch (TransitionRuleFailedException ex)
-{
-    _logger.TransitionRuleFailed(
-        context.TransitionKey,
-        context.InstanceId,
-        ex.Message);
-    throw;
-}
+// Record exceptions with error status
+Activity.Current?.RecordExceptionWithStatus(exception, "Task execution failed");
 ```
 
 ## Log Schema
@@ -890,270 +533,64 @@ Example configuration for production:
 }
 ```
 
-## Distributed Tracing with Custom Spans
+## Distributed Tracing
 
-### WorkflowActivitySource
+### Tracing with Aether SDK Aspects
 
-The workflow engine uses a custom `ActivitySource` to create distributed tracing spans for key workflow operations.
-
-Located: `BBT.Workflow.Application/Telemetry/WorkflowActivitySource.cs`
+Pipeline steps use the `[Trace]` aspect from Aether SDK for automatic span creation:
 
 ```csharp
-public static class WorkflowActivitySource
+using BBT.Aether.Aspects;
+
+public sealed class RunAutomaticTransitionsStep : ITransitionStep
 {
-    public static ActivitySource Instance { get; } = new(
-        TelemetryConstants.ActivitySourceName,    // "BBT.Workflow"
-        TelemetryConstants.ActivitySourceVersion); // "1.0.0"
+    [Trace]
+    public async Task<Result<StepOutcome>> ExecuteAsync(
+        TransitionExecutionContext context, 
+        CancellationToken cancellationToken)
+    {
+        Activity.Current?.SetDisplayName($"[{Order}] {nameof(RunAutomaticTransitionsStep)}");
+        // ...
+    }
 }
 ```
 
-### Tracing Architecture
+### Span Hierarchy
 
-The workflow engine creates hierarchical spans to represent the execution flow:
+Typical trace for a transition execution:
 
 ```
 HTTP Request (ASP.NET Core)
-└── Transition Execution (SyncTransitionStrategy)
-    ├── Handler PreHandle
-    ├── Pipeline Execution (TransitionPipeline)
-    │   ├── Pipeline Step [1] ValidateTransitionStep
-    │   ├── Pipeline Step [2] ChangeStateStep
-    │   ├── Pipeline Step [3] RunOnExecuteTasksStep
-    │   │   ├── Task Execution: TaskA
-    │   │   └── Task Execution: TaskB
-    │   └── Pipeline Step [4] HandleSubFlowStep
-    │       └── SubFlow Start: ChildFlow
-    └── Handler PostHandle
-```
-
-### Span Types
-
-#### 1. Transition Execution Span
-Created in `SyncTransitionStrategy` to represent the entire transition execution lifecycle.
-
-**Span Name**: `transition.execute`  
-**Display Name**: `{instanceId}/{transitionKey}`
-
-**Tags**:
-- `workflow.domain`: Domain name
-- `workflow.flow`: Flow key
-- `workflow.flow.version`: Flow version
-- `workflow.instance.id`: Instance ID
-- `workflow.transition.key`: Transition key
-- `workflow.trigger.type`: Trigger type (Manual, Event, Timer, etc.)
-- `workflow.handler.name`: Handler class name
-
-**Location**: `src/BBT.Workflow.Application/Execution/Transitions/Strategy/SyncTransitionStrategy.cs`
-
-#### 2. Handler Spans
-Created in `TransitionHandlerBase` for PreHandle and PostHandle operations.
-
-**Span Names**: 
-- `handler.prehandle` - Pre-processing logic
-- `handler.posthandle` - Post-processing logic
-
-**Tags**:
-- `workflow.handler.name`: Handler class name
-- `workflow.trigger.type`: Trigger type
-
-**Location**: `src/BBT.Workflow.Application/Execution/Transitions/Handlers/TransitionHandlerBase.cs`
-
-#### 3. Pipeline Execution Span
-Created in `TransitionPipeline` to represent the entire pipeline execution.
-
-**Span Name**: `pipeline.execute`
-
-Contains child spans for each pipeline step.
-
-**Location**: `src/BBT.Workflow.Application/Execution/Transitions/Pipeline/TransitionPipeline.cs`
-
-#### 4. Pipeline Step Spans
-Created for each pipeline step execution.
-
-**Span Name**: `pipeline.step`  
-**Display Name**: `[{stepOrder}] {stepName}`
-
-**Tags**:
-- `workflow.step.name`: Step class name
-- `workflow.step.order`: Step execution order
-
-**Location**: `src/BBT.Workflow.Application/Execution/Transitions/Pipeline/TransitionPipeline.cs`
-
-#### 5. Task Execution Span
-Created in `LocalTaskExecutor` for task execution.
-
-**Span Name**: `task.execute`  
-**Display Name**: `Task: {taskKey}`
-
-**Tags**:
-- `workflow.task.key`: Task key
-- `workflow.task.type`: Task type (Script, DaprService, DaprBinding, etc.)
-- `workflow.instance.id`: Instance ID
-
-**Location**: `src/BBT.Workflow.Application/Tasks/Execution/LocalTaskExecutor.cs`
-
-#### 6. SubFlow Spans
-Created in `SubflowStarter` and `SubflowCompletionService` for SubFlow lifecycle.
-
-**Span Names**:
-- `subflow.start` - SubFlow initiation
-- `subflow.complete` - SubFlow completion
-
-**Display Names**:
-- `SubFlow Start: {subFlowKey}`
-- `SubFlow Complete: {subFlowKey}`
-
-**Tags**:
-- `workflow.subflow.key`: SubFlow key
-- `workflow.domain`: Domain name
-- `workflow.instance.id`: Parent instance ID
-
-**Locations**:
-- `src/BBT.Workflow.Application/SubFlow/Services/SubflowStarter.cs`
-- `src/BBT.Workflow.Application/SubFlow/Services/SubflowCompletionService.cs`
-
-### Span Events
-
-Events are lightweight point-in-time markers within spans that capture important moments during workflow execution.
-
-#### 1. State Change Event
-Recorded in `ChangeStateStep` when a state transition occurs.
-
-**Event Name**: `state.changed`
-
-**Tags**:
-- `workflow.state.from`: Previous state
-- `workflow.state.to`: New state
-
-**Location**: `src/BBT.Workflow.Application/Execution/Transitions/Pipeline/Steps/ChangeStateStep.cs`
-
-#### 2. SubFlow Initiated Event
-Recorded in `HandleSubFlowStep` when a SubFlow/SubProcess is successfully started.
-
-**Event Name**: `subflow.initiated`
-
-**Tags**:
-- `workflow.subflow.key`: SubFlow process key
-- `workflow.domain`: SubFlow domain
-- `workflow.subflow.type`: Type code ("S" for SubFlow, "P" for SubProcess)
-- `workflow.subflow.version`: SubFlow version
-- `workflow.correlation.id`: Correlation tracking ID
-- `workflow.subflow.instance.id`: Created SubFlow instance ID
-
-**Location**: `src/BBT.Workflow.Application/Execution/Transitions/Pipeline/Steps/HandleSubFlowStep.cs`
-
-#### 3. Workflow Completed Event
-Recorded in `HandleFinishStep` when a workflow instance reaches a Finish state.
-
-**Event Name**: `workflow.completed`
-
-**Tags**:
-- `workflow.instance.id`: Completed instance ID
-- `workflow.flow`: Flow key
-- `workflow.domain`: Domain name
-- `workflow.completed.state`: Final state key
-- `workflow.is.subflow`: Whether this is a SubFlow instance
-- `workflow.duration.ms`: Total workflow duration in milliseconds
-
-**Location**: `src/BBT.Workflow.Application/Execution/Transitions/Pipeline/Steps/HandleFinishStep.cs`
-
-#### 4. Completion Event Published
-Recorded in `HandleFinishStep` when flow completion event is successfully published to Dapr pub/sub.
-
-**Event Name**: `completion.event.published`
-
-**Tags**:
-- `workflow.instance.id`: Instance ID
-- `workflow.flow`: Flow key
-- `workflow.domain`: Domain name
-- `pubsub.store`: Dapr pub/sub store name
-- `pubsub.topic`: Published topic name
-- `workflow.completed.state`: Completed state
-- `workflow.duration.ms`: Workflow duration
-
-**Location**: `src/BBT.Workflow.Application/Execution/Transitions/Pipeline/Steps/HandleFinishStep.cs`
-
-### ActivityExtensions Helper
-
-Provides extension methods to simplify span operations:
-
-**Located**: `src/BBT.Workflow.Application/Telemetry/ActivityExtensions.cs`
-
-```csharp
-// Set display name
-activity?.SetDisplayName("Custom Name");
-
-// Record exception and set error status
-activity?.RecordExceptionWithStatus(exception, "Optional description");
-```
-
-### Registering Custom ActivitySource
-
-The `WorkflowActivitySource` is automatically registered in the OpenTelemetry tracing configuration:
-
-**Location**: `src/BBT.Workflow.HttpApi.Shared/Microsoft/Extensions/DependencyInjection/VNextTelemetryServiceCollectionExtensions.cs`
-
-```csharp
-services.AddOpenTelemetry()
-    .WithTracing(tracing =>
-    {
-        tracing
-            .AddSource(TelemetryConstants.ActivitySourceName) // "BBT.Workflow"
-            .AddAspNetCoreInstrumentation()
-            .AddHttpClientInstrumentation();
-    });
-```
-
-### Span Hierarchy Example
-
-Typical trace for a transition execution with tasks and SubFlow:
-
-```
-00-a1b2c3d4e5f6... (TraceId)
-├── POST /api/v1/execution/instances/{id}/transitions/{key}
-│   ├── transition.execute: "abc-123/submit-application"
-│   │   ├── handler.prehandle
-│   │   ├── pipeline.execute
-│   │   │   ├── [1] ValidateTransitionStep
-│   │   │   ├── [2] ChangeStateStep
-│   │   │   │   └── ✓ Event: state.changed (Draft → Submitted)
-│   │   │   ├── [3] RunOnExecuteTasksStep
-│   │   │   │   ├── task.execute: "validate-document"
-│   │   │   │   ├── task.execute: "send-notification"
-│   │   │   │   └── task.execute: "update-external-system"
-│   │   │   ├── [4] HandleSubFlowStep
-│   │   │   │   ├── subflow.start: "approval-workflow"
-│   │   │   │   └── ✓ Event: subflow.initiated (type: S, correlation: xyz-789)
-│   │   │   ├── [5] HandleFinishStep
-│   │   │   │   ├── ✓ Event: workflow.completed (duration: 1250ms)
-│   │   │   │   └── ✓ Event: completion.event.published (topic: flow.completed)
-│   │   │   └── [6] SaveInstanceStep
-│   │   └── handler.posthandle
+└── Transition Pipeline
+    ├── [1] ValidateTransitionStep
+    ├── [2] ChangeStateStep
+    ├── [3] RunOnExecuteTasksStep
+    │   ├── Task: validate-document
+    │   └── Task: send-notification
+    ├── [4] RunAutomaticTransitionsStep
+    ├── [5] HandleSubFlowStep
+    ├── [6] HandleFinishStep
+    └── [7] SaveInstanceStep
 ```
 
 ### Viewing Traces
 
-Traces can be viewed in observability tools:
+Use observability tools to view traces:
+- **Jaeger UI**: `http://localhost:16686`
+- **Grafana Tempo**: Navigate to Explore → Tempo
+- **Azure Application Insights**: Application Map / Transaction Search
 
-1. **Jaeger UI**: `http://localhost:16686`
-2. **Grafana Tempo**: Navigate to Explore → Tempo
-3. **Application Insights**: Azure Portal → Application Map / Transaction Search
+## Aether SDK Reference
 
-Use the `X-Trace-Id` from response headers to find specific traces:
+For detailed telemetry configuration, refer to the Aether SDK documentation:
 
-```bash
-curl -i http://localhost:5001/api/v1/execution/instances/{id}/transitions/{key}
-
-# Response:
-# X-Trace-Id: a1b2c3d4e5f6789...
-# X-Span-Id: 1a2b3c4d5e6f...
-```
+- **`AddAetherTelemetry()`**: Configures OpenTelemetry tracing, logging, and metrics
+- **`[Trace]` Aspect**: Automatic span creation for methods
+- **`[Log]` Aspect**: Automatic logging of method entry/exit
 
 ## References
 
 - [OpenTelemetry Logging Specification](https://opentelemetry.io/docs/specs/otel/logs/)
 - [OpenTelemetry Tracing Specification](https://opentelemetry.io/docs/specs/otel/trace/)
 - [.NET LoggerMessage Source Generator](https://learn.microsoft.com/en-us/dotnet/core/extensions/logger-message-generator)
-- [Structured Logging Best Practices](https://docs.microsoft.com/en-us/aspnet/core/fundamentals/logging/)
 - [System.Diagnostics.Activity](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.activity)
-

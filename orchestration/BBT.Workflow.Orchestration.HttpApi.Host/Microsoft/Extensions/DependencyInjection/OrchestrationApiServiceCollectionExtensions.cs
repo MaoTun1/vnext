@@ -22,6 +22,7 @@ public static class OrchestrationApiServiceCollectionExtensions
             .AddApplicationModule()
             .AddInfrastructureModule()
             .AddAspNetCoreModules(configuration)
+            .AddResultResilience(configuration)
             .AddDaprClients()
             .AddEventBus(configuration)
             .AddDbContext(configuration)

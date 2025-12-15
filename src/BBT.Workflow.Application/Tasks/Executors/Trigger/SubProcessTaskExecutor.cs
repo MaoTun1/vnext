@@ -1,10 +1,8 @@
 using System.Text.Json;
 using BBT.Aether;
-using BBT.Aether.DependencyInjection;
 using BBT.Aether.Guids;
 using BBT.Aether.MultiSchema;
 using BBT.Aether.Results;
-using BBT.Aether.Uow;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Execution;
 using BBT.Workflow.Execution.Bindings;
@@ -13,6 +11,7 @@ using BBT.Workflow.Logging;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Tasks.Executors;
@@ -25,38 +24,29 @@ namespace BBT.Workflow.Tasks.Executors;
 /// </summary>
 public sealed class SubProcessTaskExecutor : TriggerTaskExecutorBase<SubProcessTask>
 {
-    private readonly ILazyServiceProvider _lazyServiceProvider;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly IInstanceRepository _instanceRepository;
     private readonly IGuidGenerator _guidGenerator;
     private readonly IConfiguration _configuration;
-    private readonly ICurrentSchema _currentSchema;
-    private readonly IUnitOfWorkManager _unitOfWorkManager;
-
-    private IInstanceCommandAppService LocalCommandService =>
-        _lazyServiceProvider.LazyGetRequiredService<IInstanceCommandAppService>();
 
     /// <summary>
     /// Initializes a new instance of SubProcessTaskExecutor.
     /// </summary>
     public SubProcessTaskExecutor(
+        IServiceScopeFactory scopeFactory,
         IScriptEngine scriptEngine,
         IRuntimeInfoProvider runtimeInfoProvider,
         IRemoteInvokerService remoteInvoker,
-        ILazyServiceProvider lazyServiceProvider,
         IInstanceRepository instanceRepository,
         IGuidGenerator guidGenerator,
         IConfiguration configuration,
-        ICurrentSchema currentSchema,
-        IUnitOfWorkManager unitOfWorkManager,
         ILogger<SubProcessTaskExecutor> logger)
         : base(scriptEngine, runtimeInfoProvider, remoteInvoker, logger)
     {
-        _lazyServiceProvider = lazyServiceProvider;
+        _serviceScopeFactory = scopeFactory;
         _instanceRepository = instanceRepository;
         _guidGenerator = guidGenerator;
         _configuration = configuration;
-        _currentSchema = currentSchema;
-        _unitOfWorkManager = unitOfWorkManager;
     }
 
     /// <inheritdoc />
@@ -100,20 +90,26 @@ public sealed class SubProcessTaskExecutor : TriggerTaskExecutorBase<SubProcessT
         TaskExecutorContext context,
         CancellationToken cancellationToken)
     {
-        // Extract IDs from result metadata
-        if (invocationResult.Metadata == null ||
-            !invocationResult.Metadata.TryGetValue("SubFlowInstanceId", out var subFlowIdObj) ||
-            !invocationResult.Metadata.TryGetValue("CorrelationId", out var correlationIdObj))
+        if (invocationResult.IsSuccess)
         {
-            Logger.LogWarning("SubProcess task {TaskKey} result missing correlation metadata", task.Key);
-            return Result.Ok();
+            // Extract IDs from result metadata
+            if (invocationResult.Metadata == null ||
+                !invocationResult.Metadata.TryGetValue("SubFlowInstanceId", out var subFlowIdObj) ||
+                !invocationResult.Metadata.TryGetValue("CorrelationId", out var correlationIdObj))
+            {
+                Logger.LogWarning("SubProcess task {TaskKey} result missing correlation metadata", task.Key);
+                return Result.Ok();
+            }
+
+            var subFlowInstanceId = subFlowIdObj is Guid subGuid ? subGuid : Guid.Parse(subFlowIdObj.ToString()!);
+            var correlationId = correlationIdObj is Guid corrGuid ? corrGuid : Guid.Parse(correlationIdObj.ToString()!);
+
+            // Create and persist correlation
+            return await CreateCorrelationAsync(context, task, correlationId, subFlowInstanceId, cancellationToken);
         }
 
-        var subFlowInstanceId = subFlowIdObj is Guid subGuid ? subGuid : Guid.Parse(subFlowIdObj.ToString()!);
-        var correlationId = correlationIdObj is Guid corrGuid ? corrGuid : Guid.Parse(correlationIdObj.ToString()!);
-
-        // Create and persist correlation
-        return await CreateCorrelationAsync(context, task, correlationId, subFlowInstanceId, cancellationToken);
+        Logger.LogWarning("SubProcess task {TaskKey} result ignored correlation", task.Key);
+        return Result.Ok();
     }
 
     private async Task<TaskInvocationResult> ExecuteLocalAsync(
@@ -125,24 +121,22 @@ public sealed class SubProcessTaskExecutor : TriggerTaskExecutorBase<SubProcessT
     {
         Logger.LogDebug("Using local IInstanceCommandAppService for SubProcess task {TaskKey}", task.Key);
 
-        var input = BuildStartInstanceInput(task, context.ScriptContext, subFlowInstanceId);
-        using (_currentSchema.Use(input.Workflow))
+        try
         {
-            await using (var uow = await _unitOfWorkManager.BeginAsync(new UnitOfWorkOptions
-                         {
-                             Scope = UnitOfWorkScopeOption.RequiresNew
-                         }, cancellationToken))
+            var input = BuildStartInstanceInput(task, context.ScriptContext, subFlowInstanceId);
+            await using var scope = _serviceScopeFactory.CreateAsyncScope();
+            var currentSchema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
+            var localCommandService = scope.ServiceProvider.GetRequiredService<IInstanceCommandAppService>();
+            using (currentSchema.Use(input.Workflow))
             {
-                var result = await LocalCommandService.StartAsync(input, cancellationToken);
-                await uow.SaveChangesAsync(cancellationToken);
-                await uow.CommitAsync(cancellationToken);
+                var result = await localCommandService.StartAsync(input, cancellationToken);
 
                 if (!result.IsSuccess)
                 {
                     Logger.TaskLocalExecutionFailed(
                         task.Key,
                         TaskType.ToString(),
-                        context.ScriptContext.Instance.Id,
+                        context.ScriptContext.Instance.Id.ToString(),
                         result.Error.Message ?? "SubProcess start failed");
                     return TaskInvocationResult.Failure(
                         error: result.Error.Message ?? "SubProcess start failed",
@@ -171,6 +165,25 @@ public sealed class SubProcessTaskExecutor : TriggerTaskExecutorBase<SubProcessT
                         ["CorrelationId"] = correlationId
                     });
             }
+        }
+        catch (Exception ex)
+        {
+            Logger.TaskLocalExecutionFailed(
+                task.Key,
+                TaskType.ToString(),
+                context.ScriptContext.Instance.Id.ToString(),
+                ex.Message);
+
+            return TaskInvocationResult.Failure(
+                error: $"SubProcess execution failed: {ex.Message}",
+                statusCode: 500,
+                taskType: TaskType.ToString(),
+                metadata: new Dictionary<string, object>
+                {
+                    ["SubFlowInstanceId"] = subFlowInstanceId,
+                    ["CorrelationId"] = correlationId,
+                    ["ExceptionType"] = ex.GetType().Name
+                });
         }
     }
 
@@ -245,22 +258,22 @@ public sealed class SubProcessTaskExecutor : TriggerTaskExecutorBase<SubProcessT
         Guid subFlowInstanceId)
     {
         return new StartInstanceInput(
-            domain: task.TriggerDomain,
-            workflow: task.TriggerFlow,
-            version: task.TriggerVersion,
-            sync: false) // Always async
-        {
-            Instance = new CreateInstanceInput
+                domain: task.TriggerDomain,
+                workflow: task.TriggerFlow,
+                version: task.TriggerVersion,
+                sync: false) // Always async
             {
-                Id = subFlowInstanceId,
-                Key = task.TriggerKey,
-                Attributes = task.Body,
-                Tags = task.TriggerTags,
-                Callback = GetCallbackAppId(),
-                ExtraProperties = BuildExtraProperties(context, task)
-            },
-            Headers = ExtractHeaders(context) ?? new Dictionary<string, string?>()
-        };
+                Instance = new CreateInstanceInput
+                {
+                    Id = subFlowInstanceId,
+                    Key = task.TriggerKey,
+                    Attributes = task.Body,
+                    Tags = task.TriggerTags,
+                    Callback = GetCallbackAppId(),
+                    ExtraProperties = BuildExtraProperties(context, task)
+                },
+                Headers = ExtractHeaders(context) ?? new Dictionary<string, string?>()
+            };
     }
 
     private SubProcessBinding BuildSubProcessBinding(SubProcessTask task, ScriptContext context, Guid subFlowInstanceId)

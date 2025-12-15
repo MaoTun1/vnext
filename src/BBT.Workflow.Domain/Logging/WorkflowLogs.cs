@@ -205,6 +205,32 @@ public static partial class WorkflowLogs
         string transitionKey,
         string triggerType);
 
+    /// <summary>
+    /// Logs when inline execution throws an exception during post-commit auto chain processing.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10051,
+        Level = LogLevel.Error,
+        Message = "Inline execution exception for instance {InstanceId}, chain {ExecutionChainId}, transition {TransitionKey}")]
+    public static partial void InlineExecutionException(
+        this ILogger logger,
+        Exception exception,
+        Guid instanceId,
+        string? executionChainId,
+        string transitionKey);
+
+    /// <summary>
+    /// Logs when auto chain processing fails without any successful transitions.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10052,
+        Level = LogLevel.Warning,
+        Message = "Auto chain processing failed: attempted {AttemptedCount} transitions with {Hops} hops, none succeeded")]
+    public static partial void AutoChainProcessingFailed(
+        this ILogger logger,
+        int attemptedCount,
+        int hops);
+
     #endregion
 
     #region Task Execution
@@ -304,7 +330,7 @@ public static partial class WorkflowLogs
         this ILogger logger,
         string taskKey,
         string taskType,
-        Guid instanceId,
+        string instanceId,
         string errorMessage);
 
     /// <summary>
@@ -390,6 +416,20 @@ public static partial class WorkflowLogs
         Guid parentInstanceId,
         string domain,
         string flow);
+
+    /// <summary>
+    /// Logs when an event is silently ignored because it belongs to a different domain.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40012,
+        Level = LogLevel.Debug,
+        Message = "Event silently ignored: event domain {EventDomain} does not match current runtime domain {RuntimeDomain}. SubInstance {SubInstanceId}, Parent {ParentInstanceId}")]
+    public static partial void SubFlowEventIgnoredDomainMismatch(
+        this ILogger logger,
+        string eventDomain,
+        string runtimeDomain,
+        Guid subInstanceId,
+        Guid parentInstanceId);
 
     /// <summary>
     /// Logs when a correlation is not found for a completed SubFlow.
@@ -565,6 +605,20 @@ public static partial class WorkflowLogs
         string flow);
 
     /// <summary>
+    /// Logs when an InstanceCanceledEvent is silently ignored because it belongs to a different domain.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40021,
+        Level = LogLevel.Debug,
+        Message = "InstanceCanceledEvent silently ignored: event domain {EventDomain} does not match current runtime domain {RuntimeDomain}. Instance {InstanceId}, Flow {Flow}")]
+    public static partial void InstanceCanceledEventIgnoredDomainMismatch(
+        this ILogger logger,
+        string eventDomain,
+        string runtimeDomain,
+        Guid instanceId,
+        string flow);
+
+    /// <summary>
     /// Logs when instance jobs are processed during cancellation.
     /// </summary>
     [LoggerMessage(
@@ -603,6 +657,20 @@ public static partial class WorkflowLogs
         this ILogger logger,
         Guid instanceId,
         string domain,
+        string flow);
+
+    /// <summary>
+    /// Logs when a ChildSubflowCancelRequestedEvent is silently ignored because it belongs to a different domain.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40025,
+        Level = LogLevel.Debug,
+        Message = "ChildSubflowCancelRequestedEvent silently ignored: event domain {EventDomain} does not match current runtime domain {RuntimeDomain}. Instance {InstanceId}, Flow {Flow}")]
+    public static partial void ChildSubflowCancelEventIgnoredDomainMismatch(
+        this ILogger logger,
+        string eventDomain,
+        string runtimeDomain,
+        Guid instanceId,
         string flow);
 
     /// <summary>
@@ -657,7 +725,7 @@ public static partial class WorkflowLogs
         Guid instanceId);
 
     /// <summary>
-    /// Logs when a background job fails.
+    /// Logs when a background job fails with an exception.
     /// </summary>
     [LoggerMessage(
         EventId = 40075,
@@ -668,6 +736,19 @@ public static partial class WorkflowLogs
         Exception exception,
         string jobName,
         Guid instanceId);
+
+    /// <summary>
+    /// Logs when a background job fails with an error message (used for Result pattern failures).
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40075,
+        Level = LogLevel.Error,
+        Message = "Job {JobName} failed for instance {InstanceId}: {ErrorMessage}")]
+    public static partial void JobFailed(
+        this ILogger logger,
+        string jobName,
+        Guid instanceId,
+        string errorMessage);
 
     /// <summary>
     /// Logs when a job is cancelled.

@@ -1,21 +1,38 @@
 using BBT.Aether.Events;
+using BBT.Aether.MultiSchema;
 using BBT.Workflow.Instances.Events;
 using BBT.Workflow.Logging;
+using BBT.Workflow.Runtime;
 using BBT.Workflow.SubFlow;
 
 namespace BBT.Workflow.Workers.Inbox.Handlers;
 
 /// <summary>
 /// Handles the InstanceSubCompletedEvent to process SubFlow/SubProcess completion.
-/// This handler is invoked via the Inbox pattern when a SubItem completes.
+/// This handler delegates the actual completion logic to ISubflowCompletionService.
 /// </summary>
 internal sealed class InstanceSubCompletedEventHandler(
-    ISubflowCompletionService subflowCompletionService,
+    ICurrentSchema currentSchema,
+    IRuntimeInfoProvider runtimeInfoProvider,
+    IServiceScopeFactory scopeFactory,
     ILogger<InstanceSubCompletedEventHandler> logger) : IEventHandler<InstanceSubCompletedEvent>
 {
+    /// <summary>
+    /// Handles the InstanceSubCompletedEvent by delegating to the subflow completion service.
+    /// </summary>
     public async Task HandleAsync(CloudEventEnvelope<InstanceSubCompletedEvent> envelope, CancellationToken cancellationToken)
     {
         var eventData = envelope.Data;
+
+        if (!runtimeInfoProvider.IsDomainMatch(eventData.Domain))
+        {
+            logger.SubFlowEventIgnoredDomainMismatch(
+                eventData.Domain,
+                runtimeInfoProvider.Domain,
+                eventData.SubInstanceId,
+                eventData.InstanceId);
+            return;
+        }
         
         logger.SubFlowEventReceived(
             eventData.SubInstanceId,
@@ -23,9 +40,8 @@ internal sealed class InstanceSubCompletedEventHandler(
             eventData.Domain,
             eventData.Flow);
 
-        try
+        using (currentSchema.Use(eventData.Flow))
         {
-            // Map event to FlowCompletedInput for processing
             var completedData = new FlowCompletedInput
             {
                 SubInstanceId = eventData.SubInstanceId,
@@ -39,14 +55,9 @@ internal sealed class InstanceSubCompletedEventHandler(
                 Duration = eventData.Duration
             };
 
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var subflowCompletionService = scope.ServiceProvider.GetRequiredService<ISubflowCompletionService>();
             await subflowCompletionService.CompletionAsync(completedData, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            logger.SubFlowCompletionFailed(
-                ex,
-                eventData.SubInstanceId,
-                eventData.InstanceId);
         }
     }
 }

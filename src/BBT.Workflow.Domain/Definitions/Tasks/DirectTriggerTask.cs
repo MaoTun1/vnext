@@ -97,6 +97,11 @@ public sealed class DirectTriggerTask : WorkflowTask
         TriggerKey = key;
     }
 
+    public void SetVersion(string? version)
+    {
+        TriggerVersion = version;
+    }
+
     public void SetDomain(string domain)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(domain, nameof(domain));

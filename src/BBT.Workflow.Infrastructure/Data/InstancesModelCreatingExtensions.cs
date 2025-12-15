@@ -97,6 +97,14 @@ public static class InstancesModelCreatingExtensions
                 .IsRequired()
                 .HasDefaultValue(0);
 
+            b.Property(p => p.VersionNo)
+                .IsRequired()
+                .HasDefaultValue(0L);
+
+            b.Property(p => p.IsLatest)
+                .IsRequired()
+                .HasDefaultValue(false);
+
             b.Property(p => p.ETag)
                 .IsRequired()
                 .HasMaxLength(WorkflowConstants.MaxETagLength);
@@ -116,8 +124,16 @@ public static class InstancesModelCreatingExtensions
 
             b.HasIndex(p => p.InstanceId);
 
-            b.HasIndex(p => new { p.InstanceId, p.Version, p.HistorySequence })
-                .IsUnique();
+            // Unique index: Instance-based VersionNo (for concurrency control)
+            b.HasIndex(p => new { p.InstanceId, p.VersionNo })
+                .IsUnique()
+                .HasDatabaseName("UX_InstancesData_Instance_VersionNo");
+
+            // Partial unique index: Only one record per instance can have IsLatest = true
+            b.HasIndex(p => p.InstanceId)
+                .IsUnique()
+                .HasFilter("\"IsLatest\" = true")
+                .HasDatabaseName("UX_InstancesData_Instance_IsLatest");
         });
 
         builder.Entity<InstanceTransition>(b =>

@@ -49,16 +49,6 @@ public sealed class TransitionInput(
     }
 }
 
-public sealed class TransitionOutput
-{
-    public Guid Id { get; set; }
-    
-    /// <summary>
-    /// Instance status (Active, Busy, Completed, etc.)
-    /// </summary>
-    public InstanceStatus? Status { get; set; }
-}
-
 public sealed class TransitionDataInput
 {
     public TransitionDataInput()

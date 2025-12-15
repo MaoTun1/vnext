@@ -37,47 +37,78 @@ The BBT Workflow Engine implements a sophisticated multi-level caching strategy 
 
 ### 1. Domain Cache Context
 
-The central orchestrator for all workflow-related caching:
+The central orchestrator for all workflow-related caching. Each `CacheSet<T>` is backed by an `ICacheBackend<T>` for database fallback:
 
 ```csharp
-public class DomainCacheContext : CacheContext
+public class DomainCacheContext : CacheContext, IDomainCacheContext, IDisposable
 {
-    public CacheSet<Workflow> Workflows { get; }
-    public CacheSet<WorkflowTask> Tasks { get; }
-    public CacheSet<SchemaDefinition> Schemas { get; }
-    public CacheSet<Function> Functions { get; }
-    public CacheSet<View> Views { get; }
-    public CacheSet<Extension> Extensions { get; }
+    public ICacheSet<Workflow> Workflows { get; }
+    public ICacheSet<WorkflowTask> Tasks { get; }
+    public ICacheSet<SchemaDefinition> Schemas { get; }
+    public ICacheSet<Function> Functions { get; }
+    public ICacheSet<View> Views { get; }
+    public ICacheSet<Extension> Extensions { get; }
 
-    public DomainCacheContext(IServiceProvider serviceProvider, ILogger<DomainCacheContext> logger)
+    public DomainCacheContext(
+        IDistributedCacheService distributedCache,
+        ICacheBackend<Workflow> workflowBackend,
+        ICacheBackend<WorkflowTask> taskBackend,
+        ICacheBackend<SchemaDefinition> schemaBackend,
+        ICacheBackend<Function> functionBackend,
+        ICacheBackend<View> viewBackend,
+        ICacheBackend<Extension> extensionBackend,
+        ILoggerFactory loggerFactory)
     {
-        Workflows = new CacheSet<Workflow>(ResolveCacheService, logger);
-        Tasks = new CacheSet<WorkflowTask>(ResolveCacheService, logger);
-        Schemas = new CacheSet<SchemaDefinition>(ResolveCacheService, logger);
-        Functions = new CacheSet<Function>(ResolveCacheService, logger);
-        Views = new CacheSet<View>(ResolveCacheService, logger);
-        Extensions = new CacheSet<Extension>(ResolveCacheService, logger);
+        Workflows = new CacheSet<Workflow>(
+            distributedCache,
+            workflowBackend,
+            loggerFactory.CreateLogger<CacheSet<Workflow>>());
+        // ... other cache sets
+    }
+
+    public ICacheSet<T> Set<T>() where T : class, IDomainEntity, IReferenceSetter
+    {
+        if (typeof(T) == typeof(Workflow)) return (ICacheSet<T>)Workflows;
+        if (typeof(T) == typeof(WorkflowTask)) return (ICacheSet<T>)Tasks;
+        // ... other types
+        throw new NotSupportedException($"Type {typeof(T).Name} is not supported");
+    }
+
+    public int CleanupAll(TimeSpan? ttl = null, int? maxItemsPerSet = null, CancellationToken cancellationToken = default)
+    {
+        // Performs cleanup across all cache sets
     }
 }
 ```
 
 ### 2. CacheSet<T> Implementation
 
-Provides thread-safe, dual-layer caching for domain entities:
+Provides thread-safe caching using an **immutable snapshot model** with Compare-And-Swap (CAS) updates:
 
 ```csharp
-public class CacheSet<T> where T : class, IDomainEntity
+public class CacheSet<T>(
+    IDistributedCacheService distributedCache,
+    ICacheBackend<T> backend,
+    ILogger<CacheSet<T>> logger)
+    : ICacheSet<T>
+    where T : class, IDomainEntity, IReferenceSetter
 {
-    private readonly ReaderWriterLockSlim _cacheLock = new();
-    private Dictionary<string, T> _localCache = new();
-    private readonly Dictionary<string, SortedSet<string>> _index = new();
+    // Immutable snapshot holding all local cache state
+    private CacheSnapshot<T> _snapshot = new(
+        ImmutableDictionary<string, CacheItem<T>>.Empty,
+        ImmutableDictionary<string, SortedSet<string>>.Empty);
 
-    private static readonly DistributedCacheEntryOptions CacheOptions = new()
-    {
-        AbsoluteExpiration = DateTimeOffset.UtcNow.AddHours(1),
-    };
+    // Default cache configuration
+    private static readonly TimeSpan DefaultItemTtl = TimeSpan.FromHours(12);
+    private const int DefaultMaxItems = 10_000;
 }
 ```
+
+**Key Features:**
+- **Lock-free reads**: Uses immutable snapshots for fast, concurrent reads
+- **CAS-based writes**: Uses `Interlocked.CompareExchange` for thread-safe updates
+- **Multi-layer caching**: Local → Distributed (Redis) → Database backend
+- **Automatic cleanup**: TTL and capacity-based eviction
 
 ### 3. Component Cache Store
 
@@ -158,65 +189,84 @@ public class CoreModelCacheKey : ModelCacheKey
 
 ## Caching Layers
 
-### 1. Local In-Memory Cache
+### 1. Local In-Memory Cache (Immutable Snapshot)
 
-**Purpose**: Ultra-fast access for frequently accessed data
-**Implementation**: Thread-safe dictionary with ReaderWriterLockSlim
+**Purpose**: Ultra-fast, lock-free access for frequently accessed data
+**Implementation**: Immutable snapshots with CAS-based updates
 **Scope**: Single application instance
 
 ```csharp
-public async Task<T?> GetAsync(string cacheKey, CancellationToken cancellationToken = default)
+public async Task<Result<T>> GetAsync(string cacheKey, CancellationToken cancellationToken = default)
 {
-    // First, check local cache
-    _cacheLock.EnterReadLock();
+    // 1) Lock-free snapshot read
+    var snap = _snapshot;
+    if (snap.Entries.TryGetValue(cacheKey, out var item))
+    {
+        item.UpdateAccess();
+        return Result<T>.Ok(item.Value);
+    }
+
+    // 2) Distributed cache - network errors will throw
     try
     {
-        if (_localCache.TryGetValue(cacheKey, out var cachedValue))
+        var fromDistributed = await distributedCache.GetAsync<T>(cacheKey, cancellationToken);
+        if (fromDistributed is not null)
         {
-            return cachedValue;
+            EnsureReferenceIsSet(fromDistributed, cacheKey);
+            _ = UpsertLocalAsync(fromDistributed, cancellationToken);
+            return Result<T>.Ok(fromDistributed);
         }
     }
-    finally
+    catch (Exception ex)
     {
-        _cacheLock.ExitReadLock();
+        _logger.LogError(ex, "Error reading from distributed cache for {CacheKey}", cacheKey);
     }
 
-    // Fall back to distributed cache
-    var distributedCacheValue = await cacheResolver().GetAsync<T>(cacheKey, cancellationToken);
-    if (distributedCacheValue is not null)
-    {
-        SetLocalCache(cacheKey, distributedCacheValue);
-    }
+    // 3) Database backend fallback
+    var fromDbResult = await backend.LoadAsync(domain, key, version, cancellationToken);
+    if (!fromDbResult.IsSuccess)
+        return fromDbResult;
 
-    return distributedCacheValue;
+    var fromDb = fromDbResult.Value!;
+    _ = SetAsync(fromDb, cancellationToken);
+    return Result<T>.Ok(fromDb);
 }
 ```
 
-### 2. Distributed Redis Cache
+### 2. Distributed Cache (Aether SDK)
 
 **Purpose**: Shared state across application instances
-**Implementation**: Redis with configurable options
+**Implementation**: `IDistributedCacheService` from Aether SDK
 **Scope**: All application instances
 
 ```csharp
-public async Task SetAsync(T entity, CancellationToken cancellationToken = default)
+public async Task<Result> SetAsync(T entity, CancellationToken cancellationToken = default)
 {
-    var cacheKey = entity.CacheKey;
-    
-    // Store in distributed cache first
-    await cacheResolver().SetAsync(cacheKey, entity, CacheOptions, cancellationToken);
-    
-    // Update local cache
-    _cacheLock.EnterWriteLock();
-    try
-    {
-        _localCache[cacheKey] = entity;
-        UpdateIndex(_index, entity);
-    }
-    finally
-    {
-        _cacheLock.ExitWriteLock();
-    }
+    var cacheKey = CreateCacheKey(entity);
+
+    // 1) Update local cache via snapshot (CAS-based)
+    SnapshotUpsert(cacheKey, entity);
+
+    // 2) Write to distributed cache
+    await distributedCache.SetAsync(cacheKey, entity, cancellationToken: cancellationToken);
+
+    return Result.Ok();
+}
+```
+
+### 3. Database Backend (ICacheBackend<T>)
+
+**Purpose**: Ultimate source of truth when cache misses occur
+**Implementation**: `ICacheBackend<T>` interface with runtime service
+
+```csharp
+public interface ICacheBackend<T>
+{
+    Task<Result<T>> LoadAsync(
+        string domain,
+        string key,
+        string? version,
+        CancellationToken cancellationToken = default);
 }
 ```
 
@@ -391,65 +441,95 @@ public async Task<T?> GetLatestByNameAsync(
 
 ## Cache Invalidation
 
-### 1. Manual Invalidation
+### 1. Manual Invalidation (CAS-based)
 
 ```csharp
-public async Task InvalidateAsync(string cacheKey, CancellationToken cancellationToken = default)
+public async Task<Result> InvalidateAsync(string cacheKey, CancellationToken cancellationToken = default)
 {
+    // Remove from snapshot using CAS
+    SnapshotRemove(cacheKey);
+
     // Remove from distributed cache
-    await cacheResolver().RemoveAsync(cacheKey, cancellationToken);
+    await distributedCache.RemoveAsync(cacheKey, cancellationToken);
+
+    return Result.Ok();
+}
+
+private void SnapshotRemove(string cacheKey)
+{
+    while (true)
+    {
+        var current = _snapshot;
+        if (!current.Entries.ContainsKey(cacheKey))
+            return;
+
+        var entries = current.Entries.ToDictionary(k => k.Key, v => v.Value);
+        entries.Remove(cacheKey, out _);
+
+        // Rebuild index
+        var index = RebuildIndex(entries);
+
+        var newSnapshot = new CacheSnapshot<T>(
+            entries.ToImmutableDictionary(),
+            index.ToImmutableDictionary());
+
+        var original = Interlocked.CompareExchange(ref _snapshot, newSnapshot, current);
+        if (ReferenceEquals(original, current))
+            break; // CAS succeeded
+    }
+}
+```
+
+### 2. Automatic Cleanup (TTL and Capacity)
+
+```csharp
+public int Cleanup(TimeSpan? ttl = null, int? maxItems = null, CancellationToken cancellationToken = default)
+{
+    ttl ??= DefaultItemTtl;      // 12 hours
+    maxItems ??= DefaultMaxItems; // 10,000
+
+    var now = DateTime.UtcNow;
+    var current = _snapshot;
+    var keptEntries = new Dictionary<string, CacheItem<T>>();
+    var removedCount = 0;
+
+    // 1) TTL filter - remove expired items
+    foreach (var (key, item) in current.Entries)
+    {
+        var age = now - item.CreatedTime;
+        var idle = now - item.LastAccessTime;
+
+        if (age > ttl.Value || idle > ttl.Value)
+        {
+            removedCount++;
+            continue;
+        }
+        keptEntries[key] = item;
+    }
+
+    // 2) Capacity filter - remove least-used items
+    if (keptEntries.Count > maxItems.Value)
+    {
+        var ordered = keptEntries
+            .OrderBy(kvp => kvp.Value.AccessCount)
+            .ThenBy(kvp => kvp.Value.LastAccessTime)
+            .ToList();
+
+        var overflow = keptEntries.Count - maxItems.Value;
+        for (var i = 0; i < overflow; i++)
+        {
+            keptEntries.Remove(ordered[i].Key);
+            removedCount++;
+        }
+    }
+
+    // Atomically replace snapshot
+    var newSnapshot = new CacheSnapshot<T>(
+        keptEntries.ToImmutableDictionary(),
+        RebuildIndex(keptEntries));
     
-    // Remove from local cache
-    InvalidateLocalCache(cacheKey);
-}
-
-private void InvalidateLocalCache(string cacheKey)
-{
-    _cacheLock.EnterWriteLock();
-    try
-    {
-        if (_localCache.Remove(cacheKey, out var removedEntity) && removedEntity != null)
-        {
-            RemoveFromIndex(_index, removedEntity);
-        }
-    }
-    finally
-    {
-        _cacheLock.ExitWriteLock();
-    }
-}
-```
-
-### 2. Time-Based Expiration
-
-```csharp
-private static readonly DistributedCacheEntryOptions CacheOptions = new()
-{
-    AbsoluteExpiration = DateTimeOffset.UtcNow.AddHours(1),
-    SlidingExpiration = TimeSpan.FromMinutes(30)
-};
-```
-
-### 3. Admin API for Cache Management
-
-```csharp
-public async Task InvalidateCacheAsync(InvalidateCacheInput input, CancellationToken cancellationToken = default)
-{
-    using (currentSchema.Change(input.Flow))
-    {
-        var instance = await instanceRepository.FindByKeyAsync(input.Key, cancellationToken);
-        if (instance?.LatestData == null)
-        {
-            throw new EntityNotFoundException(typeof(Instance), input.Key);
-        }
-
-        // Reprocess and cache the component
-        await castProcessor.ProcessAsync(
-            input.Flow,
-            new Reference(input.Key, input.Domain, input.Flow, input.Version ?? instance.LatestData.Version),
-            instance.LatestData.Data.JsonElement,
-            cancellationToken);
-    }
+    Interlocked.Exchange(ref _snapshot, newSnapshot);
+    return removedCount;
 }
 ```
 
@@ -704,57 +784,32 @@ public async Task<Result<T>> LoadAsync(
 
 ### Multi-Layer Cache Flow with Result Pattern
 
-```csharp
-public async Task<Result<T>> GetAsync(string cacheKey, CancellationToken cancellationToken = default)
-{
-    // 1) Lock-free snapshot read (local cache)
-    var snap = _snapshot;
-    if (snap.Entries.TryGetValue(cacheKey, out var item))
-    {
-        item.UpdateAccess();
-        return Result<T>.Ok(item.Value);
-    }
+The cache uses a three-tier lookup strategy with the Result pattern:
 
-    // 2) Distributed cache - network errors throw (expected)
-    try
-    {
-        var fromDistributed = await distributedCache.GetAsync<T>(cacheKey, cancellationToken);
-        if (fromDistributed is not null)
-        {
-            _ = UpsertLocalAsync(fromDistributed, cancellationToken);
-            return Result<T>.Ok(fromDistributed);
-        }
-    }
-    catch (Exception ex)
-    {
-        _logger.LogError(ex, "Distributed cache error for {CacheKey}", cacheKey);
-        // Continue to backend fallback
-    }
-
-    // 3) Database backend fallback
-    var parsed = TryParseCacheKey(cacheKey);
-    if (parsed is null)
-    {
-        return Result<T>.Fail(Error.Validation(
-            WorkflowErrorCodes.CacheInvalidKey,
-            $"Invalid cache key format: {cacheKey}",
-            cacheKey));
-    }
-
-    var (domain, key, version) = parsed.Value;
-    var fromDbResult = await backend.LoadAsync(domain, key, version, cancellationToken);
-    
-    if (!fromDbResult.IsSuccess)
-    {
-        return fromDbResult;
-    }
-
-    var fromDb = fromDbResult.Value!;
-    _ = SetAsync(fromDb, cancellationToken);
-
-    return Result<T>.Ok(fromDb);
-}
 ```
+┌─────────────────────────────────────────────────────────┐
+│                    Cache Lookup Flow                     │
+├─────────────────────────────────────────────────────────┤
+│  1. Local Snapshot (Lock-free)                          │
+│     ├─ HIT → Return Result<T>.Ok(value)                 │
+│     └─ MISS → Continue to step 2                        │
+├─────────────────────────────────────────────────────────┤
+│  2. Distributed Cache (Aether IDistributedCacheService) │
+│     ├─ HIT → Update local snapshot → Return Ok          │
+│     ├─ MISS → Continue to step 3                        │
+│     └─ ERROR → Log and continue to step 3               │
+├─────────────────────────────────────────────────────────┤
+│  3. Database Backend (ICacheBackend<T>)                 │
+│     ├─ FOUND → Update both caches → Return Ok           │
+│     └─ NOT_FOUND → Return Result<T>.Fail(NotFound)      │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Key Points:**
+- Local cache uses immutable snapshots for lock-free reads
+- Distributed cache errors are logged but don't fail the request
+- Database backend is the ultimate source of truth
+- Result pattern provides explicit success/failure handling
 
 ### Metrics Integration with Result Pattern
 

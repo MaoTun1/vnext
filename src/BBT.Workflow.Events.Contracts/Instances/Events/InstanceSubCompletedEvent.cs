@@ -11,7 +11,7 @@ namespace BBT.Workflow.Instances.Events;
 /// <remarks>
 /// This event supports hooks. Register hooks via DI:
 /// <code>
-/// services.AddEventHook&lt;InstanceSubCompletedEvent, YourHookClass&gt;();
+/// services.AddEventHook&lt;InstanceSubCompletedEvent, InstanceSubCompletedEventHook&gt;();
 /// </code>
 /// </remarks>
 [EventHook]
@@ -63,4 +63,9 @@ public class InstanceSubCompletedEvent : IDistributedEvent
     /// Duration of the SubItem execution
     /// </summary>
     public TimeSpan? Duration { get; init; }
+
+    public override string ToString()
+    {
+        return $"{nameof(InstanceSubCompletedEvent)}: InstanceId={InstanceId} Domain={Domain} Flow={Flow} Version={Version} SubInstanceId={SubInstanceId} CompletedState={CompletedState}";
+    }
 }

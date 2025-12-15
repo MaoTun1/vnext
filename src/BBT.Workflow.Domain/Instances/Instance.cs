@@ -261,7 +261,8 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// Cancels the instance and publishes a cancellation event.
     /// Sets the instance status to Canceled and records the completion time.
     /// </summary>
-    public void Cancel()
+    /// <param name="domain">The domain of the instance.</param>
+    public void Cancel(string domain)
     {
         Status = InstanceStatus.Completed;
         CompletedAt = DateTime.UtcNow;
@@ -271,6 +272,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         AddDistributedEvent(new InstanceCanceledEvent
         {
             InstanceId = Id,
+            Domain = domain,
             Flow = Flow,
             CanceledState = GetCurrentState,
             CanceledAt = CompletedAt.Value,
@@ -388,7 +390,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
 
     public void ChangeState(Transition transition)
     {
-        if (StateConstants.ReservedTargetKeys.Contains(transition.Target))
+        if (WellKnownStateKeys.ReservedTargetKeys.Contains(transition.Target))
         {
             return;
         }
@@ -500,6 +502,17 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         }
     }
 
+    /// <summary>
+    /// Finds instance data by version.
+    /// Supports multiple version formats:
+    /// <list type="bullet">
+    ///     <item><description>Exact match: "1.0.0-pkg.1.17.0+account" or "1.0.0-alpha.1-pkg.1.17.0+account"</description></item>
+    ///     <item><description>Artifact version only: "1.0.0" or "1.0.0-alpha.1" → finds highest pkg version for that artifact</description></item>
+    ///     <item><description>Partial version: "1.0" → finds highest version among all 1.0.x versions</description></item>
+    /// </list>
+    /// </summary>
+    /// <param name="version">Version string to search for</param>
+    /// <returns>The matching InstanceData or null if not found</returns>
     public InstanceData? FindData(string version)
     {
         if (string.IsNullOrWhiteSpace(version))
@@ -507,18 +520,40 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
 
         lock (_dataListLock)
         {
+            // 1. Try exact match first
             var exactMatch = _dataList.FirstOrDefault(x => x.Version == version);
             if (exactMatch != null)
                 return exactMatch;
 
-            // Partial version: 1.0 → find the highest version among all 1.0.x versions
-            var match = Regex.Match(version, @"^(\d+)\.(\d+)$");
-            if (match.Success)
+            // 2. Check if this is a full artifact version (MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-PRERELEASE)
+            //    Client sends only artifact version, we need to find the highest pkg version
+            //    Supports: 1.0.0, 1.0.0-alpha.1, 1.0.0-beta, 1.0.0-rc.1, etc.
+            var artifactMatch = Regex.Match(version, @"^(\d+\.\d+\.\d+(?:-[a-zA-Z0-9]+(?:\.[a-zA-Z0-9]+)*)?)$");
+            if (artifactMatch.Success)
             {
-                var prefix = $"{match.Groups[1].Value}.{match.Groups[2].Value}.";
+                // Find all data entries that match this artifact version
+                // They could be either:
+                // - Simple format: "1.0.0" or "1.0.0-alpha.1" (exact match, already checked above)
+                // - Extended format: "1.0.0-pkg.x.y.z+name" or "1.0.0-alpha.1-pkg.x.y.z+name"
+                var artifactPrefix = $"{version}-pkg.";
+                
+                var matched = _dataList
+                    .Where(d => d.Version.StartsWith(artifactPrefix, StringComparison.Ordinal))
+                    .OrderByDescending(d => d, InstanceDataVersionComparer.Instance)
+                    .FirstOrDefault();
+
+                return matched;
+            }
+
+            // 3. Partial version: 1.0 → find the highest version among all 1.0.x versions
+            var partialMatch = Regex.Match(version, @"^(\d+)\.(\d+)$");
+            if (partialMatch.Success)
+            {
+                var prefix = $"{partialMatch.Groups[1].Value}.{partialMatch.Groups[2].Value}.";
 
                 var matched = _dataList
-                    .Where(d => d.Version.StartsWith(prefix))
+                    .Where(d => d.Version.StartsWith(prefix, StringComparison.Ordinal) || 
+                               InstanceDataVersionComparer.GetArtifactVersion(d.Version).StartsWith(prefix, StringComparison.Ordinal))
                     .OrderByDescending(d => d, InstanceDataVersionComparer.Instance)
                     .FirstOrDefault();
 

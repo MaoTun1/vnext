@@ -303,5 +303,168 @@ public class InstanceDataTests : DomainTestBase<DomainEntryPoint>
         // Assert
         Assert.Equal(instanceData1.DataHash, instanceData2.DataHash);
     }
+
+    #region Extended Version Format Tests (MAJOR.MINOR.PATCH-pkg.PKG_VERSION+PKG_NAME)
+
+    [Fact]
+    public void AddDataWithVersion_ShouldAcceptExtendedVersionFormat()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        var data = JsonData.CreateFrom("{}");
+        var extendedVersion = "1.0.0-pkg.1.17.0+account";
+
+        // Act
+        var instanceData = instance.AddDataWithVersion(Guid.NewGuid(), data, extendedVersion);
+
+        // Assert
+        Assert.Equal(extendedVersion, instanceData.Version);
+    }
+
+    [Theory]
+    [InlineData("1.0.0-pkg.1.17.0+account", "Major", "2.0.0-pkg.1.17.0+account")]
+    [InlineData("1.0.0-pkg.1.17.0+account", "Minor", "1.1.0-pkg.1.17.0+account")]
+    [InlineData("1.0.0-pkg.1.17.0+account", "Patch", "1.0.1-pkg.1.17.0+account")]
+    [InlineData("2.5.3-pkg.10.20.30+myapp", "Major", "3.0.0-pkg.10.20.30+myapp")]
+    [InlineData("2.5.3-pkg.10.20.30+myapp", "Minor", "2.6.0-pkg.10.20.30+myapp")]
+    [InlineData("2.5.3-pkg.10.20.30+myapp", "Patch", "2.5.4-pkg.10.20.30+myapp")]
+    public void AddData_ShouldPreservePackageVersionAndMetadata_WhenIncrementing(
+        string originalVersion,
+        string strategyCode,
+        string expectedVersion)
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        var originalData = JsonData.CreateFrom("{\"original\":true}");
+        instance.AddDataWithVersion(Guid.NewGuid(), originalData, originalVersion);
+
+        var newData = JsonData.CreateFrom("{\"new\":\"data\"}");
+        var strategy = VersionStrategy.FromCode(strategyCode);
+
+        // Act
+        var newVersion = instance.AddData(Guid.NewGuid(), newData, strategy);
+
+        // Assert
+        Assert.Equal(expectedVersion, newVersion.Version);
+    }
+
+    [Fact]
+    public void AddData_ShouldPreserveSuffix_WhenNoStrategyApplied()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        var version = "1.0.0-pkg.1.17.0+account";
+        var originalData = JsonData.CreateFrom("{\"original\":true}");
+        instance.AddDataWithVersion(Guid.NewGuid(), originalData, version);
+
+        var newData = JsonData.CreateFrom("{\"new\":\"data\"}");
+
+        // Act - Using None strategy should keep the same version
+        var newVersion = instance.AddData(Guid.NewGuid(), newData, VersionStrategy.None);
+
+        // Assert
+        Assert.Equal(version, newVersion.Version);
+    }
+
+    [Fact]
+    public void AddDataWithVersion_ShouldHandleMultipleExtendedVersions()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+
+        // Act - Add multiple versions with extended format
+        var v1 = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "1.0.0-pkg.1.2.0+account");
+        var v2 = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":2}"), "1.0.0-pkg.1.2.1+account");
+        var v3 = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":3}"), "2.0.0-pkg.1.3.0+account");
+
+        // Assert
+        Assert.Equal(3, instance.DataList.Count);
+        Assert.Equal("1.0.0-pkg.1.2.0+account", v1.Version);
+        Assert.Equal("1.0.0-pkg.1.2.1+account", v2.Version);
+        Assert.Equal("2.0.0-pkg.1.3.0+account", v3.Version);
+    }
+
+    [Fact]
+    public void LatestData_ShouldReturnHighestExtendedVersion()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+
+        // Add versions in non-sequential order
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":2}"), "1.0.0-pkg.1.2.1+account");
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "1.0.0-pkg.1.2.0+account");
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":3}"), "2.0.0-pkg.1.3.0+account");
+
+        // Act
+        var latest = instance.LatestData;
+
+        // Assert - Should be the highest version (2.0.0-pkg.1.3.0+account)
+        Assert.NotNull(latest);
+        Assert.Equal("2.0.0-pkg.1.3.0+account", latest.Version);
+    }
+
+    #endregion
+
+    #region Pre-Release Version Tests
+
+    [Fact]
+    public void AddDataWithVersion_ShouldAcceptPreReleaseVersion()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        var preReleaseVersion = "1.0.0-alpha.1-pkg.1.17.0+account";
+
+        // Act
+        var instanceData = instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{}"), preReleaseVersion);
+
+        // Assert
+        Assert.Equal(preReleaseVersion, instanceData.Version);
+    }
+
+    [Theory]
+    [InlineData("1.0.0-alpha.1-pkg.1.17.0+account", "Major", "2.0.0-pkg.1.17.0+account")]
+    [InlineData("1.0.0-alpha.1-pkg.1.17.0+account", "Minor", "1.1.0-pkg.1.17.0+account")]
+    [InlineData("1.0.0-alpha.1-pkg.1.17.0+account", "Patch", "1.0.1-pkg.1.17.0+account")]
+    [InlineData("1.0.0-beta-pkg.1.0.0+test", "Patch", "1.0.1-pkg.1.0.0+test")]
+    [InlineData("2.5.3-rc.1-pkg.10.20.30+myapp", "Minor", "2.6.0-pkg.10.20.30+myapp")]
+    public void AddData_ShouldDropPreRelease_WhenIncrementing(
+        string originalVersion,
+        string strategyCode,
+        string expectedVersion)
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        var originalData = JsonData.CreateFrom("{\"original\":true}");
+        instance.AddDataWithVersion(Guid.NewGuid(), originalData, originalVersion);
+
+        var newData = JsonData.CreateFrom("{\"new\":\"data\"}");
+        var strategy = VersionStrategy.FromCode(strategyCode);
+
+        // Act
+        var newVersion = instance.AddData(Guid.NewGuid(), newData, strategy);
+
+        // Assert - Pre-release should be dropped, pkg suffix preserved
+        Assert.Equal(expectedVersion, newVersion.Version);
+    }
+
+    [Fact]
+    public void AddData_ShouldHandleMultipleBuildMetadata()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        var version = "1.0.0-pkg.1.17.0+account+build.123";
+        var originalData = JsonData.CreateFrom("{\"original\":true}");
+        instance.AddDataWithVersion(Guid.NewGuid(), originalData, version);
+
+        var newData = JsonData.CreateFrom("{\"new\":\"data\"}");
+
+        // Act
+        var newVersion = instance.AddData(Guid.NewGuid(), newData, VersionStrategy.IncreasePatch);
+
+        // Assert - Multiple build metadata should be preserved
+        Assert.Equal("1.0.1-pkg.1.17.0+account+build.123", newVersion.Version);
+    }
+
+    #endregion
 }
 

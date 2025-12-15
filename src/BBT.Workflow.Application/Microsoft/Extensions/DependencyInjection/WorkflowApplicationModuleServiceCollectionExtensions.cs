@@ -1,12 +1,16 @@
+using BBT.Workflow.Application.Resilience;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Definitions.CastHandlers;
+using BBT.Workflow.Definitions.Validators;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Monitoring;
+using BBT.Workflow.Resilience;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Extentions;
 using BBT.Workflow.SubFlow;
 using BBT.Workflow.Functions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -32,7 +36,8 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddApplicationServices();
         services.AddCacheServices();
         services.AddTaskHandlers();
-        services.AddCastHandlers();
+        services.AddComponentCacheHandlers();
+        services.AddComponentValidators();
         
         return services;
     }
@@ -43,7 +48,7 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
     private static void AddApplicationServices(this IServiceCollection services)
     {
         // Application Services
-        services.AddScoped<IAdminAppService, AdminAppService>();
+        services.AddScoped<IDefinitionAppService, DefinitionAppService>();
         services.AddScoped<IInstanceCommandAppService, InstanceCommandAppService>();
         services.AddScoped<IInstanceQueryAppService, InstanceQueryAppService>();
         services.AddScoped<IFunctionAppService, FunctionAppService>();
@@ -51,6 +56,10 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddScoped<ISubflowCompletionService, SubflowCompletionService>();
         services.AddScoped<ISubflowStarter, SubflowStarter>();
         services.AddScoped<ISubflowForwardingService, SubflowForwardingService>();
+        services.AddScoped<IChildSubflowCancellationService, ChildSubflowCancellationService>();
+        
+        // Instance Services
+        services.AddScoped<IInstanceCancellationService, InstanceCancellationService>();
         
         // Runtime Services
         services.AddScoped<IRuntimeService, RuntimeService>();
@@ -88,7 +97,7 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
     /// <summary>
     /// Configures workflow cast handlers.
     /// </summary>
-    private static void AddCastHandlers(this IServiceCollection services)
+    private static void AddComponentCacheHandlers(this IServiceCollection services)
     {
         services.AddSingleton<IWorkflowCastHandler, FlowCastHandler>();
         services.AddSingleton<IWorkflowCastHandler, TaskWorkflowCastHandler>();
@@ -97,5 +106,44 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddSingleton<IWorkflowCastHandler, SchemaWorkflowCastHandler>();
         services.AddSingleton<IWorkflowCastHandler, ExtensionWorkflowCastHandler>();
         services.AddSingleton<WorkflowCastProcessor>();
+    }
+
+    /// <summary>
+    /// Configures component validators for all component types.
+    /// </summary>
+    private static void AddComponentValidators(this IServiceCollection services)
+    {
+        services.AddSingleton<IComponentValidator, FlowComponentValidator>();
+        services.AddSingleton<IComponentValidator, TaskComponentValidator>();
+        services.AddSingleton<IComponentValidator, ViewComponentValidator>();
+        services.AddSingleton<IComponentValidator, FunctionComponentValidator>();
+        services.AddSingleton<IComponentValidator, SchemaComponentValidator>();
+        services.AddSingleton<IComponentValidator, ExtensionComponentValidator>();
+        services.AddSingleton<ComponentValidatorProcessor>();
+    }
+
+    /// <summary>
+    /// Adds Result-based resilience pipeline services for retry logic.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">Optional configuration for retry options.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddResultResilience(
+        this IServiceCollection services,
+        IConfiguration? configuration = null)
+    {
+        if (configuration != null)
+        {
+            services.Configure<ResultRetryOptions>(
+                configuration.GetSection(ResultRetryOptions.SectionName));
+        }
+        else
+        {
+            services.Configure<ResultRetryOptions>(_ => { });
+        }
+
+        services.AddSingleton<IResultResiliencePipelineFactory, ResultResiliencePipelineFactory>();
+
+        return services;
     }
 }

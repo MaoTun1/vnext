@@ -1,16 +1,17 @@
 using System.Text.Json;
-using BBT.Aether.DependencyInjection;
 using BBT.Aether.MultiSchema;
 using BBT.Aether.Results;
-using BBT.Aether.Uow;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Execution;
 using BBT.Workflow.Execution.Bindings;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Logging;
+using BBT.Workflow.Resilience;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Polly;
 
 namespace BBT.Workflow.Tasks.Executors;
 
@@ -18,32 +19,28 @@ namespace BBT.Workflow.Tasks.Executors;
 /// Executor for DirectTrigger tasks that trigger transitions on existing workflow instances.
 /// Domain-aware: uses local IInstanceCommandAppService for same domain,
 /// RemoteInvokerService for cross-domain execution.
+/// Implements retry logic for transient failures (e.g., instance lock scenarios).
 /// </summary>
 public sealed class DirectTriggerTaskExecutor : TriggerTaskExecutorBase<DirectTriggerTask>
 {
-    private readonly ILazyServiceProvider _lazyServiceProvider;
-    private readonly ICurrentSchema _currentSchema;
-    private readonly IUnitOfWorkManager _unitOfWorkManager;
-
-    private IInstanceCommandAppService LocalCommandService =>
-        _lazyServiceProvider.LazyGetRequiredService<IInstanceCommandAppService>();
+    private readonly IServiceScopeFactory _serviceScopeFactory;
+    private readonly ResiliencePipeline<Result<TransitionOutput>> _retryPipeline;
 
     /// <summary>
     /// Initializes a new instance of DirectTriggerTaskExecutor.
     /// </summary>
     public DirectTriggerTaskExecutor(
+        IServiceScopeFactory scopeFactory,
         IScriptEngine scriptEngine,
         IRuntimeInfoProvider runtimeInfoProvider,
         IRemoteInvokerService remoteInvoker,
-        ILazyServiceProvider lazyServiceProvider,
-        ICurrentSchema currentSchema,
-        IUnitOfWorkManager unitOfWorkManager,
+        IResultResiliencePipelineFactory resilienceFactory,
         ILogger<DirectTriggerTaskExecutor> logger)
         : base(scriptEngine, runtimeInfoProvider, remoteInvoker, logger)
     {
-        _lazyServiceProvider = lazyServiceProvider;
-        _currentSchema = currentSchema;
-        _unitOfWorkManager = unitOfWorkManager;
+        _serviceScopeFactory = scopeFactory;
+        _retryPipeline = resilienceFactory.CreatePipeline<TransitionOutput>(
+            operationName: "DirectTrigger.ExecuteLocal");
     }
 
     /// <inheritdoc />
@@ -126,40 +123,84 @@ public sealed class DirectTriggerTaskExecutor : TriggerTaskExecutorBase<DirectTr
             Headers = headers ?? new Dictionary<string, string?>()
         };
 
-        using (_currentSchema.Use(input.Workflow))
+        // Execute with retry pipeline for transient failures (e.g., instance lock scenarios)
+        var result = await _retryPipeline.ExecuteAsync(
+            async token => await ExecuteTransitionWithUowAsync(task, instanceIdentifier, input, token),
+            cancellationToken);
+
+        if (!result.IsSuccess)
         {
-            await using (var uow = await _unitOfWorkManager.BeginAsync(new UnitOfWorkOptions
-                         {
-                             Scope = UnitOfWorkScopeOption.RequiresNew
-                         }, cancellationToken))
+            Logger.TaskLocalExecutionFailed(
+                task.Key,
+                TaskType.ToString(),
+                context.ScriptContext.Instance.Id.ToString(),
+                result.Error.Message ?? "DirectTrigger transition failed");
+
+            return Result<TaskInvocationResult>.Ok(TaskInvocationResult.Failure(
+                error: result.Error.Message ?? "DirectTrigger transition failed",
+                statusCode: 500,
+                taskType: TaskType.ToString()));
+        }
+
+        return Result<TaskInvocationResult>.Ok(TaskInvocationResult.Success(
+            data: new
             {
-                var result = await LocalCommandService.TransitionAsync(instanceIdentifier, task.TransitionName, input,
+                result.Value!.Id,
+                result.Value.Status
+            },
+            statusCode: 200,
+            taskType: TaskType.ToString()));
+    }
+
+    /// <summary>
+    /// Executes the transition within a Unit of Work scope.
+    /// Each retry attempt gets a fresh UoW to ensure clean transaction state.
+    /// </summary>
+    private async Task<Result<TransitionOutput>> ExecuteTransitionWithUowAsync(
+        DirectTriggerTask task,
+        string instanceIdentifier,
+        TransitionInput input,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var scope = _serviceScopeFactory.CreateAsyncScope();
+            var currentSchema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
+            var localCommandService = scope.ServiceProvider.GetRequiredService<IInstanceCommandAppService>();
+            using (currentSchema.Use(input.Workflow))
+            {
+                var result = await localCommandService.TransitionAsync(
+                    instanceIdentifier,
+                    task.TransitionName,
+                    input,
                     cancellationToken);
-                await uow.SaveChangesAsync(cancellationToken);
-                await uow.CommitAsync(cancellationToken);
 
                 if (!result.IsSuccess)
                 {
                     Logger.TaskLocalExecutionFailed(
                         task.Key,
                         TaskType.ToString(),
-                        context.ScriptContext.Instance.Id,
+                        instanceIdentifier,
                         result.Error.Message ?? "DirectTrigger transition failed");
-                    return Result<TaskInvocationResult>.Ok(TaskInvocationResult.Failure(
-                        error: result.Error.Message ?? "DirectTrigger transition failed",
-                        statusCode: 500,
-                        taskType: TaskType.ToString()));
+                    return Result<TransitionOutput>.Fail(result.Error);
                 }
 
-                return Result<TaskInvocationResult>.Ok(TaskInvocationResult.Success(
-                    data: new
-                    {
-                        result.Value!.Id,
-                        result.Value.Status
-                    },
-                    statusCode: 200,
-                    taskType: TaskType.ToString()));
+                return result;
             }
+        }
+        catch (Exception ex)
+        {
+            Logger.TaskLocalExecutionFailed(
+                task.Key,
+                TaskType.ToString(),
+                instanceIdentifier,
+                ex.Message);
+            
+            return Result<TransitionOutput>.Fail(
+                Error.Failure(
+                    WorkflowErrorCodes.ExecutionStepFailed,
+                    $"DirectTrigger transition execution failed: {ex.Message}",
+                    detail: ex.GetType().Name));
         }
     }
 

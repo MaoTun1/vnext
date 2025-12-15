@@ -1,9 +1,6 @@
 using System.Text.Json;
-using BBT.Aether.Aspects;
-using BBT.Aether.DependencyInjection;
 using BBT.Aether.MultiSchema;
 using BBT.Aether.Results;
-using BBT.Aether.Uow;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Execution;
 using BBT.Workflow.Execution.Bindings;
@@ -11,6 +8,7 @@ using BBT.Workflow.Instances;
 using BBT.Workflow.Logging;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Tasks.Executors;
@@ -22,29 +20,20 @@ namespace BBT.Workflow.Tasks.Executors;
 /// </summary>
 public sealed class StartTriggerTaskExecutor : TriggerTaskExecutorBase<StartTask>
 {
-    private readonly ILazyServiceProvider _lazyServiceProvider;
-    private readonly ICurrentSchema _currentSchema;
-    private readonly IUnitOfWorkManager _unitOfWorkManager;
-
-    private IInstanceCommandAppService LocalCommandService =>
-        _lazyServiceProvider.LazyGetRequiredService<IInstanceCommandAppService>();
+    private readonly IServiceScopeFactory _serviceScopeFactory;
 
     /// <summary>
     /// Initializes a new instance of StartTriggerTaskExecutor.
     /// </summary>
     public StartTriggerTaskExecutor(
+        IServiceScopeFactory scopeFactory,
         IScriptEngine scriptEngine,
         IRuntimeInfoProvider runtimeInfoProvider,
         IRemoteInvokerService remoteInvoker,
-        ILazyServiceProvider lazyServiceProvider,
-        ICurrentSchema currentSchema,
-        IUnitOfWorkManager unitOfWorkManager,
         ILogger<StartTriggerTaskExecutor> logger)
         : base(scriptEngine, runtimeInfoProvider, remoteInvoker, logger)
     {
-        _lazyServiceProvider = lazyServiceProvider;
-        _currentSchema = currentSchema;
-        _unitOfWorkManager = unitOfWorkManager;
+        _serviceScopeFactory = scopeFactory;
     }
 
     /// <inheritdoc />
@@ -79,21 +68,22 @@ public sealed class StartTriggerTaskExecutor : TriggerTaskExecutorBase<StartTask
     {
         Logger.LogDebug("Using local IInstanceCommandAppService for StartTrigger task {TaskKey}", task.Key);
 
-        var input = BuildStartInstanceInput(task, context);
-        using (_currentSchema.Use(input.Workflow))
+        try
         {
-            await using ( var uow = await _unitOfWorkManager.BeginRequiresNew(cancellationToken))
+            var input = BuildStartInstanceInput(task, context);
+            await using var scope = _serviceScopeFactory.CreateAsyncScope();
+            var currentSchema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
+            var localCommandService = scope.ServiceProvider.GetRequiredService<IInstanceCommandAppService>();
+            using (currentSchema.Use(input.Workflow))
             {
-                var result = await LocalCommandService.StartAsync(input, cancellationToken);
-                await uow.SaveChangesAsync(cancellationToken);
-                await uow.CommitAsync(cancellationToken);
-                
+                var result = await localCommandService.StartAsync(input, cancellationToken);
+
                 if (!result.IsSuccess)
                 {
                     Logger.TaskLocalExecutionFailed(
                         task.Key,
                         TaskType.ToString(),
-                        context.ScriptContext.Instance.Id,
+                        context.ScriptContext.Instance.Id.ToString(),
                         result.Error.Message ?? "StartTrigger failed");
                     return Result<TaskInvocationResult>.Ok(TaskInvocationResult.Failure(
                         error: result.Error.Message ?? "StartTrigger failed",
@@ -110,6 +100,20 @@ public sealed class StartTriggerTaskExecutor : TriggerTaskExecutorBase<StartTask
                     statusCode: 200,
                     taskType: TaskType.ToString()));
             }
+        }
+        catch (Exception ex)
+        {
+            Logger.TaskLocalExecutionFailed(
+                task.Key,
+                TaskType.ToString(),
+                context.ScriptContext.Instance.Id.ToString(),
+                ex.Message);
+
+            return Result<TaskInvocationResult>.Fail(
+                Error.Failure(
+                    WorkflowErrorCodes.TaskExecution,
+                    $"StartTrigger execution failed: {ex.Message}",
+                    detail: ex.GetType().Name));
         }
     }
 

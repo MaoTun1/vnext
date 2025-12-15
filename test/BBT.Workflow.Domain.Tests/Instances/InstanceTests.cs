@@ -186,6 +186,187 @@ public class InstanceTests : DomainTestBase<DomainEntryPoint>
         Assert.Equal("1.0.2", result.Version);
     }
 
+    #region FindData with Extended Version Format Tests
+
+    [Fact]
+    public void FindData_ShouldReturnExactMatch_WhenExtendedVersionExists()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        var version = "1.0.0-pkg.1.17.0+account";
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), version);
+
+        // Act
+        var result = instance.FindData(version);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(version, result.Version);
+    }
+
+    [Fact]
+    public void FindData_ShouldReturnHighestPkgVersion_WhenArtifactVersionOnly()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+
+        // Add multiple versions with same artifact version but different pkg versions
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "1.0.0-pkg.1.17.0+account");
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":2}"), "1.0.0-pkg.1.18.0+account");
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":3}"), "1.0.0-pkg.1.16.0+account");
+
+        // Act - Client sends only artifact version
+        var result = instance.FindData("1.0.0");
+
+        // Assert - Should return highest pkg version for that artifact
+        Assert.NotNull(result);
+        Assert.Equal("1.0.0-pkg.1.18.0+account", result.Version);
+    }
+
+    [Fact]
+    public void FindData_ShouldReturnCorrectVersion_WhenMultipleArtifactVersionsExist()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "1.0.0-pkg.1.2.0+account");
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":2}"), "1.0.0-pkg.1.2.1+account");
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":3}"), "2.0.0-pkg.1.3.0+account");
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":4}"), "2.0.0-pkg.1.3.1+account");
+
+        // Act - Query for artifact version 1.0.0
+        var result1 = instance.FindData("1.0.0");
+        // Query for artifact version 2.0.0
+        var result2 = instance.FindData("2.0.0");
+
+        // Assert
+        Assert.NotNull(result1);
+        Assert.Equal("1.0.0-pkg.1.2.1+account", result1.Version);
+
+        Assert.NotNull(result2);
+        Assert.Equal("2.0.0-pkg.1.3.1+account", result2.Version);
+    }
+
+    [Fact]
+    public void FindData_ShouldReturnNull_WhenArtifactVersionNotFound()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "1.0.0-pkg.1.2.0+account");
+
+        // Act
+        var result = instance.FindData("2.0.0");
+
+        // Assert
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void FindData_ShouldHandlePartialVersion_WithExtendedFormat()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "1.0.0-pkg.1.2.0+account");
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":2}"), "1.0.1-pkg.1.2.1+account");
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":3}"), "1.1.0-pkg.1.3.0+account");
+
+        // Act - Partial version "1.0" should find highest matching
+        var result = instance.FindData("1.0");
+
+        // Assert
+        Assert.NotNull(result);
+        // Should find highest version starting with 1.0.x
+        Assert.StartsWith("1.0.", InstanceDataVersionComparer.GetArtifactVersion(result.Version));
+    }
+
+    [Fact]
+    public void FindData_ShouldReturnSimpleVersion_WhenNoExtendedVersionExists()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "1.0.0");
+
+        // Act
+        var result = instance.FindData("1.0.0");
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal("1.0.0", result.Version);
+    }
+
+    [Fact]
+    public void FindData_ShouldPreferExactMatch_OverPkgVersionLookup()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+
+        // Add a simple version and an extended version with same artifact
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "1.0.0");
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":2}"), "1.0.0-pkg.1.2.0+account");
+
+        // Act - Query for exact simple version
+        var result = instance.FindData("1.0.0");
+
+        // Assert - Should return the exact match (simple version)
+        Assert.NotNull(result);
+        Assert.Equal("1.0.0", result.Version);
+    }
+
+    [Fact]
+    public void FindData_ShouldFindPreReleaseArtifactVersion()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "1.0.0-alpha.1-pkg.1.17.0+account");
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":2}"), "1.0.0-alpha.1-pkg.1.18.0+account");
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":3}"), "1.0.0-pkg.1.0.0+account");
+
+        // Act - Query for pre-release artifact version
+        var result = instance.FindData("1.0.0-alpha.1");
+
+        // Assert - Should return highest pkg version for 1.0.0-alpha.1
+        Assert.NotNull(result);
+        Assert.Equal("1.0.0-alpha.1-pkg.1.18.0+account", result.Version);
+    }
+
+    [Fact]
+    public void FindData_ShouldFindExactPreReleaseVersion()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+
+        var exactVersion = "1.0.0-beta.2-pkg.1.5.0+customer";
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), exactVersion);
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":2}"), "1.0.0-beta.2-pkg.1.6.0+customer");
+
+        // Act - Query for exact version
+        var result = instance.FindData(exactVersion);
+
+        // Assert - Should return exact match
+        Assert.NotNull(result);
+        Assert.Equal(exactVersion, result.Version);
+    }
+
+    [Fact]
+    public void FindData_ShouldHandleMultipleBuildMetadata()
+    {
+        // Arrange
+        var instance = InstanceFactory.CreateDefault();
+
+        instance.AddDataWithVersion(Guid.NewGuid(), JsonData.CreateFrom("{\"v\":1}"), "1.0.0-pkg.1.17.0+account+build.123");
+
+        // Act - Query for artifact version
+        var result = instance.FindData("1.0.0");
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal("1.0.0-pkg.1.17.0+account+build.123", result.Version);
+    }
+
+    #endregion
+
     [Fact]
     public void SetKey_ShouldUpdateKey_WhenValid()
     {

@@ -40,6 +40,33 @@ public interface ITransitionStep
 
 **Note:** Pipeline steps use the Result pattern, returning `Result<StepOutcome>` for exception-free error handling and flow control.
 
+**Aether SDK Integration:** All pipeline steps use `[Trace]` attribute for automatic OpenTelemetry span creation:
+
+```csharp
+public sealed class ChangeStateStep : ITransitionStep
+{
+    public int Order => LifecycleOrder.ChangeState;
+
+    [Trace]  // Aether SDK aspect for distributed tracing
+    public async Task<Result<StepOutcome>> ExecuteAsync(
+        TransitionExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        // Set display name for trace visualization
+        Activity.Current?.SetDisplayName($"[{Order}] {nameof(ChangeStateStep)}");
+        
+        // Railway chain with Tap and OnSuccess for side effects
+        return await Result.Ok(BuildStateTransitionInfo(context))
+            .Tap(info => RecordTransitionMetric(context, info))
+            .TapAsync(info => PerformStateChangeAsync(context, info, cancellationToken))
+            .ThenAsync(_ => UpdateTargetStateInContext(context))
+            .OnSuccess(_ => RecordStateEntryMetric(context))
+            .OnSuccess(_ => LogStateChange(context))
+            .MapAsync(_ => StepOutcome.Continue());
+    }
+}
+```
+
 #### ITransitionHandler
 ```csharp
 public interface ITransitionHandler
@@ -615,6 +642,9 @@ services.AddScoped<ITransitionHandler, WebhookTransitionHandler>();
 - Use dependency injection for services
 - Return appropriate `StepOutcome` for flow control
 - Use Result pattern for error handling
+- Use `[Trace]` attribute for automatic span creation
+- Set `Activity.Current?.SetDisplayName()` for trace visualization
+- Use Railway extensions (`Tap`, `OnSuccess`, `BindAsync`) for clean chains
 - Log entry/exit for observability
 
 ### Trigger Handlers
@@ -637,6 +667,8 @@ services.AddScoped<ITransitionHandler, WebhookTransitionHandler>();
 
 ## Related Documentation
 
+- [Aether SDK Aspects](./aether-sdk-aspects.md) - Cross-cutting concerns with `[Trace]`, `[UnitOfWork]`, `[Log]`
+- [Result Pattern & Railway Programming](./result-pattern-railway.md) - Error handling with Result pattern
 - [Strategy Pattern Implementation](./strategy-pattern-implementation.md) - Execution strategy details
 - [OpenTelemetry Logging](./opentelemetry-logging.md) - Distributed tracing and logging
 - [Background Jobs](./background-jobs.md) - Dapr Jobs integration

@@ -798,6 +798,4 @@ For efficient development of CSX scripts, use the automated development tools:
 
 - **Workflow Development Automation**: Automatically converts CSX files to base64 encoded JSON
 - **File Watching**: Real-time updates when CSX files change
-- **VS Code Integration**: Keyboard shortcuts and tasks for rapid development
-
-See [Workflow Development Automation](./workflow-development-automation.md) for detailed setup and usage instructions. 
+- **VS Code Integration**: Keyboard shortcuts and tasks for rapid development 

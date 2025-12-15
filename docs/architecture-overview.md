@@ -442,13 +442,97 @@ For detailed documentation, see [Transition Pipeline Architecture](./transition-
 - Orchestration API optimized for client experience
 - Better resource utilization
 
+## Inbox/Outbox Workers
+
+The system includes dedicated worker services for reliable event processing:
+
+### Workers Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      Worker Services                             │
+│  ┌─────────────────────────┐  ┌─────────────────────────────┐   │
+│  │  BBT.Workflow.Workers   │  │  BBT.Workflow.Workers       │   │
+│  │       .Inbox            │  │       .Outbox               │   │
+│  │                         │  │                             │   │
+│  │ • InboxProcessorHosted  │  │ • OutboxProcessorHosted     │   │
+│  │   Service               │  │   Service                   │   │
+│  │ • Event Handlers        │  │ • IOutboxProcessor          │   │
+│  │ • IInboxProcessor       │  │ • Dapr PubSub Publishing    │   │
+│  └─────────────────────────┘  └─────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Inbox Worker
+
+Processes incoming events from the message broker:
+
+- `InstanceSubCompletedEventHandler` - Handles subflow completion
+- `InstanceCanceledEventHandler` - Handles instance cancellation
+- `ChildSubflowCancelRequestedEventHandler` - Handles child cancellation requests
+
+### Outbox Worker
+
+Publishes pending events from the outbox table:
+
+- Polls outbox table for pending messages
+- Publishes to Dapr PubSub
+- Handles retry logic and dead-letter scenarios
+
+For detailed documentation, see [Inbox/Outbox Workers](./inbox-outbox-workers.md).
+
+## Aether SDK Integration
+
+The system leverages Aether SDK for cross-cutting concerns:
+
+### Aspects
+
+| Aspect | Purpose |
+|--------|---------|
+| `[UnitOfWork]` | Transaction management |
+| `[Log]` | Structured logging |
+| `[Trace]` | OpenTelemetry distributed tracing |
+| `[Enrich]` | Log context enrichment |
+| `[AutoUnitOfWork]` | Assembly-level automatic UoW |
+
+### Result Pattern
+
+All business operations use `Result<T>` for exception-free error handling with Railway Programming extensions:
+
+- `BindAsync` - Chain async Result operations
+- `MapAsync` - Transform success values
+- `ThenAsync` - Chain sync operations
+- `Tap/TapAsync` - Side effects without changing Result
+- `OnSuccess` - Execute on success only
+
+### Example Usage
+
+```csharp
+[UnitOfWork]
+[Log]
+[Trace]
+public Task<Result<TransitionOutput>> ExecuteTransitionAsync(
+    [Enrich] WorkflowExecutionContext context,
+    CancellationToken cancellationToken = default)
+{
+    return GetExecutionStrategy(context.Mode)
+        .BindAsync(strategy => ExecuteStrategyAsync(strategy, context, cancellationToken))
+        .BindAsync(execCtx => BuildTransitionOutputAsync(context, execCtx, cancellationToken));
+}
+```
+
+For detailed documentation, see:
+- [Aether SDK Aspects](./aether-sdk-aspects.md)
+- [Result Pattern & Railway Programming](./result-pattern-railway.md)
+
 ## Deployment Considerations
 
 ### Development Environment
-Both APIs run simultaneously using Docker Compose for local development.
+Both APIs and Workers run simultaneously using Docker Compose for local development.
 
 ### Production Environment
 - Deploy APIs as separate services
+- Deploy Workers as separate services with appropriate replicas
 - Use service discovery for internal communication
 - Implement circuit breakers and retry policies
 - Monitor each service independently 
