@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:20-slim
 
 ENV VNEXT_CORE_RUNTIME_VERSION=latest \
     NPM_REGISTRY=https://registry.npmjs.org/ \
@@ -7,8 +7,11 @@ ENV VNEXT_CORE_RUNTIME_VERSION=latest \
 
 WORKDIR /app
 
-# Install required packages - avoid apk upgrade for QEMU/multi-arch compatibility
-RUN apk add --no-cache bash curl jq
+# Install required packages (Debian-based - better QEMU/multi-arch compatibility)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl jq \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Set up directories and permissions
 RUN mkdir -p /app/.npm-cache \
