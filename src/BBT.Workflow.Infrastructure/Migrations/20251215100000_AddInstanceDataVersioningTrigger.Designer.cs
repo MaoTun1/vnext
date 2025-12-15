@@ -296,8 +296,8 @@ namespace BBT.Workflow.Migrations
 
                     b.Property<string>("Version")
                         .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
+                        .HasMaxLength(180)
+                        .HasColumnType("character varying(180)");
 
                     b.Property<long>("VersionNo")
                         .ValueGeneratedOnAdd()
