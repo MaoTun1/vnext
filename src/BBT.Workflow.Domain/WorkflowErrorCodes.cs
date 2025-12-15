@@ -18,6 +18,7 @@ public static class WorkflowErrorCodes
     public const string TransitionHandlerNotSupported = "App:900004";
     public const string InvalidSchema = "App:900005";
     public const string InvalidWorkflow = "App:900006";
+    public const string MigrationFailed = "App:900007";
 
     #endregion
     
@@ -32,6 +33,9 @@ public static class WorkflowErrorCodes
     public const string CancelNotConfiguredForWorkflow = "Instance:100016";
     public const string InstanceNotFound = "Instance:100017";
     public const string InstanceCompleted = "Instance:100018";
+    public const string DuplicateInstanceKey = "Instance:100019";
+    public const string InstanceCancellationFailed = "Instance:100020";
+    public const string ChildSubflowCancellationFailed = "Instance:100021";
     
     #endregion
     
@@ -62,6 +66,16 @@ public static class WorkflowErrorCodes
     public const string TaskPersistenceStrategyNotFound = "Task:400003";
     public const string TaskCreationPersistenceFailed = "Task:400004";
     public const string TaskCompletionPersistenceFailed = "Task:400005";
+    public const string TaskHeadersConversionFailed = "Task:400006";
+    public const string TaskInputMappingFailed = "Task:400007";
+    public const string TaskOutputMappingFailed = "Task:400008";
+    public const string UnsupportedTaskType = "Task:400009";
+    public const string TaskBindingMappingFailed = "Task:400010";
+    public const string TaskExecutionFailed = "Task:400011";
+    public const string TaskCoordinationFailed = "Task:400012";
+    public const string TaskRemoteInvocationFailed = "Task:400013";
+    public const string TaskFactoryCreationFailed = "Task:400014";
+    public const string TaskHandlerNotFound = "Task:400015";
     
     #endregion
     
@@ -70,7 +84,6 @@ public static class WorkflowErrorCodes
     public const string CacheItemNotFound = "Cache:300001";
     public const string CacheInvalidKey = "Cache:300002";
     public const string CacheTypeNotSupported = "Cache:300003";
-    public const string TaskHeadersConversionFailed = "Task:400003";
     
     #endregion
     

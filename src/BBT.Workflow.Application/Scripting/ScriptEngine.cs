@@ -4,6 +4,7 @@ using BBT.Workflow.Scripting.Functions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Scripting;
 using System.Diagnostics;
+using System.Text.Json.Serialization;
 using BBT.Workflow.Definitions.Timer;
 
 namespace BBT.Workflow.Scripting;
@@ -34,7 +35,8 @@ public sealed class ScriptEngine(
         MetadataReference.CreateFromFile(typeof(Task).Assembly.Location),
         MetadataReference.CreateFromFile(typeof(Dictionary<,>).Assembly.Location),
         MetadataReference.CreateFromFile(typeof(Microsoft.CSharp.RuntimeBinder.CSharpArgumentInfo).Assembly.Location),
-        MetadataReference.CreateFromFile(typeof(ScriptHelper).Assembly.Location)
+        MetadataReference.CreateFromFile(typeof(ScriptHelper).Assembly.Location),
+        MetadataReference.CreateFromFile(typeof(JsonSerializableAttribute).Assembly.Location),
     ]);
 
     /// <summary>
@@ -50,6 +52,8 @@ public sealed class ScriptEngine(
         "System.Threading",
         "System.Threading.Tasks",
         "System.Dynamic",
+        "System.Text.Json.Serialization",
+        "BBT.Workflow.Shared",
         "BBT.Workflow.Scripting",
         "BBT.Workflow.Definitions",
         "BBT.Workflow.Instances",

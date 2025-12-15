@@ -1,5 +1,4 @@
 using BBT.Workflow.Monitoring;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
@@ -10,22 +9,11 @@ namespace BBT.Workflow.Middlewares;
 /// Middleware that automatically records comprehensive HTTP metrics for all requests.
 /// This middleware captures request duration, response size, error rates, and other HTTP metrics.
 /// </summary>
-public sealed class HttpMetricsMiddleware
+public sealed class HttpMetricsMiddleware(
+    RequestDelegate next,
+    IWorkflowMetrics workflowMetrics,
+    ILogger<HttpMetricsMiddleware> logger)
 {
-    private readonly RequestDelegate _next;
-    private readonly IWorkflowMetrics _workflowMetrics;
-    private readonly ILogger<HttpMetricsMiddleware> _logger;
-
-    public HttpMetricsMiddleware(
-        RequestDelegate next,
-        IWorkflowMetrics workflowMetrics,
-        ILogger<HttpMetricsMiddleware> logger)
-    {
-        _next = next;
-        _workflowMetrics = workflowMetrics;
-        _logger = logger;
-    }
-
     /// <summary>
     /// Processes HTTP request and records comprehensive metrics
     /// </summary>
@@ -45,7 +33,7 @@ public sealed class HttpMetricsMiddleware
             context.Response.Body = responseBody;
 
             // Process the request
-            await _next(context);
+            await next(context);
             
             stopwatch.Stop();
             var statusCode = context.Response.StatusCode.ToString();
@@ -56,9 +44,9 @@ public sealed class HttpMetricsMiddleware
             await responseBody.CopyToAsync(originalBodyStream);
             
             // Record successful request metrics
-            _workflowMetrics.RecordHttpRequest(method, endpoint, statusCode);
-            _workflowMetrics.RecordHttpRequestDuration(method, endpoint, statusCode, stopwatch.Elapsed.TotalSeconds);
-            _workflowMetrics.RecordHttpResponseSize(method, endpoint, statusCode, responseSize);
+            workflowMetrics.RecordHttpRequest(method, endpoint, statusCode);
+            workflowMetrics.RecordHttpRequestDuration(method, endpoint, statusCode, stopwatch.Elapsed.TotalSeconds);
+            workflowMetrics.RecordHttpResponseSize(method, endpoint, statusCode, responseSize);
         }
         catch (Exception ex)
         {
@@ -69,15 +57,15 @@ public sealed class HttpMetricsMiddleware
             var errorType = ex.GetType().Name;
             
             // Record HTTP error metrics
-            _workflowMetrics.RecordHttpRequest(method, endpoint, statusCode);
-            _workflowMetrics.RecordHttpError(method, endpoint, errorType);
-            _workflowMetrics.RecordHttpRequestDuration(method, endpoint, statusCode, stopwatch.Elapsed.TotalSeconds);
+            workflowMetrics.RecordHttpRequest(method, endpoint, statusCode);
+            workflowMetrics.RecordHttpError(method, endpoint, errorType);
+            workflowMetrics.RecordHttpRequestDuration(method, endpoint, statusCode, stopwatch.Elapsed.TotalSeconds);
             
             // Record workflow error and exception metrics
-            _workflowMetrics.RecordWorkflowError("system", "high", "HttpMiddleware");
-            _workflowMetrics.RecordWorkflowException(errorType, "HttpMiddleware", $"{method} {endpoint}");
+            workflowMetrics.RecordWorkflowError("system", "high", "HttpMiddleware");
+            workflowMetrics.RecordWorkflowException(errorType, "HttpMiddleware", $"{method} {endpoint}");
             
-            _logger.LogWarning(ex, "HTTP request failed: {Method} {Endpoint} with {ErrorType} after {Duration}ms",
+            logger.LogWarning(ex, "HTTP request failed: {Method} {Endpoint} with {ErrorType} after {Duration}ms",
                 method, endpoint, errorType, stopwatch.ElapsedMilliseconds);
             
             throw;
@@ -144,19 +132,5 @@ public sealed class HttpMetricsMiddleware
         }
         
         return normalizedPath;
-    }
-}
-
-/// <summary>
-/// Extension methods for HTTP metrics middleware registration
-/// </summary>
-public static class HttpMetricsMiddlewareExtensions
-{
-    /// <summary>
-    /// Adds HTTP metrics middleware to the pipeline
-    /// </summary>
-    public static IApplicationBuilder UseWorkflowHttpMetrics(this IApplicationBuilder app)
-    {
-        return app.UseMiddleware<HttpMetricsMiddleware>();
     }
 }

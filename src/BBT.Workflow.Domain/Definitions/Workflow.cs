@@ -44,11 +44,11 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
         Timeout = timeout;
         Cancel = cancel;
         this.labels = labels;
-        this.functions = functions;
-        this.features = features;
+        this.functions = functions ?? [];
+        this.features = features ?? [];
         this.states = states;
-        this.extensions = extensions;
-        this.sharedTransitions = sharedTransitions;
+        this.extensions = extensions ?? [];
+        this.sharedTransitions = sharedTransitions ?? [];
         StartTransition = startTransition;
     }
 

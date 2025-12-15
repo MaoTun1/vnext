@@ -1,3 +1,4 @@
+using BBT.Aether;
 using BBT.Aether.Domain;
 using BBT.Aether.Domain.EntityFrameworkCore;
 using BBT.Aether.Domain.Repositories;
@@ -93,7 +94,7 @@ public sealed class EfCoreInstanceRepository(
     // No need for manual transaction tracking helpers
 
     public async Task<Instance?> FindByIdentifierAsync(
-        string identifier,
+        string? identifier,
         CancellationToken cancellationToken = default)
     {
         var query = (await WithDetailsAsync())
@@ -260,6 +261,18 @@ public sealed class EfCoreInstanceRepository(
             .AsNoTracking() // Don't track changes for read-only operations
             .AsSplitQuery() // Use split queries for better performance with joins
             .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> AnyActiveByKeyAsync(string key, Guid excludeInstanceId, CancellationToken cancellationToken = default)
+    {
+        return await (await GetDbSetAsync())
+            .AsNoTracking()
+            .AnyAsync(
+                i => i.Key == key 
+                     && i.Id != excludeInstanceId 
+                     && i.Status == InstanceStatus.Active,
+                cancellationToken);
     }
 
     /// <summary>

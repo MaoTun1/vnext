@@ -6,6 +6,8 @@ using BBT.Workflow.Logging;
 using System.Diagnostics;
 using BBT.Aether.Aspects;
 using BBT.Aether.Results;
+using BBT.Workflow.Runtime;
+using BBT.Workflow.Tasks.Coordinator;
 
 namespace BBT.Workflow.Execution.Pipeline.Steps;
 
@@ -15,15 +17,15 @@ namespace BBT.Workflow.Execution.Pipeline.Steps;
 /// Uses Result pattern for exception-free error handling.
 /// </summary>
 public sealed class RunOnExecuteTasksStep(
-    ITaskOrchestrationService taskOrchestrationService,
+    ITaskCoordinator taskCoordinator,
     IScriptContextFactory scriptContextFactory,
-    IInstanceRepository instanceRepository) : ITransitionStep
+    IInstanceRepository instanceRepository,
+    IRuntimeInfoProvider runtimeInfoProvider) : ITransitionStep
 {
     /// <inheritdoc />
     public int Order => LifecycleOrder.OnExecute;
 
     /// <inheritdoc />
-    [Log]
     [Trace]
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
     {
@@ -36,12 +38,18 @@ public sealed class RunOnExecuteTasksStep(
         }
 
         // Railway chain: Build context -> Execute tasks -> Apply changes -> Persist
-        return await Result.Ok(context)
-            .MapAsync(ctx => BuildScriptContextAsync(ctx, cancellationToken))
-            .TapAsync(scriptContext => ExecuteTasksAsync(context, scriptContext, cancellationToken))
-            .Tap(context.ApplyScriptContextChanges)
-            .TapAsync(_ => instanceRepository.UpdateAsync(context.Instance, true, cancellationToken))
-            .Map(_ => StepOutcome.Continue());
+        var scriptContext = await BuildScriptContextAsync(context, cancellationToken);
+        
+        var executeResult = await ExecuteTasksAsync(context, scriptContext, cancellationToken);
+        if (!executeResult.IsSuccess)
+        {
+            return Result<StepOutcome>.Fail(executeResult.Error);
+        }
+        
+        context.ApplyScriptContextChanges(scriptContext);
+        await instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
+        
+        return Result<StepOutcome>.Ok(StepOutcome.Continue());
     }
 
     /// <summary>
@@ -63,16 +71,16 @@ public sealed class RunOnExecuteTasksStep(
     }
 
     /// <summary>
-    /// Executes the OnExecute tasks.
+    /// Executes the OnExecute tasks and returns Result for error propagation.
     /// </summary>
-    private async Task ExecuteTasksAsync(
+    private async Task<Result> ExecuteTasksAsync(
         TransitionExecutionContext context,
         ScriptContext scriptContext,
         CancellationToken cancellationToken)
     {
         var instanceTransitionId = GetTransitionRecordId(context);
 
-        await taskOrchestrationService.ExecuteAsync(
+        return await taskCoordinator.ExecuteAsync(
             context.Transition!.OnExecutionTasks,
             instanceTransitionId,
             TaskTrigger.OnExecute,
@@ -93,11 +101,12 @@ public sealed class RunOnExecuteTasksStep(
         TransitionExecutionContext context,
         CancellationToken cancellationToken)
     {
-        return await scriptContextFactory.NewBuilder()
+        return await scriptContextFactory.NewBuilder(instanceRepository)
             .WithWorkflow(context.Workflow)
             .WithInstance(context.Instance)
             .WithTransition(context.Transition)
             .WithBody(context.Data)
+            .WithRuntime(runtimeInfoProvider)
             .WithHeaders(context.Headers.ToDictionary(kvp => kvp.Key, kvp => kvp.Value))
             .BuildAsync(cancellationToken);
     }

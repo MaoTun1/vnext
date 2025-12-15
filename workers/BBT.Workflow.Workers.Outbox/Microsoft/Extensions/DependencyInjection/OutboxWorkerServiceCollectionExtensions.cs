@@ -14,17 +14,33 @@ public static class OutboxWorkerServiceCollectionExtensions
     /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddWorkerOutboxModule(this IServiceCollection services)
     {
+        var configuration = services.GetConfiguration();
         services
-            .AddWorkflowApiBase()
-            .AddWorkflowDaprClients()
-            .AddWorkflowHttpClient();
-        
-        // Add health checks separately to avoid ambiguity
-        services.AddAppHealthChecks();
-        
-        // Register hosted service
+            .AddDomainModule()
+            .AddApplicationModule()
+            .AddInfrastructureModule()
+            .AddAspNetCoreModules(configuration)
+            .AddResultResilience(configuration)
+            .AddDaprClients()
+            .AddAetherEventBus()
+            .AddDbContext(configuration)
+            .AppMapper()
+            .AddTelemetry(configuration)
+            .AddDistributedCache(configuration)
+            .AddDistributedLock(configuration)
+            .AddBackgroundJob()
+            .AddRedis()
+            .AddExceptionHandling()
+            .AddRuntimeMiddleware()
+            .AddHeaderService()
+            .AddWorkflowHttpClient() // TODO: Düşün!!!!
+            .AddHostedServices()
+            .AddAppHealthChecks();
+        return services;
+    }
+    private static IServiceCollection AddHostedServices(this IServiceCollection services)
+    {
         services.AddHostedService<OutboxProcessorHostedService>();
-        
         return services;
     }
 }

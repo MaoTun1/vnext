@@ -10,6 +10,8 @@ using BBT.Workflow.Instances;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks;
 using BBT.Workflow.Logging;
+using BBT.Workflow.Runtime;
+using BBT.Workflow.Tasks.Coordinator;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Execution.Pipeline.Steps;
@@ -24,13 +26,14 @@ public sealed class ScheduleTransitionsStep(
     ITaskTimerService taskTimerService,
     IScriptContextFactory scriptContextFactory,
     IInstanceJobRepository jobRepository,
-    ILogger<ScheduleTransitionsStep> logger) : ITransitionStep
+    IInstanceRepository instanceRepository,
+    ILogger<ScheduleTransitionsStep> logger,
+    IRuntimeInfoProvider runtimeInfoProvider) : ITransitionStep
 {
     /// <inheritdoc />
     public int Order => LifecycleOrder.Schedule;
 
     /// <inheritdoc />
-    [Log]
     [Trace]
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context,
         CancellationToken cancellationToken)
@@ -80,7 +83,7 @@ public sealed class ScheduleTransitionsStep(
         // Railway chain: Build context -> Evaluate timer -> Build payload -> Enqueue -> Persist
         return await Result.Ok(scheduledTransition)
             .MapAsync(transition => BuildScriptContextAsync(context, transition, cancellationToken))
-            .MapAsync(scriptContext => EvaluateTimerAsync(scheduledTransition, scriptContext, cancellationToken))
+            .BindAsync(scriptContext => EvaluateTimerAsync(scheduledTransition, scriptContext, cancellationToken))
             .Map(timerSchedule => BuildSchedulingInfo(context, scheduledTransition, timerSchedule))
             .ThenAsync(info => EnqueueAndPersistAsync(info, cancellationToken));
     }
@@ -94,9 +97,10 @@ public sealed class ScheduleTransitionsStep(
         CancellationToken cancellationToken)
     {
         return await scriptContextFactory
-            .NewBuilder()
+            .NewBuilder(instanceRepository)
             .WithWorkflow(context.Workflow)
             .WithInstance(context.Instance)
+            .WithRuntime(runtimeInfoProvider)
             .WithTransition(scheduledTransition)
             .WithHeaders(context.Headers.ToDictionary(kvp => kvp.Key, kvp => kvp.Value))
             .WithRouteValues(context.RouteValues.ToDictionary(kvp => kvp.Key, kvp => kvp.Value))
@@ -106,7 +110,7 @@ public sealed class ScheduleTransitionsStep(
     /// <summary>
     /// Evaluates timer to get the schedule.
     /// </summary>
-    private async Task<TimerSchedule> EvaluateTimerAsync(
+    private async Task<Result<TimerSchedule>> EvaluateTimerAsync(
         Transition scheduledTransition,
         ScriptContext scriptContext,
         CancellationToken cancellationToken)

@@ -18,7 +18,6 @@ public class ForwardToActiveSubflowStep(
     public int Order => LifecycleOrder.ForwardToActiveSubflow;
 
     /// <inheritdoc />
-    [Log]
     [Trace]
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context,
         CancellationToken cancellationToken)
@@ -53,7 +52,11 @@ public class ForwardToActiveSubflowStep(
             context.Instance.Subflow!.SubFlowDomain,
             context.Instance.Subflow!.SubFlowName,
             context.Instance.Subflow!.SubFlowVersion,
-            context.DataElement,
+            new TransitionDataInput(context.DataElement)
+            {
+                Key = context.InstanceKey,
+                Tags = context.Tags
+            },
             true // sync = true
         )
         {

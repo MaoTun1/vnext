@@ -1,10 +1,10 @@
 # Transition Pipeline Architecture
 
-This documentation describes the new **Transition Pipeline Architecture** refactoring implemented in the BBT.Workflow project.
+This documentation describes the **Transition Pipeline Architecture** implemented in the BBT.Workflow project.
 
 ## Overview
 
-The new architecture is designed to make transition execution **readable, testable, and extensible**. It reduces complexity on the `StateMachineExecutor` and defines Auto/Schedule **re-entry** scenarios as first-class citizens.
+The architecture is designed to make transition execution **readable, testable, and extensible**. It reduces complexity on the `StateMachineExecutor` and defines Auto/Schedule **re-entry** scenarios as first-class citizens.
 
 ## Core Principles
 
@@ -13,6 +13,7 @@ The new architecture is designed to make transition execution **readable, testab
 - **Context Rehydration:** Context is not carried over in Auto/Schedule re-entry; it is rebuilt in a new DI scope
 - **No Service Locator:** Services are not in Context but injected into steps/handlers via DI
 - **Idempotency & Lock:** Instance-based locking and idempotency is a core feature
+- **Post-Commit Processing:** Inline auto chain runs after UoW commit for data consistency
 
 ## Architecture Components
 
@@ -40,6 +41,33 @@ public interface ITransitionStep
 
 **Note:** Pipeline steps use the Result pattern, returning `Result<StepOutcome>` for exception-free error handling and flow control.
 
+**Aether SDK Integration:** All pipeline steps use `[Trace]` attribute for automatic OpenTelemetry span creation:
+
+```csharp
+public sealed class ChangeStateStep : ITransitionStep
+{
+    public int Order => LifecycleOrder.ChangeState;
+
+    [Trace]  // Aether SDK aspect for distributed tracing
+    public async Task<Result<StepOutcome>> ExecuteAsync(
+        TransitionExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        // Set display name for trace visualization
+        Activity.Current?.SetDisplayName($"[{Order}] {nameof(ChangeStateStep)}");
+        
+        // Railway chain with Tap and OnSuccess for side effects
+        return await Result.Ok(BuildStateTransitionInfo(context))
+            .Tap(info => RecordTransitionMetric(context, info))
+            .TapAsync(info => PerformStateChangeAsync(context, info, cancellationToken))
+            .ThenAsync(_ => UpdateTargetStateInContext(context))
+            .OnSuccess(_ => RecordStateEntryMetric(context))
+            .OnSuccess(_ => LogStateChange(context))
+            .MapAsync(_ => StepOutcome.Continue());
+    }
+}
+```
+
 #### ITransitionHandler
 ```csharp
 public interface ITransitionHandler
@@ -50,25 +78,191 @@ public interface ITransitionHandler
 }
 ```
 
-### 2. Pipeline Steps (Lifecycle Order)
+### 2. TransitionRunner (New)
+
+The `TransitionRunner` orchestrates transition chaining with isolated DI scope and UoW per hop. This is the entry point for transition execution.
+
+#### ITransitionRunner Interface
+```csharp
+public interface ITransitionRunner
+{
+    /// <summary>
+    /// Runs a transition and any subsequent inline auto chain transitions.
+    /// Each hop is executed in a new DI scope with RequiresNew UoW for complete isolation.
+    /// </summary>
+    Task<Result<TransitionOutput>> RunAsync(
+        WorkflowExecutionContext context,
+        CancellationToken cancellationToken = default);
+}
+```
+
+#### TransitionRunner Implementation
+```csharp
+public sealed class TransitionRunner(
+    IServiceScopeFactory scopeFactory,
+    IOptions<ReentryOptions> options,
+    ILogger<TransitionRunner> logger) : ITransitionRunner
+{
+    private readonly ReentryOptions _options = options.Value;
+
+    [Trace]
+    public async Task<Result<TransitionOutput>> RunAsync(
+        WorkflowExecutionContext context,
+        CancellationToken cancellationToken = default)
+    {
+        var queue = new Queue<WorkflowExecutionContext>();
+        queue.Enqueue(context);
+
+        var hop = 0;
+        TransitionOutput? lastOutput = null;
+
+        while (queue.TryDequeue(out var current))
+        {
+            hop++;
+
+            // Guard: prevent infinite loops
+            if (hop > _options.MaxAutoHops)
+            {
+                return Result<TransitionOutput>.Fail(
+                    Error.Validation("auto.chain.maxhops", $"Auto chain exceeded max hops: {_options.MaxAutoHops}"));
+            }
+
+            // Execute in isolated scope + UoW
+            var hopResult = await ExecuteHopAsync(current, cancellationToken);
+            if (!hopResult.IsSuccess)
+                return Result<TransitionOutput>.Fail(hopResult.Error);
+
+            var coreOutput = hopResult.Value!;
+            lastOutput = coreOutput.Output;
+
+            // POST-COMMIT: enqueue inline auto chain transitions
+            if (coreOutput.DirectivesSnapshot.HasQueuedTransitions)
+            {
+                foreach (var cmd in coreOutput.DirectivesSnapshot.InlineAutoQueue)
+                {
+                    var nextCmd = cmd with { ChainDepth = cmd.ChainDepth + 1 };
+                    
+                    if (nextCmd.ChainDepth <= _options.MaxAutoHops)
+                    {
+                        queue.Enqueue(WorkflowExecutionContext.From(nextCmd));
+                    }
+                }
+            }
+        }
+
+        return lastOutput is null
+            ? Result<TransitionOutput>.Fail(Error.Failure("transition.output.missing", "Transition output missing"))
+            : Result<TransitionOutput>.Ok(lastOutput);
+    }
+
+    /// <summary>
+    /// Executes a single transition hop in a new DI scope with RequiresNew UoW.
+    /// </summary>
+    private async Task<Result<TransitionCoreOutput>> ExecuteHopAsync(
+        WorkflowExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var sp = scope.ServiceProvider;
+
+        var uowManager = sp.GetRequiredService<IUnitOfWorkManager>();
+        var core = sp.GetRequiredService<IWorkflowExecutionCore>();
+
+        await using var uow = await uowManager.BeginAsync(
+            new UnitOfWorkOptions { Scope = UnitOfWorkScopeOption.RequiresNew },
+            cancellationToken);
+
+        var coreResult = await core.ExecuteTransitionCoreAsync(context, cancellationToken);
+        if (!coreResult.IsSuccess)
+            return Result<TransitionCoreOutput>.Fail(coreResult.Error);
+
+        // Commit is THE boundary - post-commit processing happens after this
+        await uow.CommitAsync(cancellationToken);
+
+        return coreResult;
+    }
+}
+```
+
+**Key Design Decisions:**
+- **Isolated DI Scope per Hop**: Each transition runs in a new DI scope
+- **RequiresNew UoW**: Complete isolation from any ambient UoW
+- **Post-Commit Processing**: Inline auto chain is processed AFTER UoW commit
+- **DirectivesSnapshot**: Captures queue state for cross-UoW boundary transfer
+- **MaxAutoHops Guard**: Prevents infinite loops with configurable limit
+
+### 3. IWorkflowExecutionCore
+
+Core transition execution contract without UoW management:
+
+```csharp
+public interface IWorkflowExecutionCore
+{
+    /// <summary>
+    /// Executes a single transition's core logic without managing UoW.
+    /// Returns both the transition output and directives snapshot for post-commit processing.
+    /// </summary>
+    Task<Result<TransitionCoreOutput>> ExecuteTransitionCoreAsync(
+        WorkflowExecutionContext context,
+        CancellationToken cancellationToken = default);
+}
+```
+
+#### TransitionCoreOutput
+```csharp
+/// <summary>
+/// Output from core transition execution containing both the transition output
+/// and the directives snapshot for post-commit inline auto chain processing.
+/// </summary>
+public sealed record TransitionCoreOutput(TransitionOutput Output, DirectivesSnapshot DirectivesSnapshot);
+```
+
+### 4. Pipeline Steps (Lifecycle Order)
 
 All steps implement `ITransitionStep` and return `Result<StepOutcome>`:
 
-1. **ForwardToActiveSubflowStep** (Order: 5) - Forwards transition to active subflow if exists
-2. **CreateTransitionRecordStep** (Order: 10) - Creates the transition record
-3. **RunOnExecuteTasksStep** (Order: 20) - Executes the transition's OnExecute tasks
-4. **RunOnExitTasksStep** (Order: 30) - Executes the current state's OnExit tasks
-5. **ChangeStateStep** (Order: 40) - Performs the state change
-6. **RunOnEntryTasksStep** (Order: 50) - Executes the target state's OnEntry tasks
-7. **HandleSubFlowStep** (Order: 60) - Manages SubFlow operations
-8. **ClearBusyOnResumeStep** (Order: 69) - Clears BUSY status on resume
-9. **ScheduleTransitionsStep** (Order: 70) - Schedules timed transitions
-10. **RunAutomaticTransitionsStep** (Order: 80) - Enqueues automatic transitions for execution
-11. **HandleFinishStep** (Order: 90) - Handles workflow completion
-12. **FinalizeTransitionStep** (Order: 100) - Finalizes the transition and performs cleanup
-13. **ProcessInlineAutoChainStep** (Order: 101) - Processes inline automatic transition chain
+| Order | Step | Description |
+|-------|------|-------------|
+| 5 | ForwardToActiveSubflowStep | Forwards transition to active subflow if exists (Preflight) |
+| 10 | HandleCancelPreflightStep | Handles cancel preflight operations |
+| 20 | CreateTransitionRecordStep | Creates the transition record |
+| 30 | RunOnExecuteTasksStep | Executes the transition's OnExecute tasks |
+| 40 | RunOnExitTasksStep | Executes the current state's OnExit tasks |
+| 50 | ChangeStateStep | Performs the state change |
+| 60 | RunOnEntryTasksStep | Executes the target state's OnEntry tasks |
+| 70 | HandleSubFlowStep | Manages SubFlow operations |
+| 79 | ClearBusyOnResumeStep | Clears BUSY status on resume |
+| 80 | ScheduleTransitionsStep | Schedules timed transitions |
+| 90 | RunAutomaticTransitionsStep | Evaluates and enqueues automatic transitions |
+| 100 | HandleFinishStep | Handles workflow completion |
+| 110 | FinalizeTransitionStep | Finalizes the transition and performs cleanup |
+| 111 | AfterEpilogueRefresh | Post-epilogue operations |
 
-### 3. Trigger Handlers
+### 5. LifecycleOrder
+
+Constants defining the standard execution order for transition lifecycle steps:
+
+```csharp
+public static class LifecycleOrder
+{
+    public const int Preflight = 5;               // Subflow preflight check
+    public const int ForwardToActiveSubflow = 10; // Forward to active subflow
+    public const int CreateTransition = 20;       // Create transition record
+    public const int OnExecute = 30;              // Execute transition's OnExecute tasks
+    public const int OnExit = 40;                 // Execute current state's OnExit tasks
+    public const int ChangeState = 50;            // Change the instance state
+    public const int OnEntry = 60;                // Execute target state's OnEntry tasks
+    public const int SubFlow = 70;                // Handle SubFlow operations
+    public const int ClearBusyOnResumeStep = Schedule - 1; // Clear BUSY status (79)
+    public const int Schedule = 80;               // Schedule future transitions
+    public const int Auto = 90;                   // Evaluate automatic transitions
+    public const int Finish = 100;                // Handle workflow finishing
+    public const int Finalize = 110;              // Finalize transition and cleanup
+    public const int AfterEpilogueRefresh = Finalize + 1; // Post-epilogue (111)
+}
+```
+
+### 6. Trigger Handlers
 
 #### ManualTransitionHandler
 - Policy/HMAC/Auth/Schema validation
@@ -76,9 +270,25 @@ All steps implement `ITransitionStep` and return `Result<StepOutcome>`:
 - Audit logging
 
 #### AutomaticTransitionHandler
-- Condition re-validation
 - Chain depth control
 - Execution metrics
+- System state validation
+
+```csharp
+public sealed class AutomaticTransitionHandler(
+    ITransitionValidationService validationService,
+    ILogger<AutomaticTransitionHandler> logger) : TransitionHandlerBase(logger, validationService)
+{
+    public override bool CanHandle(TriggerType triggerType) => triggerType == TriggerType.Automatic;
+
+    protected override async Task PreValidateAsync(TransitionExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        await ValidateSystemStateAsync(context);
+        await base.PreValidateAsync(context, cancellationToken);
+    }
+}
+```
 
 #### ScheduledTransitionHandler
 - Timing validation
@@ -90,7 +300,7 @@ All steps implement `ITransitionStep` and return `Result<StepOutcome>`:
 - Event correlation
 - Payload validation
 
-### 4. Re-entry System
+### 7. Re-entry System
 
 #### ReentryCommand
 ```csharp
@@ -111,7 +321,7 @@ public sealed record ReentryCommand(
 - `DispatchAutoAsync`: Manages automatic transitions (inline or background job)
 - `DispatchScheduledAsync`: Queues scheduled transitions as background jobs
 
-### 5. TransitionPipeline
+### 8. TransitionPipeline
 
 The pipeline orchestrates the execution of transition lifecycle steps in a deterministic order.
 
@@ -122,27 +332,74 @@ The pipeline orchestrates the execution of transition lifecycle steps in a deter
 - Provides structured logging and distributed tracing for each step
 - Returns `Result` to indicate success or failure without throwing exceptions
 
-#### Execution Plan Building
-The pipeline dynamically builds execution plans using the `BuildExecutionPlan` method:
+#### Implementation
 
+```csharp
+public class TransitionPipeline
+{
+    private readonly IReadOnlyList<ITransitionStep> _steps;
+
+    public TransitionPipeline(IEnumerable<ITransitionStep> steps)
+    {
+        _steps = steps.OrderBy(s => s.Order).ToList();
+    }
+
+    [Trace]
+    public async Task<Result> RunAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
+    {
+        var state = CreateInitialState(context);
+
+        while (state.HasMoreSteps())
+        {
+            // Guard: Skip immediate execution requested
+            if (context.SkipImmediateExecution)
+                return Result.Ok();
+
+            // Execute current step
+            var stepResult = await ExecuteStepAsync(state.CurrentStep, context, cancellationToken);
+            if (!stepResult.IsSuccess)
+                return Result.Fail(stepResult.Error);
+
+            // Determine flow control based on step outcome
+            var flowControl = DetermineFlowControl(stepResult.Value!, state.CurrentStep, context, state);
+
+            // Apply flow control decision
+            if (flowControl.ShouldStop)
+                break;
+
+            if (flowControl.ShouldReplan)
+            {
+                state = CreateInitialState(context);
+                continue;
+            }
+
+            state = state.MoveNext();
+        }
+
+        return Result.Ok();
+    }
+}
+```
+
+#### Execution Plan Building
 ```csharp
 private IReadOnlyList<ITransitionStep> BuildExecutionPlan(TransitionExecutionContext context)
 {
-    var ordered = _steps.ToList(); // Already ordered in constructor
+    var ordered = _steps.ToList();
 
-    // 1) ResumeFrom: Start from a specific step
+    // 1) ResumeFrom start
     var startOrder = context.Directives.ConsumeResumeFrom();
     if (startOrder.HasValue)
         ordered = ordered.Where(s => s.Order >= startOrder.Value).ToList();
 
-    // 2) Terminal State: Short-circuit to Finalize
+    // 2) Subflow terminal short circuit (until Finalize)
     if (context.Directives.TerminalReached)
     {
         var maxOrder = LifecycleOrder.Finalize;
         ordered = ordered.Where(s => s.Order <= maxOrder).ToList();
     }
 
-    // 3) Epilogue Mode: Skip or run Schedule/Auto steps
+    // 3) Epilogue policy
     if (context.Directives.Epilogue == EpilogueMode.Skip)
     {
         ordered = ordered
@@ -155,56 +412,89 @@ private IReadOnlyList<ITransitionStep> BuildExecutionPlan(TransitionExecutionCon
 }
 ```
 
-#### Planning Strategies
-- **ResumeFrom**: Start from a specific step (subflow completion, re-planning)
-- **Terminal State**: Run only up to Finalize in terminal state
-- **Epilogue Mode**: Skip or run Schedule/Auto steps based on directives
-- **Dynamic Re-planning**: Rebuild plan when directives change mid-execution
-
-### 6. LifecycleOrder
-
-Constants defining the standard execution order for transition lifecycle steps:
-
+#### Pipeline State Management
 ```csharp
-public static class LifecycleOrder
+/// <summary>
+/// Represents the current execution state of the pipeline.
+/// Immutable record struct for functional state management.
+/// </summary>
+private readonly record struct PipelineState(IReadOnlyList<ITransitionStep> Plan, int Index)
 {
-    public const int Preflight = 5;           // Subflow preflight check
-    public const int CreateTransition = 10;   // Create transition record
-    public const int OnExecute = 20;          // Execute transition's OnExecute tasks
-    public const int OnExit = 30;             // Execute current state's OnExit tasks
-    public const int ChangeState = 40;        // Change the instance state
-    public const int OnEntry = 50;            // Execute target state's OnEntry tasks
-    public const int SubFlow = 60;            // Handle SubFlow operations
-    public const int ClearBusyOnResumeStep = Schedule - 1; // Clear BUSY status
-    public const int Schedule = 70;           // Schedule future transitions
-    public const int Auto = 80;               // Execute automatic transitions
-    public const int Finish = 90;             // Handle workflow finishing
-    public const int Finalize = 100;          // Finalize transition and cleanup
-    public const int AfterEpilogueRefresh = Finalize + 1; // Process inline auto chain
+    public ITransitionStep CurrentStep => Plan[Index];
+    public bool HasMoreSteps() => Index < Plan.Count;
+    public PipelineState MoveNext() => this with { Index = Index + 1 };
+}
+
+/// <summary>
+/// Represents flow control decision after step execution.
+/// Factory methods provide clear intent.
+/// </summary>
+private readonly record struct FlowControl(bool ShouldStop, bool ShouldReplan)
+{
+    public static FlowControl Stop() => new(ShouldStop: true, ShouldReplan: false);
+    public static FlowControl Replan() => new(ShouldStop: false, ShouldReplan: true);
+    public static FlowControl Continue() => new(ShouldStop: false, ShouldReplan: false);
 }
 ```
 
-### 7. PipelineDirectives
+### 9. PipelineDirectives
 
 Directive system controlling pipeline behavior:
 
 ```csharp
 public sealed class PipelineDirectives
 {
-    // Which step to resume from
+    /// <summary>
+    /// Gets the order number from which to resume pipeline execution.
+    /// </summary>
     public int? ResumeFromOrder { get; private set; }
     
-    // Behavior of epilogue (Schedule/Auto) steps
-    public EpilogueMode Epilogue { get; private set; }
+    /// <summary>
+    /// Gets the epilogue execution mode.
+    /// </summary>
+    public EpilogueMode Epilogue { get; private set; } = EpilogueMode.Run;
     
-    // Inline automatic transition queue
-    public Queue<ReentryCommand> InlineAutoQueue { get; }
+    /// <summary>
+    /// Gets the queue of re-entry commands for inline automatic transition chain execution.
+    /// </summary>
+    public Queue<ReentryCommand> InlineAutoQueue { get; } = new();
     
-    // Terminal state flag
+    /// <summary>
+    /// Gets a value indicating whether the pipeline has reached a terminal state.
+    /// </summary>
     public bool TerminalReached { get; private set; }
     
-    // SubFlow resume scenario
+    /// <summary>
+    /// Gets a value indicating whether this execution is resuming from a subflow.
+    /// </summary>
     public bool IsSubFlowResume { get; private set; }
+    
+    // Methods
+    public void RequestResumeFrom(int order);
+    public int? ConsumeResumeFrom();
+    public void RequestEpilogue(EpilogueMode mode);
+    public void MarkTerminal();
+    public void EnqueueInlineAuto(ReentryCommand command);
+    public void MarkAsSubFlowResume();
+    public DirectivesSnapshot CreateSnapshot();
+}
+```
+
+#### DirectivesSnapshot
+
+Immutable snapshot for post-commit processing:
+
+```csharp
+/// <summary>
+/// Immutable snapshot of pipeline directives for post-commit processing.
+/// Used to transfer inline auto queue state across UoW boundaries.
+/// </summary>
+public sealed record DirectivesSnapshot(ReentryCommand[] InlineAutoQueue)
+{
+    /// <summary>
+    /// Gets a value indicating whether there are any queued inline auto transitions.
+    /// </summary>
+    public bool HasQueuedTransitions => InlineAutoQueue.Length > 0;
 }
 ```
 
@@ -218,9 +508,9 @@ public enum EpilogueMode
 }
 ```
 
-### 8. StepOutcome
+### 10. StepOutcome
 
-Pipeline step result reporting and flow control. Steps return `Result<StepOutcome>` using the Result pattern:
+Pipeline step result reporting and flow control:
 
 ```csharp
 public sealed class StepOutcome
@@ -246,7 +536,7 @@ return Result<StepOutcome>.Ok(StepOutcome.Continue());
 // Stop the pipeline
 return Result<StepOutcome>.Ok(StepOutcome.Stop());
 
-// Skip to a specific step (e.g., return to CreateTransition after inline auto)
+// Skip to a specific step
 return Result<StepOutcome>.Ok(StepOutcome.SkipTo(LifecycleOrder.CreateTransition));
 
 // Mutate directives
@@ -256,88 +546,7 @@ return Result<StepOutcome>.Ok(StepOutcome.With(d => d.RequestEpilogue(EpilogueMo
 return Result<StepOutcome>.Fail(Error.Validation("step.failed", "Validation failed"));
 ```
 
-### 9. Dynamic Re-planning
-
-The pipeline detects directive changes during execution and rebuilds the plan dynamically:
-
-**Re-planning Scenarios:**
-1. **SubFlow Initiation**: Switch to epilogue SKIP mode
-2. **Inline Auto Chain**: Restart from CreateTransition
-3. **SubFlow Completion**: Resume from Schedule step
-4. **Terminal State**: Execute only up to Finalize
-
-**Pipeline Re-planning Flow:**
-```csharp
-public async Task<Result> RunAsync(TransitionExecutionContext context, CancellationToken cancellationToken)
-{
-    // Build initial execution plan
-    var plan = BuildExecutionPlan(context);
-    var i = 0;
-    
-    while (i < plan.Count)
-    {
-        if (context.SkipImmediateExecution) break;
-
-        var step = plan[i];
-        
-        // Execute step and handle Result
-        var outcomeResult = await step.ExecuteAsync(context, cancellationToken);
-        if (!outcomeResult.IsSuccess)
-            return Result.Fail(outcomeResult.Error);
-        
-        var outcome = outcomeResult.Value!;
-        
-        // Apply directive mutations
-        outcome.MutateDirectives?.Invoke(context.Directives);
-
-        // 1) Stop pipeline?
-        if (outcome.StopPipeline) break;
-
-        // 2) SkipTo? (e.g., restart from CreateTransition after inline auto)
-        if (outcome.SkipToOrder is { } skipTo)
-        {
-            context.Directives.RequestResumeFrom(skipTo);
-            plan = BuildExecutionPlan(context); // Rebuild plan
-            i = 0;
-            continue;
-        }
-
-        // 3) If directives changed, update the plan
-        if (NeedsReplan(plan, context.Directives))
-        {
-            context.Directives.RequestResumeFrom(step.Order + 1);
-            plan = BuildExecutionPlan(context); // Rebuild plan
-            i = 0;
-            continue;
-        }
-
-        i++; // Move to next step
-    }
-    
-    return Result.Ok();
-}
-```
-
-**Re-planning Logic:**
-```csharp
-private static bool NeedsReplan(IReadOnlyList<ITransitionStep> currentPlan, PipelineDirectives d)
-{
-    // Replan if terminal state is reached
-    if (d.TerminalReached) return true;
-    
-    // Replan if epilogue mode changed to SKIP and Schedule/Auto steps are in plan
-    if (d.Epilogue == EpilogueMode.Skip &&
-        currentPlan.Any(s => s.Order == LifecycleOrder.Schedule || s.Order == LifecycleOrder.Auto))
-        return true;
-    
-    // Replan if resume-from is requested
-    if (d.ResumeFromOrder is not null) return true;
-    
-    return false;
-}
-```
-
-### 10. TransitionExecutionContext
+### 11. TransitionExecutionContext
 
 Minimal, service-free context structure that carries only essential data and state:
 
@@ -391,7 +600,9 @@ public sealed class TransitionExecutionContext
     public ClientResponse? ClientResponse { get; set; }
     
     // Helper methods
-    public ScriptContext GetOrBuildScriptContext(Func<ScriptContext> factory);
+    public Task<ScriptContext> GetOrBuildScriptContextAsync(
+        Func<CancellationToken, Task<ScriptContext>> factory,
+        CancellationToken cancellationToken);
     public void ApplyScriptContextChanges(ScriptContext scriptContext);
     public void ClearCacheForFinalize();
 }
@@ -404,6 +615,104 @@ public sealed class TransitionExecutionContext
 - **Items vs Cache**: 
   - `Items`: Temporary storage shared between steps (cleared after execution)
   - `Cache`: Performance cache (ScriptContext, etc.) that can be cleared at finalize
+
+## Execution Flow
+
+### Complete Transition Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         WorkflowExecutionService                            │
+│                    ExecuteTransitionAsync(context)                          │
+└─────────────────────────────┬───────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           TransitionRunner                                   │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │ while (queue.TryDequeue)                                              │  │
+│  │   1. Guard: MaxAutoHops check                                         │  │
+│  │   2. ExecuteHopAsync (isolated DI scope + RequiresNew UoW)            │  │
+│  │   3. UoW Commit                                                       │  │
+│  │   4. POST-COMMIT: Enqueue inline auto transitions from snapshot       │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────┬───────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      IWorkflowExecutionCore                                  │
+│                  ExecuteTransitionCoreAsync(context)                         │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │ 1. GetExecutionStrategy(mode)                                         │  │
+│  │ 2. ExecuteStrategyAsync(strategy, context)                            │  │
+│  │ 3. BuildCoreOutputAsync (creates DirectivesSnapshot)                  │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────┬───────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       TransitionPipeline                                     │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │ Pipeline Steps (Order):                                               │  │
+│  │   5  → ForwardToActiveSubflowStep                                     │  │
+│  │   10 → HandleCancelPreflightStep                                      │  │
+│  │   20 → CreateTransitionRecordStep                                     │  │
+│  │   30 → RunOnExecuteTasksStep                                          │  │
+│  │   40 → RunOnExitTasksStep                                             │  │
+│  │   50 → ChangeStateStep                                                │  │
+│  │   60 → RunOnEntryTasksStep                                            │  │
+│  │   70 → HandleSubFlowStep                                              │  │
+│  │   79 → ClearBusyOnResumeStep                                          │  │
+│  │   80 → ScheduleTransitionsStep                                        │  │
+│  │   90 → RunAutomaticTransitionsStep (enqueues to InlineAutoQueue)      │  │
+│  │  100 → HandleFinishStep                                               │  │
+│  │  110 → FinalizeTransitionStep                                         │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Inline Auto Chain Flow
+
+```
+Transition A completes
+       │
+       ▼
+RunAutomaticTransitionsStep
+       │
+       ├── Evaluate all auto transitions
+       │
+       └── Winner found? 
+            │
+            ├── Yes → EnqueueInlineAuto(ReentryCommand)
+            │          │
+            └── No  → Continue (soft-fail)
+                       │
+                       ▼
+                 FinalizeTransitionStep
+                       │
+                       ▼
+              DirectivesSnapshot.CreateSnapshot()
+                       │
+                       ▼
+                  UoW.CommitAsync()
+                       │
+                       ▼
+          ┌────────────────────────────────┐
+          │ POST-COMMIT (TransitionRunner) │
+          │ DirectivesSnapshot.HasQueued?  │
+          │    │                           │
+          │    ├── Yes → queue.Enqueue(B)  │
+          │    │          │                │
+          │    └── No  → return lastOutput │
+          └────────────────────────────────┘
+                       │
+                       ▼
+              Next loop iteration
+                       │
+                       ▼
+              Execute Transition B
+                  (new scope + UoW)
+```
 
 ## Usage
 
@@ -445,10 +754,10 @@ var result = await workflowExecutionService.ExecuteTransitionAsync(executionCont
 // Handle result
 if (result.IsSuccess)
 {
-    var context = result.Value!;
+    var output = result.Value!;
     // Transition executed successfully
-    // Access instance state: context.Instance
-    // Access client response: context.ClientResponse
+    // Access instance ID: output.Id
+    // Access status: output.Status
 }
 else
 {
@@ -474,12 +783,15 @@ public sealed class CustomValidationStep : ITransitionStep
         _logger = logger;
     }
     
-    public int Order => 15; // Between CreateTransition (10) and OnExecute (20)
+    public int Order => 25; // Between CreateTransition (20) and OnExecute (30)
     
+    [Trace]
     public async Task<Result<StepOutcome>> ExecuteAsync(
         TransitionExecutionContext context, 
         CancellationToken cancellationToken)
     {
+        Activity.Current?.SetDisplayName($"[{Order}] {nameof(CustomValidationStep)}");
+        
         _logger.LogDebug("Validating business rules for transition {TransitionKey}", 
             context.TransitionKey);
         
@@ -495,13 +807,6 @@ public sealed class CustomValidationStep : ITransitionStep
         
         // Normal continuation
         return Result<StepOutcome>.Ok(StepOutcome.Continue());
-        
-        // Or conditionally stop the pipeline
-        // if (shouldStop)
-        //     return Result<StepOutcome>.Ok(StepOutcome.Stop());
-        
-        // Or skip to a specific step
-        // return Result<StepOutcome>.Ok(StepOutcome.SkipTo(LifecycleOrder.Finalize));
     }
 }
 
@@ -534,6 +839,7 @@ services.AddScoped<ITransitionHandler, WebhookTransitionHandler>();
 - Trigger handlers only manage their own trigger types
 - Execution strategies only handle sync/async differences
 - TransitionPipeline focuses only on orchestration and execution order
+- TransitionRunner manages UoW lifecycle and inline chain processing
 
 ### 2. Dynamic Flow Control
 - Step-level flow control with StepOutcome
@@ -549,64 +855,42 @@ services.AddScoped<ITransitionHandler, WebhookTransitionHandler>();
 - Better error tracking and debugging
 - Consistent error handling across all steps
 
-### 4. Testability
+### 4. Post-Commit Safety
+- Inline auto chain runs AFTER UoW commit
+- DirectivesSnapshot captures queue state
+- Cross-UoW boundary state transfer
+- Data consistency guaranteed
+
+### 5. Testability
 - Each component can be tested independently
 - Easy mocking with dependency injection
 - Pipeline execution can be tested with different directive scenarios
 - Different flow scenarios can be tested with StepOutcome
 - Clear boundaries between components
 
-### 5. Extensibility
+### 6. Extensibility
 - New pipeline steps can be easily added without modifying existing code
 - New trigger handlers can be added for custom trigger types
 - Custom flow control with StepOutcome factory methods
 - Directive-based behavior customization
 - Order-based step insertion at any point in lifecycle
 
-### 6. Performance
+### 7. Performance
 - Re-entry system optimization with inline execution
 - Distributed locking at service level
 - Idempotency control with concurrency tokens
 - Inline automatic transition chaining (prevents unnecessary I/O and background jobs)
 - Dynamic step skipping based on directives (prevents unnecessary operations)
 - Efficient plan building with minimal allocations
+- Isolated DI scope prevents memory leaks
 
-### 7. Observability
+### 8. Observability
 - Structured logging with correlation IDs
-- OpenTelemetry distributed tracing
+- OpenTelemetry distributed tracing with `[Trace]` aspect
 - Detailed telemetry for each step with timing
 - Re-planning events tracking
 - Step-level spans for detailed trace analysis
 - Comprehensive error logging with context
-
-## Key Architecture Changes
-
-### Removed Components
-1. **IPipelinePlanner & DefaultPlanner**: Planning logic moved into `TransitionPipeline.BuildExecutionPlan()`
-2. **Service Locator Pattern**: Services now injected into steps/handlers, not stored in context
-3. **Exception-based Flow Control**: Replaced with Result pattern
-
-### Current Implementation
-1. **Integrated Planning**: Pipeline builds execution plan dynamically based on directives
-2. **Result Pattern**: All operations return `Result<T>` for exception-free error handling
-3. **Simplified Architecture**: Fewer abstractions, clearer responsibilities
-4. **Performance Optimized**: Inline planning eliminates overhead of separate planner service
-
-## Migration Guide
-
-### From Old Architecture
-1. Update step implementations to return `Result<StepOutcome>` instead of `StepOutcome`
-2. Replace exception throwing with `Result.Fail()` calls
-3. Use `TransitionPipeline` directly instead of through planner abstraction
-4. Inject services into steps/handlers instead of retrieving from context
-5. Update tests to verify Result pattern behavior
-
-### Adding New Features
-1. Implement `ITransitionStep` with Result pattern
-2. Set appropriate `Order` constant from `LifecycleOrder`
-3. Register in DI container via `AddTransitionPipeline()`
-4. Use `PipelineDirectives` for flow control
-5. Return `Result<StepOutcome>` for success/failure
 
 ## Best Practices
 
@@ -615,6 +899,9 @@ services.AddScoped<ITransitionHandler, WebhookTransitionHandler>();
 - Use dependency injection for services
 - Return appropriate `StepOutcome` for flow control
 - Use Result pattern for error handling
+- Use `[Trace]` attribute for automatic span creation
+- Set `Activity.Current?.SetDisplayName()` for trace visualization
+- Use Railway extensions (`Tap`, `OnSuccess`, `BindAsync`) for clean chains
 - Log entry/exit for observability
 
 ### Trigger Handlers
@@ -634,9 +921,13 @@ services.AddScoped<ITransitionHandler, WebhookTransitionHandler>();
 - Use `context.Items` for step-to-step data sharing
 - Clear cache in finalize step if needed
 - Minimize database round-trips
+- Use `GetOrBuildScriptContextAsync` for ScriptContext caching
 
 ## Related Documentation
 
+- [Auto Transition Evaluation](./auto-transition-evaluation.md) - Automatic transition condition evaluation
+- [Aether SDK Aspects](./aether-sdk-aspects.md) - Cross-cutting concerns with `[Trace]`, `[UnitOfWork]`, `[Log]`
+- [Result Pattern & Railway Programming](./result-pattern-railway.md) - Error handling with Result pattern
 - [Strategy Pattern Implementation](./strategy-pattern-implementation.md) - Execution strategy details
 - [OpenTelemetry Logging](./opentelemetry-logging.md) - Distributed tracing and logging
 - [Background Jobs](./background-jobs.md) - Dapr Jobs integration

@@ -70,9 +70,14 @@ public sealed class FlowTimeoutJobHandler(
                 await jobRepository.MarkAsProcessedAsync(args.JobName, cancellationToken);
             }
         }
-        catch (Exception ex)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            logger.JobFailed(ex, args.JobName, args.InstanceId);
+            logger.JobCancelled(args.JobName, "timeout", args.InstanceId);
+            throw; // Re-throw cancellation exceptions
+        }
+        catch (Exception e)
+        {
+            logger.JobFailed(e, args.JobName, args.InstanceId);
             throw;
         }
     }

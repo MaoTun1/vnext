@@ -1,4 +1,3 @@
-using System.Dynamic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using BBT.Workflow.Definitions;
@@ -130,9 +129,9 @@ public class ScriptContext(ILogger<ScriptContext> logger) : IDisposable
         {
             try
             {
-                TaskResponse?.Clear();
-                MetaData?.Clear();
-                Definitions?.Clear();
+                TaskResponse.Clear();
+                MetaData.Clear();
+                Definitions.Clear();
 
                 Body = null;
                 Headers = null;
@@ -393,56 +392,43 @@ public class ScriptContext(ILogger<ScriptContext> logger) : IDisposable
     /// Sets the standardized response body for the script context.
     /// </summary>
     /// <param name="response">The standardized task response.</param>
-    public void SetStandardResponse(StandardTaskResponse response)
+    /// <param name="taskKey">The standardized task variable name.</param>
+    public void SetStandardResponse(StandardTaskResponse response, string? taskKey = null)
     {
         ThrowIfDisposed();
-        MergeToBody(response, JsonScriptBodyOptions);
+        var value = MergeToBody(response, JsonScriptBodyOptions);
+        if (!string.IsNullOrWhiteSpace(taskKey) && value != null)
+        {
+            TaskResponse[taskKey!] = value;
+        }
     }
 
     /// <summary>
     /// Merges the provided object into the existing Body using the specified JSON options.
     /// If Body is null, it initializes it with the new content.
+    /// Supports both JSON objects and JSON arrays with full merge capabilities.
     /// </summary>
     /// <param name="content">The content to merge into Body.</param>
     /// <param name="jsonOptions">The JSON serialization options to use.</param>
-    private void MergeToBody(object? content, JsonSerializerOptions jsonOptions)
+    private dynamic? MergeToBody(object? content, JsonSerializerOptions jsonOptions)
     {
         if (content == null)
         {
-            return;
+            return null;
         }
 
         var serializedContent = JsonSerializer.Serialize(content, jsonOptions);
-        var newExpando = JsonSerializer.Deserialize<ExpandoObject>(serializedContent, JsonScriptBodyOptions);
+        using var document = JsonDocument.Parse(serializedContent);
+        var newValue = document.RootElement.ToDynamic();
 
-        if (newExpando == null)
+        if (newValue == null)
         {
-            return;
+            return null;
         }
 
-        Body = Body == null ? newExpando : MergeExpandoObjects(Body, newExpando);
-    }
-
-    /// <summary>
-    /// Merges two ExpandoObject instances, with properties from the source taking precedence.
-    /// Handles all nested structures including JsonElement objects and arrays.
-    /// </summary>
-    /// <param name="target">The target ExpandoObject to merge into.</param>
-    /// <param name="source">The source ExpandoObject to merge from.</param>
-    /// <returns>The merged ExpandoObject.</returns>
-    private static ExpandoObject MergeExpandoObjects(ExpandoObject target, ExpandoObject source)
-    {
-        var targetDict = (IDictionary<string, object?>)target;
-        var sourceDict = (IDictionary<string, object?>)source;
-
-        foreach (var kvp in sourceDict)
-        {
-            targetDict[kvp.Key] = targetDict.TryGetValue(kvp.Key, out var existingValue)
-            ? ObjectMerger.MergeValues(existingValue, kvp.Value)
-            : kvp.Value;
-        }
-
-        return target;
+        // Use ObjectMerger for all merge operations - handles arrays, objects, and mixed types
+        Body = ObjectMerger.MergeValues(Body, newValue);
+        return newValue;
     }
 
     public sealed class Builder(ILogger<ScriptContext> logger)

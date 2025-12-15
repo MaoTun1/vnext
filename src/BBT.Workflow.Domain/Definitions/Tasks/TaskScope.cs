@@ -3,11 +3,11 @@ using System.Text.Json.Serialization;
 namespace BBT.Workflow.Definitions;
 
 [JsonConverter(typeof(IEquatableJsonConverter<TaskScope>))]
-public class TaskScope: IEquatable<TaskScope>
+public sealed class TaskScope: IEquatable<TaskScope>
 {
-    public static readonly TaskScope Domain = new TaskScope("D", "Domain");
-    public static readonly TaskScope Flow = new TaskScope("F", "Flow");
-    public static readonly TaskScope Instance = new TaskScope("I", "Instance");
+    public static readonly TaskScope Domain = new("D", "Domain");
+    public static readonly TaskScope Flow = new("F", "Flow");
+    public static readonly TaskScope Instance = new("I", "Instance");
 
     public string Code { get; }
     public string Description { get; }

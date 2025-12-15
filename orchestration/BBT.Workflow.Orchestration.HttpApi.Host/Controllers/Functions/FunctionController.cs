@@ -1,7 +1,7 @@
+using BBT.Aether;
 using BBT.Aether.Application.Dtos;
 using BBT.Aether.AspNetCore.Controllers;
-using BBT.Aether.Domain.Pagination;
-using BBT.Aether.Domain.Repositories;
+using BBT.Aether.AspNetCore.Pagination;
 using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Domain.Shared;
@@ -104,6 +104,12 @@ public sealed class FunctionController(
                 cancellationToken));
         }
 
+        if (functionType == Definitions.Functions.FunctionTypeConst.Schema)
+        {
+            return FromResult(await ProcessSchemaFunctionListAsync(domain, workflow, instanceListResult.Value!,
+                cancellationToken));
+        }
+
         return FromResult(await ProcessCustomFunctionListAsync(function, workflow, domain, instanceListResult.Value!,
             cancellationToken));
     }
@@ -114,7 +120,7 @@ public sealed class FunctionController(
         [FromRoute] string function,
         [FromRoute] string workflow,
         [FromRoute] string instance,
-        [FromQuery] FunctionQueryParemeters parameters,
+        [FromQuery] FunctionQueryParameters parameters,
         [FromHeader(Name = "If-None-Match")] string? ifNoneMatch,
         CancellationToken cancellationToken = default)
     {
@@ -146,6 +152,12 @@ public sealed class FunctionController(
             }
 
             return FromResult(dataResult.Result);
+        }
+        
+        if (functionType == Definitions.Functions.FunctionTypeConst.Schema)
+        {
+            return FromResult(await ProcessSchemaFunctionAsync(domain, workflow, instance, parameters.Version,
+                parameters.TransitionKey, cancellationToken));
         }
 
         return FromResult(await functionAppService.GetFunctionByInstanceAsync(function, workflow, domain, instance,
@@ -228,6 +240,58 @@ public sealed class FunctionController(
             platform ?? string.Empty,
             transitionKey ?? string.Empty,
             cancellationToken);
+    }
+
+    private async Task<Result<GetSchemaOutput>> ProcessSchemaFunctionAsync(
+        string domain,
+        string workflow,
+        string instance,
+        string? version,
+        string? transitionKey,
+        CancellationToken cancellationToken)
+    {
+        var input = new GetSchemaInput
+        {
+            Domain = domain,
+            Workflow = workflow,
+            Instance = instance,
+            Version = version
+        };
+
+        return await queryAppService.GetSchemaAsync(input, transitionKey, cancellationToken);
+    }
+
+    private async Task<Result<HateoasPagedResultDto<GetSchemaOutput>>> ProcessSchemaFunctionListAsync(
+        string domain,
+        string workflow,
+        HateoasPagedList<GetInstanceOutput> instanceListResult,
+        CancellationToken cancellationToken)
+    {
+        var list = new List<GetSchemaOutput>();
+
+        foreach (var instance in instanceListResult.Items)
+        {
+            var result = await ProcessSchemaFunctionAsync(
+                domain,
+                workflow,
+                instance.Key!,
+                instance.FlowVersion,
+                string.Empty,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                continue;
+            }
+
+            list.Add(result.Value!);
+        }
+
+        var route = InstanceUrlTemplates.FunctionList(domain, workflow,
+            Definitions.Functions.FunctionTypeConst.Schema, InstanceUrlTemplates.GetApiVersionPrefix("1"));
+        var output = linkGenerator.CreateHateoasResult(instanceListResult, list, route);
+
+        return Result<HateoasPagedResultDto<GetSchemaOutput>>.Ok(output);
     }
 
     private async Task<Result<HateoasPagedResultDto<GetViewOutput>>> ProcessViewFunctionListAsync(

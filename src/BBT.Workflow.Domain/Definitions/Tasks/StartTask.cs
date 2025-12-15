@@ -34,6 +34,36 @@ public sealed class StartTask : WorkflowTask
     /// </summary>
     public JsonElement? Body { get; private set; }
 
+    /// <summary>
+    /// Sync of the instance to start
+    /// </summary>
+    public bool TriggerSync { get; private set; } = true;
+    
+    /// <summary>
+    /// Version of the target workflow
+    /// </summary>
+    public string? TriggerVersion { get; private set; }
+
+    /// <summary>
+    /// Key of the instance to start
+    /// </summary>
+    public string? TriggerKey { get; private set; }
+
+    /// <summary>
+    /// Tags of the instance to start
+    /// </summary>
+    public string[]? TriggerTags { get; private set; }
+
+    public void SetTags(string[] tags)
+    {
+        TriggerTags = tags;
+    }
+
+    public void SetKey(string key)
+    {
+        TriggerKey = key;
+    }
+
     public void SetBody(dynamic body)
     {
         Body = JsonSerializer.SerializeToElement(body);
@@ -41,42 +71,64 @@ public sealed class StartTask : WorkflowTask
 
     public void SetDomain(string domain)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(domain, nameof(domain));
         TriggerDomain = domain;
     }
 
     public void SetFlow(string flow)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(flow, nameof(flow));
         TriggerFlow = flow;
+    }
+
+    public void SetSync(bool sync)
+    {
+        TriggerSync = sync;
+    }
+    
+    public void SetVersion(string? version)
+    {
+        TriggerVersion = version;
     }
 
     /// <summary>
     /// Internal property setters for object pooling
     /// </summary>
     internal void SetTriggerDomainInternal(string triggerDomain) => TriggerDomain = triggerDomain;
+
     internal void SetTriggerFlowInternal(string triggerFlow) => TriggerFlow = triggerFlow;
     internal void SetBodyInternal(JsonElement? body) => Body = body;
-
+    internal void SetTriggerSyncInternal(bool sync) => TriggerSync = sync;
+    internal void SetTriggerVersionInternal(string? version) => TriggerVersion = version;
+    internal void SetTriggerKeyInternal(string? key) => TriggerKey = key;
+    internal void SetTriggerTagsInternal(string[]? tags) => TriggerTags = tags;
     protected override void Configure(JsonElement config)
     {
         base.Configure(config);
 
         if (config.TryGetProperty("domain", out var triggerDomainElement))
-            TriggerDomain = triggerDomainElement.GetString() ?? string.Empty;
-
-        if (string.IsNullOrWhiteSpace(TriggerDomain))
-            throw new ArgumentException("Property 'domain' is required for StartTask.", nameof(config));
-
+            TriggerDomain = triggerDomainElement.GetString() ?? throw new ArgumentException($"Property 'domain' is required for StartTask (Key={Key}).", nameof(config));
+        
         if (config.TryGetProperty("flow", out var triggerFlowElement))
-            TriggerFlow = triggerFlowElement.GetString() ?? string.Empty;
-
-        if (string.IsNullOrWhiteSpace(TriggerFlow))
-            throw new ArgumentException("Property 'flow' is required for StartTask.", nameof(config));
-
+            TriggerFlow = triggerFlowElement.GetString() ?? throw new ArgumentException($"Property 'flow' is required for StartTask (Key={Key}).", nameof(config));
+        
         if (config.TryGetProperty("body", out var bodyElement))
         {
             var body = bodyElement.GetRawText();
             Body = string.IsNullOrWhiteSpace(body) ? null : bodyElement;
         }
+        
+        if (config.TryGetProperty("sync", out var triggerSyncElement))
+            TriggerSync = triggerSyncElement.GetBoolean();
+        
+        if (config.TryGetProperty("version", out var triggerVersionElement))
+            TriggerVersion = triggerFlowElement.GetString() ?? string.Empty;
+
+        if (config.TryGetProperty("key", out var triggerKeyElement))
+            TriggerKey = triggerKeyElement.GetString() ?? string.Empty;
+
+        if (config.TryGetProperty("tags", out var triggerTagsElement))
+            TriggerTags = triggerTagsElement.GetArrayLength() > 0 ? triggerTagsElement.EnumerateArray().Select(e => e.GetString() ?? string.Empty).ToArray() : null;
     }
 
     public static StartTask Create(JsonElement config)
@@ -103,7 +155,10 @@ public sealed class StartTask : WorkflowTask
         cloned.TriggerDomain = TriggerDomain;
         cloned.TriggerFlow = TriggerFlow;
         cloned.Body = Body;
-
+        cloned.TriggerSync = TriggerSync;
+        cloned.TriggerVersion = TriggerVersion;
+        cloned.TriggerKey = TriggerKey;
+        cloned.TriggerTags = TriggerTags;
         return cloned;
     }
 
@@ -117,6 +172,10 @@ public sealed class StartTask : WorkflowTask
         SetTriggerDomainInternal(source.TriggerDomain);
         SetTriggerFlowInternal(source.TriggerFlow);
         SetBodyInternal(source.Body);
+        SetTriggerSyncInternal(source.TriggerSync);
+        SetTriggerVersionInternal(source.TriggerVersion);
+        SetTriggerKeyInternal(source.TriggerKey);
+        SetTriggerTagsInternal(source.TriggerTags);
     }
 
     /// <summary>
@@ -128,6 +187,10 @@ public sealed class StartTask : WorkflowTask
         TriggerDomain = string.Empty;
         TriggerFlow = string.Empty;
         Body = null;
+        TriggerSync = true;
+        TriggerVersion = null;  
+        TriggerKey = null;
+        TriggerTags = null;
     }
 
     /// <summary>
@@ -138,4 +201,3 @@ public sealed class StartTask : WorkflowTask
         return new StartTask();
     }
 }
-

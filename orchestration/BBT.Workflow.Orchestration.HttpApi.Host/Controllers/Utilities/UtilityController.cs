@@ -15,7 +15,7 @@ namespace BBT.Workflow.Orchestration.Controllers.Utilities;
 [Route("api/v{version:apiVersion}")]
 [ServiceFilter(typeof(ResponseHeaderFilter))]
 public sealed class UtilityController(
-    IAdminAppService adminAppService,
+    IDefinitionAppService definitionAppService,
     IRuntimeInfoProvider runtimeInfoProvider,
     IOptions<RuntimeOptions> runtimeOptions) : AetherControllerBase
 {
@@ -51,7 +51,7 @@ public sealed class UtilityController(
         [FromBody] InvalidateCacheInput input,
         CancellationToken cancellationToken = default)
     {
-        var result = await adminAppService.InvalidateCacheAsync(input, cancellationToken);
+        var result = await definitionAppService.InvalidateCacheAsync(input, cancellationToken);
         return FromResult(result);
     }
 } 

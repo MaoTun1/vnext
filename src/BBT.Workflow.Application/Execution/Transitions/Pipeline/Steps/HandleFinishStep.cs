@@ -21,14 +21,8 @@ public sealed class HandleFinishStep(
 {
     /// <inheritdoc />
     public int Order => LifecycleOrder.Finish;
-
-    /* TODO: 
-     * SubFlow bittiğinde bir hook deneyecek başarız olursa -> Event yayıyor.
-     * long pooling => aynı davranacak.
-    */
     
     /// <inheritdoc />
-    [Log]
     [Trace]
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context,
         CancellationToken cancellationToken)
@@ -80,7 +74,7 @@ public sealed class HandleFinishStep(
         if (context.IsCancelTransition())
         {
             logger.InstanceCanceling(context.Instance.Id);
-            context.Instance.Cancel();
+            context.Instance.Cancel(context.Domain);
         }
         else
         {

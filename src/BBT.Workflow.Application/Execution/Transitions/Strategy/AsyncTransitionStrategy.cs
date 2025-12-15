@@ -19,6 +19,7 @@ public sealed class AsyncTransitionStrategy(
     IInstanceJobRepository jobRepository,
     ILogger<AsyncTransitionStrategy> logger) : ITransitionStrategy
 {
+    public ExecMode Mode => ExecMode.Async;
     /// <inheritdoc />
     /// <summary>
     /// Executes transition asynchronously by enqueuing a background job.
@@ -144,7 +145,9 @@ public sealed class AsyncTransitionStrategy(
             Domain = transContext.Domain,
             Workflow = transContext.WorkflowKey,
             Version = transContext.Workflow.Version,
-            Data = context.Data,
+            Data = context.Data?.Attributes,
+            InstanceKey = context.Data?.Key,
+            Tags = context.Data?.Tags,
             Headers = context.Headers,
             RouteValues = context.RouteValues,
             ExecutionActor = context.Actor

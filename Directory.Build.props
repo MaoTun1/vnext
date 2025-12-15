@@ -2,7 +2,7 @@
     <PropertyGroup>
 
         <!-- All Prism packages -->
-        <AetherPackageVersion>1.0.11</AetherPackageVersion>
+        <AetherPackageVersion>1.0.14</AetherPackageVersion>
         <!-- Elastic Apm packages -->
         <ElasticApmPackageVersion>1.31.0</ElasticApmPackageVersion>
         <!-- Microsoft packages -->
@@ -16,6 +16,9 @@
         <!-- JsonSchema.NET -->
         <JsonSchemaNetPackageVersion>7.3.3</JsonSchemaNetPackageVersion>
 
+        <!-- Polly packages -->
+        <PollyPackageVersion>8.5.0</PollyPackageVersion>
+
         <!-- OpenTelemetry packages -->
         <OpenTelemetryPackageVersion>1.12.0</OpenTelemetryPackageVersion>
       
@@ -28,6 +31,7 @@
         <xunitRunnerPackageVersion>3.0.1</xunitRunnerPackageVersion>
         <MoqPackageVersion>4.20.72</MoqPackageVersion>
         <PrometheusVersion>8.2.1</PrometheusVersion>
+        <TestcontainersPackageVersion>4.1.0</TestcontainersPackageVersion>
 
     </PropertyGroup>
 </Project>

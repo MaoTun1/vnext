@@ -2,10 +2,9 @@ using BBT.Aether;
 using BBT.Aether.Application.Services;
 using BBT.Aether.BackgroundJob;
 using BBT.Aether.DistributedLock;
-using BBT.Aether.Domain.Entities;
 using BBT.Aether.Guids;
-using BBT.Aether.MultiSchema;
 using BBT.Aether.Results;
+using BBT.Aether.Uow;
 using BBT.Workflow.BackgroundJobs.Handlers;
 using BBT.Workflow.BackgroundJobs.Payloads;
 using BBT.Workflow.Caching;
@@ -35,7 +34,7 @@ public sealed class InstanceCommandAppService(
     ITransitionDataMapper transitionDataMapper,
     ITransitionValidationService transitionValidationService,
     IDistributedLockService distributedLockService,
-    ISchemaMigrationOrchestrator  schemaMigrationOrchestrator,
+    ISchemaMigrationOrchestrator schemaMigrationOrchestrator,
     ILogger<InstanceCommandAppService> logger)
     : ApplicationService(serviceProvider), IInstanceCommandAppService
 {
@@ -46,25 +45,24 @@ public sealed class InstanceCommandAppService(
     {
         runtimeInfoProvider.Check(input.Domain);
         // Set schema context once at the beginning
-            return await LoadWorkflowAsync(input, cancellationToken)
-                .OnSuccessAsync(async _ => 
-                    await schemaMigrationOrchestrator.MigrateSchemaWithLockAsync(input.Workflow, cancellationToken))
-                .ThenAsync(workflow => PrepareInstanceAsync(workflow, input, cancellationToken))
-                .ThenAsync(async data => 
-                {
-                    await ScheduleWorkflowTimeoutIfConfiguredAsync(data.Workflow, data.Instance, cancellationToken);
-                    return Result<(Definitions.Workflow Workflow, Instance Instance)>.Ok(data);
-                })
-                .ThenAsync(data => ExecuteStartTransitionAsync(data, input, cancellationToken))
-                .OnSuccess(output => AddWorkflowHeader(output, input));
-        
+        return await LoadWorkflowAsync(input, cancellationToken)
+            .OnSuccessAsync(async _ =>
+                await schemaMigrationOrchestrator.MigrateSchemaWithLockAsync(input.Workflow, cancellationToken))
+            .ThenAsync(workflow => PrepareInstanceAsync(workflow, input, cancellationToken))
+            .ThenAsync(async data =>
+            {
+                await ScheduleWorkflowTimeoutIfConfiguredAsync(data.Workflow, data.Instance, cancellationToken);
+                return Result<(Definitions.Workflow Workflow, Instance Instance)>.Ok(data);
+            })
+            .ThenAsync(data => ExecuteStartTransitionAsync(data, input, cancellationToken))
+            .OnSuccess(output => AddWorkflowHeader(output, input));
     }
 
     /// <summary>
     /// Step 2: Loads the workflow definition.
     /// </summary>
     private Task<Result<Definitions.Workflow>> LoadWorkflowAsync(
-        StartInstanceInput input, 
+        StartInstanceInput input,
         CancellationToken cancellationToken)
     {
         return componentCacheStore.GetFlowAsync(
@@ -75,12 +73,13 @@ public sealed class InstanceCommandAppService(
     /// Step 3: Prepares the instance (create, configure, persist).
     /// Railway chain: Create Instance → Validate → Map Data → Persist
     /// </summary>
-    private Task<Result<(Definitions.Workflow Workflow, Instance Instance)>> PrepareInstanceAsync(
+    private async Task<Result<(Definitions.Workflow Workflow, Instance Instance)>> PrepareInstanceAsync(
         Definitions.Workflow workflow,
         StartInstanceInput input,
         CancellationToken cancellationToken)
     {
-        return CreateAndPrepareInstanceAsync(
+        await using var uow = await UnitOfWorkManager.BeginRequiresNew(cancellationToken);
+        var result = await CreateAndPrepareInstanceAsync(
                 workflow,
                 input.Instance.Id ?? guidGenerator.Create(),
                 input.Instance.Key,
@@ -92,6 +91,9 @@ public sealed class InstanceCommandAppService(
             .ThenAsync(instance => ValidateStartTransitionAsync(workflow, instance, input, cancellationToken))
             .ThenAsync(instance => MapInstanceDataAsync(workflow, instance, input, cancellationToken))
             .ThenAsync(instance => PersistInstanceAsync(workflow, instance, cancellationToken));
+        
+        await uow.CommitAsync(cancellationToken);
+        return result;
     }
 
     /// <summary>
@@ -205,7 +207,7 @@ public sealed class InstanceCommandAppService(
 
         return lockOutcome.Result;
     }
-    
+
     /// <summary>
     /// Schedules a workflow timeout job if the workflow has a timeout configuration.
     /// </summary>
@@ -234,7 +236,7 @@ public sealed class InstanceCommandAppService(
 
             // Parse ISO 8601 duration string to TimeSpan
             var timeoutDuration = System.Xml.XmlConvert.ToTimeSpan(workflow.Timeout.Timer.Duration);
-            
+
             // Calculate timeout schedule - workflow timeout should be evaluated from creation time
             var timeoutDateTime = DateTime.UtcNow.Add(timeoutDuration);
             var schedule = DaprJobSchedule.FromDateTime(timeoutDateTime).ExpressionValue;
@@ -329,7 +331,7 @@ public sealed class InstanceCommandAppService(
                 Error.Conflict(
                     WorkflowErrorCodes.ConflictWorkflow,
                     "Failed to acquire lock for instance",
-                    instanceId.ToString()));
+                    instanceId));
         }
 
         return lockOutcome.Result;
@@ -353,7 +355,7 @@ public sealed class InstanceCommandAppService(
     private async Task<Result<Instance>> CreateAndPrepareInstanceAsync(
         Definitions.Workflow workflow,
         Guid instanceId,
-        string instanceKey,
+        string? instanceKey,
         List<string>? tags,
         ExtraPropertyDictionary metadata,
         bool isSync,
@@ -361,9 +363,13 @@ public sealed class InstanceCommandAppService(
         CancellationToken cancellationToken = default)
     {
         // Check for existing active instance first
-        var existingInstance = await instanceRepository.FindByIdentifierAsync(instanceKey, cancellationToken);
+        var existingInstance = !instanceKey.IsNullOrWhiteSpace()
+            ? await instanceRepository.FindByIdentifierAsync(instanceKey, cancellationToken)
+            : await instanceRepository.FindByIdentifierAsync(instanceId.ToString(), cancellationToken);
         if (existingInstance is { IsCompleted: false })
-            return Result<Instance>.Fail(WorkflowErrors.InstanceAlreadyExists(instanceKey));
+            return Result<Instance>.Fail(WorkflowErrors.InstanceAlreadyExists(
+                instanceKey.IsNullOrWhiteSpace() ? instanceId.ToString() : instanceKey)
+            );
 
         // Railway chain: Get initial state → Create and configure instance
         return workflow.GetInitialState()

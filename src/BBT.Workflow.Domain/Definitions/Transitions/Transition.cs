@@ -169,9 +169,9 @@ public sealed class Transition : IHasKey
         Timer = new ScriptCode(location, code);
     }
     
-    public void SetMapping(string location, string code)
+    public void SetMapping(ScriptCode code)
     {
-        Mapping = new ScriptCode(location, code);
+        Mapping = code;
     }
 
     public bool CanExecute(State currentState, StateTransitionPolicy policy)

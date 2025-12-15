@@ -5,7 +5,7 @@ namespace BBT.Workflow.Definitions;
 
 public sealed class PublishInput : PublishBaseInput
 {
-    [Required] public CreateWorkflowInput Attributes { get; set; }
+    [Required] public JsonElement Attributes { get; set; }
     public List<PublishDataInput>? Data { get; set; }
 }
 
@@ -25,8 +25,6 @@ public sealed class PublishDataInput
     /// </summary>
     [Required]
     [StringLength(WorkflowConstants.MaxVersionLength)]
-    [RegularExpression(@"^\d+\.\d+\.\d+$",
-        ErrorMessage = "The Version field must be in the format 'MAJOR.MINOR.PATCH', e.g., '1.0.0'.")]
     public string Version { get; set; }
     
     public List<string> Tags { get; set; } = [];

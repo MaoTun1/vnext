@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using BBT.Workflow.Scripting;
 
 namespace BBT.Workflow.Definitions;
 
@@ -25,9 +24,14 @@ public sealed class SubProcessTask : WorkflowTask
     public string TriggerDomain { get; private set; } = string.Empty;
 
     /// <summary>
-    /// Flow key of the target workflow
+    /// Flow name of the target workflow
     /// </summary>
-    public string TriggerKey { get; private set; } = string.Empty;
+    public string TriggerFlow { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// Key of the instance to start
+    /// </summary>
+    public string? TriggerKey { get; private set; }
 
     /// <summary>
     /// SubFlow version (optional)
@@ -39,19 +43,31 @@ public sealed class SubProcessTask : WorkflowTask
     /// </summary>
     public JsonElement? Body { get; private set; }
 
+    /// <summary>
+    /// Tags of the instance to start
+    /// </summary>
+    public string[]? TriggerTags { get; private set; }
+
     public void SetBody(dynamic body)
     {
         Body = JsonSerializer.SerializeToElement(body);
     }
 
-    public void SetKey(string key)
+    public void SetKey(string? key)
     {
         TriggerKey = key;
     }
 
     public void SetDomain(string domain)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(domain, nameof(domain));
         TriggerDomain = domain;
+    }
+
+    public void SetFlow(string flow)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(flow, nameof(flow));
+        TriggerFlow = flow;
     }
 
     public void SetVersion(string version)
@@ -59,29 +75,34 @@ public sealed class SubProcessTask : WorkflowTask
         TriggerVersion = version;
     }
 
+    public void SetTags(string[] tags)
+    {
+        TriggerTags = tags;
+    }
+
     /// <summary>
     /// Internal property setters for object pooling
     /// </summary>
     internal void SetTriggerDomainInternal(string triggerDomain) => TriggerDomain = triggerDomain;
-    internal void SetTriggerKeyInternal(string triggerKey) => TriggerKey = triggerKey;
+
+    internal void SetTriggerFlowInternal(string triggerFlow) => TriggerFlow = triggerFlow;
+    internal void SetTriggerKeyInternal(string? triggerKey) => TriggerKey = triggerKey;
     internal void SetTriggerVersionInternal(string? triggerVersion) => TriggerVersion = triggerVersion;
     internal void SetBodyInternal(JsonElement? body) => Body = body;
+    internal void SetTriggerTagsInternal(string[]? tags) => TriggerTags = tags;
 
     protected override void Configure(JsonElement config)
     {
         base.Configure(config);
 
         if (config.TryGetProperty("domain", out var triggerDomainElement))
-            TriggerDomain = triggerDomainElement.GetString() ?? string.Empty;
-
-        if (string.IsNullOrWhiteSpace(TriggerDomain))
-            throw new ArgumentException("Property 'domain' is required for SubProcessTask.", nameof(config));
+            TriggerDomain = triggerDomainElement.GetString() ?? throw new ArgumentException($"Property 'domain' is required for SubProcessTask (Key={Key}).", nameof(config));
+        
+        if (config.TryGetProperty("flow", out var triggerFlowElement))
+            TriggerFlow = triggerFlowElement.GetString() ?? throw new ArgumentException($"Property 'flow' is required for SubProcessTask (Key={Key}).", nameof(config));
 
         if (config.TryGetProperty("key", out var keyElement))
             TriggerKey = keyElement.GetString() ?? string.Empty;
-
-        if (string.IsNullOrWhiteSpace(TriggerKey))
-            throw new ArgumentException("Property 'key' is required for SubProcessTask.", nameof(config));
 
         if (config.TryGetProperty("version", out var versionElement))
             TriggerVersion = versionElement.GetString();
@@ -91,6 +112,11 @@ public sealed class SubProcessTask : WorkflowTask
             var body = bodyElement.GetRawText();
             Body = string.IsNullOrWhiteSpace(body) ? null : bodyElement;
         }
+        
+        if (config.TryGetProperty("tags", out var triggerTagsElement))
+            TriggerTags = triggerTagsElement.GetArrayLength() > 0
+                ? triggerTagsElement.EnumerateArray().Select(e => e.GetString() ?? string.Empty).ToArray()
+                : null;
     }
 
     public static SubProcessTask Create(JsonElement config)
@@ -115,10 +141,11 @@ public sealed class SubProcessTask : WorkflowTask
         CopyBaseTo(cloned);
 
         cloned.TriggerDomain = TriggerDomain;
+        cloned.TriggerFlow = TriggerFlow;
         cloned.TriggerKey = TriggerKey;
         cloned.TriggerVersion = TriggerVersion;
         cloned.Body = Body;
-
+        cloned.TriggerTags = TriggerTags;
         return cloned;
     }
 
@@ -130,9 +157,11 @@ public sealed class SubProcessTask : WorkflowTask
     {
         source.CopyBaseToInternal(this);
         SetTriggerDomainInternal(source.TriggerDomain);
+        SetTriggerFlowInternal(source.TriggerFlow);
         SetTriggerKeyInternal(source.TriggerKey);
         SetTriggerVersionInternal(source.TriggerVersion);
         SetBodyInternal(source.Body);
+        SetTriggerTagsInternal(source.TriggerTags);
     }
 
     /// <summary>
@@ -142,9 +171,11 @@ public sealed class SubProcessTask : WorkflowTask
     {
         base.Reset();
         TriggerDomain = string.Empty;
-        TriggerKey = string.Empty;
+        TriggerFlow = string.Empty;
+        TriggerKey = null;
         TriggerVersion = null;
         Body = null;
+        TriggerTags = null;
     }
 
     /// <summary>
@@ -155,4 +186,3 @@ public sealed class SubProcessTask : WorkflowTask
         return new SubProcessTask();
     }
 }
-

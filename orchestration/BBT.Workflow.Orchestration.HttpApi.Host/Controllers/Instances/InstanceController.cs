@@ -2,8 +2,8 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using BBT.Aether;
 using BBT.Aether.AspNetCore.Controllers;
+using BBT.Aether.AspNetCore.Pagination;
 using BBT.Aether.AspNetCore.Results;
-using BBT.Aether.Domain.Pagination;
 using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Instances;
@@ -134,7 +134,7 @@ public sealed class InstanceController(
         [FromRoute] string workflow,
         [FromRoute] string instance,
         [FromRoute] string transitionKey,
-        [FromBody] JsonElement? attributes,
+        [FromBody] TransitionDataInput? data = null,
         [FromQuery] string? version = null,
         [FromQuery] bool sync = false,
         CancellationToken cancellationToken = default
@@ -146,7 +146,7 @@ public sealed class InstanceController(
             version = flowInfo?.Version;
         }
 
-        var input = new TransitionInput(domain, workflow, version, attributes, sync);
+        var input = new TransitionInput(domain, workflow, version, data, sync);
         var httpContext = httpContextAccessor.HttpContext;
         if (httpContext is not null)
         {

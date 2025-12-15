@@ -286,20 +286,33 @@ namespace BBT.Workflow.Migrations
                     b.Property<Guid>("InstanceId")
                         .HasColumnType("uuid");
 
-                    b.Property<bool?>("IsLatest")
-                        .HasColumnType("boolean");
+                    b.Property<bool>("IsLatest")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<string>("Version")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<long>("VersionNo")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
                     b.HasKey("Id");
 
                     b.HasIndex("InstanceId");
 
-                    b.HasIndex("InstanceId", "Version", "HistorySequence")
-                        .IsUnique();
+                    b.HasIndex("InstanceId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_InstancesData_Instance_IsLatest")
+                        .HasFilter("\"IsLatest\" = true");
+
+                    b.HasIndex("InstanceId", "VersionNo")
+                        .IsUnique()
+                        .HasDatabaseName("UX_InstancesData_Instance_VersionNo");
 
                     b.ToTable("InstancesData", (string)null);
                 });

@@ -73,4 +73,24 @@ public sealed class PipelineDirectives
     /// Marks this execution as a subflow resume scenario.
     /// </summary>
     public void MarkAsSubFlowResume() => IsSubFlowResume = true;
+    
+    /// <summary>
+    /// Creates a snapshot of the current directives state for post-commit processing.
+    /// The snapshot captures the inline auto queue for execution after UoW commit.
+    /// </summary>
+    /// <returns>A snapshot containing the queued re-entry commands.</returns>
+    public DirectivesSnapshot CreateSnapshot() => new(InlineAutoQueue.ToArray());
+}
+
+/// <summary>
+/// Immutable snapshot of pipeline directives for post-commit processing.
+/// Used to transfer inline auto queue state across UoW boundaries.
+/// </summary>
+/// <param name="InlineAutoQueue">Array of re-entry commands to process after commit.</param>
+public sealed record DirectivesSnapshot(ReentryCommand[] InlineAutoQueue)
+{
+    /// <summary>
+    /// Gets a value indicating whether there are any queued inline auto transitions.
+    /// </summary>
+    public bool HasQueuedTransitions => InlineAutoQueue.Length > 0;
 }

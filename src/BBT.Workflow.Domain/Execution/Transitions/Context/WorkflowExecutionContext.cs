@@ -60,7 +60,7 @@ public sealed class WorkflowExecutionContext
     public bool IsReentry { get; set; }
     
     /// <summary>Gets or sets the transition data payload.</summary>
-    public JsonElement? Data { get; set; }
+    public TransitionDataInfo? Data { get; set; }
     
     /// <summary>Gets or sets the route values from the HTTP request.</summary>
     public Dictionary<string, string?> RouteValues { get; set; } = new();
@@ -91,4 +91,26 @@ public sealed class WorkflowExecutionContext
         IsReentry = true,
         Actor = command.Actor
     };
+}
+
+public sealed class TransitionDataInfo 
+{
+    public TransitionDataInfo()
+    {
+        
+    }
+    
+    public TransitionDataInfo(JsonElement? attributes)
+    {
+        Attributes = attributes;
+    }
+
+    public TransitionDataInfo(string? key, JsonElement? attributes) : this(attributes)
+    {
+        Key = key;
+    }
+    
+    public string? Key { get; set; }
+    public JsonElement? Attributes  { get; set; }
+    public string[]? Tags { get; set; }
 }

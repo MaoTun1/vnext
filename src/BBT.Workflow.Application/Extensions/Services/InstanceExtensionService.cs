@@ -8,6 +8,8 @@ using BBT.Workflow.Definitions;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks;
+using BBT.Workflow.Tasks.Coordinator;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Extentions;
 
@@ -16,9 +18,10 @@ namespace BBT.Workflow.Extentions;
 /// </summary>
 public sealed class InstanceExtensionService(
     IComponentCacheStore componentCacheStore,
-    ITaskOrchestrationService taskExecutionService,
+    ITaskCoordinator taskCoordinator,
     IRuntimeInfoProvider runtimeInfoProvider,
-    ICurrentSchema currentSchema) : IInstanceExtensionService
+    ICurrentSchema currentSchema,
+    ILogger<InstanceExtensionService> logger) : IInstanceExtensionService
 {
     /// <inheritdoc />
     public async Task<Result<Dictionary<string, object>>> ProcessExtensionsAsync(
@@ -143,6 +146,7 @@ public sealed class InstanceExtensionService(
 
     /// <summary>
     /// Executes extensions and extracts their responses into the context.
+    /// Extension execution errors are logged but don't propagate - extensions are best-effort enrichment.
     /// </summary>
     private async Task ExecuteExtensionsInternalAsync(
         string[]? extensionRequested,
@@ -161,14 +165,23 @@ public sealed class InstanceExtensionService(
 
         var tasks = executableExtensions.Select(ext => ext.Task);
 
-        await taskExecutionService.ExecuteAsync(
+        // Execute tasks and log errors (extensions are best-effort, don't fail the chain)
+        var executeResult = await taskCoordinator.ExecuteAsync(
             tasks,
             null,
             TaskTrigger.Extension,
             scriptContext,
             cancellationToken);
 
-        // Extract responses from executed extensions
+        if (!executeResult.IsSuccess)
+        {
+            logger.LogWarning(
+                "Extension task execution failed: {ErrorCode} - {ErrorMessage}. Extensions are best-effort, continuing.",
+                executeResult.Error.Code,
+                executeResult.Error.Message);
+        }
+
+        // Extract responses from executed extensions (even partial results)
         foreach (var extension in executableExtensions)
         {
             ExtractExtensionResponse(extension, scriptContext, context);

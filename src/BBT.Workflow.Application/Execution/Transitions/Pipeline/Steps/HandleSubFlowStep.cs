@@ -7,6 +7,7 @@ using BBT.Workflow.Instances;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.SubFlow;
 using BBT.Workflow.Logging;
+using BBT.Workflow.Runtime;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Execution.Pipeline.Steps;
@@ -20,13 +21,13 @@ public sealed class HandleSubFlowStep(
     ISubflowStarter subflowStarter,
     IGuidGenerator guidGenerator,
     IScriptContextFactory scriptContextFactory,
-    ILogger<HandleSubFlowStep> logger) : ITransitionStep
+    ILogger<HandleSubFlowStep> logger,
+    IRuntimeInfoProvider runtimeInfoProvider) : ITransitionStep
 {
     /// <inheritdoc />
     public int Order => LifecycleOrder.SubFlow;
 
     /// <inheritdoc />
-    [Log]
     [Trace]
     public async Task<Result<StepOutcome>> ExecuteAsync(TransitionExecutionContext context,
         CancellationToken cancellationToken)
@@ -135,10 +136,11 @@ public sealed class HandleSubFlowStep(
         TransitionExecutionContext context,
         CancellationToken cancellationToken)
     {
-        return await scriptContextFactory.NewBuilder()
+        return await scriptContextFactory.NewBuilder(instanceRepository)
             .WithWorkflow(context.Workflow)
             .WithInstance(context.Instance)
             .WithTransition(context.Transition!)
+            .WithRuntime(runtimeInfoProvider)
             .WithBody(context.Data)
             .WithHeaders(context.Headers.ToDictionary(kvp => kvp.Key, kvp => kvp.Value))
             .BuildAsync(cancellationToken);

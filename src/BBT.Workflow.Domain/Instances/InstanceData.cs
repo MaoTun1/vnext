@@ -49,9 +49,16 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
     public int HistorySequence { get; private set; }
 
     /// <summary>
-    /// IsLatest
+    /// Instance-global version number. Auto-incremented by database trigger.
+    /// Provides a monotonically increasing sequence per instance for concurrency control.
     /// </summary>
-    public bool? IsLatest { get; private set; }
+    public long VersionNo { get; internal set; }
+
+    /// <summary>
+    /// Indicates if this is the latest data for the instance.
+    /// Managed by database trigger to ensure only one record per instance has IsLatest = true.
+    /// </summary>
+    public bool IsLatest { get; private set; }
 
     /// <summary>
     /// ETag
@@ -122,6 +129,8 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
             Id = Id,
             InstanceId = InstanceId,
             Version = Version,
+            HistorySequence = HistorySequence,
+            VersionNo = VersionNo,
             IsLatest = IsLatest,
             ETag = ETag,
             DataHash = DataHash,
@@ -152,23 +161,57 @@ public sealed class InstanceData : Entity<Guid>, IHasVersion, IHasEtag
         IsLatest = false;
     }
 
-    private string IncrementVersion(string currentVersion, VersionStrategy versionStrategy)
+    /// <summary>
+    /// Increments the version based on the version strategy.
+    /// Preserves package version (-pkg.x.y.z) and build metadata (+name) if present.
+    /// Pre-release identifiers (e.g., -alpha.1) are dropped when incrementing.
+    /// </summary>
+    /// <param name="currentVersion">Current version string (e.g., "1.0.0", "1.0.0-alpha.1", or "1.0.0-alpha.1-pkg.1.17.0+account")</param>
+    /// <param name="versionStrategy">Strategy for version increment (Major, Minor, Patch)</param>
+    /// <returns>Incremented version string with preserved pkg suffix and metadata, but pre-release dropped</returns>
+    /// <remarks>
+    /// Examples:
+    /// <list type="bullet">
+    ///     <item><description>1.0.0-pkg.1.17.0+account + Patch → 1.0.1-pkg.1.17.0+account</description></item>
+    ///     <item><description>1.0.0-alpha.1-pkg.1.17.0+account + Patch → 1.0.1-pkg.1.17.0+account (pre-release dropped)</description></item>
+    ///     <item><description>1.0.0-alpha.1 + Major → 2.0.0</description></item>
+    /// </list>
+    /// </remarks>
+    private static string IncrementVersion(string currentVersion, VersionStrategy versionStrategy)
     {
-        var match = Regex.Match(currentVersion, @"^(\d+)\.(\d+)\.(\d+)");
+        // Parse extended version format: MAJOR.MINOR.PATCH[-PRERELEASE][-pkg.PKG_VERSION][+BUILD_METADATA]
+        // Pre-release can be: -alpha, -alpha.1, -beta.2, -rc.1, etc. (but NOT -pkg which is reserved)
+        // Using negative lookahead (?!pkg\.) to exclude -pkg from pre-release matching
+        var match = Regex.Match(currentVersion,
+            @"^(?<base>\d+\.\d+\.\d+)(?<prerelease>-(?!pkg\.)[a-zA-Z0-9]+(?:\.[a-zA-Z0-9]+)*)?(?<suffix>-pkg\.\d+\.\d+\.\d+)?(?<metadata>\+.+)?$");
+
         if (!match.Success)
             return currentVersion;
 
-        int.TryParse(match.Groups[1].Value, out var major);
-        int.TryParse(match.Groups[2].Value, out var minor);
-        int.TryParse(match.Groups[3].Value, out var patch);
+        var baseVersion = match.Groups["base"].Value;
+        // Pre-release is intentionally not preserved when incrementing
+        var suffix = match.Groups["suffix"].Success ? match.Groups["suffix"].Value : string.Empty;
+        var metadata = match.Groups["metadata"].Success ? match.Groups["metadata"].Value : string.Empty;
 
-        return versionStrategy.Code switch
+        // Parse base version components (MAJOR.MINOR.PATCH)
+        var baseMatch = Regex.Match(baseVersion, @"^(\d+)\.(\d+)\.(\d+)$");
+        if (!baseMatch.Success)
+            return currentVersion;
+
+        int.TryParse(baseMatch.Groups[1].Value, out var major);
+        int.TryParse(baseMatch.Groups[2].Value, out var minor);
+        int.TryParse(baseMatch.Groups[3].Value, out var patch);
+
+        var newBaseVersion = versionStrategy.Code switch
         {
             "Major" => $"{major + 1}.0.0",
             "Minor" => $"{major}.{minor + 1}.0",
             "Patch" => $"{major}.{minor}.{patch + 1}",
-            _ => currentVersion
+            _ => baseVersion
         };
+
+        // Reconstruct version with preserved pkg suffix and metadata (pre-release dropped)
+        return $"{newBaseVersion}{suffix}{metadata}";
     }
 
     public InstanceDataShadow Shadow()

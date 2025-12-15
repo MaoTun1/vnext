@@ -34,9 +34,9 @@ public sealed class PooledTaskFactory(
     {
         return await componentCacheStore.GetTaskAsync(taskReference, cancellationToken)
             .Then(CreateFromCached)
-            .OnFailure(error => logger.LogWarning(
+            .OnFailure(error => logger.LogError(
                 "Failed to create execution task for reference {TaskReference}: {ErrorCode}", 
-                taskReference, error.Code));
+                taskReference.ToString(), error.Code));
     }
 
     /// <summary>

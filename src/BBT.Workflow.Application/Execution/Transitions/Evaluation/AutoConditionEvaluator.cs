@@ -1,8 +1,10 @@
 using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Instances;
 using BBT.Workflow.Scripting;
-using BBT.Workflow.Tasks;
 using BBT.Workflow.Logging;
+using BBT.Workflow.Runtime;
+using BBT.Workflow.Tasks.Coordinator;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Execution;
@@ -14,7 +16,9 @@ namespace BBT.Workflow.Execution;
 public sealed class AutoConditionEvaluator(
     ITaskConditionService taskConditionService,
     IScriptContextFactory scriptContextFactory,
-    ILogger<AutoConditionEvaluator> logger) : IAutoConditionEvaluator
+    IInstanceRepository instanceRepository,
+    ILogger<AutoConditionEvaluator> logger,
+    IRuntimeInfoProvider runtimeInfoProvider) : IAutoConditionEvaluator
 {
     /// <inheritdoc />
     /// <summary>
@@ -66,7 +70,7 @@ public sealed class AutoConditionEvaluator(
                     scriptContext,
                     ct);
 
-                return MapToEvaluation(transition.Key, conditionResult);
+                return MapToEvaluation(transition.Key, conditionResult.Value);
             },
             cancellationToken,
             ex => CreateScriptExecutionError(transition, context, ex));
@@ -106,10 +110,11 @@ public sealed class AutoConditionEvaluator(
         TransitionExecutionContext context,
         CancellationToken cancellationToken)
     {
-        var builder = scriptContextFactory.NewBuilder()
+        var builder = scriptContextFactory.NewBuilder(instanceRepository)
             .WithWorkflow(context.Workflow)
             .WithInstance(context.Instance)
             .WithBody(context.Data)
+            .WithRuntime(runtimeInfoProvider)
             .WithHeaders(context.Headers.ToDictionary(kvp => kvp.Key, kvp => kvp.Value));
 
         if (context.Transition != null)

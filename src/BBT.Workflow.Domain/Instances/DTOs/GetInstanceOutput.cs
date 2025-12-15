@@ -36,14 +36,4 @@ public sealed class GetInstanceDataOutput
     public string? Etag { get => _etag != null ? $"\"{_etag}\"" : string.Empty; set => _etag = value; }
     private string? _etag = string.Empty;
     public Dictionary<string, object>? Extensions { get; set; }
-} 
-public sealed class GetInstanceDataResponseOutput
-{
-    public GetInstanceDataResponseOutput(GetInstanceDataOutput output)
-    {
-        Data = output.Data;
-        Extensions = output.Extensions;
-    }
-    public JsonElement? Data { get; init; }
-    public Dictionary<string, object>? Extensions { get; init; }
-} 
+}

@@ -6,8 +6,7 @@ public class WorkflowConstants
 
     public const int MaxKeyLength = 100;
     public const int MaxTypeLength = 3;
-    public const int MaxDescriptionLength = 500;
-    public const int MaxVersionLength = 20;
+    public const int MaxVersionLength = 180;
     public const int MaxDomainLength = 50;
     public const int MaxFlowLength = 100;
     public const int MaxDurationLength = 100;
@@ -30,13 +29,19 @@ public class ViewConstants
 public class TaskConstants
 {
     public const int MaxKeyLength = WorkflowConstants.MaxKeyLength;
+    /// <summary>
+    /// Named HttpClient for SSL validation enabled requests (default behavior)
+    /// </summary>
+    public const string DefaultHttpClientName = "WorkflowHttpClient";
+    /// <summary>
+    /// Named HttpClient for SSL validation disabled requests
+    /// </summary>
+    public const string NoSslValidationHttpClientName = "WorkflowHttpClient.NoSslValidation";
 }
 
 public class StateConstants
 {
     public const int MaxKeyLength = WorkflowConstants.MaxKeyLength;
-    public const int MaxDescriptionLength = 500;
-    public static readonly string[] ReservedTargetKeys = ["$self"];
 }
 
 public class TransitionConstants
@@ -49,17 +54,6 @@ public class TransitionConstants
 public class FunctionConstants
 {
     public const int MaxKeyLength = WorkflowConstants.MaxKeyLength;
-}
-
-public class FeatureConstants
-{
-    public const int MaxKeyLength = WorkflowConstants.MaxKeyLength;
-}
-
-public class ExtensionConstants
-{
-    public const int MaxKeyLength = WorkflowConstants.MaxKeyLength;
-    public const int MaxTypeLength = 3;
 }
 
 public class SchemaConstants

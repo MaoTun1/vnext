@@ -9,6 +9,11 @@ namespace BBT.Workflow.Execution.Strategies;
 public interface ITransitionStrategy
 {
     /// <summary>
+    /// Gets the execution mode of the strategy.
+    /// </summary>
+    ExecMode Mode { get; }
+    
+    /// <summary>
     /// Executes the provided action using the strategy's execution mode.
     /// </summary>
     /// <param name="context">The workflow execution context.</param>

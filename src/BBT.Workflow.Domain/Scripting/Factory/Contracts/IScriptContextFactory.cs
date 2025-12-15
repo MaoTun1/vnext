@@ -1,3 +1,5 @@
+using BBT.Workflow.Instances;
+
 namespace BBT.Workflow.Scripting;
 
 /// <summary>
@@ -11,5 +13,5 @@ public interface IScriptContextFactory
     /// This builder can be configured with various data sources and then built into a ScriptContext.
     /// </summary>
     /// <returns>A new ScriptContextBuilder instance for fluent configuration.</returns>
-    IScriptContextBuilder NewBuilder();
+    IScriptContextBuilder NewBuilder(IInstanceRepository instanceRepository);
 }
