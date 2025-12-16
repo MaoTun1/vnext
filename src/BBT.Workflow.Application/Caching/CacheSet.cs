@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Text.RegularExpressions;
 using BBT.Aether.DistributedCache;
 using BBT.Aether.Results;
+using BBT.Workflow.Instances;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Caching;
@@ -213,6 +214,70 @@ public class CacheSet<T>(
         var fromDb = fromDbResult.Value!;
         var cacheKey = CreateCacheKey(fromDb);
         EnsureReferenceIsSet(fromDb, cacheKey);
+        _ = SetAsync(fromDb, cancellationToken);
+
+        return Result<T>.Ok(fromDb);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<T>> GetByVersionAsync(
+        string domain,
+        string key,
+        string? version,
+        CancellationToken cancellationToken = default)
+    {
+        // 1) If version is null/empty → return latest version
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            return await GetLatestByNameAsync(domain, key, cancellationToken);
+        }
+
+        // 2) If full version → try exact match first from local snapshot
+        if (InstanceDataVersionComparer.IsFullVersion(version))
+        {
+            var cacheKey = $"{typeof(T).Name}:{domain}:{key}:{version}";
+            return await GetAsync(cacheKey, cancellationToken);
+        }
+
+        // 3) For artifact or partial version → use smart matching
+        var snap = _snapshot;
+        var indexKey = CreateIndexKey(domain, key);
+
+        // Get all versions from index
+        if (snap.Index.TryGetValue(indexKey, out var versions) && versions.Count > 0)
+        {
+            // Use InstanceDataVersionComparer.FindBestMatch to find the best matching version
+            var bestMatch = InstanceDataVersionComparer.FindBestMatch(versions, version);
+
+            if (!string.IsNullOrEmpty(bestMatch))
+            {
+                // Find the entity with the best matching version in snapshot
+                foreach (var entry in snap.Entries.Values)
+                {
+                    var entity = entry.Value;
+                    if (string.Equals(entity.Domain, domain, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(entity.Key, key, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(entity.Version, bestMatch, StringComparison.OrdinalIgnoreCase))
+                    {
+                        entry.UpdateAccess();
+                        return Result<T>.Ok(entity);
+                    }
+                }
+            }
+        }
+
+        // 4) Not in snapshot: try distributed cache with pattern matching or load from backend
+        // For artifact/partial versions, we need to load from backend with smart matching
+        var fromDbResult = await backend.LoadAsync(domain, key, version, cancellationToken);
+
+        if (!fromDbResult.IsSuccess)
+        {
+            return fromDbResult;
+        }
+
+        var fromDb = fromDbResult.Value!;
+        var foundCacheKey = CreateCacheKey(fromDb);
+        EnsureReferenceIsSet(fromDb, foundCacheKey);
         _ = SetAsync(fromDb, cancellationToken);
 
         return Result<T>.Ok(fromDb);
