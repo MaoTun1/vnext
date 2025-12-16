@@ -1,4 +1,5 @@
 using BBT.Aether.Results;
+using BBT.Workflow.Instances;
 using BBT.Workflow.Runtime;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -15,6 +16,21 @@ public sealed class RuntimeCacheBackend<T>(
     : ICacheBackend<T>
     where T : class, IDomainEntity, IReferenceSetter
 {
+    /// <summary>
+    /// Loads an entity from the backend with smart version matching.
+    /// </summary>
+    /// <param name="domain">The domain identifier</param>
+    /// <param name="key">The entity key/name</param>
+    /// <param name="version">The version to search for. Supports:
+    /// <list type="bullet">
+    ///     <item><description>null/empty: Returns the latest version</description></item>
+    ///     <item><description>Full version (e.g., "1.0.0-pkg.1.17.0+account"): Exact match</description></item>
+    ///     <item><description>Artifact version (e.g., "1.0.0" or "1.0.0-alpha.1"): Returns highest pkg version for that artifact</description></item>
+    ///     <item><description>Partial version (e.g., "1.0"): Returns highest version matching the prefix</description></item>
+    /// </list>
+    /// </param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests</param>
+    /// <returns>A Result containing the matched entity or an error</returns>
     public async Task<Result<T>> LoadAsync(
         string domain,
         string key,
@@ -28,9 +44,11 @@ public sealed class RuntimeCacheBackend<T>(
         runtimeInfoProvider.Check(domain);
 
         // Infrastructure exceptions (DB, connection) will bubble up - this is expected per Railway Pattern
-        if (!string.IsNullOrEmpty(version))
+        
+        // Full version → try exact match first via repository
+        if (InstanceDataVersionComparer.IsFullVersion(version))
         {
-            var entity = await runtimeService.GetAsync<T>(key, version, cancellationToken);
+            var entity = await runtimeService.GetAsync<T>(key, version!, cancellationToken);
             
             if (entity is null)
             {
@@ -40,8 +58,7 @@ public sealed class RuntimeCacheBackend<T>(
             return Result<T>.Ok(entity);
         }
 
-        // Version is null: find latest version among all entities in the flow
-
+        // For null/empty, artifact, or partial version → load all and use smart matching
         var all = await runtimeService.GetAsync<T>(cancellationToken);
         var filtered = all
             .Where(e => e is not null &&
@@ -49,21 +66,29 @@ public sealed class RuntimeCacheBackend<T>(
                         string.Equals(e.Key, key, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-        if (!filtered.Any())
+        if (filtered.Count == 0)
         {
-            return Result<T>.Fail(CacheErrors.ItemNotFoundInBackend<T>(domain, key, null));
+            return Result<T>.Fail(CacheErrors.ItemNotFoundInBackend<T>(domain, key, version));
         }
 
-        var latest = filtered
-            .OrderByDescending(e => e!.Version, new SemVersionComparer())
-            .FirstOrDefault();
+        // Use smart version matching
+        var versions = filtered.Select(e => e!.Version).ToList();
+        var bestMatchVersion = InstanceDataVersionComparer.FindBestMatch(versions, version);
 
-        if (latest is null)
+        if (string.IsNullOrEmpty(bestMatchVersion))
         {
-            return Result<T>.Fail(CacheErrors.ItemNotFoundInBackend<T>(domain, key, null));
+            return Result<T>.Fail(CacheErrors.ItemNotFoundInBackend<T>(domain, key, version));
         }
 
-        return Result<T>.Ok(latest);
+        var matched = filtered.FirstOrDefault(e => 
+            string.Equals(e!.Version, bestMatchVersion, StringComparison.OrdinalIgnoreCase));
+
+        if (matched is null)
+        {
+            return Result<T>.Fail(CacheErrors.ItemNotFoundInBackend<T>(domain, key, version));
+        }
+
+        return Result<T>.Ok(matched);
     }
 }
 
