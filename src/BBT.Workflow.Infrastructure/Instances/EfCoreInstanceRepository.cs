@@ -135,24 +135,66 @@ public sealed class EfCoreInstanceRepository(
                 cancellationToken);
     }
 
+    /// <summary>
+    /// Finds active instance data with smart version matching.
+    /// </summary>
+    /// <param name="key">The instance key to search for</param>
+    /// <param name="version">The version to search for. Supports:
+    /// <list type="bullet">
+    ///     <item><description>Full version (e.g., "1.0.0-pkg.1.17.0+account"): Exact match</description></item>
+    ///     <item><description>Artifact version (e.g., "1.0.0" or "1.0.0-alpha.1"): Returns highest pkg version for that artifact</description></item>
+    ///     <item><description>Partial version (e.g., "1.0"): Returns highest version matching the prefix</description></item>
+    /// </list>
+    /// </param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests</param>
+    /// <returns>The matched instance and data model, or null if not found</returns>
     public async Task<InstanceAndDataModel?> FindActiveDataAsync(string key, string version,
         CancellationToken cancellationToken = default)
     {
         var context = await GetDbContextAsync();
 
-        // Optimize query with proper indexing and reduced data transfer
-        return await (from instance in context.Instances
-                where instance.Status == InstanceStatus.Active
+        // If full version → exact match (optimized query)
+        if (InstanceDataVersionComparer.IsFullVersion(version))
+        {
+            return await (from instance in context.Instances
+                    where instance.Status == InstanceStatus.Active
+                    join data in context.InstancesData on instance.Id equals data.InstanceId
+                    where instance.Key == key && data.Version == version
+                    select new InstanceAndDataModel
+                    {
+                        Instance = instance,
+                        InstanceData = data
+                    })
+                .AsNoTracking()
+                .AsSplitQuery()
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        // For artifact or partial version → load all matching versions and use smart matching
+        var candidates = await (from instance in context.Instances
+                where instance.Status == InstanceStatus.Active && instance.Key == key
                 join data in context.InstancesData on instance.Id equals data.InstanceId
-                where instance.Key == key && data.Version == version
                 select new InstanceAndDataModel
                 {
                     Instance = instance,
                     InstanceData = data
                 })
-            .AsNoTracking() // Don't track changes for read-only operations
-            .AsSplitQuery() // Use split queries for better performance with joins
-            .FirstOrDefaultAsync(cancellationToken);
+            .AsNoTracking()
+            .AsSplitQuery()
+            .ToListAsync(cancellationToken);
+
+        if (candidates.Count == 0)
+            return null;
+
+        // Use smart version matching
+        var versions = candidates.Select(c => c.InstanceData.Version).ToList();
+        var bestMatchVersion = InstanceDataVersionComparer.FindBestMatch(versions, version);
+
+        if (string.IsNullOrEmpty(bestMatchVersion))
+            return null;
+
+        return candidates.FirstOrDefault(c => 
+            string.Equals(c.InstanceData.Version, bestMatchVersion, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task<IQueryable<Instance>> GetFilteredQueryAsync(
