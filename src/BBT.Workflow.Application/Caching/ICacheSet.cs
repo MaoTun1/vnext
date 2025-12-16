@@ -62,6 +62,25 @@ public interface ICacheSet<T> : ICacheSet where T : class, IDomainEntity, IRefer
     Task<Result<T>> GetLatestByNameAsync(string domain, string name, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Retrieves an entity by domain, name, and version with smart version matching.
+    /// </summary>
+    /// <param name="domain">The domain identifier</param>
+    /// <param name="key">The entity key/name</param>
+    /// <param name="version">The version to search for. Supports multiple formats:
+    /// <list type="bullet">
+    ///     <item><description>null/empty: Returns the latest version</description></item>
+    ///     <item><description>Full version (e.g., "1.0.0-pkg.1.17.0+account"): Exact match</description></item>
+    ///     <item><description>Artifact version (e.g., "1.0.0" or "1.0.0-alpha.1"): Returns highest pkg version for that artifact</description></item>
+    ///     <item><description>Partial version (e.g., "1.0"): Returns highest version matching the prefix</description></item>
+    /// </list>
+    /// </param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests</param>
+    /// <returns>
+    /// A <see cref="Result{T}"/> containing the entity if found, or <see cref="Error.NotFound"/> if not found.
+    /// </returns>
+    Task<Result<T>> GetByVersionAsync(string domain, string key, string? version, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Invalidates (removes) an entity from the cache.
     /// </summary>
     /// <returns>

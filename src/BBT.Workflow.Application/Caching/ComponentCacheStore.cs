@@ -113,12 +113,19 @@ public sealed class ComponentCacheStore(
     }
 
     /// <summary>
-    /// Generic method to retrieve entities from cache with version support.
+    /// Generic method to retrieve entities from cache with smart version matching.
     /// </summary>
     /// <typeparam name="T">The type of entity to retrieve.</typeparam>
     /// <param name="domain">The domain identifier.</param>
     /// <param name="key">The entity key/name.</param>
-    /// <param name="version">The entity version. If null or empty, retrieves the latest version.</param>
+    /// <param name="version">The entity version. Supports multiple formats:
+    /// <list type="bullet">
+    ///     <item><description>null/empty: Returns the latest version</description></item>
+    ///     <item><description>Full version (e.g., "1.0.0-pkg.1.17.0+account"): Exact match</description></item>
+    ///     <item><description>Artifact version (e.g., "1.0.0" or "1.0.0-alpha.1"): Returns highest pkg version for that artifact</description></item>
+    ///     <item><description>Partial version (e.g., "1.0"): Returns highest version matching the prefix</description></item>
+    /// </list>
+    /// </param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>A <see cref="Result{T}"/> containing the cached entity or an error.</returns>
     private async Task<Result<T>> GetAsync<T>(
@@ -130,11 +137,12 @@ public sealed class ComponentCacheStore(
     {
         var cacheSet = GetCacheSet<T>();
 
-        var result = version.IsNullOrEmpty()
-            ? await cacheSet.GetLatestByNameAsync(domain, key, cancellationToken)
-            : await cacheSet.GetAsync($"{typeof(T).Name}:{domain}:{key}:{version}", cancellationToken);
-
-        return result;
+        // Use GetByVersionAsync which handles all version matching logic:
+        // - null/empty → latest version
+        // - full version → exact match
+        // - artifact version → highest pkg version for that artifact
+        // - partial version → highest version matching the prefix
+        return await cacheSet.GetByVersionAsync(domain, key, version, cancellationToken);
     }
 
     /// <summary>

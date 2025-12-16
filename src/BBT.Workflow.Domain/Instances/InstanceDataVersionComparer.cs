@@ -111,22 +111,103 @@ public partial class InstanceDataVersionComparer : IComparer<InstanceData>
     }
 
     /// <summary>
-    /// Compares two semantic version strings.
+    /// Compares two semantic version strings with proper pre-release support.
     /// </summary>
+    /// <remarks>
+    /// Follows SemVer spec: pre-release versions have lower precedence than normal versions.
+    /// For example: 1.0.0-alpha &lt; 1.0.0-beta &lt; 1.0.0
+    /// </remarks>
     private static int CompareSemanticVersion(string? v1, string? v2)
     {
         if (string.IsNullOrWhiteSpace(v1) && string.IsNullOrWhiteSpace(v2)) return 0;
         if (string.IsNullOrWhiteSpace(v1)) return -1;
         if (string.IsNullOrWhiteSpace(v2)) return 1;
 
-        // Try standard Version parsing first
-        if (Version.TryParse(v1, out var version1) && Version.TryParse(v2, out var version2))
+        // Parse into core version and pre-release parts
+        var (core1, preRelease1) = ParseSemVerParts(v1);
+        var (core2, preRelease2) = ParseSemVerParts(v2);
+
+        // Compare core versions first
+        var coreComparison = CompareCoreVersion(core1, core2);
+        if (coreComparison != 0)
+            return coreComparison;
+
+        // Core versions are equal, compare pre-release parts
+        // Per SemVer: no pre-release > has pre-release (stable is higher)
+        var hasPreRelease1 = !string.IsNullOrEmpty(preRelease1);
+        var hasPreRelease2 = !string.IsNullOrEmpty(preRelease2);
+
+        if (!hasPreRelease1 && !hasPreRelease2) return 0;
+        if (!hasPreRelease1) return 1;  // v1 is stable, v2 has pre-release → v1 > v2
+        if (!hasPreRelease2) return -1; // v2 is stable, v1 has pre-release → v1 < v2
+
+        // Both have pre-release, compare lexicographically
+        return string.Compare(preRelease1, preRelease2, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Parses a version string into core version and pre-release parts.
+    /// Only treats the dash as pre-release separator if what follows starts with a letter.
+    /// This allows versions like "1.0.0" or "1" to be parsed correctly without treating them as pre-release.
+    /// </summary>
+    private static (string Core, string? PreRelease) ParseSemVerParts(string version)
+    {
+        var dashIndex = version.IndexOf('-');
+        if (dashIndex < 0)
+            return (version, null);
+
+        // Check if what follows the dash starts with a letter (pre-release identifier)
+        // Otherwise, it might be part of an extended version format like "1.0.0-pkg.1.17.0"
+        var afterDash = version[(dashIndex + 1)..];
+        if (afterDash.Length > 0 && char.IsLetter(afterDash[0]))
         {
-            return version1.CompareTo(version2);
+            return (version[..dashIndex], afterDash);
         }
 
-        // Fallback to string comparison
-        return string.Compare(v1, v2, StringComparison.OrdinalIgnoreCase);
+        // Treat as core version without pre-release
+        return (version, null);
+    }
+
+    /// <summary>
+    /// Compares two core version strings (MAJOR.MINOR.PATCH format).
+    /// Normalizes incomplete versions (e.g., "1" → "1.0.0", "1.2" → "1.2.0").
+    /// Invalid versions are treated as "0.0.0" (lower than any valid version).
+    /// </summary>
+    private static int CompareCoreVersion(string core1, string core2)
+    {
+        // Normalize and parse versions
+        var normalized1 = NormalizeVersion(core1);
+        var normalized2 = NormalizeVersion(core2);
+
+        // Try standard Version parsing
+        var parsed1 = Version.TryParse(normalized1, out var version1);
+        var parsed2 = Version.TryParse(normalized2, out var version2);
+
+        if (parsed1 && parsed2)
+        {
+            return version1!.CompareTo(version2);
+        }
+
+        // If one is valid and the other is not, invalid is treated as 0.0.0
+        if (parsed1 && !parsed2) return 1;  // v1 is valid, v2 is invalid → v1 > v2
+        if (!parsed1 && parsed2) return -1; // v1 is invalid, v2 is valid → v1 < v2
+
+        // Both invalid, fall back to string comparison
+        return string.Compare(core1, core2, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Normalizes a version string to have at least major.minor.patch format.
+    /// </summary>
+    private static string NormalizeVersion(string version)
+    {
+        var parts = version.Split('.');
+        return parts.Length switch
+        {
+            1 => $"{parts[0]}.0.0",
+            2 => $"{parts[0]}.{parts[1]}.0",
+            _ => version
+        };
     }
 
     /// <summary>
@@ -137,6 +218,152 @@ public partial class InstanceDataVersionComparer : IComparer<InstanceData>
     public static bool HasPackageVersion(string? version)
     {
         return !string.IsNullOrWhiteSpace(version) && version.Contains("-pkg.");
+    }
+
+    /// <summary>
+    /// Checks if the version is a full version (contains package version).
+    /// Alias for <see cref="HasPackageVersion"/>.
+    /// </summary>
+    /// <param name="version">Version string to check</param>
+    /// <returns>True if the version is in full format (e.g., "1.0.0-pkg.1.17.0+account")</returns>
+    public static bool IsFullVersion(string? version) => HasPackageVersion(version);
+
+    /// <summary>
+    /// Checks if the version is an artifact version format (MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-PRERELEASE).
+    /// </summary>
+    /// <param name="version">Version string to check</param>
+    /// <returns>True if the version matches artifact version format</returns>
+    /// <remarks>
+    /// Matches:
+    /// - 1.0.0
+    /// - 1.0.0-alpha.1
+    /// - 2.1.3-beta
+    /// - 1.0.0-rc.1
+    /// Does NOT match:
+    /// - 1.0.0-pkg.1.17.0+account (full version)
+    /// - 1.0 (partial version)
+    /// </remarks>
+    public static bool IsArtifactVersion(string? version)
+    {
+        if (string.IsNullOrWhiteSpace(version))
+            return false;
+
+        // If it has package version, it's not just an artifact version
+        if (HasPackageVersion(version))
+            return false;
+
+        // Match MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-PRERELEASE
+        return ArtifactVersionRegex().IsMatch(version);
+    }
+
+    /// <summary>
+    /// Checks if the version is a partial version format (MAJOR.MINOR).
+    /// </summary>
+    /// <param name="version">Version string to check</param>
+    /// <returns>True if the version matches partial version format (e.g., "1.0")</returns>
+    public static bool IsPartialVersion(string? version)
+    {
+        if (string.IsNullOrWhiteSpace(version))
+            return false;
+
+        return PartialVersionRegex().IsMatch(version);
+    }
+
+    /// <summary>
+    /// Checks if a full version matches the given artifact version.
+    /// </summary>
+    /// <param name="fullVersion">Full version string (e.g., "1.0.0-pkg.1.17.0+account")</param>
+    /// <param name="artifactVersion">Artifact version to match (e.g., "1.0.0" or "1.0.0-alpha.1")</param>
+    /// <returns>True if the full version's artifact part matches the given artifact version</returns>
+    public static bool MatchesArtifact(string? fullVersion, string? artifactVersion)
+    {
+        if (string.IsNullOrWhiteSpace(fullVersion) || string.IsNullOrWhiteSpace(artifactVersion))
+            return false;
+
+        var parsed = ParseVersion(fullVersion);
+        return string.Equals(parsed.ArtifactVersion, artifactVersion, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Checks if a full version matches the given partial version prefix.
+    /// </summary>
+    /// <param name="fullVersion">Full version string (e.g., "1.0.5-pkg.1.17.0+account")</param>
+    /// <param name="partialVersion">Partial version prefix (e.g., "1.0")</param>
+    /// <returns>True if the full version's artifact part starts with the partial version</returns>
+    public static bool MatchesPartial(string? fullVersion, string? partialVersion)
+    {
+        if (string.IsNullOrWhiteSpace(fullVersion) || string.IsNullOrWhiteSpace(partialVersion))
+            return false;
+
+        var parsed = ParseVersion(fullVersion);
+        var prefix = $"{partialVersion}.";
+        return parsed.ArtifactVersion.StartsWith(prefix, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Finds the best matching version from a list of versions based on the requested version.
+    /// </summary>
+    /// <param name="versions">Collection of available versions</param>
+    /// <param name="requestedVersion">The version requested by the user</param>
+    /// <returns>The best matching version, or null if no match found</returns>
+    /// <remarks>
+    /// Matching logic:
+    /// <list type="number">
+    ///     <item><description>If requestedVersion is null/empty → returns the latest version</description></item>
+    ///     <item><description>If requestedVersion is a full version → exact match only</description></item>
+    ///     <item><description>If requestedVersion is an artifact version → finds highest pkg version for that artifact</description></item>
+    ///     <item><description>If requestedVersion is a partial version → finds highest version matching the prefix</description></item>
+    /// </list>
+    /// </remarks>
+    public static string? FindBestMatch(IEnumerable<string> versions, string? requestedVersion)
+    {
+        var versionList = versions?.ToList() ?? [];
+        if (versionList.Count == 0)
+            return null;
+
+        // 1. If requestedVersion is null/empty → return latest version
+        if (string.IsNullOrWhiteSpace(requestedVersion))
+        {
+            return versionList
+                .OrderByDescending(v => v, StringVersionComparer.Instance)
+                .FirstOrDefault();
+        }
+
+        // 2. Try exact match first
+        var exactMatch = versionList.FirstOrDefault(v => 
+            string.Equals(v, requestedVersion, StringComparison.OrdinalIgnoreCase));
+        if (exactMatch != null)
+            return exactMatch;
+
+        // 3. If requestedVersion is a full version and no exact match → not found
+        if (IsFullVersion(requestedVersion))
+            return null;
+
+        // 4. If requestedVersion is an artifact version → find highest pkg version
+        if (IsArtifactVersion(requestedVersion))
+        {
+            var artifactPrefix = $"{requestedVersion}-pkg.";
+            var matched = versionList
+                .Where(v => v.StartsWith(artifactPrefix, StringComparison.Ordinal) || 
+                           MatchesArtifact(v, requestedVersion))
+                .OrderByDescending(v => v, StringVersionComparer.Instance)
+                .FirstOrDefault();
+
+            return matched;
+        }
+
+        // 5. If requestedVersion is a partial version → find highest version matching prefix
+        if (IsPartialVersion(requestedVersion))
+        {
+            var matched = versionList
+                .Where(v => MatchesPartial(v, requestedVersion))
+                .OrderByDescending(v => v, StringVersionComparer.Instance)
+                .FirstOrDefault();
+
+            return matched;
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -169,9 +396,35 @@ public partial class InstanceDataVersionComparer : IComparer<InstanceData>
     private static partial Regex ExtendedVersionRegex();
 
     /// <summary>
+    /// Regex pattern for artifact version format: MAJOR.MINOR.PATCH[-PRERELEASE]
+    /// </summary>
+    [GeneratedRegex(@"^(\d+\.\d+\.\d+(?:-[a-zA-Z0-9]+(?:\.[a-zA-Z0-9]+)*)?)$", RegexOptions.Compiled)]
+    private static partial Regex ArtifactVersionRegex();
+
+    /// <summary>
+    /// Regex pattern for partial version format: MAJOR.MINOR
+    /// </summary>
+    [GeneratedRegex(@"^(\d+)\.(\d+)$", RegexOptions.Compiled)]
+    private static partial Regex PartialVersionRegex();
+
+    /// <summary>
     /// Represents a parsed version with artifact and optional package version.
     /// </summary>
     /// <param name="ArtifactVersion">The artifact version (e.g., "1.0.0")</param>
     /// <param name="PackageVersion">The package version (e.g., "1.17.0"), null if not present</param>
     public readonly record struct ParsedVersion(string ArtifactVersion, string? PackageVersion);
+
+    /// <summary>
+    /// String-based version comparer that uses CompareVersionStrings for ordering.
+    /// </summary>
+    public sealed class StringVersionComparer : IComparer<string>
+    {
+        /// <summary>
+        /// Singleton instance of the string version comparer.
+        /// </summary>
+        public static StringVersionComparer Instance { get; } = new();
+
+        /// <inheritdoc />
+        public int Compare(string? x, string? y) => CompareVersionStrings(x, y);
+    }
 }
