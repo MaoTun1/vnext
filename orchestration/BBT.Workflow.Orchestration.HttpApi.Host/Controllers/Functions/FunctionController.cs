@@ -76,7 +76,9 @@ public sealed class FunctionController(
             Workflow = workflow,
             Filter = function.ToLowerInvariant() == Definitions.Functions.FunctionTypeConst.Data
                 ? parameters.Filter
-                : []
+                : [],
+            Headers = headers,
+            QueryParameters = queryParams
         };
 
         var instanceListResult = await queryAppService.GetInstanceListAsync(getInstanceListInput, cancellationToken);
