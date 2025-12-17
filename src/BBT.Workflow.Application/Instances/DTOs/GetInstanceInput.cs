@@ -122,4 +122,14 @@ public sealed class GetInstanceDataInput : IHasDomain
     /// Extensions requested for data enrichment
     /// </summary>
     public string[]? Extensions { get; set; }
+
+    /// <summary>
+    /// HTTP headers from the request for script context binding
+    /// </summary>
+    public Dictionary<string, string?>? Headers { get; set; }
+
+    /// <summary>
+    /// Query parameters from the request for script context binding
+    /// </summary>
+    public Dictionary<string, string?>? QueryParameters { get; set; }
 } 

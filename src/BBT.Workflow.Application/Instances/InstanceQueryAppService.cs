@@ -354,6 +354,8 @@ public sealed class InstanceQueryAppService(
                         .WithRuntime(runtimeInfoProvider)
                         .WithTransition(string.Empty)
                         .WithBody(instance.LatestData?.Data ?? new JsonData("{}"))
+                        .WithHeaders(input.Headers)
+                        .WithQueryParameters(input.QueryParameters)
                         .BuildAsync(cancellationToken);
 
                     var extensionsResult = await instanceExtensionService.ProcessExtensionsAsync(
