@@ -109,24 +109,49 @@ public sealed class SubProcessRemoteInvoker(
                 }
             }
 
-            var response = await daprClient.InvokeMethodAsync<object?>(request, cancellationToken);
+            // Use InvokeMethodWithResponseAsync to get full HTTP response including status codes
+            var response = await daprClient.InvokeMethodWithResponseAsync(request, cancellationToken);
             stopwatch.Stop();
 
-            _metrics.RecordTaskExecution(TaskType, "success");
+            var responseHeaders = response.Headers
+                .Concat(response.Content.Headers)
+                .ToDictionary(h => h.Key.ToLower(), h => string.Join(", ", h.Value));
 
-            return TaskInvocationResult.Success(
-                data: response,
-                body: response != null ? JsonSerializer.Serialize(response) : null,
-                statusCode: 200,
-                executionDurationMs: stopwatch.ElapsedMilliseconds,
-                taskType: TaskType,
-                metadata: new Dictionary<string, object>
-                {
-                    ["Domain"] = binding.Domain,
-                    ["Workflow"] = binding.Workflow,
-                    ["SubProcessInstanceId"] = binding.InstanceId.ToString(),
-                    ["OrchestrationAppId"] = _orchestrationAppId
-                });
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            var responseData = TryParseJson(content);
+
+            var metadata = new Dictionary<string, object>
+            {
+                ["Domain"] = binding.Domain,
+                ["Workflow"] = binding.Workflow,
+                ["SubProcessInstanceId"] = binding.InstanceId.ToString(),
+                ["OrchestrationAppId"] = _orchestrationAppId,
+                ["ReasonPhrase"] = response.ReasonPhrase ?? string.Empty
+            };
+
+            // Record metrics based on success/failure
+            _metrics.RecordTaskExecution(TaskType, response.IsSuccessStatusCode ? "success" : "failure");
+
+            // Always return result with full response details - let output mapping handle error scenarios
+            // All HTTP responses (2xx, 4xx, 5xx) include headers, body, and parsed data
+            return response.IsSuccessStatusCode
+                ? TaskInvocationResult.Success(
+                    data: responseData,
+                    body: content,
+                    statusCode: (int)response.StatusCode,
+                    executionDurationMs: stopwatch.ElapsedMilliseconds,
+                    taskType: TaskType,
+                    headers: responseHeaders,
+                    metadata: metadata)
+                : TaskInvocationResult.Failure(
+                    error: $"HTTP {(int)response.StatusCode}: {response.ReasonPhrase}",
+                    statusCode: (int)response.StatusCode,
+                    body: content,
+                    executionDurationMs: stopwatch.ElapsedMilliseconds,
+                    taskType: TaskType,
+                    headers: responseHeaders,
+                    data: responseData,
+                    metadata: metadata);
         }
         catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -167,6 +192,19 @@ public sealed class SubProcessRemoteInvoker(
                     ["OrchestrationAppId"] = _orchestrationAppId,
                     ["ExceptionType"] = ex.GetType().Name
                 });
+        }
+    }
+
+    private static object? TryParseJson(string? content)
+    {
+        if (string.IsNullOrEmpty(content)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<object>(content);
+        }
+        catch
+        {
+            return content;
         }
     }
 }

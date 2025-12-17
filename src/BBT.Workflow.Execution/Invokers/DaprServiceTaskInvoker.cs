@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using BBT.Workflow.Execution.Bindings;
 using BBT.Workflow.Execution.Metrics;
-using Dapr;
 using Dapr.Client;
 using Microsoft.Extensions.Logging;
 
@@ -91,41 +90,51 @@ public sealed class DaprServiceTaskInvoker(
                 }
             }
 
-            var response = await daprClient.InvokeMethodAsync<object?>(request, cancellationToken);
+            // Use InvokeMethodWithResponseAsync to get full HTTP response including status codes
+            var response = await daprClient.InvokeMethodWithResponseAsync(request, cancellationToken);
             stopwatch.Stop();
 
-            _metrics.RecordDaprServiceInvocation(binding.AppId, binding.MethodName, "success");
+            var responseHeaders = response.Headers
+                .Concat(response.Content.Headers)
+                .ToDictionary(h => h.Key.ToLower(), h => string.Join(", ", h.Value));
 
-            return TaskInvocationResult.Success(
-                data: response,
-                body: response != null ? JsonSerializer.Serialize(response) : null,
-                executionDurationMs: stopwatch.ElapsedMilliseconds,
-                taskType: TaskType,
-                metadata: new Dictionary<string, object>
-                {
-                    ["AppId"] = binding.AppId,
-                    ["MethodName"] = binding.MethodName,
-                    ["HttpVerb"] = binding.Method
-                });
-        }
-        catch (DaprException ex)
-        {
-            stopwatch.Stop();
-            _metrics.RecordDaprServiceInvocation(binding.AppId, binding.MethodName, "failure");
-            logger.LogError(ex, "Dapr service invocation failed: {AppId}/{MethodName}",
-                binding.AppId, binding.MethodName);
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            var responseData = TryParseJson(content);
 
-            return TaskInvocationResult.Failure(
-                error: ex.Message,
-                executionDurationMs: stopwatch.ElapsedMilliseconds,
-                taskType: TaskType,
-                metadata: new Dictionary<string, object>
-                {
-                    ["AppId"] = binding.AppId,
-                    ["MethodName"] = binding.MethodName,
-                    ["HttpVerb"] = binding.Method,
-                    ["ExceptionType"] = ex.GetType().Name
-                });
+            var metadata = new Dictionary<string, object>
+            {
+                ["AppId"] = binding.AppId,
+                ["MethodName"] = binding.MethodName,
+                ["HttpVerb"] = binding.Method,
+                ["ReasonPhrase"] = response.ReasonPhrase ?? string.Empty
+            };
+
+            // Record metrics based on success/failure
+            _metrics.RecordDaprServiceInvocation(
+                binding.AppId, 
+                binding.MethodName, 
+                response.IsSuccessStatusCode ? "success" : "failure");
+
+            // Always return result with full response details - let output mapping handle error scenarios
+            // All HTTP responses (2xx, 4xx, 5xx) include headers, body, and parsed data
+            return response.IsSuccessStatusCode
+                ? TaskInvocationResult.Success(
+                    data: responseData,
+                    body: content,
+                    statusCode: (int)response.StatusCode,
+                    executionDurationMs: stopwatch.ElapsedMilliseconds,
+                    taskType: TaskType,
+                    headers: responseHeaders,
+                    metadata: metadata)
+                : TaskInvocationResult.Failure(
+                    error: $"HTTP {(int)response.StatusCode}: {response.ReasonPhrase}",
+                    statusCode: (int)response.StatusCode,
+                    body: content,
+                    executionDurationMs: stopwatch.ElapsedMilliseconds,
+                    taskType: TaskType,
+                    headers: responseHeaders,
+                    data: responseData,
+                    metadata: metadata);
         }
         catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -165,6 +174,19 @@ public sealed class DaprServiceTaskInvoker(
                     ["ExceptionType"] = ex.GetType().Name,
                     ["StackTrace"] = ex.StackTrace ?? string.Empty
                 });
+        }
+    }
+
+    private static object? TryParseJson(string? content)
+    {
+        if (string.IsNullOrEmpty(content)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<object>(content);
+        }
+        catch
+        {
+            return content;
         }
     }
 }

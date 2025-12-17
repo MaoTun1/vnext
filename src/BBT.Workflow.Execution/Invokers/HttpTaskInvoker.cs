@@ -104,9 +104,6 @@ public sealed class HttpTaskInvoker(
             // Record metrics
             _metrics.RecordTaskExecution(TaskType, response.IsSuccessStatusCode ? "success" : "failure");
 
-            // Record metrics
-            _metrics.RecordTaskExecution(TaskType, response.IsSuccessStatusCode ? "success" : "failure");
-
             var metadata = new Dictionary<string, object>
             {
                 ["Url"] = binding.Url,
@@ -114,7 +111,8 @@ public sealed class HttpTaskInvoker(
                 ["ReasonPhrase"] = response.ReasonPhrase ?? string.Empty
             };
 
-            // Always return result - let output mapping handle error scenarios
+            // Always return result with full response details - let output mapping handle error scenarios
+            // All HTTP responses (2xx, 4xx, 5xx) include headers, body, and parsed data
             return response.IsSuccessStatusCode
                 ? TaskInvocationResult.Success(
                     data: responseData,
@@ -130,6 +128,8 @@ public sealed class HttpTaskInvoker(
                     body: content,
                     executionDurationMs: stopwatch.ElapsedMilliseconds,
                     taskType: TaskType,
+                    headers: responseHeaders,
+                    data: responseData,
                     metadata: metadata);
         }
         catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)

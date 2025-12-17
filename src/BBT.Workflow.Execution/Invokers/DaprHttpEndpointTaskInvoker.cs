@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using BBT.Workflow.Execution.Bindings;
 using BBT.Workflow.Execution.Metrics;
@@ -54,34 +55,62 @@ public sealed class DaprHttpEndpointTaskInvoker(
 
         try
         {
-            // Parse body if present
-            object? body = null;
-            if (!string.IsNullOrEmpty(binding.Body))
-            {
-                body = JsonSerializer.Deserialize<object>(binding.Body);
-            }
-
-            var response = await daprClient.InvokeMethodAsync<object?, object>(
+            var request = daprClient.CreateInvokeMethodRequest(
                 new HttpMethod(binding.Method),
                 binding.EndpointName,
-                binding.Path,
-                body,
-                cancellationToken);
+                binding.Path);
 
+            // Add body for non-GET requests
+            if (request.Method != HttpMethod.Get && !string.IsNullOrEmpty(binding.Body))
+            {
+                request.Content = new StringContent(binding.Body, Encoding.UTF8, "application/json");
+            }
+
+            // Use InvokeMethodWithResponseAsync to get full HTTP response including status codes
+            var response = await daprClient.InvokeMethodWithResponseAsync(request, cancellationToken);
             stopwatch.Stop();
-            _metrics.RecordDaprServiceInvocation(binding.EndpointName, binding.Path, "success");
 
-            return TaskInvocationResult.Success(
-                data: response,
-                body: response != null ? JsonSerializer.Serialize(response) : null,
-                executionDurationMs: stopwatch.ElapsedMilliseconds,
-                taskType: TaskType,
-                metadata: new Dictionary<string, object>
-                {
-                    ["EndpointName"] = binding.EndpointName,
-                    ["Path"] = binding.Path,
-                    ["Method"] = binding.Method
-                });
+            var responseHeaders = response.Headers
+                .Concat(response.Content.Headers)
+                .ToDictionary(h => h.Key.ToLower(), h => string.Join(", ", h.Value));
+
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            var responseData = TryParseJson(content);
+
+            var metadata = new Dictionary<string, object>
+            {
+                ["EndpointName"] = binding.EndpointName,
+                ["Path"] = binding.Path,
+                ["Method"] = binding.Method,
+                ["ReasonPhrase"] = response.ReasonPhrase ?? string.Empty
+            };
+
+            // Record metrics based on success/failure
+            _metrics.RecordDaprServiceInvocation(
+                binding.EndpointName,
+                binding.Path,
+                response.IsSuccessStatusCode ? "success" : "failure");
+
+            // Always return result with full response details - let output mapping handle error scenarios
+            // All HTTP responses (2xx, 4xx, 5xx) include headers, body, and parsed data
+            return response.IsSuccessStatusCode
+                ? TaskInvocationResult.Success(
+                    data: responseData,
+                    body: content,
+                    statusCode: (int)response.StatusCode,
+                    executionDurationMs: stopwatch.ElapsedMilliseconds,
+                    taskType: TaskType,
+                    headers: responseHeaders,
+                    metadata: metadata)
+                : TaskInvocationResult.Failure(
+                    error: $"HTTP {(int)response.StatusCode}: {response.ReasonPhrase}",
+                    statusCode: (int)response.StatusCode,
+                    body: content,
+                    executionDurationMs: stopwatch.ElapsedMilliseconds,
+                    taskType: TaskType,
+                    headers: responseHeaders,
+                    data: responseData,
+                    metadata: metadata);
         }
         catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -119,6 +148,19 @@ public sealed class DaprHttpEndpointTaskInvoker(
                     ["ExceptionType"] = ex.GetType().Name,
                     ["StackTrace"] = ex.StackTrace ?? string.Empty
                 });
+        }
+    }
+
+    private static object? TryParseJson(string? content)
+    {
+        if (string.IsNullOrEmpty(content)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<object>(content);
+        }
+        catch
+        {
+            return content;
         }
     }
 }
