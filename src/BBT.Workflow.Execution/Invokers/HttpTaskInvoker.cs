@@ -92,17 +92,12 @@ public sealed class HttpTaskInvoker(
             }
 
             var response = await httpClient.SendAsync(request, cancellationToken);
-            stopwatch.Stop();
 
-            var responseHeaders = response.Headers
-                .Concat(response.Content.Headers)
-                .ToDictionary(h => h.Key.ToLower(), h => string.Join(", ", h.Value));
+            var responseHeaders = InvokerHelpers.MergeHeaders(response.Headers, response.Content.Headers);
 
             var content = await response.Content.ReadAsStringAsync(cancellationToken);
-            var responseData = TryParseJson(content);
-
-            // Record metrics
-            _metrics.RecordTaskExecution(TaskType, response.IsSuccessStatusCode ? "success" : "failure");
+            stopwatch.Stop();
+            var responseData = InvokerHelpers.TryParseJson(content);
 
             var metadata = new Dictionary<string, object>
             {
@@ -205,16 +200,4 @@ public sealed class HttpTaskInvoker(
         return client;
     }
 
-    private static object? TryParseJson(string? content)
-    {
-        if (string.IsNullOrEmpty(content)) return null;
-        try
-        {
-            return JsonSerializer.Deserialize<object>(content);
-        }
-        catch
-        {
-            return content;
-        }
-    }
 }

@@ -110,16 +110,14 @@ public sealed class SubProcessRemoteInvoker(
             }
 
             // Use InvokeMethodWithResponseAsync to get full HTTP response including status codes
-            var response = await daprClient.InvokeMethodWithResponseAsync(request, cancellationToken);
-            stopwatch.Stop();
+            using var response = await daprClient.InvokeMethodWithResponseAsync(request, cancellationToken);
 
-            var responseHeaders = response.Headers
-                .Concat(response.Content.Headers)
-                .ToDictionary(h => h.Key.ToLower(), h => string.Join(", ", h.Value));
+            var responseHeaders = InvokerHelpers.MergeHeaders(response.Headers, response.Content.Headers);
 
             var content = await response.Content.ReadAsStringAsync(cancellationToken);
-            var responseData = TryParseJson(content);
-
+            stopwatch.Stop();
+            var responseData = InvokerHelpers.TryParseJson(content);
+            
             var metadata = new Dictionary<string, object>
             {
                 ["Domain"] = binding.Domain,
@@ -128,7 +126,7 @@ public sealed class SubProcessRemoteInvoker(
                 ["OrchestrationAppId"] = _orchestrationAppId,
                 ["ReasonPhrase"] = response.ReasonPhrase ?? string.Empty
             };
-
+            
             // Record metrics based on success/failure
             _metrics.RecordTaskExecution(TaskType, response.IsSuccessStatusCode ? "success" : "failure");
 
@@ -192,19 +190,6 @@ public sealed class SubProcessRemoteInvoker(
                     ["OrchestrationAppId"] = _orchestrationAppId,
                     ["ExceptionType"] = ex.GetType().Name
                 });
-        }
-    }
-
-    private static object? TryParseJson(string? content)
-    {
-        if (string.IsNullOrEmpty(content)) return null;
-        try
-        {
-            return JsonSerializer.Deserialize<object>(content);
-        }
-        catch
-        {
-            return content;
         }
     }
 }
