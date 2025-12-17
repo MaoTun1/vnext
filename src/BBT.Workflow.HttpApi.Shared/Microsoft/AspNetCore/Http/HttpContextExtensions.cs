@@ -5,7 +5,7 @@ namespace Microsoft.AspNetCore.Http;
 /// <summary>
 /// Represents extracted HTTP request context for script binding.
 /// </summary>
-/// <param name="Headers">HTTP headers with normalized lowercase keys (sensitive headers filtered)</param>
+/// <param name="Headers">HTTP headers with normalized lowercase keys</param>
 /// <param name="QueryParameters">Query parameters from the request</param>
 public sealed record RequestBindingContext(
     Dictionary<string, string?> Headers,
@@ -19,7 +19,6 @@ public static partial class HttpContextExtensions
     /// <summary>
     /// Extracts headers and query parameters from the HTTP context for script binding.
     /// Headers are normalized to lowercase keys using invariant culture.
-    /// Sensitive headers (Authorization, Cookie, etc.) are filtered out.
     /// </summary>
     /// <param name="context">The HTTP context</param>
     /// <returns>A tuple containing filtered headers and query parameters</returns>
@@ -60,7 +59,6 @@ public static partial class HttpContextExtensions
     /// <summary>
     /// Extracts headers from the HTTP context for script binding.
     /// Headers are normalized to lowercase keys using invariant culture.
-    /// Sensitive headers (Authorization, Cookie, etc.) are filtered out.
     /// </summary>
     /// <param name="context">The HTTP context</param>
     /// <returns>Dictionary of filtered headers with normalized keys</returns>
