@@ -181,8 +181,7 @@ public sealed class InstanceController(
         [FromQuery] string[]? extension = null,
         CancellationToken cancellationToken = default)
     {
-        var headers = HttpContext.Request.Headers.ToDictionary(h => h.Key.ToLower(), h => (string?)h.Value.ToString());
-        var queryParams = HttpContext.Request.Query.ToDictionary(q => q.Key, q => (string?)q.Value.ToString());
+        var requestContext = HttpContext.GetRequestBindingContext();
 
         var input = new GetInstanceInput
         {
@@ -191,8 +190,8 @@ public sealed class InstanceController(
             Instance = instance,
             Extension = extension,
             IfNoneMatch = ifNoneMatch,
-            Headers = headers,
-            QueryParameters = queryParams
+            Headers = requestContext.Headers,
+            QueryParameters = requestContext.QueryParameters
         };
 
         var result = await queryAppService.GetInstanceAsync(input, cancellationToken);
@@ -210,8 +209,7 @@ public sealed class InstanceController(
         [FromQuery] string? sort = null,
         CancellationToken cancellationToken = default)
     {
-        var headers = HttpContext.Request.Headers.ToDictionary(h => h.Key.ToLower(), h => (string?)h.Value.ToString());
-        var queryParams = HttpContext.Request.Query.ToDictionary(q => q.Key, q => (string?)q.Value.ToString());
+        var requestContext = HttpContext.GetRequestBindingContext();
 
         var input = new GetInstanceListInput
         {
@@ -223,8 +221,8 @@ public sealed class InstanceController(
             PageUrl = InstanceUrlTemplates.InstanceList(domain, workflow),
             Filter = filter,
             Sort = sort,
-            Headers = headers,
-            QueryParameters = queryParams
+            Headers = requestContext.Headers,
+            QueryParameters = requestContext.QueryParameters
         };
 
         var response = await queryAppService.GetInstanceListAsync(input, cancellationToken);
@@ -246,8 +244,7 @@ public sealed class InstanceController(
         [FromQuery] string[]? extension = null,
         CancellationToken cancellationToken = default)
     {
-        var headers = HttpContext.Request.Headers.ToDictionary(h => h.Key.ToLower(), h => (string?)h.Value.ToString());
-        var queryParams = HttpContext.Request.Query.ToDictionary(q => q.Key, q => (string?)q.Value.ToString());
+        var requestContext = HttpContext.GetRequestBindingContext();
 
         var input = new GetInstanceHistoryInput
         {
@@ -255,8 +252,8 @@ public sealed class InstanceController(
             Workflow = workflow,
             Instance = instance,
             Extension = extension,
-            Headers = headers,
-            QueryParameters = queryParams
+            Headers = requestContext.Headers,
+            QueryParameters = requestContext.QueryParameters
         };
 
         var response = await queryAppService.GetInstanceHistoryAsync(input, cancellationToken);
@@ -271,8 +268,7 @@ public sealed class InstanceController(
         [FromRoute] string instance,
         CancellationToken cancellationToken = default)
     {
-        var headers = HttpContext.Request.Headers.ToDictionary(h => h.Key.ToLower(), h => (string?)h.Value.ToString());
-        var queryParams = HttpContext.Request.Query.ToDictionary(q => q.Key, q => (string?)q.Value.ToString());
+        var requestContext = HttpContext.GetRequestBindingContext();
 
         var input = new GetInstanceDataInput
         {
@@ -280,8 +276,8 @@ public sealed class InstanceController(
             Workflow = workflow,
             Instance = instance,
             IfNoneMatch = ifNoneMatch,
-            Headers = headers,
-            QueryParameters = queryParams
+            Headers = requestContext.Headers,
+            QueryParameters = requestContext.QueryParameters
         };
 
         var result = await queryAppService.GetInstanceDataAsync(input, cancellationToken);
