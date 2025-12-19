@@ -85,7 +85,7 @@ public sealed class RunAutomaticTransitionsStep(
             }
 
             evaluations.Add(evalResult.Value);
-            if (evalResult.Value.IsSuccess)
+            if (evalResult.Value.Status == AutoConditionStatus.Satisfied)
             {
                 break;
             }
