@@ -39,7 +39,6 @@ public sealed class WorkflowExecutionService(
     /// IMPORTANT: This method does NOT have [UnitOfWork] attribute.
     /// UoW is managed by TransitionRunner to ensure proper post-commit processing.
     /// </remarks>
-    [Trace]
     public Task<Result<TransitionCoreOutput>> ExecuteTransitionCoreAsync(
         WorkflowExecutionContext context,
         CancellationToken cancellationToken = default)

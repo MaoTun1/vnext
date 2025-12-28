@@ -2,6 +2,8 @@ using BBT.Workflow.Execution;
 using BBT.Workflow.Execution.Handlers;
 using BBT.Workflow.Execution.Pipeline;
 using BBT.Workflow.Execution.Pipeline.Steps;
+using BBT.Workflow.Execution.PostCommit;
+using BBT.Workflow.Execution.PostCommit.Handlers;
 using BBT.Workflow.Execution.ReEntry;
 using BBT.Workflow.Execution.Services;
 using BBT.Workflow.Execution.Strategies;
@@ -70,7 +72,12 @@ public static class PipelineServiceCollectionExtensions
 
         // Pipeline
         services.AddScoped<TransitionPipeline>();
-        
+
+        // Post-Commit Execution (jobs run after lock release)
+        services.AddScoped<IPostCommitExecutor, PostCommitExecutor>();
+        services.AddScoped<IPostCommitHandler<StartSubflowJob>, StartSubflowJobHandler>();
+        services.AddSingleton<IPostCommitFailurePolicy, DefaultPostCommitFailurePolicy>();
+
         // Configure Re-entry Options
         services.Configure<ReentryOptions>(options =>
         {

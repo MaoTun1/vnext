@@ -162,6 +162,20 @@ public static class WorkflowErrors
             target: domain);
 
     #endregion
+
+    #region Lock Errors
+
+    /// <summary>
+    /// Failed to acquire distributed lock for instance.
+    /// </summary>
+    /// <param name="instanceId">The ID of the instance that could not be locked.</param>
+    public static Error InstanceLockConflict(Guid instanceId)
+        => Error.Conflict(
+            WorkflowErrorCodes.ConflictWorkflow,
+            "Failed to acquire lock for instance",
+            target: instanceId.ToString());
+
+    #endregion
     
     #region Cancellation Errors
 

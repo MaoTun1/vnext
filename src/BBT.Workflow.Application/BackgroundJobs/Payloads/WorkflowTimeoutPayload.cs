@@ -31,4 +31,15 @@ public sealed class WorkflowTimeoutPayload
     /// </summary>
     /// <value>A string representing the workflow version.</value>
     public string Version { get; set; }
+
+    /// <summary>
+    /// Gets or sets the W3C Trace Context traceparent header for distributed tracing correlation.
+    /// Format: {version}-{trace-id}-{parent-id}-{trace-flags}
+    /// </summary>
+    public string? TraceParent { get; set; }
+
+    /// <summary>
+    /// Gets or sets the W3C Trace Context tracestate header for vendor-specific trace data.
+    /// </summary>
+    public string? TraceState { get; set; }
 }

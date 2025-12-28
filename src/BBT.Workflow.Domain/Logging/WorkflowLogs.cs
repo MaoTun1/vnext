@@ -800,4 +800,57 @@ public static partial class WorkflowLogs
         Guid instanceId);
 
     #endregion
+
+    #region Post-Commit Execution
+
+    /// <summary>
+    /// Logs when post-commit executor starts processing jobs.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10090,
+        Level = LogLevel.Debug,
+        Message = "Post-commit executor starting for instance {InstanceId}, processing {JobCount} job(s)")]
+    public static partial void PostCommitExecutorStarting(
+        this ILogger logger,
+        Guid instanceId,
+        int jobCount);
+
+    /// <summary>
+    /// Logs when a post-commit job completes successfully.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10091,
+        Level = LogLevel.Debug,
+        Message = "Post-commit job {JobType} completed for instance {InstanceId}")]
+    public static partial void PostCommitJobCompleted(
+        this ILogger logger,
+        Guid instanceId,
+        string jobType);
+
+    /// <summary>
+    /// Logs when a post-commit job fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10092,
+        Level = LogLevel.Error,
+        Message = "Post-commit job {JobType} failed for instance {InstanceId}: {ErrorMessage}")]
+    public static partial void PostCommitJobFailed(
+        this ILogger logger,
+        Guid instanceId,
+        string jobType,
+        string errorMessage);
+
+    /// <summary>
+    /// Logs when post-commit executor completes all jobs.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10093,
+        Level = LogLevel.Debug,
+        Message = "Post-commit executor completed for instance {InstanceId}, processed {JobCount} job(s)")]
+    public static partial void PostCommitExecutorCompleted(
+        this ILogger logger,
+        Guid instanceId,
+        int jobCount);
+
+    #endregion
 }

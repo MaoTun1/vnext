@@ -1,7 +1,9 @@
 using BBT.Aether.MultiSchema;
 using BBT.Aether.MultiSchema.EntityFrameworkCore.Interceptors;
 using BBT.Workflow.Data;
+using BBT.Workflow.Execution.PostCommit;
 using BBT.Workflow.Infrastructure.DataSink;
+using BBT.Workflow.Infrastructure.Execution.PostCommit;
 using BBT.Workflow.Infrastructure.HostedServices;
 using BBT.Workflow.Infrastructure.Scripting;
 using BBT.Workflow.Instances;
@@ -57,6 +59,9 @@ public static class WorkflowInfrastructureModuleServiceCollectionExtensions
         
         // Schema Migration Orchestration
         services.AddScoped<ISchemaMigrationOrchestrator, SchemaMigrationOrchestrator>();
+        
+        // Post-Commit Idempotency Store
+        services.AddSingleton<IPostCommitIdempotencyStore, DistributedCacheIdempotencyStore>();
         
         // Event Hooks
         services.AddEventHook<InstanceSubCompletedEvent, InstanceSubCompletedEventHook>();

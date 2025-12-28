@@ -106,33 +106,9 @@ public sealed class ScriptTaskExecutor : TaskExecutorBase<ScriptTask>
         }
         
         // Update script context with response for output handler
-        UpdateScriptContextWithResponse(task.Key, result.Value, context.ScriptContext);
+        UpdateScriptContextWithResponse(task.Key, result.Value, context.ScriptContext, context.TaskTrigger);
 
         return result;
-    }
-    
-    /// <summary>
-    /// Updates script context with response data for output handler processing.
-    /// </summary>
-    private static void UpdateScriptContextWithResponse(
-        string taskKey,
-        TaskInvocationResult? result,
-        ScriptContext context)
-    {
-        var variableKey = taskKey.ToVariableName();
-        var response = new StandardTaskResponse
-        {
-            IsSuccess = result?.IsSuccess ?? false,
-            Data = result?.Data,
-            StatusCode = result?.StatusCode,
-            Headers = result?.Headers,
-            ErrorMessage = result?.ErrorMessage,
-            ExecutionDurationMs = result?.ExecutionDurationMs,
-            TaskType = result?.TaskType,
-            Metadata = result?.Metadata
-        };
-        
-        context.SetStandardResponse(response, variableKey);
     }
 }
 

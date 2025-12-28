@@ -65,4 +65,15 @@ public sealed class TransitionJobPayload
     /// Gets or sets the execution context for the transition.
     /// </summary>
     public ExecutionActor ExecutionActor { get; set; } = ExecutionActor.User;
+
+    /// <summary>
+    /// Gets or sets the W3C Trace Context traceparent header for distributed tracing correlation.
+    /// Format: {version}-{trace-id}-{parent-id}-{trace-flags}
+    /// </summary>
+    public string? TraceParent { get; set; }
+
+    /// <summary>
+    /// Gets or sets the W3C Trace Context tracestate header for vendor-specific trace data.
+    /// </summary>
+    public string? TraceState { get; set; }
 }

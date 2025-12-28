@@ -14,7 +14,7 @@ public static class ExtensionExecutionExtensions
     /// <param name="extensionRequested">Array of specifically requested extensions for performance optimization</param>
     /// <param name="currentScope">Current execution scope (GetInstance, GetInstances, or Everywhere)</param>
     /// <returns>True if the extension should be executed, false otherwise</returns>
-    public static bool ShouldExecute(this Extension extension, string[]? extensionRequested, ExtensionScope currentScope)
+    public static bool ShouldExecute(this Extension extension, HashSet<string>? extensionRequested, ExtensionScope currentScope)
     {
         // First check if extension scope matches current execution context
         var scopeMatches = extension.Scope switch
@@ -33,11 +33,11 @@ public static class ExtensionExecutionExtensions
         {
             // Core extensions always execute regardless of extensionRequested (when scope matches)
             ExtensionType.Global => true,
-            ExtensionType.GlobalAndRequested => true,
+            ExtensionType.GlobalAndRequested => extensionRequested?.Contains(extension.Key) == true,
             
             // Workflow-specific extensions that respect extensionRequested parameter
-            ExtensionType.DefinedFlows => extensionRequested == null || extensionRequested.Length == 0 || extensionRequested.Contains(extension.Key),
-            ExtensionType.DefinedFlowAndRequested => extensionRequested != null && extensionRequested.Contains(extension.Key),
+            ExtensionType.DefinedFlows => extensionRequested == null || extensionRequested.Contains(extension.Key),
+            ExtensionType.DefinedFlowAndRequested => extensionRequested?.Contains(extension.Key) == true,
             
             _ => false
         };
