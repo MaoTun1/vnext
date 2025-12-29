@@ -44,7 +44,13 @@ public sealed class InstanceCommandAppService(
         CancellationToken cancellationToken = default)
     {
         runtimeInfoProvider.Check(input.Domain);
-        // Set schema context once at the beginning
+        
+        // Check existing instance BEFORE entering railway chain
+        var existingInstanceResult = await CheckExistingInstanceAsync(input, cancellationToken);
+        if (existingInstanceResult.HasValue)
+            return existingInstanceResult.Value;
+        
+        // Continue with normal railway flow for NEW instances only
         return await LoadWorkflowAsync(input, cancellationToken)
             .OnSuccessAsync(async _ =>
                 await schemaMigrationOrchestrator.MigrateSchemaWithLockAsync(input.Workflow, cancellationToken))
@@ -56,6 +62,40 @@ public sealed class InstanceCommandAppService(
             })
             .ThenAsync(data => ExecuteStartTransitionAsync(data, input, cancellationToken))
             .OnSuccess(output => AddWorkflowHeader(output, input));
+    }
+
+    /// <summary>
+    /// Checks if an active instance already exists before starting workflow creation.
+    /// Implements idempotent behavior for active instances only.
+    /// </summary>
+    /// <returns>
+    /// - null: No existing instance OR existing completed instance, continue with creation
+    /// - Ok: Existing active instance found, return its current status (idempotent)
+    /// </returns>
+    private async Task<Result<StartInstanceOutput>?> CheckExistingInstanceAsync(
+        StartInstanceInput input,
+        CancellationToken cancellationToken)
+    {
+        var instanceId = input.Instance.Id;
+        var instanceKey = input.Instance.Key;
+        
+        var existingInstance = !instanceKey.IsNullOrWhiteSpace()
+            ? await instanceRepository.FindByIdentifierAsync(instanceKey, cancellationToken)
+            : instanceId.HasValue 
+                ? await instanceRepository.FindByIdentifierAsync(instanceId.Value.ToString(), cancellationToken)
+                : null;
+
+        if (existingInstance is null)
+            return null; // No existing instance, continue with creation
+
+        if (existingInstance.IsCompleted)
+            return null; // Completed instance, allow creating new one
+            
+        return Result<StartInstanceOutput>.Ok(new StartInstanceOutput
+        {
+            Id = existingInstance.Id,
+            Status = existingInstance.Status
+        });
     }
 
     /// <summary>
@@ -350,9 +390,9 @@ public sealed class InstanceCommandAppService(
 
     /// <summary>
     /// Creates and prepares a new instance with the provided parameters.
-    /// Railway chain: Get Initial State → Check Existing → Create Instance → Configure
+    /// Note: Existing instance check is done in CheckExistingInstanceAsync (idempotent behavior).
     /// </summary>
-    private async Task<Result<Instance>> CreateAndPrepareInstanceAsync(
+    private Task<Result<Instance>> CreateAndPrepareInstanceAsync(
         Definitions.Workflow workflow,
         Guid instanceId,
         string? instanceKey,
@@ -362,17 +402,8 @@ public sealed class InstanceCommandAppService(
         string? callback,
         CancellationToken cancellationToken = default)
     {
-        // Check for existing active instance first
-        var existingInstance = !instanceKey.IsNullOrWhiteSpace()
-            ? await instanceRepository.FindByIdentifierAsync(instanceKey, cancellationToken)
-            : await instanceRepository.FindByIdentifierAsync(instanceId.ToString(), cancellationToken);
-        if (existingInstance is { IsCompleted: false })
-            return Result<Instance>.Fail(WorkflowErrors.InstanceAlreadyExists(
-                instanceKey.IsNullOrWhiteSpace() ? instanceId.ToString() : instanceKey)
-            );
-
-        // Railway chain: Get initial state → Create and configure instance
-        return workflow.GetInitialState()
+        // Get initial state and create instance
+        return Task.FromResult(workflow.GetInitialState()
             .Map(initialState =>
             {
                 var instance = Instance.Create(instanceId, workflow.Key, instanceKey);
@@ -383,6 +414,6 @@ public sealed class InstanceCommandAppService(
                     instance.AddTags(tags.ToArray());
 
                 return instance;
-            });
+            }));
     }
 }
