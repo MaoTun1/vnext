@@ -59,13 +59,13 @@ public sealed class StartSubflowJobHandler(
                 context.InstanceId);
             return Result.Fail(WorkflowErrors.ConfigInvalid(context.InstanceId, job.TargetStateKey));
         }
-
-        // Build script context for subflow mapping
-        var scriptContext = await CreateScriptContextAsync(context, instance, cancellationToken);
-
+        
         // Start the subflow (this is the remote call that was causing lock issues)
         try
         {
+            // Build script context for subflow mapping
+            await using var scriptContext = await CreateScriptContextAsync(context, instance, cancellationToken);
+
             await subflowStarter.StartAsync(
                 context.Workflow,
                 instance,

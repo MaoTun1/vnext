@@ -110,7 +110,7 @@ public sealed class StandardTaskResponse
     public string? TaskType { get; set; }
 }
 
-public class ScriptContext(ILogger<ScriptContext> logger) : IDisposable
+public class ScriptContext(ILogger<ScriptContext> logger) : IDisposable, IAsyncDisposable
 {
     public static readonly JsonSerializerOptions JsonScriptBodyOptions = new()
     {
@@ -551,5 +551,25 @@ public class ScriptContext(ILogger<ScriptContext> logger) : IDisposable
         {
             return _context;
         }
+    }
+
+    /// <summary>
+    /// Asynchronously releases managed resources used by the ScriptContext.
+    /// Implements IAsyncDisposable pattern for proper async cleanup.
+    /// </summary>
+    /// <returns>A ValueTask representing the asynchronous dispose operation.</returns>
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+            return;
+
+        // Perform synchronous cleanup through existing Dispose logic
+        Dispose(true);
+
+        // Suppress finalization since we've already cleaned up
+        GC.SuppressFinalize(this);
+
+        // No async operations needed currently, but await to satisfy compiler
+        await ValueTask.CompletedTask;
     }
 }
