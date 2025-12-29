@@ -131,22 +131,4 @@ public sealed class PipelineDirectives
         _postCommitJobKeys.Clear();
         return copy;
     }
-
-    /// <summary>
-    /// Creates a snapshot of the current directives state for post-commit processing.
-    /// </summary>
-    /// <returns>A snapshot of the current directives state.</returns>
-    public DirectivesSnapshot CreateSnapshot() => new();
-}
-
-/// <summary>
-/// Immutable snapshot of pipeline directives for post-commit processing.
-/// </summary>
-public sealed record DirectivesSnapshot
-{
-    /// <summary>
-    /// Gets a value indicating whether there are any queued transitions.
-    /// Always false - transition chaining is now handled via sync dispatch in pipeline.
-    /// </summary>
-    public bool HasQueuedTransitions => false;
 }

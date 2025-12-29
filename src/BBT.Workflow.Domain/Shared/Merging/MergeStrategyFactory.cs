@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Dynamic;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -16,6 +17,9 @@ public static class MergeStrategyFactory
     private static readonly IMergeStrategy _jsonElementStrategy = new JsonElementMergeStrategy();
     private static readonly IMergeStrategy _collectionStrategy = new CollectionMergeStrategy();
     private static readonly IMergeStrategy _defaultStrategy = new DefaultMergeStrategy();
+
+    // Cache for IsListLikeCollection results to avoid repeated reflection in hot paths
+    private static readonly ConcurrentDictionary<Type, bool> _listLikeCache = new();
 
     /// <summary>
     /// Gets the appropriate merge strategy for the given target and source objects.
@@ -101,45 +105,56 @@ public static class MergeStrategyFactory
 
     /// <summary>
     /// Checks if the object is a list-like collection (array, list, etc.) but NOT a dictionary or string.
+    /// Uses caching to avoid repeated reflection overhead in high-frequency scenarios.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool IsListLikeCollection(object obj)
     {
-        // Exclude strings (they implement IEnumerable)
+        // Fast path: exclude strings (they implement IEnumerable)
         if (obj is string)
             return false;
 
-        // Exclude dictionary-like objects (ExpandoObject, IDictionary)
+        // Fast path: exclude dictionary-like objects (ExpandoObject, IDictionary)
         if (obj is ExpandoObject || obj is IDictionary)
             return false;
 
-        // Exclude IDictionary<string, object?> which ExpandoObject implements
+        // Fast path: exclude IDictionary<string, object?> which ExpandoObject implements
         if (obj is IDictionary<string, object?>)
             return false;
 
-        // Check for array or IList
+        // Fast path: check for array or IList
         if (obj is Array || obj is IList)
             return true;
 
         // Check if it's an enumerable but not a dictionary
-        if (obj is IEnumerable enumerable)
+        if (obj is IEnumerable)
         {
-            // Additional check: if it's a generic enumerable of KeyValuePair, it's dictionary-like
+            // Use cached result to avoid repeated reflection
             var type = obj.GetType();
-            if (type.IsGenericType)
-            {
-                var genericArgs = type.GetGenericArguments();
-                if (genericArgs.Length == 1 && genericArgs[0].IsGenericType &&
-                    genericArgs[0].GetGenericTypeDefinition() == typeof(KeyValuePair<,>))
-                {
-                    return false;
-                }
-            }
-
-            return true;
+            return _listLikeCache.GetOrAdd(type, EvaluateListLikeType);
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Evaluates whether a type is list-like (used for caching).
+    /// This method performs reflection and is only called once per type.
+    /// </summary>
+    private static bool EvaluateListLikeType(Type type)
+    {
+        // Check if it's a generic enumerable of KeyValuePair (dictionary-like)
+        if (type.IsGenericType)
+        {
+            var genericArgs = type.GetGenericArguments();
+            if (genericArgs.Length == 1 && genericArgs[0].IsGenericType &&
+                genericArgs[0].GetGenericTypeDefinition() == typeof(KeyValuePair<,>))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>

@@ -11,7 +11,7 @@ public static class ExtensionExecutionExtensions
     /// Determines if an extension should be executed based on its type, requested extensions, and current scope.
     /// </summary>
     /// <param name="extension">The extension to evaluate</param>
-    /// <param name="extensionRequested">Array of specifically requested extensions for performance optimization</param>
+    /// <param name="extensionRequested">Set of specifically requested extension keys, or null to indicate no filtering preference</param>
     /// <param name="currentScope">Current execution scope (GetInstance, GetInstances, or Everywhere)</param>
     /// <returns>True if the extension should be executed, false otherwise</returns>
     public static bool ShouldExecute(this Extension extension, HashSet<string>? extensionRequested, ExtensionScope currentScope)

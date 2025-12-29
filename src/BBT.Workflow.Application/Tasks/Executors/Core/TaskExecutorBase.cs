@@ -19,15 +19,10 @@ namespace BBT.Workflow.Tasks.Executors;
 /// 7. CreateResponse - Build StandardTaskResponse
 /// </summary>
 /// <typeparam name="TTask">The specific WorkflowTask type this executor handles.</typeparam>
-public abstract class TaskExecutorBase<TTask> : ITaskExecutor
+public abstract class TaskExecutorBase<TTask>(ILogger logger) : ITaskExecutor
     where TTask : WorkflowTask
 {
-    protected readonly ILogger Logger;
-
-    protected TaskExecutorBase(ILogger logger)
-    {
-        Logger = logger;
-    }
+    protected readonly ILogger Logger = logger;
 
     /// <inheritdoc />
     public abstract TaskType TaskType { get; }
@@ -248,7 +243,7 @@ public abstract class TaskExecutorBase<TTask> : ITaskExecutor
         var variableKey = taskKey.ToVariableName();
         var response = new StandardTaskResponse
         {
-            IsSuccess = result?.IsSuccess ?? false,
+            IsSuccess = result?.IsSuccess == true,
             Data = result?.Data,
             StatusCode = result?.StatusCode,
             Headers = result?.Headers,

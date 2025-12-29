@@ -3,22 +3,6 @@ using BBT.Aether.Results;
 namespace BBT.Workflow.Execution.PostCommit;
 
 /// <summary>
-/// Defines how the post-commit executor should handle failures.
-/// </summary>
-public enum PostCommitFailureMode
-{
-    /// <summary>
-    /// Stop execution on first failure.
-    /// </summary>
-    FailFast,
-
-    /// <summary>
-    /// Continue processing remaining jobs, aggregate errors at the end.
-    /// </summary>
-    Continue
-}
-
-/// <summary>
 /// Context provided to the failure policy for making decisions.
 /// </summary>
 /// <param name="Job">The job that failed.</param>

@@ -1,4 +1,5 @@
 using BBT.Aether.DistributedCache;
+using BBT.Aether.DistributedLock;
 using BBT.Aether.Results;
 using BBT.Workflow.Execution.PostCommit;
 using Microsoft.Extensions.Logging;
@@ -8,15 +9,23 @@ namespace BBT.Workflow.Infrastructure.Execution.PostCommit;
 /// <summary>
 /// Distributed cache implementation of post-commit idempotency store.
 /// Uses IDistributedCacheService for tracking job execution across instances.
+/// Uses IDistributedLockService to ensure atomic check-and-set operations.
 /// </summary>
 public sealed class DistributedCacheIdempotencyStore(
     IDistributedCacheService cache,
+    IDistributedLockService lockService,
     ILogger<DistributedCacheIdempotencyStore> logger) : IPostCommitIdempotencyStore
 {
     private const string KeyPrefix = "postcommit:idempotency:";
+    private const string LockKeyPrefix = "postcommit:idempotency:lock:";
     private const string StatusPending = "pending";
     private const string StatusCompleted = "completed";
     private const string StatusFailed = "failed";
+
+    /// <summary>
+    /// Lock expiry for atomic check-and-set operations.
+    /// </summary>
+    private const int LockExpiryInSeconds = 30;
 
     /// <summary>
     /// Default TTL for idempotency entries.
@@ -28,29 +37,58 @@ public sealed class DistributedCacheIdempotencyStore(
     public async Task<Result<bool>> TryBeginAsync(string key, CancellationToken cancellationToken)
     {
         var cacheKey = GetCacheKey(key);
+        var lockKey = GetLockKey(key);
+
+        // Track result from within the lock
+        var shouldExecute = false;
+        string? existingStatus = null;
 
         try
         {
-            // Check if already processed
-            var existing = await cache.GetAsync<string>(cacheKey, cancellationToken);
-            if (existing is not null)
+            // Atomic check-and-set with distributed lock (first executor wins)
+            var lockAcquired = await lockService.ExecuteWithLockAsync(
+                lockKey,
+                async () =>
+                {
+                    // Check if already processed
+                    var existing = await cache.GetAsync<string>(cacheKey, cancellationToken);
+                    if (existing is not null)
+                    {
+                        existingStatus = existing;
+                        shouldExecute = false;
+                        return;
+                    }
+
+                    // Set as pending (first executor wins)
+                    await cache.SetAsync(
+                        cacheKey,
+                        StatusPending,
+                        new DistributedCacheEntryOptions
+                        {
+                            AbsoluteExpiration = DateTimeOffset.UtcNow.Add(DefaultTtl)
+                        },
+                        cancellationToken);
+
+                    shouldExecute = true;
+                },
+                LockExpiryInSeconds,
+                cancellationToken);
+
+            if (!lockAcquired)
+            {
+                // Lock not acquired - another instance is processing, treat as duplicate
+                logger.LogDebug("Idempotency lock not acquired for key {Key}, skipping", key);
+                return Result<bool>.Ok(false);
+            }
+
+            if (!shouldExecute)
             {
                 logger.LogDebug(
                     "Idempotency key {Key} already exists with status {Status}, skipping",
                     key,
-                    existing);
+                    existingStatus);
                 return Result<bool>.Ok(false);
             }
-
-            // Try to set as pending (first executor wins)
-            await cache.SetAsync(
-                cacheKey,
-                StatusPending,
-                new DistributedCacheEntryOptions
-                {
-                    AbsoluteExpiration = DateTimeOffset.UtcNow.Add(DefaultTtl)
-                },
-                cancellationToken);
 
             logger.LogDebug("Idempotency key {Key} registered as pending", key);
             return Result<bool>.Ok(true);
@@ -116,5 +154,7 @@ public sealed class DistributedCacheIdempotencyStore(
     }
 
     private static string GetCacheKey(string key) => $"{KeyPrefix}{key}";
+
+    private static string GetLockKey(string key) => $"{LockKeyPrefix}{key}";
 }
 

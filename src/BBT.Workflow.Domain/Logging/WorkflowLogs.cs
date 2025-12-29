@@ -460,7 +460,7 @@ public static partial class WorkflowLogs
     /// Logs when a correlation is marked as completed.
     /// </summary>
     [LoggerMessage(
-        EventId = 40012,
+        EventId = 40022,
         Level = LogLevel.Information,
         Message = "SubFlow correlation completed for SubInstance {SubInstanceId}, Parent {ParentInstanceId}")]
     public static partial void SubFlowCorrelationCompleted(
@@ -472,7 +472,7 @@ public static partial class WorkflowLogs
     /// Logs when a SubFlow correlation is reverted due to pipeline failure.
     /// </summary>
     [LoggerMessage(
-        EventId = 40016,
+        EventId = 40023,
         Level = LogLevel.Warning,
         Message = "SubFlow correlation reverted for SubInstance {SubInstanceId}, Parent {ParentInstanceId}")]
     public static partial void SubFlowCorrelationReverted(
@@ -703,7 +703,7 @@ public static partial class WorkflowLogs
     /// Logs when child subflow cancellation succeeds.
     /// </summary>
     [LoggerMessage(
-        EventId = 40021,
+        EventId = 40024,
         Level = LogLevel.Information,
         Message = "Child subflow cancellation succeeded for instance {InstanceId}")]
     public static partial void ChildSubflowCancelSucceeded(

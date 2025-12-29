@@ -73,9 +73,6 @@ public sealed class WorkflowExecutionService(
         TransitionExecutionContext executionContext,
         CancellationToken cancellationToken)
     {
-        // Capture directives snapshot before building output
-        var snapshot = executionContext.Directives.CreateSnapshot();
-
         // Build transition output
         var outputResult = await BuildTransitionOutputAsync(context, executionContext, cancellationToken);
         if (!outputResult.IsSuccess)
@@ -83,7 +80,7 @@ public sealed class WorkflowExecutionService(
             return Result<TransitionCoreOutput>.Fail(outputResult.Error);
         }
         
-        return Result<TransitionCoreOutput>.Ok(new TransitionCoreOutput(outputResult.Value!, snapshot));
+        return Result<TransitionCoreOutput>.Ok(new TransitionCoreOutput(outputResult.Value!));
     }
 
     /// <summary>
