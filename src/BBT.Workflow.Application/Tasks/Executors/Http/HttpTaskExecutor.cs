@@ -121,7 +121,7 @@ public sealed class HttpTaskExecutor : TaskExecutorBase<HttpTask>
         }
 
         // Update script context with response for output handler
-        UpdateScriptContextWithResponse(task.Key, invocationResult, context.ScriptContext, context.TaskTrigger);
+        UpdateScriptContextWithResponse(task.Key, invocationResult, context.ScriptContext);
 
         var result = await ResultExtensions.TryAsync<object?>(async ct =>
         {

@@ -5,7 +5,7 @@ namespace BBT.Workflow.BackgroundJobs.Payloads;
 /// This class contains all necessary information to identify and process
 /// a workflow instance that has exceeded its timeout duration.
 /// </summary>
-public sealed class WorkflowTimeoutPayload
+public sealed class WorkflowTimeoutPayload : ITraceableJobPayload
 {
     public string JobName { get; set; }
     /// <summary>

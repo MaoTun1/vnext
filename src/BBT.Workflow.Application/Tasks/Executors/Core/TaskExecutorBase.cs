@@ -240,12 +240,10 @@ public abstract class TaskExecutorBase<TTask> : ITaskExecutor
     /// <param name="taskKey">The task key used to generate the variable name.</param>
     /// <param name="result">The task invocation result (can be null).</param>
     /// <param name="context">The script context to update.</param>
-    /// <param name="trigger">The task trigger type.</param>
     protected static void UpdateScriptContextWithResponse(
         string taskKey,
         TaskInvocationResult? result,
-        ScriptContext context,
-        TaskTrigger trigger)
+        ScriptContext context)
     {
         var variableKey = taskKey.ToVariableName();
         var response = new StandardTaskResponse

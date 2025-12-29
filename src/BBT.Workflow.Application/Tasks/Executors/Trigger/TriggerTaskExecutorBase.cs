@@ -85,7 +85,7 @@ public abstract class TriggerTaskExecutorBase<TTask>(
         CancellationToken cancellationToken)
     {
         // Update script context with response
-        UpdateScriptContextWithResponse(task.Key, invocationResult, context.ScriptContext, context.TaskTrigger);
+        UpdateScriptContextWithResponse(task.Key, invocationResult, context.ScriptContext);
 
         var mapping = context.OnExecuteTask.Mapping;
         if (mapping == null || string.IsNullOrEmpty(mapping.DecodedCode))

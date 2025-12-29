@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace BBT.Workflow.Execution.PostCommit;
 
 /// <summary>
@@ -36,5 +38,36 @@ public sealed record StartSubflowJob(
 {
     /// <inheritdoc />
     public string IdempotencyKey => $"subflow:{CorrelationId}";
+}
+
+/// <summary>
+/// Post-commit job for forwarding a transition to an active subflow.
+/// Contains the data needed to forward the transition after lock release.
+/// Implements idempotency to prevent duplicate forwards on retries.
+/// </summary>
+/// <param name="SubflowInstanceId">The instance ID of the active subflow to forward to.</param>
+/// <param name="TransitionKey">The transition key being forwarded.</param>
+/// <param name="SubflowDomain">The domain of the subflow.</param>
+/// <param name="SubflowName">The workflow name of the subflow.</param>
+/// <param name="SubflowVersion">The version of the subflow workflow.</param>
+/// <param name="InstanceKey">The key of the parent instance.</param>
+/// <param name="Tags">The tags from the transition.</param>
+/// <param name="DataElement">The data element to forward.</param>
+/// <param name="Headers">The headers to forward.</param>
+/// <param name="RouteValues">The route values to forward.</param>
+public sealed record ForwardToSubflowJob(
+    Guid SubflowInstanceId,
+    string TransitionKey,
+    string SubflowDomain,
+    string SubflowName,
+    string? SubflowVersion,
+    string? InstanceKey,
+    string[]? Tags,
+    JsonElement? DataElement,
+    Dictionary<string, string?> Headers,
+    Dictionary<string, string?> RouteValues) : IIdempotentPostCommitJob
+{
+    /// <inheritdoc />
+    public string IdempotencyKey => $"forward:{SubflowInstanceId}:{TransitionKey}";
 }
 

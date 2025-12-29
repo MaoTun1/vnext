@@ -163,20 +163,29 @@ public sealed class PostCommitExecutor(
 
     /// <summary>
     /// Dispatches a job to its corresponding handler.
-    /// Uses pattern matching to resolve the correct handler type.
+    /// Dynamically resolves IPostCommitHandler&lt;TJob&gt; from DI using reflection.
     /// </summary>
-    private static Task<Result> DispatchAsync(
+    private static async Task<Result> DispatchAsync(
         IPostCommitJob job,
         IServiceProvider serviceProvider,
         TransitionExecutionContext context,
         CancellationToken cancellationToken)
-        => job switch
-        {
-            StartSubflowJob subflowJob => serviceProvider
-                .GetRequiredService<IPostCommitHandler<StartSubflowJob>>()
-                .HandleAsync(subflowJob, context, cancellationToken),
+    {
+        var jobType = job.GetType();
+        var handlerInterfaceType = typeof(IPostCommitHandler<>).MakeGenericType(jobType);
 
-            _ => Task.FromResult(Result.Fail(
-                WorkflowErrors.ConfigInvalid(context.InstanceId, $"No post-commit handler for: {job.GetType().Name}")))
-        };
+        var handler = serviceProvider.GetService(handlerInterfaceType);
+        if (handler is null)
+        {
+            return Result.Fail(WorkflowErrors.ConfigInvalid(
+                context.InstanceId,
+                $"No post-commit handler registered for: {jobType.Name}"));
+        }
+
+        // Invoke HandleAsync via reflection
+        var handleMethod = handlerInterfaceType.GetMethod(nameof(IPostCommitHandler<IPostCommitJob>.HandleAsync))!;
+        var resultTask = (Task<Result>)handleMethod.Invoke(handler, [job, context, cancellationToken])!;
+
+        return await resultTask;
+    }
 }

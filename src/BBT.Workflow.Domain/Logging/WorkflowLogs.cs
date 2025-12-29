@@ -142,6 +142,20 @@ public static partial class WorkflowLogs
         string? executionChainId);
 
     /// <summary>
+    /// Logs when transition chain depth limit is exceeded in the pipeline.
+    /// This indicates a potential infinite loop in automatic transition chains.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10053,
+        Level = LogLevel.Warning,
+        Message = "Transition chain depth limit exceeded ({CurrentDepth}/{MaxDepth}) for transition '{TransitionKey}'")]
+    public static partial void TransitionChainDepthExceeded(
+        this ILogger logger,
+        int currentDepth,
+        int maxDepth,
+        string? transitionKey);
+
+    /// <summary>
     /// Logs when asynchronous transition enqueue fails.
     /// </summary>
     [LoggerMessage(
@@ -450,6 +464,18 @@ public static partial class WorkflowLogs
         Level = LogLevel.Information,
         Message = "SubFlow correlation completed for SubInstance {SubInstanceId}, Parent {ParentInstanceId}")]
     public static partial void SubFlowCorrelationCompleted(
+        this ILogger logger,
+        Guid subInstanceId,
+        Guid parentInstanceId);
+
+    /// <summary>
+    /// Logs when a SubFlow correlation is reverted due to pipeline failure.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40016,
+        Level = LogLevel.Warning,
+        Message = "SubFlow correlation reverted for SubInstance {SubInstanceId}, Parent {ParentInstanceId}")]
+    public static partial void SubFlowCorrelationReverted(
         this ILogger logger,
         Guid subInstanceId,
         Guid parentInstanceId);

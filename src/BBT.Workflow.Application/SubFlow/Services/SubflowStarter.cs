@@ -103,6 +103,17 @@ public sealed class SubflowStarter(
         ScriptResponse? inputMappingResult,
         CancellationToken cancellationToken)
     {
+        using var activity = SubFlowActivityHelper.StartActivity($"SubFlow.Start/{subFlowReference.Domain}/{subFlowReference.Key}");
+        SubFlowActivityHelper.EnrichWithStart(
+            activity,
+            parentInstance.Id,
+            subFlowReference.Domain,
+            subFlowReference.Key,
+            correlation.SubFlowInstanceId);
+        activity?.SetTag("vnext.subflow.type", subFlowTypeCode == "S" ? "subflow" : "subprocess");
+        activity?.SetTag("vnext.subflow.parent.state", stateKey);
+        activity?.SetTag("vnext.subflow.parent.transition", transitionKey);
+
         try
         {
             // Prepare instance creation input
@@ -167,6 +178,7 @@ public sealed class SubflowStarter(
             {
                 var error = startResult.Error;
 
+                SubFlowActivityHelper.SetError(activity, $"{error.Code}: {error.Message}");
                 logger.LogError(
                     "SubFlow {SubFlowKey} start failed for instance {InstanceId}: {ErrorCode} - {ErrorMessage}",
                     subFlowReference.Key,
@@ -179,6 +191,7 @@ public sealed class SubflowStarter(
                     new Exception(error.Code));
             }
 
+            SubFlowActivityHelper.SetSuccess(activity);
             logger.LogInformation(
                 "SubFlow {SubFlowKey} started successfully for instance {InstanceId}",
                 subFlowReference.Key,
@@ -186,6 +199,7 @@ public sealed class SubflowStarter(
         }
         catch (Exception ex)
         {
+            SubFlowActivityHelper.SetError(activity, ex.Message, ex);
             logger.LogError(ex,
                 "SubFlow {SubFlowKey} start failed for instance {InstanceId}",
                 subFlowReference.Key,

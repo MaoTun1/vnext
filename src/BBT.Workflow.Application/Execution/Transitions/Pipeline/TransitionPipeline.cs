@@ -30,6 +30,12 @@ public class TransitionPipeline
     private const int DefaultLockLeaseSeconds = 60;
 
     /// <summary>
+    /// Maximum allowed chain depth for automatic transitions.
+    /// Prevents infinite loops in recursive transition chains.
+    /// </summary>
+    private const int MaxChainDepth = 50;
+
+    /// <summary>
     /// Initializes a new instance of the TransitionPipeline.
     /// </summary>
     /// <param name="steps">The collection of pipeline steps to execute.</param>
@@ -71,6 +77,21 @@ public class TransitionPipeline
         // Sync dispatch loop: chains automatic transitions under the same trace
         while (true)
         {
+            // Guard: Prevent infinite chain loops (defense in depth)
+            var currentDepth = currentWorkflowContext.Execution?.ChainDepth ?? 0;
+            if (currentDepth > MaxChainDepth)
+            {
+                _logger.TransitionChainDepthExceeded(
+                    currentDepth,
+                    MaxChainDepth,
+                    currentWorkflowContext.TransitionKey);
+                return Result<TransitionExecutionContext>.Fail(
+                    WorkflowErrors.TransitionChainDepthExceeded(
+                        currentDepth,
+                        MaxChainDepth,
+                        currentWorkflowContext.TransitionKey));
+            }
+
             // 1) Create TransitionExecutionContext
             var contextResult = await _contextFactory.CreateAsync(currentWorkflowContext, cancellationToken);
             if (!contextResult.IsSuccess)

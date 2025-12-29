@@ -110,10 +110,10 @@ public sealed class PipelineDirectives
     public void EnqueuePostCommit(IPostCommitJob job)
     {
         // Enqueue-level idempotency: prevent duplicate jobs in the same transition
-        if (job is IIdempotentPostCommitJob idempotentJob)
+        if (job is IIdempotentPostCommitJob idempotentJob &&
+            !_postCommitJobKeys.Add(idempotentJob.IdempotencyKey))
         {
-            if (!_postCommitJobKeys.Add(idempotentJob.IdempotencyKey))
-                return; // Same job already queued in this transition
+            return; // Same job already queued in this transition
         }
 
         _postCommitJobs.Add(job);

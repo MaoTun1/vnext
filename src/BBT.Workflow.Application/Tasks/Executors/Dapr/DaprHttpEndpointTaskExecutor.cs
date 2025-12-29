@@ -120,7 +120,7 @@ public sealed class DaprHttpEndpointTaskExecutor : TaskExecutorBase<DaprHttpEndp
             return Result<object?>.Ok(invocationResult.Data);
         }
 
-        UpdateScriptContextWithResponse(task.Key, invocationResult, context.ScriptContext, context.TaskTrigger);
+        UpdateScriptContextWithResponse(task.Key, invocationResult, context.ScriptContext);
 
         var result = await ResultExtensions.TryAsync<object?>(async ct =>
         {

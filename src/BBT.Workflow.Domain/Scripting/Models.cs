@@ -408,14 +408,15 @@ public class ScriptContext(ILogger<ScriptContext> logger) : IDisposable
 
     /// <summary>
     /// Sets the output response data directly without merging to Body.
+    /// If <paramref name="taskKey"/> is null or whitespace, the method has no effect.
     /// </summary>
     /// <param name="output">The output data.</param>
-    /// <param name="taskKey">The standardized task variable name (optional).</param>
+    /// <param name="taskKey">The standardized task variable name. If null or whitespace, no action is taken.</param>
     public void SetOutputResponse(object? output, string? taskKey = null)
     {
         ThrowIfDisposed();
 
-        // If taskKey provided, set to that key; otherwise set to root
+        // Only set output if taskKey is provided
         if (!string.IsNullOrWhiteSpace(taskKey))
         {
             var value = ToDynamic(output, JsonScriptBodyOptions);

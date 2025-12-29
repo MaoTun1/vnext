@@ -7,7 +7,7 @@ namespace BBT.Workflow.BackgroundJobs.Payloads;
 /// Payload for asynchronous transition background jobs.
 /// Contains all necessary information to execute a workflow transition in the background.
 /// </summary>
-public sealed class TransitionJobPayload
+public sealed class TransitionJobPayload : ITraceableJobPayload
 {
     public string JobName { get; set; }
     
@@ -30,7 +30,13 @@ public sealed class TransitionJobPayload
     /// Gets or sets the workflow name.
     /// </summary>
     public string Workflow { get; set; } = default!;
-    
+
+    /// <summary>
+    /// Gets the workflow name for tracing purposes.
+    /// Maps to <see cref="Workflow"/> property for ITraceableJobPayload compatibility.
+    /// </summary>
+    string ITraceableJobPayload.FlowName => Workflow;
+
     /// <summary>
     /// Gets or sets the workflow version.
     /// </summary>

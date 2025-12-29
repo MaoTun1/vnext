@@ -5,7 +5,7 @@ namespace BBT.Workflow.BackgroundJobs.Payloads;
 /// This class contains information needed to execute a specific workflow transition
 /// after a configured time delay.
 /// </summary>
-public sealed class TransitionTimerPayload
+public sealed class TransitionTimerPayload : ITraceableJobPayload
 {
     public string JobName { get; set; }
     /// <summary>

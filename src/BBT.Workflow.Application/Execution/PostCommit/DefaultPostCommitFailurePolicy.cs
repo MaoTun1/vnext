@@ -9,16 +9,17 @@ public sealed class DefaultPostCommitFailurePolicy : IPostCommitFailurePolicy
     /// <inheritdoc />
     public PostCommitFailureDecision Decide(PostCommitFailureContext context)
     {
-        // Subflow job failure: fail-fast + mark instance faulted
-        // Subflow failures are critical - parent workflow cannot continue
-        if (context.Job is StartSubflowJob)
-        {
-            return new PostCommitFailureDecision(
-                ShouldContinue: false,
-                ShouldMarkInstanceFaulted: true,
-                FaultErrorCode: context.Error.Code,
-                FaultErrorMessage: context.Error.Message);
-        }
+        // INFO: If you need to customize subflow failure handling, you can use the following code block:
+        // Subflow failures are critical - parent workflow cannot continue if subflow fails.
+        //
+        // if (context.Job is StartSubflowJob)
+        // {
+        //     return new PostCommitFailureDecision(
+        //         ShouldContinue: false,
+        //         ShouldMarkInstanceFaulted: true,
+        //         FaultErrorCode: context.Error.Code,
+        //         FaultErrorMessage: context.Error.Message);
+        // }
 
         // Default behavior for other job types: fail-fast + mark instance faulted
         // Can be customized per job type if needed
