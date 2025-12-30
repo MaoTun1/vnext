@@ -364,6 +364,32 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         return correlation;
     }
 
+    /// <summary>
+    /// Reverts a previously completed correlation for the given SubFlow instance ID.
+    /// Marks the correlation as incomplete and returns it.
+    /// If the correlation is a SubFlow type, sets the instance back to Busy status.
+    /// </summary>
+    /// <param name="subInstanceId">The SubFlow instance ID to revert</param>
+    /// <returns>The reverted correlation if found and was completed, otherwise null</returns>
+    public InstanceCorrelation? RevertCorrelation(Guid subInstanceId)
+    {
+        var correlation = FindCorrelationBySubInstanceId(subInstanceId);
+        if (correlation == null || !correlation.IsCompleted)
+        {
+            return null;
+        }
+
+        correlation.Revert();
+
+        // If this is a SubFlow (blocking), set instance back to Busy
+        if (correlation.SubFlowType.Equals(SubFlowType.SubFlow))
+        {
+            Busy();
+        }
+
+        return correlation;
+    }
+
     public void SetKey(string key)
     {
         Key = Check.NotNullOrWhiteSpace(key, nameof(key), InstanceConstants.MaxKeyLength);
