@@ -1,6 +1,6 @@
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Discovery;
 using BBT.Workflow.Runtime;
-using BBT.Workflow.ServiceDiscovery;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

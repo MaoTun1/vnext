@@ -1,4 +1,4 @@
-namespace BBT.Workflow.ServiceDiscovery;
+namespace BBT.Workflow.Discovery;
 
 /// <summary>
 /// Configuration options for service discovery and domain registration.
@@ -15,7 +15,7 @@ public sealed class ServiceDiscoveryOptions
     /// <summary>
     /// Gets or sets whether service discovery is enabled.
     /// When enabled, the application will automatically register itself with the domain registry on startup.
-    /// Default is true.
+    /// Default is false.
     /// </summary>
     public bool Enabled { get; set; } = false;
 
@@ -32,5 +32,56 @@ public sealed class ServiceDiscoveryOptions
     /// Default is "core".
     /// </summary>
     public string Domain { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the registry workflow name.
+    /// </summary>
     public string RegistryFlow { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Timeout in seconds for HTTP requests (default: 30 seconds).
+    /// </summary>
+    public int TimeoutSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// Maximum retry attempts for failed requests (default: 3).
+    /// </summary>
+    public int MaxRetryAttempts { get; set; } = 3;
+
+    /// <summary>
+    /// Retry delay in milliseconds (default: 1000ms).
+    /// </summary>
+    public int RetryDelayMilliseconds { get; set; } = 1000;
+
+    /// <summary>
+    /// Circuit breaker failure threshold before opening (default: 5).
+    /// </summary>
+    public int CircuitBreakerFailureThreshold { get; set; } = 5;
+
+    /// <summary>
+    /// Circuit breaker timeout in seconds (default: 30 seconds).
+    /// </summary>
+    public int CircuitBreakerTimeoutSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// Enable circuit breaker bypass for internal operations (default: false).
+    /// </summary>
+    public bool EnableCircuitBreakerBypass { get; set; } = false;
+
+    /// <summary>
+    /// Internal operation header name for bypass identification.
+    /// </summary>
+    public string InternalOperationHeader { get; set; } = "X-Internal-Operation";
+
+    /// <summary>
+    /// Cache duration in seconds for discovered endpoints (default: 300 = 5 minutes).
+    /// </summary>
+    public int DiscoveryCacheSeconds { get; set; } = 300;
+
+    /// <summary>
+    /// Discovery API endpoint template for resolving domain endpoints.
+    /// {0} = domain name.
+    /// Default: "/discovery/workflows/domain/instances/{0}/functions/data"
+    /// </summary>
+    public string DiscoveryEndpointTemplate { get; set; } = "/discovery/workflows/domain/instances/{0}/functions/data";
 }

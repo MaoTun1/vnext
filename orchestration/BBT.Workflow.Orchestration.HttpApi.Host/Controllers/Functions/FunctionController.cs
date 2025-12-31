@@ -354,7 +354,7 @@ public sealed class FunctionController(
 
         var response = await queryAppService.GetInstanceDataAsync(input, cancellationToken);
 
-        if (response.Result.IsSuccess && !string.IsNullOrEmpty(response.Result.Value!.Etag))
+        if (response.Result.IsSuccess && !string.IsNullOrEmpty(response.Result.Value?.Etag))
         {
             HttpContext.Response.Headers[HeadersConstants.ETag] = response.Result.Value.Etag;
         }

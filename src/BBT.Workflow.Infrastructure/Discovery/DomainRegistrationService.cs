@@ -5,7 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace BBT.Workflow.ServiceDiscovery;
+namespace BBT.Workflow.Discovery;
 
 /// <summary>
 /// Service implementation for registering the current domain with the central service registry.
