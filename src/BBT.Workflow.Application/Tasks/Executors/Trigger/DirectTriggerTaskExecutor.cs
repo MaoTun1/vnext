@@ -78,10 +78,10 @@ public sealed class DirectTriggerTaskExecutor : TriggerTaskExecutorBase<DirectTr
             "DirectTrigger task {TaskKey} targeting domain {TargetDomain}, instance {InstanceId}, same domain: {IsSameDomain}",
             task.Key, task.TriggerDomain, instanceIdentifier, isSameDomain);
 
-        if (isSameDomain)
-        {
-            return await ExecuteLocalAsync(task, instanceIdentifier, context, cancellationToken);
-        }
+        // if (isSameDomain)
+        // {
+        //     return await ExecuteLocalAsync(task, instanceIdentifier, context, cancellationToken);
+        // }
 
         return await ExecuteRemoteAsync(task, context, cancellationToken);
     }

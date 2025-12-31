@@ -75,14 +75,14 @@ public sealed class SubProcessTaskExecutor : TriggerTaskExecutorBase<SubProcessT
 
         TaskInvocationResult result;
 
-        if (isSameDomain)
-        {
-            result = await ExecuteLocalAsync(task, context, subFlowInstanceId, correlationId, cancellationToken);
-        }
-        else
-        {
+        // if (isSameDomain)
+        // {
+        //     result = await ExecuteLocalAsync(task, context, subFlowInstanceId, correlationId, cancellationToken);
+        // }
+        // else
+        // {
             result = await ExecuteRemoteAsync(task, context, subFlowInstanceId, correlationId, cancellationToken);
-        }
+        // }
 
         return Result<TaskInvocationResult>.Ok(result);
     }

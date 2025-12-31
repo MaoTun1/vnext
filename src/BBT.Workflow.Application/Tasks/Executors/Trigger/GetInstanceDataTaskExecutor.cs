@@ -71,10 +71,10 @@ public sealed class GetInstanceDataTaskExecutor : TriggerTaskExecutorBase<GetIns
             "GetInstanceData task {TaskKey} targeting domain {TargetDomain}, instance {InstanceId}, same domain: {IsSameDomain}",
             task.Key, task.TriggerDomain, instanceIdentifier, isSameDomain);
 
-        if (isSameDomain)
-        {
-            return await ExecuteLocalAsync(task, instanceIdentifier, context, cancellationToken);
-        }
+        // if (isSameDomain)
+        // {
+        //     return await ExecuteLocalAsync(task, instanceIdentifier, context, cancellationToken);
+        // }
 
         return await ExecuteRemoteAsync(task, instanceIdentifier, context, cancellationToken);
     }
