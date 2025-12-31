@@ -212,7 +212,7 @@ public sealed class DomainDiscoveryResolver(
             // Add If-None-Match header for conditional request
             if (!string.IsNullOrWhiteSpace(cachedETag))
             {
-                request.Headers.TryAddWithoutValidation(IfNoneMatchHeader, cachedETag);
+                request.Headers.TryAddWithoutValidation(IfNoneMatchHeader,  $"\"{cachedETag}\"");
             }
 
             var response = await httpClient.SendAsync(request, cancellationToken);
@@ -239,7 +239,7 @@ public sealed class DomainDiscoveryResolver(
 
             var dto = await response.Content.ReadFromJsonAsync<DiscoveryRegistrationDto>(JsonOptions, cancellationToken);
 
-            if (dto is null || string.IsNullOrWhiteSpace(dto.Data.BaseUrl))
+            if (dto?.Data is null || string.IsNullOrWhiteSpace(dto.Data.BaseUrl))
             {
                 logger.LogWarning(
                     "Discovery service returned empty or invalid registration for domain '{Domain}'",
@@ -277,7 +277,7 @@ public sealed class DomainDiscoveryResolver(
             else if (!string.IsNullOrWhiteSpace(dto.ETag))
             {
                 // DTO ETag may not include quotes - normalize to quoted format
-                responseETag = dto.ETag.StartsWith("\"") ? dto.ETag : $"\"{dto.ETag}\"";
+                responseETag = dto.ETag.Trim('"');
             }
 
             return DiscoveryFetchResult.Success(endpoint, responseETag);

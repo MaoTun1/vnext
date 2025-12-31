@@ -249,7 +249,8 @@ public sealed class StartTriggerRemoteInvoker : ITaskInvoker<StartTriggerBinding
         if (string.IsNullOrEmpty(binding.BaseUrl))
             throw new InvalidOperationException("BaseUrl is required for HTTP execution");
 
-        var requestUri = new Uri(new Uri(binding.BaseUrl), path.TrimStart('/'));
+        var baseUrl = binding.BaseUrl.TrimEnd('/') + "/";
+        var requestUri = new Uri(new Uri(baseUrl), path.TrimStart('/'));
 
         var requestBody = new
         {

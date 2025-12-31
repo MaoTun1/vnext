@@ -17,7 +17,7 @@ public static class ETagExtensions
     {
         var normalizedCurrent = StripQuotes(currentETag);
         var normalizedIfNoneMatch = StripQuotes(ifNoneMatch);
-        return normalizedCurrent.Equals(normalizedIfNoneMatch, StringComparison.OrdinalIgnoreCase);
+        return normalizedCurrent.Equals(normalizedIfNoneMatch, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -31,6 +31,6 @@ public static class ETagExtensions
         if (string.IsNullOrEmpty(etag))
             return string.Empty;
 
-        return etag.Replace("\"", "");
+        return etag.Trim('"');
     }
 } 
