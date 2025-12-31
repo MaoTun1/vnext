@@ -31,6 +31,14 @@ public static class ETagExtensions
         if (string.IsNullOrEmpty(etag))
             return string.Empty;
 
-        return etag.Trim('"');
+        var value = etag.Trim();
+        const string WeakPrefix = "W/";
+        if (value.StartsWith(WeakPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            value = value.Substring(WeakPrefix.Length).TrimStart();
+        }
+        // Only remove surrounding quotes, not quotes that may appear within the value.
+        value = value.Trim('"');
+        return value;
     }
 } 

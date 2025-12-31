@@ -115,7 +115,7 @@ public sealed class DomainDiscoveryResolver(
         {
             throw new InvalidOperationException(
                 $"Cannot resolve endpoint for domain '{domain}': " +
-                "ServiceDiscovery.UseServiceDiscovery is false and vNextApi.BaseUrl is not configured.");
+                "ServiceDiscovery.Enabled is false and vNextApi.BaseUrl is not configured.");
         }
 
         logger.LogDebug(
@@ -196,7 +196,7 @@ public sealed class DomainDiscoveryResolver(
         {
             throw new InvalidOperationException(
                 $"Cannot resolve endpoint for domain '{domain}': " +
-                "ServiceDiscovery.BaseUrl is not configured but UseServiceDiscovery is true.");
+                "ServiceDiscovery.BaseUrl is not configured but Enabled is true.");
         }
 
         var endpointTemplate = options.DiscoveryEndpointTemplate;
