@@ -1,4 +1,4 @@
-namespace BBT.Workflow.ServiceDiscovery;
+namespace BBT.Workflow.Discovery;
 
 /// <summary>
 /// Service responsible for registering the current domain with the service registry.

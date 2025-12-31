@@ -41,6 +41,9 @@ public static class WorkflowInfrastructureModuleServiceCollectionExtensions
         services.AddScoped<IInstanceTaskRepository, EfCoreInstanceTaskRepository>();
         services.AddScoped<IInstanceJobRepository, EfCoreInstanceJobRepository>();
         
+        // Domain discovery
+        services.AddDomainDiscovery();
+        
         // Remote vnext api
         services.AddVNextApiServices();
         
