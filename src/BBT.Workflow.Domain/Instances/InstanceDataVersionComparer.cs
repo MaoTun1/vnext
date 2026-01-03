@@ -29,6 +29,15 @@ namespace BBT.Workflow.Instances;
 ///     <item><description>If equal, compare package version</description></item>
 ///     <item><description>Build metadata (+PKG_NAME, +build.xxx) is ignored in comparisons</description></item>
 /// </list>
+/// 
+/// Version Resolution (FindBestMatch):
+/// <list type="bullet">
+///     <item><description>"latest" or null/empty → Returns the highest available version</description></item>
+///     <item><description>"1.0.0-pkg.1.17.0+account" (full version) → Exact match only</description></item>
+///     <item><description>"1.0.0" (artifact version) → Finds highest pkg version for that artifact</description></item>
+///     <item><description>"1.0" (partial version) → Finds highest version matching the prefix</description></item>
+///     <item><description>"1" (major-only version) → Finds highest version matching the major</description></item>
+/// </list>
 /// </remarks>
 public partial class InstanceDataVersionComparer : IComparer<InstanceData>
 {
@@ -270,6 +279,29 @@ public partial class InstanceDataVersionComparer : IComparer<InstanceData>
     }
 
     /// <summary>
+    /// Checks if the version is a major-only version format (single number).
+    /// </summary>
+    /// <param name="version">Version string to check</param>
+    /// <returns>True if the version matches major-only format (e.g., "1", "2", "10")</returns>
+    public static bool IsMajorOnlyVersion(string? version)
+    {
+        if (string.IsNullOrWhiteSpace(version))
+            return false;
+
+        return MajorOnlyVersionRegex().IsMatch(version);
+    }
+
+    /// <summary>
+    /// Checks if the version string represents the "latest" keyword.
+    /// </summary>
+    /// <param name="version">Version string to check</param>
+    /// <returns>True if the version is "latest" (case-insensitive)</returns>
+    public static bool IsLatestKeyword(string? version)
+    {
+        return string.Equals(version, "latest", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Checks if a full version matches the given artifact version.
     /// </summary>
     /// <param name="fullVersion">Full version string (e.g., "1.0.0-pkg.1.17.0+account")</param>
@@ -285,11 +317,14 @@ public partial class InstanceDataVersionComparer : IComparer<InstanceData>
     }
 
     /// <summary>
-    /// Checks if a full version matches the given partial version prefix.
+    /// Checks if a full version matches the given partial version prefix (MAJOR.MINOR format).
     /// </summary>
     /// <param name="fullVersion">Full version string (e.g., "1.0.5-pkg.1.17.0+account")</param>
-    /// <param name="partialVersion">Partial version prefix (e.g., "1.0")</param>
-    /// <returns>True if the full version's artifact part starts with the partial version</returns>
+    /// <param name="partialVersion">Partial version prefix in MAJOR.MINOR format (e.g., "1.0")</param>
+    /// <returns>True if the full version's artifact part starts with the partial version prefix</returns>
+    /// <remarks>
+    /// For major-only version matching (e.g., "1"), use <see cref="MatchesMajor"/> instead.
+    /// </remarks>
     public static bool MatchesPartial(string? fullVersion, string? partialVersion)
     {
         if (string.IsNullOrWhiteSpace(fullVersion) || string.IsNullOrWhiteSpace(partialVersion))
@@ -297,6 +332,22 @@ public partial class InstanceDataVersionComparer : IComparer<InstanceData>
 
         var parsed = ParseVersion(fullVersion);
         var prefix = $"{partialVersion}.";
+        return parsed.ArtifactVersion.StartsWith(prefix, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Checks if a full version matches the given major version.
+    /// </summary>
+    /// <param name="fullVersion">Full version string (e.g., "1.0.5-pkg.1.17.0+account")</param>
+    /// <param name="majorVersion">Major version to match (e.g., "1")</param>
+    /// <returns>True if the full version's artifact part starts with the major version</returns>
+    public static bool MatchesMajor(string? fullVersion, string? majorVersion)
+    {
+        if (string.IsNullOrWhiteSpace(fullVersion) || string.IsNullOrWhiteSpace(majorVersion))
+            return false;
+
+        var parsed = ParseVersion(fullVersion);
+        var prefix = $"{majorVersion}.";
         return parsed.ArtifactVersion.StartsWith(prefix, StringComparison.Ordinal);
     }
 
@@ -309,10 +360,11 @@ public partial class InstanceDataVersionComparer : IComparer<InstanceData>
     /// <remarks>
     /// Matching logic:
     /// <list type="number">
-    ///     <item><description>If requestedVersion is null/empty → returns the latest version</description></item>
+    ///     <item><description>If requestedVersion is null/empty or "latest" → returns the latest version</description></item>
     ///     <item><description>If requestedVersion is a full version → exact match only</description></item>
     ///     <item><description>If requestedVersion is an artifact version → finds highest pkg version for that artifact</description></item>
-    ///     <item><description>If requestedVersion is a partial version → finds highest version matching the prefix</description></item>
+    ///     <item><description>If requestedVersion is a partial version (MAJOR.MINOR) → finds highest version matching the prefix</description></item>
+    ///     <item><description>If requestedVersion is a major-only version (e.g., "1") → finds highest version matching the major</description></item>
     /// </list>
     /// </remarks>
     public static string? FindBestMatch(IEnumerable<string> versions, string? requestedVersion)
@@ -321,8 +373,8 @@ public partial class InstanceDataVersionComparer : IComparer<InstanceData>
         if (versionList.Count == 0)
             return null;
 
-        // 1. If requestedVersion is null/empty → return latest version
-        if (string.IsNullOrWhiteSpace(requestedVersion))
+        // 1. If requestedVersion is null/empty or "latest" → return latest version
+        if (string.IsNullOrWhiteSpace(requestedVersion) || IsLatestKeyword(requestedVersion))
         {
             return versionList
                 .OrderByDescending(v => v, StringVersionComparer.Instance)
@@ -352,11 +404,22 @@ public partial class InstanceDataVersionComparer : IComparer<InstanceData>
             return matched;
         }
 
-        // 5. If requestedVersion is a partial version → find highest version matching prefix
+        // 5. If requestedVersion is a partial version (MAJOR.MINOR) → find highest version matching prefix
         if (IsPartialVersion(requestedVersion))
         {
             var matched = versionList
                 .Where(v => MatchesPartial(v, requestedVersion))
+                .OrderByDescending(v => v, StringVersionComparer.Instance)
+                .FirstOrDefault();
+
+            return matched;
+        }
+
+        // 6. If requestedVersion is a major-only version (e.g., "1") → find highest version matching major
+        if (IsMajorOnlyVersion(requestedVersion))
+        {
+            var matched = versionList
+                .Where(v => MatchesMajor(v, requestedVersion))
                 .OrderByDescending(v => v, StringVersionComparer.Instance)
                 .FirstOrDefault();
 
@@ -406,6 +469,12 @@ public partial class InstanceDataVersionComparer : IComparer<InstanceData>
     /// </summary>
     [GeneratedRegex(@"^(\d+)\.(\d+)$", RegexOptions.Compiled)]
     private static partial Regex PartialVersionRegex();
+
+    /// <summary>
+    /// Regex pattern for major-only version format: MAJOR (single number)
+    /// </summary>
+    [GeneratedRegex(@"^(\d+)$", RegexOptions.Compiled)]
+    private static partial Regex MajorOnlyVersionRegex();
 
     /// <summary>
     /// Represents a parsed version with artifact and optional package version.

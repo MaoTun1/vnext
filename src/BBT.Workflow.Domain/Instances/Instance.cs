@@ -523,20 +523,27 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// Finds instance data by version.
     /// Supports multiple version formats:
     /// <list type="bullet">
+    ///     <item><description>null/empty or "latest": Returns the highest available version</description></item>
     ///     <item><description>Exact match: "1.0.0-pkg.1.17.0+account" or "1.0.0-alpha.1-pkg.1.17.0+account"</description></item>
     ///     <item><description>Artifact version only: "1.0.0" or "1.0.0-alpha.1" → finds highest pkg version for that artifact</description></item>
     ///     <item><description>Partial version: "1.0" → finds highest version among all 1.0.x versions</description></item>
+    ///     <item><description>Major-only version: "1" → finds highest version among all 1.x.x versions</description></item>
     /// </list>
     /// </summary>
-    /// <param name="version">Version string to search for</param>
+    /// <param name="version">Version string to search for (null, empty, or "latest" returns the highest version)</param>
     /// <returns>The matching InstanceData or null if not found</returns>
-    public InstanceData? FindData(string version)
+    public InstanceData? FindData(string? version)
     {
-        if (string.IsNullOrWhiteSpace(version))
-            return null;
-
         lock (_dataListLock)
         {
+            // 0. If version is null/empty or "latest" → return the highest version
+            if (string.IsNullOrWhiteSpace(version) || InstanceDataVersionComparer.IsLatestKeyword(version))
+            {
+                return _dataList
+                    .OrderByDescending(d => d, InstanceDataVersionComparer.Instance)
+                    .FirstOrDefault();
+            }
+
             // 1. Try exact match first
             var exactMatch = _dataList.FirstOrDefault(x => x.Version == version);
             if (exactMatch != null)
@@ -545,8 +552,7 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
             // 2. Check if this is a full artifact version (MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-PRERELEASE)
             //    Client sends only artifact version, we need to find the highest pkg version
             //    Supports: 1.0.0, 1.0.0-alpha.1, 1.0.0-beta, 1.0.0-rc.1, etc.
-            var artifactMatch = Regex.Match(version, @"^(\d+\.\d+\.\d+(?:-[a-zA-Z0-9]+(?:\.[a-zA-Z0-9]+)*)?)$");
-            if (artifactMatch.Success)
+            if (InstanceDataVersionComparer.IsArtifactVersion(version))
             {
                 // Find all data entries that match this artifact version
                 // They could be either:
@@ -555,7 +561,8 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
                 var artifactPrefix = $"{version}-pkg.";
                 
                 var matched = _dataList
-                    .Where(d => d.Version.StartsWith(artifactPrefix, StringComparison.Ordinal))
+                    .Where(d => d.Version.StartsWith(artifactPrefix, StringComparison.Ordinal) ||
+                               InstanceDataVersionComparer.MatchesArtifact(d.Version, version))
                     .OrderByDescending(d => d, InstanceDataVersionComparer.Instance)
                     .FirstOrDefault();
 
@@ -563,14 +570,21 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
             }
 
             // 3. Partial version: 1.0 → find the highest version among all 1.0.x versions
-            var partialMatch = Regex.Match(version, @"^(\d+)\.(\d+)$");
-            if (partialMatch.Success)
+            if (InstanceDataVersionComparer.IsPartialVersion(version))
             {
-                var prefix = $"{partialMatch.Groups[1].Value}.{partialMatch.Groups[2].Value}.";
-
                 var matched = _dataList
-                    .Where(d => d.Version.StartsWith(prefix, StringComparison.Ordinal) || 
-                               InstanceDataVersionComparer.GetArtifactVersion(d.Version).StartsWith(prefix, StringComparison.Ordinal))
+                    .Where(d => InstanceDataVersionComparer.MatchesPartial(d.Version, version))
+                    .OrderByDescending(d => d, InstanceDataVersionComparer.Instance)
+                    .FirstOrDefault();
+
+                return matched;
+            }
+
+            // 4. Major-only version: 1 → find the highest version among all 1.x.x versions
+            if (InstanceDataVersionComparer.IsMajorOnlyVersion(version))
+            {
+                var matched = _dataList
+                    .Where(d => InstanceDataVersionComparer.MatchesMajor(d.Version, version))
                     .OrderByDescending(d => d, InstanceDataVersionComparer.Instance)
                     .FirstOrDefault();
 
