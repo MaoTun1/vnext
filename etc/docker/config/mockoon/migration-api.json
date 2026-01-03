@@ -2073,7 +2073,7 @@
       "responses": [
         {
           "uuid": "7198d479-8589-4487-a458-d9454d94f398",
-          "body": "{{setVar 'eTag' (faker 'string.alphanumeric' 32)}}\n{{setVar 'port' (faker 'number.int' min=4200 max=5000)}}\n{\n    \"data\": {\n        \"eTag\": \"\\\"{{@eTag}}\\\"\",\n        \"appId\": \"vnext-{{urlParam 'domain'}}.test-vnext-{{urlParam 'domain'}}\",\n        \"baseUrl\": \"http://localhost:{{@port}}\",\n        \"healthUrl\": \"https://localhost:{{@port}}/health\",\n        \"domainName\": \"{{urlParam 'domain'}}\"\n    },\n    \"etag\":  \"\\\"{{@eTag}}\\\"\",\n    \"extensions\": {}\n}\n ",
+          "body": "{{setVar 'eTag' (faker 'string.alphanumeric' 32)}}\n\n{{#if (eq (urlParam 'domain') 'core')}}\n  {{setVar 'port' 4201}}\n{{else}}\n  {{setVar 'port' (faker 'number.int' min=4200 max=5000)}}\n{{/if}}\n\n{\n    \"data\": {\n        \"eTag\": \"\\\"{{@eTag}}\\\"\",\n        \"appId\": \"vnext-{{urlParam 'domain'}}.test-vnext-{{urlParam 'domain'}}\",\n        \"baseUrl\": \"http://localhost:{{@port}}\",\n        \"healthUrl\": \"https://localhost:{{@port}}/health\",\n        \"domainName\": \"{{urlParam 'domain'}}\"\n    },\n    \"etag\":  \"\\\"{{@eTag}}\\\"\",\n    \"extensions\": {}\n}\n ",
           "latency": 0,
           "statusCode": 200,
           "label": "Domain servis bilgisini döner",
@@ -2081,6 +2081,10 @@
             {
               "key": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "key": "x-change-port",
+              "value": "true"
             }
           ],
           "bodyType": "INLINE",

@@ -9,6 +9,8 @@ using BBT.Workflow.Functions;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Instances.DTOs;
 using BBT.Workflow.Runtime;
+using GetExtensionsInput = BBT.Workflow.Instances.DTOs.GetExtensionsInput;
+using GetExtensionsOutput = BBT.Workflow.Instances.DTOs.GetExtensionsOutput;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
@@ -113,6 +115,12 @@ public sealed class FunctionController(
                 cancellationToken));
         }
 
+        if (functionType == Definitions.Functions.FunctionTypeConst.Extensions)
+        {
+            return FromResult(await ProcessExtensionsFunctionListAsync(domain, workflow, instanceListResult.Value!,
+                requestContext.Headers, requestContext.QueryParameters, cancellationToken));
+        }
+
         return FromResult(await ProcessCustomFunctionListAsync(function, workflow, domain, instanceListResult.Value!,
             requestContext.Headers, requestContext.QueryParameters, cancellationToken));
     }
@@ -161,6 +169,12 @@ public sealed class FunctionController(
         {
             return FromResult(await ProcessSchemaFunctionAsync(domain, workflow, instance, parameters.Version,
                 parameters.TransitionKey, cancellationToken));
+        }
+
+        if (functionType == Definitions.Functions.FunctionTypeConst.Extensions)
+        {
+            return FromResult(await ProcessExtensionsFunctionAsync(domain, workflow, instance, parameters.Version,
+                parameters.Extensions, requestContext.Headers, requestContext.QueryParameters, cancellationToken));
         }
 
         return FromResult(await functionAppService.GetFunctionByInstanceAsync(function, workflow, domain, instance,
@@ -262,6 +276,67 @@ public sealed class FunctionController(
         };
 
         return await queryAppService.GetSchemaAsync(input, transitionKey, cancellationToken);
+    }
+
+    private async Task<Result<GetExtensionsOutput>> ProcessExtensionsFunctionAsync(
+        string domain,
+        string workflow,
+        string instance,
+        string? version,
+        string[]? extensions,
+        Dictionary<string, string?> headers,
+        Dictionary<string, string?> queryParams,
+        CancellationToken cancellationToken)
+    {
+        var input = new GetExtensionsInput
+        {
+            Domain = domain,
+            Workflow = workflow,
+            Instance = instance,
+            Version = version,
+            Extensions = extensions,
+            Headers = headers,
+            QueryParameters = queryParams
+        };
+
+        return await queryAppService.GetExtensionsAsync(input, cancellationToken);
+    }
+
+    private async Task<Result<HateoasPagedResultDto<GetExtensionsOutput>>> ProcessExtensionsFunctionListAsync(
+        string domain,
+        string workflow,
+        HateoasPagedList<GetInstanceOutput> instanceListResult,
+        Dictionary<string, string?> headers,
+        Dictionary<string, string?> queryParams,
+        CancellationToken cancellationToken)
+    {
+        var list = new List<GetExtensionsOutput>();
+
+        foreach (var instance in instanceListResult.Items)
+        {
+            var result = await ProcessExtensionsFunctionAsync(
+                domain,
+                workflow,
+                instance.Key!,
+                instance.FlowVersion,
+                null,
+                headers,
+                queryParams,
+                cancellationToken);
+
+            if (!result.IsSuccess)
+            {
+                continue;
+            }
+
+            list.Add(result.Value!);
+        }
+
+        var route = InstanceUrlTemplates.FunctionList(domain, workflow,
+            Definitions.Functions.FunctionTypeConst.Extensions, InstanceUrlTemplates.GetApiVersionPrefix("1"));
+        var output = linkGenerator.CreateHateoasResult(instanceListResult, list, route);
+
+        return Result<HateoasPagedResultDto<GetExtensionsOutput>>.Ok(output);
     }
 
     private async Task<Result<HateoasPagedResultDto<GetSchemaOutput>>> ProcessSchemaFunctionListAsync(

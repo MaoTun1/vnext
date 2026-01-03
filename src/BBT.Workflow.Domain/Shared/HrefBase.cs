@@ -23,6 +23,7 @@ public sealed class TransitionItem : HrefBase
     /// Transition name
     /// </summary>
     public string Name { get; set; } = string.Empty;
+    public HrefBase? Schema {get; set; }
 }
 
 /// <summary>

@@ -450,12 +450,12 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         return policy.Validate(state, transition, executionActor);
     }
 
-    public InstanceData AddDataWithVersion(Guid id, JsonData inputData, string version)
+    public InstanceData AddDataWithVersion(Guid id, JsonData inputData, string version, bool ignoreSameData = true)
     {
         lock (_dataListLock)
         {
             var latestData = _dataList.OrderByDescending(x => x, InstanceDataVersionComparer.Instance).FirstOrDefault();
-            if (latestData?.HasSameData(inputData) == true)
+            if (ignoreSameData && latestData?.HasSameData(inputData) == true)
             {
                 // Data hasn't changed, return the existing latest data
                 return latestData;
