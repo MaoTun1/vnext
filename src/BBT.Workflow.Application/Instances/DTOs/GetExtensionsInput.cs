@@ -37,7 +37,7 @@ public sealed class GetExtensionsInput : IHasDomain
     /// <summary>
     /// Extensions to execute
     /// </summary>
-    public string[]? Extensions { get; set; }
+    public string[]? Extensions { get; init; }
 
     /// <summary>
     /// Request headers for script context

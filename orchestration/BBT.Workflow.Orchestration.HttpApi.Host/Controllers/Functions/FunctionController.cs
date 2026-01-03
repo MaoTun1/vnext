@@ -208,25 +208,11 @@ public sealed class FunctionController(
         HateoasPagedList<GetInstanceOutput> instanceListResult,
         CancellationToken cancellationToken)
     {
-        var list = new List<GetInstanceStateOutput>();
+        var tasks = instanceListResult.Items.Select(instance =>
+            ProcessLongpoolingFunctionAsync(domain, workflow, instance.Key!, instance.FlowVersion, null, cancellationToken));
 
-        foreach (var instance in instanceListResult.Items)
-        {
-            var result = await ProcessLongpoolingFunctionAsync(
-                domain,
-                workflow,
-                instance.Key!,
-                instance.FlowVersion,
-                null,
-                cancellationToken);
-
-            if (!result.IsSuccess)
-            {
-                continue;
-            }
-
-            list.Add(result.Value!);
-        }
+        var results = await Task.WhenAll(tasks);
+        var list = results.Where(r => r.IsSuccess).Select(r => r.Value!).ToList();
 
         var route = InstanceUrlTemplates.FunctionList(domain, workflow,
             Definitions.Functions.FunctionTypeConst.Longpooling, InstanceUrlTemplates.GetApiVersionPrefix("1"));
@@ -310,27 +296,11 @@ public sealed class FunctionController(
         Dictionary<string, string?> queryParams,
         CancellationToken cancellationToken)
     {
-        var list = new List<GetExtensionsOutput>();
+        var tasks = instanceListResult.Items.Select(instance =>
+            ProcessExtensionsFunctionAsync(domain, workflow, instance.Key!, instance.FlowVersion, null, headers, queryParams, cancellationToken));
 
-        foreach (var instance in instanceListResult.Items)
-        {
-            var result = await ProcessExtensionsFunctionAsync(
-                domain,
-                workflow,
-                instance.Key!,
-                instance.FlowVersion,
-                null,
-                headers,
-                queryParams,
-                cancellationToken);
-
-            if (!result.IsSuccess)
-            {
-                continue;
-            }
-
-            list.Add(result.Value!);
-        }
+        var results = await Task.WhenAll(tasks);
+        var list = results.Where(r => r.IsSuccess).Select(r => r.Value!).ToList();
 
         var route = InstanceUrlTemplates.FunctionList(domain, workflow,
             Definitions.Functions.FunctionTypeConst.Extensions, InstanceUrlTemplates.GetApiVersionPrefix("1"));
@@ -345,25 +315,11 @@ public sealed class FunctionController(
         HateoasPagedList<GetInstanceOutput> instanceListResult,
         CancellationToken cancellationToken)
     {
-        var list = new List<GetSchemaOutput>();
+        var tasks = instanceListResult.Items.Select(instance =>
+            ProcessSchemaFunctionAsync(domain, workflow, instance.Key!, instance.FlowVersion, string.Empty, cancellationToken));
 
-        foreach (var instance in instanceListResult.Items)
-        {
-            var result = await ProcessSchemaFunctionAsync(
-                domain,
-                workflow,
-                instance.Key!,
-                instance.FlowVersion,
-                string.Empty,
-                cancellationToken);
-
-            if (!result.IsSuccess)
-            {
-                continue;
-            }
-
-            list.Add(result.Value!);
-        }
+        var results = await Task.WhenAll(tasks);
+        var list = results.Where(r => r.IsSuccess).Select(r => r.Value!).ToList();
 
         var route = InstanceUrlTemplates.FunctionList(domain, workflow,
             Definitions.Functions.FunctionTypeConst.Schema, InstanceUrlTemplates.GetApiVersionPrefix("1"));
@@ -378,26 +334,11 @@ public sealed class FunctionController(
         HateoasPagedList<GetInstanceOutput> instanceListResult,
         CancellationToken cancellationToken)
     {
-        var list = new List<GetViewOutput>();
+        var tasks = instanceListResult.Items.Select(instance =>
+            ProcessViewFunctionAsync(domain, workflow, instance.Key!, instance.FlowVersion, string.Empty, string.Empty, cancellationToken));
 
-        foreach (var instance in instanceListResult.Items)
-        {
-            var result = await ProcessViewFunctionAsync(
-                domain,
-                workflow,
-                instance.Key!,
-                instance.FlowVersion,
-                string.Empty,
-                string.Empty,
-                cancellationToken);
-
-            if (!result.IsSuccess)
-            {
-                continue;
-            }
-
-            list.Add(result.Value!);
-        }
+        var results = await Task.WhenAll(tasks);
+        var list = results.Where(r => r.IsSuccess).Select(r => r.Value!).ToList();
 
         var route = InstanceUrlTemplates.FunctionList(domain, workflow,
             Definitions.Functions.FunctionTypeConst.View, InstanceUrlTemplates.GetApiVersionPrefix("1"));
@@ -445,9 +386,7 @@ public sealed class FunctionController(
         Dictionary<string, string?> queryParams,
         CancellationToken cancellationToken)
     {
-        var list = new List<GetInstanceDataOutput>();
-
-        foreach (var instance in instanceListResult.Items)
+        var tasks = instanceListResult.Items.Select(instance =>
         {
             var input = new GetInstanceDataInput
             {
@@ -457,10 +396,11 @@ public sealed class FunctionController(
                 Headers = headers,
                 QueryParameters = queryParams
             };
+            return queryAppService.GetInstanceDataAsync(input, cancellationToken);
+        });
 
-            var response = await queryAppService.GetInstanceDataAsync(input, cancellationToken);
-            list.Add(response.Result.Value!);
-        }
+        var results = await Task.WhenAll(tasks);
+        var list = results.Where(r => r.Result.IsSuccess).Select(r => r.Result.Value!).ToList();
 
         var route = InstanceUrlTemplates.FunctionList(domain, workflow,
             Definitions.Functions.FunctionTypeConst.Data, InstanceUrlTemplates.GetApiVersionPrefix("1"));
@@ -477,23 +417,11 @@ public sealed class FunctionController(
         Dictionary<string, string?> queryParams,
         CancellationToken cancellationToken)
     {
-        var list = new List<Dictionary<string, dynamic?>>();
+        var tasks = instanceListResult.Items.Select(instance =>
+            functionAppService.GetFunctionByInstanceAsync(function, workflow, domain, instance.Key!, headers, queryParams, cancellationToken));
 
-        foreach (var instance in instanceListResult.Items)
-        {
-            var result = await functionAppService.GetFunctionByInstanceAsync(function, workflow, domain,
-                instance.Key!,
-                headers, queryParams, cancellationToken);
-
-            if (!result.IsSuccess)
-            {
-                continue;
-            }
-
-            list.Add(
-                result.Value!
-            );
-        }
+        var results = await Task.WhenAll(tasks);
+        var list = results.Where(r => r.IsSuccess).Select(r => r.Value!).ToList();
 
         var route = InstanceUrlTemplates.FunctionList(domain, workflow, function,
             InstanceUrlTemplates.GetApiVersionPrefix("1"));

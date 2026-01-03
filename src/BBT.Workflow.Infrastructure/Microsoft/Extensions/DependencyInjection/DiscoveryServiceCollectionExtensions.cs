@@ -60,9 +60,20 @@ public static class DiscoveryServiceCollectionExtensions
                     client.DefaultRequestHeaders.Add(clientOptions.InternalOperationHeader, "true");
                 }
             })
-            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            .ConfigurePrimaryHttpMessageHandler(() =>
             {
-                AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
+                var handler = new HttpClientHandler
+                {
+                    AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
+                };
+
+                // Disable SSL validation if configured (useful for development environments)
+                if (!options.ValidateSsl)
+                {
+                    handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+                }
+
+                return handler;
             })
             .AddPolicyHandler(GetTimeoutPolicy(options))
             .AddPolicyHandler(GetRetryPolicy(options))

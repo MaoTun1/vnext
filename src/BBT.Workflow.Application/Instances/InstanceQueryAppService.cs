@@ -362,9 +362,7 @@ public sealed class InstanceQueryAppService(
                             input.Extensions,
                             cancellationToken);
 
-                        result.Extensions = subFlowExtensionsResult.IsSuccess
-                            ? subFlowExtensionsResult.Value?.Extensions ?? new Dictionary<string, object>()
-                            : new Dictionary<string, object>();
+                        result.Extensions = subFlowExtensionsResult.Value?.Extensions ?? new Dictionary<string, object>();
 
                         return ConditionalResult<GetInstanceDataOutput>.Success(result);
                     }
@@ -564,25 +562,18 @@ public sealed class InstanceQueryAppService(
             return [];
         }
 
-        // Parse the URL to extract extensions query parameter
-        // Expected format: /instances/{domain}/{workflow}/{instanceId}/data?extensions=ext1,ext2
-        var uri = new Uri(dataHref, UriKind.RelativeOrAbsolute);
-        var query = uri.IsAbsoluteUri ? uri.Query : dataHref.Contains('?') ? dataHref[(dataHref.IndexOf('?'))..] : string.Empty;
-        
-        if (string.IsNullOrEmpty(query))
+        var queryIndex = dataHref.IndexOf('?');
+        if (queryIndex == -1)
         {
             return [];
         }
 
-        // Parse query string manually to extract extensions
-        var queryParams = query.TrimStart('?').Split('&');
-        foreach (var param in queryParams)
+        var query = dataHref.Substring(queryIndex);
+        var queryParams = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(query);
+
+        if (queryParams.TryGetValue("extensions", out var extensionsValues))
         {
-            var keyValue = param.Split('=', 2);
-            if (keyValue.Length == 2 && keyValue[0].Equals("extensions", StringComparison.OrdinalIgnoreCase))
-            {
-                return keyValue[1].Split(',', StringSplitOptions.RemoveEmptyEntries);
-            }
+            return extensionsValues.SelectMany(v => v?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? []).ToArray();
         }
 
         return [];

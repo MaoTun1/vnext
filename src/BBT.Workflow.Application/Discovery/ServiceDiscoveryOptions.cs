@@ -84,4 +84,11 @@ public sealed class ServiceDiscoveryOptions
     /// Default: "/discovery/workflows/domain/instances/{0}/functions/data"
     /// </summary>
     public string DiscoveryEndpointTemplate { get; set; } = "/discovery/workflows/domain/instances/{0}/functions/data";
+
+    /// <summary>
+    /// Gets or sets whether SSL certificate validation is enabled.
+    /// When set to false, SSL certificate errors will be ignored (useful for development environments).
+    /// Default is true for security reasons.
+    /// </summary>
+    public bool ValidateSsl { get; set; } = true;
 }
