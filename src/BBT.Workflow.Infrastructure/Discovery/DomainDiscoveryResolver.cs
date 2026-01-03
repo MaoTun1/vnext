@@ -38,10 +38,10 @@ public sealed class DomainDiscoveryResolver(
         var options = serviceDiscoveryOptions.Value;
 
         // If service discovery is disabled, fall back to static BaseUrl
-        if (!options.Enabled)
-        {
-            return GetFallbackEndpoint(domain);
-        }
+        // if (!options.Enabled)
+        // {
+        //     return GetFallbackEndpoint(domain);
+        // }
 
         // Try to get from cache first
         var cacheKey = GetCacheKey(domain);

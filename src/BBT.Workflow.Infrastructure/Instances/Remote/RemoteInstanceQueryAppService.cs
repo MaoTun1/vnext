@@ -298,6 +298,89 @@ public sealed class RemoteInstanceQueryAppService(
     }
 
     /// <summary>
+    /// Retrieves schema function result for an instance (returns GetSchemaOutput with transition schema)
+    /// GET {baseUrl}/api/v{version}/{domain}/workflows/{workflow}/instances/{instance}/functions/schema?transitionKey={transitionKey}
+    /// </summary>
+    public async Task<Result<DTOs.GetSchemaOutput>> GetFunctionWithSchemaAsync(
+        GetFunctionWithInstanceInput input,
+        string transitionKey,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Resolve endpoint dynamically based on target domain
+            var endpoint = await endpointResolver.GetEndpointAsync(input.Domain, EndpointKind.Url, cancellationToken);
+
+            var relativePath = InstanceUrlTemplates.Schema(input.Domain, input.Workflow, input.Instance, transitionKey, ApiVersionPrefix);
+
+            var queryParams = new List<string>();
+            if (!string.IsNullOrEmpty(input.Version))
+            {
+                queryParams.Add($"{nameof(input.Version).ToLowerInvariant()}={Uri.EscapeDataString(input.Version)}");
+            }
+
+            if (queryParams.Count > 0)
+                relativePath += "&" + string.Join("&", queryParams);
+
+            var requestUri = new Uri(endpoint.BaseUrl, relativePath.TrimStart('/'));
+            var response = await httpClient.GetAsync(requestUri, cancellationToken);
+
+            // Status code → Result.Fail (per Railway Pattern)
+            return await HandleResponseAsync<DTOs.GetSchemaOutput>(response, cancellationToken);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
+        {
+            // Network errors → Transient error (per Railway Pattern)
+            return Result<DTOs.GetSchemaOutput>.Fail(Error.Transient("remote_network_error", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Retrieves extensions function result for an instance (returns GetExtensionsOutput with executed extension results)
+    /// GET {baseUrl}/api/v{version}/{domain}/workflows/{workflow}/instances/{instance}/functions/extensions?extensions={extensions}
+    /// </summary>
+    public async Task<Result<DTOs.GetExtensionsOutput>> GetFunctionWithExtensionsAsync(
+        GetFunctionWithInstanceInput input,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Resolve endpoint dynamically based on target domain
+            var endpoint = await endpointResolver.GetEndpointAsync(input.Domain, EndpointKind.Url, cancellationToken);
+
+            var relativePath = InstanceUrlTemplates.Extensions(input.Domain, input.Workflow, input.Instance, ApiVersionPrefix);
+
+            var queryParams = new List<string>();
+            if (!string.IsNullOrEmpty(input.Version))
+            {
+                queryParams.Add($"{nameof(input.Version).ToLowerInvariant()}={Uri.EscapeDataString(input.Version)}");
+            }
+
+            if (input.Extensions?.Length > 0)
+            {
+                foreach (var ext in input.Extensions)
+                {
+                    queryParams.Add($"{nameof(input.Extensions).ToLowerInvariant()}={Uri.EscapeDataString(ext)}");
+                }
+            }
+
+            if (queryParams.Count > 0)
+                relativePath += "?" + string.Join("&", queryParams);
+
+            var requestUri = new Uri(endpoint.BaseUrl, relativePath.TrimStart('/'));
+            var response = await httpClient.GetAsync(requestUri, cancellationToken);
+
+            // Status code → Result.Fail (per Railway Pattern)
+            return await HandleResponseAsync<DTOs.GetExtensionsOutput>(response, cancellationToken);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
+        {
+            // Network errors → Transient error (per Railway Pattern)
+            return Result<DTOs.GetExtensionsOutput>.Fail(Error.Transient("remote_network_error", ex.Message));
+        }
+    }
+
+    /// <summary>
     /// Handles HTTP response by mapping status codes to appropriate Result types.
     /// Follows Railway Pattern: Status code → Result.Fail (not exceptions).
     /// </summary>
