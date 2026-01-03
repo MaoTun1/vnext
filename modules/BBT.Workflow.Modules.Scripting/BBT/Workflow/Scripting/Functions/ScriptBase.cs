@@ -47,7 +47,8 @@ public abstract class ScriptBase
     /// <returns>The secret value</returns>
     protected string GetSecret(string storeName, string secretStore, string secretKey)
     {
-        return GetSecretAsync(storeName, secretStore, secretKey).GetAwaiter().GetResult();
+        return GetSecretAsync(storeName, secretStore, secretKey)
+            .ConfigureAwait(false).GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -95,7 +96,8 @@ public abstract class ScriptBase
     /// <returns>Dictionary of secret keys and values</returns>
     protected Dictionary<string, string> GetSecrets(string storeName, string secretStore)
     {
-        return GetSecretsAsync(storeName, secretStore).GetAwaiter().GetResult();
+        return GetSecretsAsync(storeName, secretStore)
+            .ConfigureAwait(false).GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -129,7 +131,7 @@ public abstract class ScriptBase
     /// <param name="obj">The dynamic object to check</param>
     /// <param name="propertyName">The property name to check for</param>
     /// <returns>True if the property exists, false otherwise</returns>
-    protected static bool HasProperty(object obj, string propertyName)
+    protected bool HasProperty(object obj, string propertyName)
     {
         if (obj == null || string.IsNullOrWhiteSpace(propertyName)) return false;
 
@@ -404,27 +406,7 @@ public abstract class ScriptBase
         {
             // Use LoggerExtensions to properly handle message template with args
 #pragma warning disable CA2254
-            switch (level)
-            {
-                case LogLevel.Trace:
-                    Services.Logger.LogTrace(message, args);
-                    break;
-                case LogLevel.Debug:
-                    Services.Logger.LogDebug(message, args);
-                    break;
-                case LogLevel.Information:
-                    Services.Logger.LogInformation(message, args);
-                    break;
-                case LogLevel.Warning:
-                    Services.Logger.LogWarning(message, args);
-                    break;
-                case LogLevel.Error:
-                    Services.Logger.LogError(message, args);
-                    break;
-                case LogLevel.Critical:
-                    Services.Logger.LogCritical(message, args);
-                    break;
-            }
+            Services.Logger.Log(level, message, args);
 #pragma warning restore CA2254
         }
     }
@@ -488,8 +470,16 @@ public abstract class ScriptBase
         {
             return (T)Convert.ChangeType(value, typeof(T));
         }
-        catch
+        catch (Exception ex)
         {
+            Services.Logger?.LogWarning(
+                ex,
+                "Failed to convert configuration value for key '{ConfigKey}' to type {TargetType}. Raw value: '{RawValue}'. Returning default.",
+                key,
+                typeof(T).FullName,
+                value
+            );
+
             return default;
         }
     }
@@ -517,8 +507,16 @@ public abstract class ScriptBase
         {
             return (T)Convert.ChangeType(value, typeof(T));
         }
-        catch
+        catch (Exception ex)
         {
+            Services.Logger?.LogWarning(
+                ex,
+                "Failed to convert configuration value for key '{ConfigKey}' to type {TargetType}. Raw value: '{RawValue}'. Returning provided default.",
+                key,
+                typeof(T).FullName,
+                value
+            );
+
             return defaultValue;
         }
     }
