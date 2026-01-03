@@ -227,7 +227,7 @@ public class CacheSet<T>(
         CancellationToken cancellationToken = default)
     {
         // 1) If version is null/empty or "latest" → return latest version
-        if (string.IsNullOrWhiteSpace(version) || InstanceDataVersionComparer.IsLatestKeyword(version))
+        if (InstanceDataVersionComparer.IsRequestingLatest(version))
         {
             return await GetLatestByNameAsync(domain, key, cancellationToken);
         }

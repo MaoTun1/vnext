@@ -302,6 +302,20 @@ public partial class InstanceDataVersionComparer : IComparer<InstanceData>
     }
 
     /// <summary>
+    /// Checks if the version request should resolve to the latest available version.
+    /// This is true when the version is null, empty, whitespace, or the "latest" keyword.
+    /// </summary>
+    /// <param name="version">Version string to check</param>
+    /// <returns>True if the request should resolve to the latest version</returns>
+    /// <remarks>
+    /// Use this method to centralize the "latest" resolution logic across the codebase.
+    /// </remarks>
+    public static bool IsRequestingLatest(string? version)
+    {
+        return string.IsNullOrWhiteSpace(version) || IsLatestKeyword(version);
+    }
+
+    /// <summary>
     /// Checks if a full version matches the given artifact version.
     /// </summary>
     /// <param name="fullVersion">Full version string (e.g., "1.0.0-pkg.1.17.0+account")</param>
@@ -317,38 +331,62 @@ public partial class InstanceDataVersionComparer : IComparer<InstanceData>
     }
 
     /// <summary>
-    /// Checks if a full version matches the given partial version prefix (MAJOR.MINOR format).
+    /// Checks if a full version matches the given partial version (MAJOR.MINOR format).
+    /// Uses explicit MAJOR.MINOR extraction to avoid false positives with multi-digit versions.
     /// </summary>
     /// <param name="fullVersion">Full version string (e.g., "1.0.5-pkg.1.17.0+account")</param>
-    /// <param name="partialVersion">Partial version prefix in MAJOR.MINOR format (e.g., "1.0")</param>
-    /// <returns>True if the full version's artifact part starts with the partial version prefix</returns>
+    /// <param name="partialVersion">Partial version in MAJOR.MINOR format (e.g., "1.0")</param>
+    /// <returns>True if the full version's MAJOR.MINOR matches the given partial version</returns>
     /// <remarks>
     /// For major-only version matching (e.g., "1"), use <see cref="MatchesMajor"/> instead.
     /// </remarks>
+    /// <example>
+    /// MatchesPartial("1.0.5-pkg.1.0.0+account", "1.0") → true
+    /// MatchesPartial("1.20.0-pkg.1.0.0+account", "1.2") → false (not a false positive)
+    /// MatchesPartial("1.2.3-pkg.1.0.0+account", "1.2") → true
+    /// </example>
     public static bool MatchesPartial(string? fullVersion, string? partialVersion)
     {
         if (string.IsNullOrWhiteSpace(fullVersion) || string.IsNullOrWhiteSpace(partialVersion))
             return false;
 
         var parsed = ParseVersion(fullVersion);
-        var prefix = $"{partialVersion}.";
-        return parsed.ArtifactVersion.StartsWith(prefix, StringComparison.Ordinal);
+
+        // Extract MAJOR.MINOR from artifact version
+        var parts = parsed.ArtifactVersion.Split('.');
+        if (parts.Length < 2)
+            return false;
+
+        var artifactMajorMinor = $"{parts[0]}.{parts[1]}";
+        return string.Equals(artifactMajorMinor, partialVersion, StringComparison.Ordinal);
     }
 
     /// <summary>
     /// Checks if a full version matches the given major version.
+    /// Uses explicit major version extraction to avoid false positives with multi-digit versions.
     /// </summary>
     /// <param name="fullVersion">Full version string (e.g., "1.0.5-pkg.1.17.0+account")</param>
     /// <param name="majorVersion">Major version to match (e.g., "1")</param>
-    /// <returns>True if the full version's artifact part starts with the major version</returns>
+    /// <returns>True if the full version's major component equals the given major version</returns>
+    /// <example>
+    /// MatchesMajor("1.2.3-pkg.1.0.0+account", "1") → true
+    /// MatchesMajor("12.0.0-pkg.1.0.0+account", "1") → false (not a false positive)
+    /// MatchesMajor("12.0.0-pkg.1.0.0+account", "12") → true
+    /// </example>
     public static bool MatchesMajor(string? fullVersion, string? majorVersion)
     {
         if (string.IsNullOrWhiteSpace(fullVersion) || string.IsNullOrWhiteSpace(majorVersion))
             return false;
 
         var parsed = ParseVersion(fullVersion);
-        var prefix = $"{majorVersion}.";
-        return parsed.ArtifactVersion.StartsWith(prefix, StringComparison.Ordinal);
+        
+        // Extract the major version from artifact (first segment before '.')
+        var dotIndex = parsed.ArtifactVersion.IndexOf('.');
+        if (dotIndex < 0)
+            return false;
+
+        var artifactMajor = parsed.ArtifactVersion[..dotIndex];
+        return string.Equals(artifactMajor, majorVersion, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -374,7 +412,7 @@ public partial class InstanceDataVersionComparer : IComparer<InstanceData>
             return null;
 
         // 1. If requestedVersion is null/empty or "latest" → return latest version
-        if (string.IsNullOrWhiteSpace(requestedVersion) || IsLatestKeyword(requestedVersion))
+        if (IsRequestingLatest(requestedVersion))
         {
             return versionList
                 .OrderByDescending(v => v, StringVersionComparer.Instance)
