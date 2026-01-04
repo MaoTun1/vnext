@@ -47,6 +47,9 @@ public static class WorkflowInfrastructureModuleServiceCollectionExtensions
         // Remote vnext api
         services.AddVNextApiServices();
         
+        // Instance Gateways - route between local and remote execution
+        services.AddInstanceGatewayServices();
+        
         // Monitoring
         services.AddSingleton<IWorkflowMetrics, PrometheusWorkflowMetrics>();
         services.AddSingleton<WorkflowDatabaseInterceptor>();

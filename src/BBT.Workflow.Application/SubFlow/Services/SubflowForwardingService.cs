@@ -1,13 +1,14 @@
+using BBT.Workflow.Gateway;
 using BBT.Workflow.Instances;
-using BBT.Workflow.Instances.Remote;
 
 namespace BBT.Workflow.SubFlow;
 
 /// <summary>
 /// Service for forwarding transitions to active subflow instances.
+/// Uses IInstanceCommandGateway to route between local and remote execution based on target domain.
 /// </summary>
 public sealed class SubflowForwardingService(
-    IRemoteInstanceCommandAppService remoteInstanceCommandAppService)
+    IInstanceCommandGateway instanceCommandGateway)
     : ISubflowForwardingService
 {
     /// <inheritdoc />
@@ -20,7 +21,7 @@ public sealed class SubflowForwardingService(
         using var activity = SubFlowActivityHelper.StartActivity($"SubFlow.Forward/{input.Domain}/{input.Workflow}/{transitionKey}");
         SubFlowActivityHelper.EnrichWithForward(activity, instanceId, transitionKey);
 
-        var result = await remoteInstanceCommandAppService
+        var result = await instanceCommandGateway
             .TransitionAsync(
                 instanceId,
                 transitionKey,

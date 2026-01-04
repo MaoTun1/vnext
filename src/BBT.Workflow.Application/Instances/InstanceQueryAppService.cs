@@ -6,8 +6,8 @@ using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Logging;
 using BBT.Workflow.Extentions;
+using BBT.Workflow.Gateway;
 using BBT.Workflow.Instances.DTOs;
-using BBT.Workflow.Instances.Remote;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Scripting;
 using Microsoft.Extensions.Logging;
@@ -22,7 +22,7 @@ public sealed class InstanceQueryAppService(
     IInstanceRepository instanceRepository,
     IInstanceExtensionService instanceExtensionService,
     IScriptContextFactory scriptContextFactory,
-    IRemoteInstanceQueryAppService remoteInstanceQueryAppService,
+    IInstanceQueryGateway instanceQueryGateway,
     ILogger<InstanceQueryAppService> logger)
     : ApplicationService(serviceProvider), IInstanceQueryAppService
 {
@@ -187,7 +187,7 @@ public sealed class InstanceQueryAppService(
                 Extensions = extensions
             };
 
-            var subFlowResult = await remoteInstanceQueryAppService.GetFunctionWithStateAsync(
+            var subFlowResult = await instanceQueryGateway.GetFunctionWithStateAsync(
                 subFlowInput,
                 cancellationToken);
 
@@ -703,7 +703,7 @@ public sealed class InstanceQueryAppService(
             Extensions = extensions
         };
 
-        return await remoteInstanceQueryAppService.GetFunctionWithExtensionsAsync(
+        return await instanceQueryGateway.GetFunctionWithExtensionsAsync(
             subFlowInput,
             cancellationToken);
     }
@@ -783,7 +783,7 @@ public sealed class InstanceQueryAppService(
             Instance = subflow.SubFlowInstanceId.ToString()
         };
 
-        return await remoteInstanceQueryAppService.GetFunctionWithSchemaAsync(
+        return await instanceQueryGateway.GetFunctionWithSchemaAsync(
             subFlowInput,
             transitionKey,
             cancellationToken);
@@ -863,7 +863,7 @@ public sealed class InstanceQueryAppService(
         string? transitionKey = null,
         CancellationToken cancellationToken = default)
     {
-        var subFlowViewResult = await remoteInstanceQueryAppService.GetFunctionWithViewAsync(
+        var subFlowViewResult = await instanceQueryGateway.GetFunctionWithViewAsync(
             new GetFunctionWithInstanceInput
             {
                 Instance = instance.Subflow!.SubFlowInstanceId.ToString(),
