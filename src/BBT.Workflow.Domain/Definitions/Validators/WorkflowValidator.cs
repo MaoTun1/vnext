@@ -27,6 +27,7 @@ public class WorkflowValidator
         ValidateWorkflowLabels(workflow, result);
         ValidateTimeoutInStates(workflow, result, stateKeys);
         ValidateStartTransition(workflow, result);
+        ValidateUpdateDataTransition(workflow, result);
         ValidateTransitionInStates(workflow, result, stateKeys);
         ValidateStateCountAndTypes(workflow, result);
 
@@ -83,6 +84,22 @@ public class WorkflowValidator
             result.AddError(new ValidationResult(
                 "Workflow must have a start transition.",
                 [$"{nameof(Workflow)}.{nameof(Workflow.StartTransition)}"]));
+        }
+    }
+
+    /// <summary>
+    /// Validates that UpdateData transition must have target value of "$self".
+    /// </summary>
+    private void ValidateUpdateDataTransition(Workflow workflow, WorkflowValidationResult result)
+    {
+        if (workflow.UpdateData != null)
+        {
+            if (workflow.UpdateData.Target != WellKnownStateKeys.ReservedTargetKeys[0])
+            {
+                result.AddError(new ValidationResult(
+                    $"UpdateData transition must have target value of '$self'. Found: '{workflow.UpdateData.Target}'.",
+                    [$"{nameof(Workflow)}.{nameof(Workflow.UpdateData)}.{nameof(Transition.Target)}"]));
+            }
         }
     }
 

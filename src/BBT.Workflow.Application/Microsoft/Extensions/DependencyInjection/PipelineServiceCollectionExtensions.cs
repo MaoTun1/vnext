@@ -56,6 +56,7 @@ public static class PipelineServiceCollectionExtensions
 
         // Pipeline Steps (registered in execution order)
         services.AddScoped<ITransitionStep, HandleCancelPreflightStep>();
+        services.AddScoped<ITransitionStep, HandleUpdateDataPreflightStep>();
         services.AddScoped<ITransitionStep, ForwardToActiveSubflowStep>();
         services.AddScoped<ITransitionStep, CreateTransitionRecordStep>();
         services.AddScoped<ITransitionStep, RunOnExecuteTasksStep>();
