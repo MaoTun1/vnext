@@ -177,7 +177,7 @@ public static class InstanceUrlTemplates
     public static string DataWithExtensions(string domain, string workflow, string instance, IEnumerable<string> extensions, string? apiVersionPrefix = null)
     {
         var basePath = BuildUrl(DataWithExtensionsTemplate, apiVersionPrefix, domain, workflow, instance);
-        var extensionParams = string.Join("&", extensions.Select(e => $"extensions={Uri.EscapeDataString(e)}"));
+        var extensionParams = string.Join("&", extensions.Where(e => !string.IsNullOrEmpty(e)).Select(e => $"extensions={Uri.EscapeDataString(e)}"));
         return string.IsNullOrEmpty(extensionParams) ? basePath : $"{basePath}?{extensionParams}";
     }
 
