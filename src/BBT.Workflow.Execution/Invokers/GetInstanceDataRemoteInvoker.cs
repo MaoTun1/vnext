@@ -206,8 +206,8 @@ public sealed class GetInstanceDataRemoteInvoker : ITaskInvoker<GetInstanceDataB
 
         if (binding.Extensions != null && binding.Extensions.Length > 0)
         {
-            var extensionsParam = string.Join(",", binding.Extensions);
-            path += $"?extensions={Uri.EscapeDataString(extensionsParam)}";
+            var extensionsParam = string.Join("&", binding.Extensions.Select(e => $"extensions={Uri.EscapeDataString(e)}"));
+            path += $"?{extensionsParam}";
         }
 
         return path;
