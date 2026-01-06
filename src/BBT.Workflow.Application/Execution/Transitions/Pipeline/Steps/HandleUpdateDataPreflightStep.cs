@@ -41,11 +41,12 @@ public sealed class HandleUpdateDataPreflightStep(
 
         // Railway chain: Log detection -> Validate -> Update data -> Create skip outcome
         return await Result.Ok(context)
-            .Tap(_ => logger.UpdateDataTransitionDetected(context.InstanceId))
+           
             .Ensure(
                 ctx => !ctx.Instance.IsCompleted,
                 CreateAlreadyCompletedError(context))
             .BindAsync(_ => UpdateDataAsync(context, cancellationToken))
+            .Tap(_ => logger.UpdateDataTransitionDetected(context.InstanceId))
             .Tap(_ => logger.UpdateDataSkipToFinish(context.InstanceId))
             .Map(_ => CreateSkipOutcome());
     }
