@@ -204,7 +204,7 @@ public sealed class InstanceQueryAppService(
                 return new SubFlowStateInfo(
                     AvailableTransitions: transitionNames,
                     CurrentState: subFlowValue.State,
-                    Status: mainInstance.Status,
+                    Status: subFlowValue.Status,
                     SubFlowData: subFlowValue.Data,
                     SubFlowView: subFlowValue.View,
                     SubFlowActiveCorrelations: subFlowValue.ActiveCorrelations);
