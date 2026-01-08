@@ -24,6 +24,7 @@ public sealed class TaskCoordinator : ITaskCoordinatorExtended
     private readonly ITaskExecutionEngine _executionEngine;
     private readonly IConditionEvaluator _conditionEvaluator;
     private readonly ITimerEvaluator _timerEvaluator;
+    private readonly IExecutionErrorFactory _errorFactory;
     private readonly ILogger<TaskCoordinator> _logger;
 
     /// <summary>
@@ -42,11 +43,13 @@ public sealed class TaskCoordinator : ITaskCoordinatorExtended
         ITaskExecutionEngine executionEngine,
         IConditionEvaluator conditionEvaluator,
         ITimerEvaluator timerEvaluator,
+        IExecutionErrorFactory errorFactory,
         ILogger<TaskCoordinator> logger)
     {
         _executionEngine = executionEngine;
         _conditionEvaluator = conditionEvaluator;
         _timerEvaluator = timerEvaluator;
+        _errorFactory = errorFactory;
         _logger = logger;
     }
 
@@ -215,7 +218,7 @@ public sealed class TaskCoordinator : ITaskCoordinatorExtended
         if (!taskResult.IsSuccess)
         {
             totalStopwatch.Stop();
-            var infraError = ExecutionError.FromError(
+            var infraError = _errorFactory.CreateFromError(
                 taskResult.Error,
                 onExecuteTask.Task.Key,
                 "Unknown",

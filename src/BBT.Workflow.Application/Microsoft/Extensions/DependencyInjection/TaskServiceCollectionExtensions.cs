@@ -115,6 +115,9 @@ public static class TaskServiceCollectionExtensions
         // Boundary resolution with hierarchical lookup
         services.TryAddScoped<IErrorBoundaryResolver, ErrorBoundaryResolver>();
 
+        // Execution Error Factory
+        services.TryAddScoped<IExecutionErrorFactory, ExecutionErrorFactory>();
+
         // Action execution (Abort, Retry, Rollback, Notify, Log, Ignore)
         services.TryAddScoped<IErrorActionExecutor, ErrorActionExecutor>();
 

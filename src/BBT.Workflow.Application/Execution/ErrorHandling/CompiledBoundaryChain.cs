@@ -75,40 +75,10 @@ public sealed class CompiledBoundaryChain
         string? errorCode,
         int? statusCode)
     {
-        // 1. Try Task-level boundary first
-        if (TaskBoundary != null)
-        {
-            var match = TaskBoundary.FindMatch(
-                exceptionTypeName ?? string.Empty,
-                errorCode,
-                statusCode);
-            if (match != null)
-                return (match, ErrorBoundaryLevel.Task);
-        }
-
-        // 2. Try State-level boundary
-        if (StateBoundary != null)
-        {
-            var match = StateBoundary.FindMatch(
-                exceptionTypeName ?? string.Empty,
-                errorCode,
-                statusCode);
-            if (match != null)
-                return (match, ErrorBoundaryLevel.State);
-        }
-
-        // 3. Try Global-level boundary
-        if (GlobalBoundary != null)
-        {
-            var match = GlobalBoundary.FindMatch(
-                exceptionTypeName ?? string.Empty,
-                errorCode,
-                statusCode);
-            if (match != null)
-                return (match, ErrorBoundaryLevel.Global);
-        }
-
-        return null;
+        return FindMatchInternal(boundary => boundary.FindMatch(
+            exceptionTypeName ?? string.Empty,
+            errorCode,
+            statusCode));
     }
 
     /// <summary>
@@ -134,14 +104,23 @@ public sealed class CompiledBoundaryChain
     {
         var excludeSet = new HashSet<ErrorAction>(excludeActions);
 
-        // 1. Try Task-level boundary first
+        return FindMatchInternal(boundary => boundary.FindMatchExcluding(
+            error.ExceptionType ?? string.Empty,
+            error.Code,
+            error.StatusCode,
+            excludeSet));
+    }
+
+    /// <summary>
+    /// Helper to find match across hierarchy (Task -> State -> Global).
+    /// </summary>
+    private (CompiledRule Rule, ErrorBoundaryLevel Level)? FindMatchInternal(
+        Func<CompiledBoundary, CompiledRule?> findFunc)
+    {
+        // 1. Try Task-level boundary
         if (TaskBoundary != null)
         {
-            var match = TaskBoundary.FindMatchExcluding(
-                error.ExceptionType ?? string.Empty,
-                error.Code,
-                error.StatusCode,
-                excludeSet);
+            var match = findFunc(TaskBoundary);
             if (match != null)
                 return (match, ErrorBoundaryLevel.Task);
         }
@@ -149,11 +128,7 @@ public sealed class CompiledBoundaryChain
         // 2. Try State-level boundary
         if (StateBoundary != null)
         {
-            var match = StateBoundary.FindMatchExcluding(
-                error.ExceptionType ?? string.Empty,
-                error.Code,
-                error.StatusCode,
-                excludeSet);
+            var match = findFunc(StateBoundary);
             if (match != null)
                 return (match, ErrorBoundaryLevel.State);
         }
@@ -161,11 +136,7 @@ public sealed class CompiledBoundaryChain
         // 3. Try Global-level boundary
         if (GlobalBoundary != null)
         {
-            var match = GlobalBoundary.FindMatchExcluding(
-                error.ExceptionType ?? string.Empty,
-                error.Code,
-                error.StatusCode,
-                excludeSet);
+            var match = findFunc(GlobalBoundary);
             if (match != null)
                 return (match, ErrorBoundaryLevel.Global);
         }

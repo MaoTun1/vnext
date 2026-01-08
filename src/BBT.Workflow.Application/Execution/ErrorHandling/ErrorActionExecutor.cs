@@ -33,9 +33,11 @@ public sealed class ErrorActionExecutor : IErrorActionExecutor
     public async Task<ActionExecutionResult> ExecuteAsync(
         BoundaryResolutionResult resolution,
         ExecutionError error,
-        Func<RetryPolicy, Task<Result<ActionExecutionResult>>>? retryExecutor,
+        Func<RetryPolicy, CancellationToken, Task<Result<ActionExecutionResult>>>? retryExecutor,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         // Handle unhandled errors (no boundary matched)
         if (!resolution.IsHandled)
         {
@@ -74,7 +76,7 @@ public sealed class ErrorActionExecutor : IErrorActionExecutor
     private async Task<ActionExecutionResult> HandleRetryAsync(
         BoundaryResolutionResult resolution,
         ExecutionError error,
-        Func<RetryPolicy, Task<Result<ActionExecutionResult>>>? retryExecutor,
+        Func<RetryPolicy, CancellationToken, Task<Result<ActionExecutionResult>>>? retryExecutor,
         CancellationToken cancellationToken)
     {
         var retryPolicy = resolution.RetryPolicy;
@@ -103,7 +105,7 @@ public sealed class ErrorActionExecutor : IErrorActionExecutor
             retryPolicy.MaxRetries,
             retryPolicy.BackoffType);
 
-        var result = await retryExecutor(retryPolicy);
+        var result = await retryExecutor(retryPolicy, cancellationToken);
 
         if (result is { IsSuccess: true, Value: not null })
         {

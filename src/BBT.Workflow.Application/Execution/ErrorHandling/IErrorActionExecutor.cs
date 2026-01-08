@@ -28,7 +28,7 @@ public interface IErrorActionExecutor
     Task<ActionExecutionResult> ExecuteAsync(
         BoundaryResolutionResult resolution,
         ExecutionError error,
-        Func<RetryPolicy, Task<Result<ActionExecutionResult>>>? retryExecutor,
+        Func<RetryPolicy, CancellationToken, Task<Result<ActionExecutionResult>>>? retryExecutor,
         CancellationToken cancellationToken);
 }
 

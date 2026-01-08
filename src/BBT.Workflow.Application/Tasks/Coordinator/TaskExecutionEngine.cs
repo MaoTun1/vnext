@@ -33,6 +33,7 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
     private readonly IErrorBoundaryResolver _boundaryResolver;
     private readonly IErrorActionExecutor _actionExecutor;
     private readonly IRetryPolicyFactory _retryPolicyFactory;
+    private readonly IExecutionErrorFactory _errorFactory;
     private readonly ILogger<TaskExecutionEngine> _logger;
 
     /// <summary>
@@ -48,6 +49,7 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         IErrorBoundaryResolver boundaryResolver,
         IErrorActionExecutor actionExecutor,
         IRetryPolicyFactory retryPolicyFactory,
+        IExecutionErrorFactory errorFactory,
         ILogger<TaskExecutionEngine> logger)
     {
         _executorRegistry = executorRegistry;
@@ -59,6 +61,7 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         _boundaryResolver = boundaryResolver;
         _actionExecutor = actionExecutor;
         _retryPolicyFactory = retryPolicyFactory;
+        _errorFactory = errorFactory;
         _logger = logger;
     }
 
@@ -163,7 +166,7 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
             totalStopwatch.Stop();
             _logger.LogError(ex, "Task execution failed with exception for {TaskKey}", taskKey);
 
-            var taskError = ExecutionError.FromException(ex, taskKey, "Unknown", totalStopwatch.ElapsedMilliseconds);
+            var taskError = _errorFactory.CreateFromException(ex, taskKey, "Unknown", totalStopwatch.ElapsedMilliseconds);
             return Result<TasksExecutionResult>.Fail(taskError.ToError());
         }
     }
@@ -193,8 +196,8 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         if (executionError == null)
         {
             // Infrastructure error - create from Result.Error
-            executionError = CreateExecutionError(
-                taskKey, "Unknown", failedResult.Error, totalDurationMs);
+            executionError = _errorFactory.CreateFromError(
+                failedResult.Error, taskKey, "Unknown", totalDurationMs);
         }
 
         _logger.LogWarning(
@@ -223,7 +226,7 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
             resolution,
             executionError,
             // Retry executor is not used here since retries are exhausted
-            _ => Task.FromResult(Result<ActionExecutionResult>.Ok(
+            (_, _) => Task.FromResult(Result<ActionExecutionResult>.Ok(
                 ActionExecutionResult.Abort(executionError.ToError(), null, executionError))),
             cancellationToken);
 
@@ -327,39 +330,7 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         return state?.ErrorBoundary;
     }
 
-    /// <summary>
-    /// Creates an ExecutionError from an Error using IErrorNormalizer.
-    /// </summary>
-    private ExecutionError CreateExecutionError(
-        string taskKey,
-        string taskType,
-        Error error,
-        long executionDurationMs)
-    {
-        var normalized = _errorNormalizer.Normalize(error);
 
-        var taskNormalizedError = new NormalizedError
-        {
-            Code = $"Task:{taskType}:{taskKey}",
-            Layer = ErrorLayer.Task,
-            ExceptionType = normalized.ExceptionType,
-            StatusCode = normalized.StatusCode,
-            Message = error.Message ?? "Task execution failed",
-            Source = ErrorSource.TaskInvocationFailure,
-            IsTransient = normalized.IsTransient,
-            OriginalCode = error.Code
-        };
-
-        return new ExecutionError
-        {
-            TaskKey = taskKey,
-            TaskType = taskType,
-            StatusCode = normalized.StatusCode,
-            ErrorMessage = error.Message,
-            NormalizedError = taskNormalizedError,
-            ExecutionDurationMs = executionDurationMs
-        };
-    }
 
     /// <summary>
     /// Gets the persistence strategy for the given task trigger.
@@ -466,7 +437,7 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         if (!taskResult.IsSuccess)
         {
             stopwatch.Stop();
-            var error = ExecutionError.FromException(
+            var error = _errorFactory.CreateFromException(
                 new InvalidOperationException(taskResult.Error.Message ?? "Failed to create task"),
                 onExecuteTask.Task.Key,
                 "Unknown",
@@ -508,8 +479,8 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
             RecordFailure(instanceTask, persistenceStrategy, taskTypeStr, workflowKey, stopwatch,
                 executorResult.Error.Message, cancellationToken);
 
-            var infraError = CreateExecutionError(
-                task.Key, taskTypeStr, executorResult.Error, stopwatch.ElapsedMilliseconds);
+            var infraError = _errorFactory.CreateFromError(
+                executorResult.Error, task.Key, taskTypeStr, stopwatch.ElapsedMilliseconds);
 
             // Return failure without boundary resolution - not retriable
             return Result<TasksExecutionResult>.Ok(TasksExecutionResult.Failure(
@@ -531,8 +502,8 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
             RecordFailure(instanceTask, persistenceStrategy, taskTypeStr, workflowKey, stopwatch,
                 executeResult.Error.Message ?? "Unknown infrastructure error", cancellationToken);
 
-            var infraError = CreateExecutionError(
-                task.Key, taskTypeStr, executeResult.Error, stopwatch.ElapsedMilliseconds);
+            var infraError = _errorFactory.CreateFromError(
+                executeResult.Error, task.Key, taskTypeStr, stopwatch.ElapsedMilliseconds);
 
             return Result<TasksExecutionResult>.Ok(TasksExecutionResult.Failure(
                 onExecuteTask, infraError, [], stopwatch.ElapsedMilliseconds));
@@ -565,17 +536,8 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         // 11. Handle business failure - return raw result for Polly evaluation
         if (!response.IsSuccess)
         {
-            var normalizedError = _errorNormalizer.NormalizeTaskResponse(response, task.Key, taskTypeStr);
-            var executionError = new ExecutionError
-            {
-                TaskKey = task.Key,
-                TaskType = taskTypeStr,
-                StatusCode = response.StatusCode,
-                ErrorMessage = response.ErrorMessage,
-                NormalizedError = normalizedError,
-                ExecutionDurationMs = stopwatch.ElapsedMilliseconds,
-                Metadata = response.Metadata
-            };
+            var executionError = _errorFactory.CreateFromResponse(
+                response, task.Key, taskTypeStr, stopwatch.ElapsedMilliseconds);
 
             // Return failure - Polly will decide whether to retry based on IsSuccess
             return Result<TasksExecutionResult>.Ok(new TasksExecutionResult

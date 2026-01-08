@@ -301,6 +301,11 @@ public sealed class ErrorNormalizer : IErrorNormalizer
 
     private static int? ExtractStatusCode(Exception exception)
     {
+        if (exception is HttpRequestException httpEx)
+        {
+            return (int?)httpEx.StatusCode;
+        }
+
         // Try to extract from HttpRequestException if available
         if (exception.Data.Contains("StatusCode") && 
             exception.Data["StatusCode"] is int statusCode)

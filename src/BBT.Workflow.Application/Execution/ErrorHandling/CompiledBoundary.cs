@@ -33,15 +33,7 @@ public sealed class CompiledBoundary
     /// <returns>The matching rule, or null if no rule matches.</returns>
     public CompiledRule? FindMatch(string exceptionTypeName, string? errorCode, int? statusCode)
     {
-        foreach (var compiledRule in SortedRules)
-        {
-            if (compiledRule.Matches(exceptionTypeName, errorCode, statusCode))
-            {
-                return compiledRule;
-            }
-        }
-
-        return null;
+        return SortedRules.FirstOrDefault(rule => rule.Matches(exceptionTypeName, errorCode, statusCode));
     }
 
     /// <summary>
