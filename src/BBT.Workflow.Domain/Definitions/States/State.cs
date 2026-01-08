@@ -79,8 +79,16 @@ public sealed class State : IHasKey
 
     [JsonInclude] [JsonPropertyName("subFlow")]
     public SubFlow? SubFlow { get; private set; }
+    
     [JsonInclude] [JsonPropertyName("view")]
     public ViewDefinition? view  { get; private set; }
+    
+    /// <summary>
+    /// State-level error boundary.
+    /// Applied when no task-level boundary handles the error.
+    /// </summary>
+    [JsonInclude] [JsonPropertyName("errorBoundary")]
+    public ErrorBoundary? ErrorBoundary { get; private set; }
 
     /// <summary>
     /// Languages
@@ -149,6 +157,11 @@ public sealed class State : IHasKey
     public void SetSubFlow(string type, IReference reference, ScriptCode mapping, Dictionary<string, Reference>? viewOverrides)
     {
         SubFlow = SubFlow.Create(type, reference, mapping, viewOverrides);
+    }
+
+    public void SetErrorBoundary(ErrorBoundary errorBoundary)
+    {
+        ErrorBoundary = errorBoundary;
     }
 
     public void AddTransition(Transition transition)

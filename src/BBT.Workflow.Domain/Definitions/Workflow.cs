@@ -105,6 +105,13 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     /// </summary>
     public Transition? Cancel { get; private set; }
 
+    /// <summary>
+    /// Global error boundary for the workflow.
+    /// Applied when no task or state-level boundary handles the error.
+    /// </summary>
+    [JsonInclude] [JsonPropertyName("errorBoundary")]
+    public ErrorBoundary? ErrorBoundary { get; private set; }
+
     [JsonInclude] [JsonPropertyName("labels")]
     private List<LanguageLabel> labels = new();
 
@@ -223,6 +230,11 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     public void SetCancel(Transition cancel)
     {
         Cancel = cancel;
+    }
+
+    public void SetErrorBoundary(ErrorBoundary errorBoundary)
+    {
+        ErrorBoundary = errorBoundary;
     }
 
     public void AddFunction(IReference reference)
