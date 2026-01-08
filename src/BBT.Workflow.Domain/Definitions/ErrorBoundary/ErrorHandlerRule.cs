@@ -92,9 +92,9 @@ public sealed record ErrorHandlerRule
         get
         {
             var score = 0;
-            if (ErrorTypes != null && ErrorTypes.Count > 0 && !ErrorTypes.Contains("*"))
+            if (ErrorTypes is { Count: > 0 } && !ErrorTypes.Contains("*"))
                 score += ErrorTypes.Count;
-            if (ErrorCodes != null && ErrorCodes.Count > 0 && !ErrorCodes.Contains("*"))
+            if (ErrorCodes is { Count: > 0 } && !ErrorCodes.Contains("*"))
                 score += ErrorCodes.Count;
             return score;
         }

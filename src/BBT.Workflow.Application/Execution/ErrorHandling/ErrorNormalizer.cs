@@ -105,13 +105,12 @@ public sealed class ErrorNormalizer : IErrorNormalizer
         var isTransient = statusCode.HasValue && TransientStatusCodes.Contains(statusCode.Value);
 
         // Check metadata for transient indicators
-        if (!isTransient && result.Metadata != null)
+        if (!isTransient &&
+            result.Metadata != null &&
+            result.Metadata.TryGetValue("IsTransient", out var transientValue) &&
+            transientValue is bool isTransientMeta)
         {
-            if (result.Metadata.TryGetValue("IsTransient", out var transientValue) &&
-                transientValue is bool isTransientMeta)
-            {
-                isTransient = isTransientMeta;
-            }
+            isTransient = isTransientMeta;
         }
 
         return new NormalizedError
@@ -148,13 +147,12 @@ public sealed class ErrorNormalizer : IErrorNormalizer
         }
 
         // Check metadata for transient indicators
-        if (!isTransient && response.Metadata != null)
+        if (!isTransient &&
+            response.Metadata != null &&
+            response.Metadata.TryGetValue("IsTransient", out var transientMeta) &&
+            transientMeta is bool isTransientFromMeta)
         {
-            if (response.Metadata.TryGetValue("IsTransient", out var transientValue) &&
-                transientValue is bool isTransientMeta)
-            {
-                isTransient = isTransientMeta;
-            }
+            isTransient = isTransientFromMeta;
         }
 
         return new NormalizedError

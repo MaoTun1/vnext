@@ -27,6 +27,15 @@ public sealed class TaskCoordinator : ITaskCoordinatorExtended
     private readonly ILogger<TaskCoordinator> _logger;
 
     /// <summary>
+    /// Lock object for thread-safe parallel task failure tracking.
+    /// Per Microsoft guidelines: use a dedicated private readonly object for locking.
+    /// </summary>
+    /// <remarks>
+    /// See: https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/statements/lock#guidelines
+    /// </remarks>
+    private readonly object _parallelTaskLock = new();
+
+    /// <summary>
     /// Initializes a new instance of TaskCoordinator.
     /// </summary>
     public TaskCoordinator(
@@ -263,10 +272,9 @@ public sealed class TaskCoordinator : ITaskCoordinatorExtended
             "Executing {TaskCount} tasks in parallel for instance {InstanceId}",
             tasks.Count, context.Instance.Id);
 
-        // Track first failure for error boundary
+        // Track first failure for error boundary (thread-safe)
         TasksExecutionResult? firstFailure = null;
         OnExecuteTask? firstFailedTask = null;
-        var lockObj = new object();
 
         var executionTasks = tasks.Select(async task =>
         {
@@ -277,7 +285,9 @@ public sealed class TaskCoordinator : ITaskCoordinatorExtended
 
                 if (!result.IsSuccess || !result.Value!.IsSuccess)
                 {
-                    lock (lockObj)
+                    // Use class-level lock per Microsoft guidelines
+                    // https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/statements/lock#guidelines
+                    lock (_parallelTaskLock)
                     {
                         if (firstFailure == null)
                         {

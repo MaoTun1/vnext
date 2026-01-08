@@ -109,14 +109,13 @@ public sealed class ErrorBoundaryValidator
         }
 
         // Validate Transition references a valid transition key in the workflow
-        if (!string.IsNullOrEmpty(rule.Transition))
+        if (!string.IsNullOrEmpty(rule.Transition) &&
+            validTransitions != null &&
+            !validTransitions.Contains(rule.Transition))
         {
-            if (validTransitions != null && !validTransitions.Contains(rule.Transition))
-            {
-                results.Add(new ValidationResult(
-                    $"Transition '{rule.Transition}' does not match any valid transition in the workflow.",
-                    [$"{context}.{nameof(ErrorHandlerRule.Transition)}"]));
-            }
+            results.Add(new ValidationResult(
+                $"Transition '{rule.Transition}' does not match any valid transition in the workflow.",
+                [$"{context}.{nameof(ErrorHandlerRule.Transition)}"]));
         }
 
         // Validate Transition is required for Notify action (acts like Rollback)
@@ -261,14 +260,12 @@ public sealed class ErrorBoundaryValidator
         }
 
         // Validate Transition references a valid state
-        if (!string.IsNullOrEmpty(policy.Transition))
+        if (!string.IsNullOrEmpty(policy.Transition) &&
+            !validStates.Contains(policy.Transition))
         {
-            if (!validStates.Contains(policy.Transition))
-            {
-                results.Add(new ValidationResult(
-                    $"Transition '{policy.Transition}' does not match any valid state.",
-                    [$"{context}.{nameof(TimeoutPolicy.Transition)}"]));
-            }
+            results.Add(new ValidationResult(
+                $"Transition '{policy.Transition}' does not match any valid state.",
+                [$"{context}.{nameof(TimeoutPolicy.Transition)}"]));
         }
 
         return results;
