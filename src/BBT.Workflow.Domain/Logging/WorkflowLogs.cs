@@ -121,7 +121,7 @@ public static partial class WorkflowLogs
     [LoggerMessage(
         EventId = 10012,
         Level = LogLevel.Information,
-        Message = "Skipping normal pipeline steps for updateData transition, jumping to CreateTransition step for instance {InstanceId}")]
+        Message = "Skipping normal pipeline steps for updateData transition, jumping to Finalize step for instance {InstanceId}")]
     public static partial void UpdateDataSkipToFinish(
         this ILogger logger,
         Guid instanceId);
@@ -229,7 +229,7 @@ public static partial class WorkflowLogs
     /// Logs when attempting to update data on an already completed instance.
     /// </summary>
     [LoggerMessage(
-        EventId = 10050,
+        EventId = 10054,
         Level = LogLevel.Warning,
         Message = "Cannot update data for instance {InstanceId}: already in {Status} state")]
     public static partial void UpdateDataInstanceAlreadyCompleted(

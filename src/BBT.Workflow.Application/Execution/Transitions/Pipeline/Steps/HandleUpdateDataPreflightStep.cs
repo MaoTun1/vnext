@@ -25,7 +25,7 @@ public sealed class HandleUpdateDataPreflightStep(
     IRuntimeInfoProvider runtimeInfoProvider) : ITransitionStep
 {
     /// <inheritdoc />
-    public int Order => LifecycleOrder.Preflight;
+    public int Order => LifecycleOrder.CheckParentUpdateDataTransition;
 
     /// <inheritdoc />
     [Trace]
@@ -41,7 +41,6 @@ public sealed class HandleUpdateDataPreflightStep(
 
         // Railway chain: Log detection -> Validate -> Update data -> Create skip outcome
         return await Result.Ok(context)
-           
             .Ensure(
                 ctx => !ctx.Instance.IsCompleted,
                 CreateAlreadyCompletedError(context))
@@ -82,7 +81,7 @@ public sealed class HandleUpdateDataPreflightStep(
         return await MapTransitionDataAsync(context, transition, cancellationToken)
             .Tap(mappedData => AddMappedDataToInstance(context, mappedData, transition))
             .BindAsync(_ => ValidateAndSetInstanceKeyAsync(context, cancellationToken))
-            .TapAsync(_ => instanceRepository.UpdateAsync(context.Instance, true, cancellationToken))
+            .TapAsync(_ => instanceRepository.UpdateAsync(context.Instance, false, cancellationToken))
             .TapAsync(_ =>
                 instanceTransitionRepository.InsertAsync(instanceTransition, saveChanges: true, cancellationToken))
             .Tap(_ => UpdateContextItems(context, instanceTransition.Id))

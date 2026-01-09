@@ -38,7 +38,7 @@ public static class WorkflowEventIds
     public static readonly EventId CancelInstanceAlreadyCompleted = new(10047, nameof(CancelInstanceAlreadyCompleted));
     public static readonly EventId TargetStateNull = new(10048, nameof(TargetStateNull));
     public static readonly EventId AutoTransitionConditionNotSatisfied = new(10049, nameof(AutoTransitionConditionNotSatisfied));
-    public static readonly EventId UpdateDataInstanceAlreadyCompleted = new(10050, nameof(UpdateDataInstanceAlreadyCompleted));
+    public static readonly EventId UpdateDataInstanceAlreadyCompleted = new(10054, nameof(UpdateDataInstanceAlreadyCompleted));
 
     // Error (10070-10099)
     public static readonly EventId TaskExecutionFailed = new(10071, nameof(TaskExecutionFailed));

@@ -97,8 +97,7 @@ public class WorkflowValidator
     /// </summary>
     private void ValidateUpdateDataTransition(Workflow workflow, WorkflowValidationResult result)
     {
-
-        if (workflow.UpdateData != null && workflow.UpdateData.Target != WellKnownStateKeys.ReservedTargetKeys[0])
+        if (workflow.UpdateData != null && workflow.UpdateData.Target != WellKnownStateKeys.Self)
         {
             result.AddError(new ValidationResult(
                 $"UpdateData transition must have target value of '$self'. Found: '{workflow.UpdateData.Target}'.",
