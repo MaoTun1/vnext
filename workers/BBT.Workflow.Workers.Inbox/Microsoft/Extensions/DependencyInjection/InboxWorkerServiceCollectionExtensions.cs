@@ -1,3 +1,5 @@
+using BBT.Workflow.BackgroundJobs.Handlers;
+using BBT.Workflow.Data;
 using BBT.Workflow.Workers.Inbox.HostedServices;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -28,7 +30,8 @@ public static class InboxWorkerServiceCollectionExtensions
             .AddTelemetry(configuration)
             .AddDistributedCache(configuration)
             .AddDistributedLock(configuration)
-            .AddBackgroundJob()
+            .AddAetherBackgroundJob<WorkflowDbContext>()
+            .AddDaprJobScheduler()
             .AddRedis()
             .AddExceptionHandling()
             .AddRuntimeMiddleware()
@@ -36,6 +39,7 @@ public static class InboxWorkerServiceCollectionExtensions
             .AddWorkflowHttpClient() // TODO: Düşün!!!!
             .AddHostedServices()
             .AddAppHealthChecks();
+        
         return services;
     }
     
