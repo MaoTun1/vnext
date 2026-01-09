@@ -111,7 +111,16 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     /// Defines the update data configuration for this workflow.
     /// When configured, allows the workflow to update data via the updateData transition.
     /// </summary>
+    [JsonInclude] [JsonPropertyName("updateData")]
     public Transition? UpdateData { get; private set; }
+
+    /// <summary>
+    /// Global error boundary for the workflow.
+    /// Applied when no task or state-level boundary handles the error.
+    /// </summary>
+    [JsonInclude] [JsonPropertyName("errorBoundary")]
+    public ErrorBoundary? ErrorBoundary { get; private set; }
+
 
     [JsonInclude] [JsonPropertyName("labels")]
     private List<LanguageLabel> labels = new();
@@ -236,6 +245,11 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     public void SetUpdateData(Transition updateData)
     {
         UpdateData = updateData;
+    }
+
+    public void SetErrorBoundary(ErrorBoundary errorBoundary)
+    {
+        ErrorBoundary = errorBoundary;
     }
 
     public void AddFunction(IReference reference)

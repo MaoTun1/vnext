@@ -1,3 +1,4 @@
+using BBT.Workflow.Data;
 using BBT.Workflow.Workers.Outbox.HostedServices;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -28,7 +29,8 @@ public static class OutboxWorkerServiceCollectionExtensions
             .AddTelemetry(configuration)
             .AddDistributedCache(configuration)
             .AddDistributedLock(configuration)
-            .AddBackgroundJob()
+            .AddAetherBackgroundJob<WorkflowDbContext>()
+            .AddDaprJobScheduler()
             .AddRedis()
             .AddExceptionHandling()
             .AddRuntimeMiddleware()

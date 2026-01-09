@@ -1,4 +1,5 @@
 using BBT.Workflow.Execution;
+using BBT.Workflow.Execution.ErrorHandling;
 using BBT.Workflow.Execution.Handlers;
 using BBT.Workflow.Execution.Pipeline;
 using BBT.Workflow.Execution.Pipeline.Steps;
@@ -73,6 +74,9 @@ public static class PipelineServiceCollectionExtensions
         // Pipeline
         services.AddScoped<TransitionPipeline>();
 
+        // Error Boundary Services (used by TaskCoordinator for task-level error handling)
+        services.AddScoped<IErrorNormalizer, ErrorNormalizer>();
+        
         // Post-Commit Execution (jobs run after lock release)
         services.AddScoped<IPostCommitExecutor, PostCommitExecutor>();
         services.AddScoped<IPostCommitHandler<StartSubflowJob>, StartSubflowJobHandler>();
