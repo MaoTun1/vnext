@@ -112,6 +112,8 @@ public sealed class RemoteInstanceCommandAppService(
             if (input.Sync)
                 queryParams.Add($"sync={input.Sync}");
 
+            queryParams.Add("strictIdempotency=true");
+
             if (queryParams.Count > 0)
                 relativePath += "?" + string.Join("&", queryParams);
 

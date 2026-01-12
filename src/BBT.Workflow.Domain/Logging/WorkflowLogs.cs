@@ -561,6 +561,68 @@ public static partial class WorkflowLogs
         Guid subInstanceId,
         Guid parentInstanceId);
 
+    /// <summary>
+    /// Logs when a SubFlow start operation completes successfully.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40030,
+        Level = LogLevel.Information,
+        Message = "SubFlow {SubFlowKey} started successfully for parent instance {ParentInstanceId}")]
+    public static partial void SubFlowStarted(
+        this ILogger logger,
+        string subFlowKey,
+        Guid parentInstanceId);
+
+    /// <summary>
+    /// Logs when a SubFlow start operation fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40080,
+        Level = LogLevel.Error,
+        Message = "SubFlow {SubFlowKey} start failed for parent instance {ParentInstanceId}: {ErrorCode} - {ErrorMessage}")]
+    public static partial void SubFlowStartFailed(
+        this ILogger logger,
+        string subFlowKey,
+        Guid parentInstanceId,
+        string errorCode,
+        string errorMessage);
+
+    /// <summary>
+    /// Logs when instance is not found during subflow start.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40081,
+        Level = LogLevel.Error,
+        Message = "Instance {InstanceId} not found while starting subflow for correlation {CorrelationId}")]
+    public static partial void SubFlowInstanceNotFound(
+        this ILogger logger,
+        Guid instanceId,
+        Guid correlationId);
+
+    /// <summary>
+    /// Logs when correlation is not found during subflow start.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40082,
+        Level = LogLevel.Error,
+        Message = "Correlation {CorrelationId} not found for instance {InstanceId}")]
+    public static partial void SubFlowCorrelationNotFoundForStart(
+        this ILogger logger,
+        Guid correlationId,
+        Guid instanceId);
+
+    /// <summary>
+    /// Logs when target state is not found or has no SubFlow configuration.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40083,
+        Level = LogLevel.Error,
+        Message = "Target state {TargetStateKey} not found or has no SubFlow configuration for instance {InstanceId}")]
+    public static partial void SubFlowTargetStateNotFound(
+        this ILogger logger,
+        string targetStateKey,
+        Guid instanceId);
+
     #endregion
 
     #region Instance Management

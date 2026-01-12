@@ -86,7 +86,8 @@ public sealed class InstanceController(
                 Attributes = request.Attributes,
                 Callback = request.Callback,
                 ExtraProperties = new ExtraPropertyDictionary(request.ExtraProperties)
-            }
+            },
+            StrictIdempotency = true
         };
         var httpContext = httpContextAccessor.HttpContext;
         if (httpContext is not null)
