@@ -59,6 +59,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddScoped<ITransitionStep, HandleCancelPreflightStep>();
         services.AddScoped<ITransitionStep, HandleUpdateDataPreflightStep>();
         services.AddScoped<ITransitionStep, ForwardToActiveSubflowStep>();
+        services.AddScoped<ITransitionStep, SetBusyStep>();
         services.AddScoped<ITransitionStep, CreateTransitionRecordStep>();
         services.AddScoped<ITransitionStep, RunOnExecuteTasksStep>();
         services.AddScoped<ITransitionStep, RunOnExitTasksStep>();
@@ -70,6 +71,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddScoped<ITransitionStep, RunAutomaticTransitionsStep>();
         services.AddScoped<ITransitionStep, HandleFinishStep>();
         services.AddScoped<ITransitionStep, FinalizeTransitionStep>();
+        services.AddScoped<ITransitionStep, ResolveAvailableStep>();
 
         // Pipeline
         services.AddScoped<TransitionPipeline>();

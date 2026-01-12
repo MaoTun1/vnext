@@ -23,6 +23,12 @@ public static class LifecycleOrder
     public const int ForwardToActiveSubflow = 10;
     
     /// <summary>
+    /// Order for setting instance to Busy status at pipeline start.
+    /// Prevents concurrent modifications during transition processing.
+    /// </summary>
+    public const int SetBusy = CreateTransition - 1;
+    
+    /// <summary>
     /// Order for creating the transition record in the database.
     /// This should be the first step to track the transition attempt.
     /// </summary>
@@ -87,4 +93,9 @@ public static class LifecycleOrder
     
     public const int AfterEpilogueRefresh = Finalize + 1;
     
+    /// <summary>
+    /// Order for resolving Available status at pipeline end.
+    /// Sets instance to Active when target state has only manual/event transitions.
+    /// </summary>
+    public const int ResolveAvailable = Finalize + 2;
 }
