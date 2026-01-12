@@ -193,7 +193,7 @@ public sealed class EfCoreInstanceRepository(
         if (string.IsNullOrEmpty(bestMatchVersion))
             return null;
 
-        return candidates.FirstOrDefault(c => 
+        return candidates.FirstOrDefault(c =>
             string.Equals(c.InstanceData.Version, bestMatchVersion, StringComparison.OrdinalIgnoreCase));
     }
 
@@ -241,7 +241,8 @@ public sealed class EfCoreInstanceRepository(
     {
         var query = (await GetFilteredQueryAsync(filters, cancellationToken))
             .Include(i => i.DataList)
-            .AsSplitQuery();
+            .AsSplitQuery()
+            .AsNoTracking();
         return await query.ToHateoasPagedListAsync(page, pageSize, cancellationToken);
     }
 
@@ -306,13 +307,14 @@ public sealed class EfCoreInstanceRepository(
     }
 
     /// <inheritdoc />
-    public async Task<bool> AnyActiveByKeyAsync(string key, Guid excludeInstanceId, CancellationToken cancellationToken = default)
+    public async Task<bool> AnyActiveByKeyAsync(string key, Guid excludeInstanceId,
+        CancellationToken cancellationToken = default)
     {
         return await (await GetDbSetAsync())
             .AsNoTracking()
             .AnyAsync(
-                i => i.Key == key 
-                     && i.Id != excludeInstanceId 
+                i => i.Key == key
+                     && i.Id != excludeInstanceId
                      && i.Status == InstanceStatus.Active,
                 cancellationToken);
     }

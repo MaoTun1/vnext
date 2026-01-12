@@ -265,7 +265,7 @@ public sealed class InstanceQueryAppService(
         string instanceIdentifier,
         CancellationToken cancellationToken)
     {
-        var instance = await instanceRepository.FindByIdentifierAsync(instanceIdentifier, cancellationToken);
+        var instance = await instanceRepository.FindByIdentifierAsReadOnlyAsync(instanceIdentifier, cancellationToken);
         return instance.EnsureNotNull(WorkflowErrors.InstanceNotFound(instanceIdentifier));
     }
 
