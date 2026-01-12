@@ -7,12 +7,12 @@ The vNext workflow system provides powerful filtering capabilities for querying 
 ## Supported Routes
 
 ### 1. Function/Data Route
-```
+```http
 GET /{domain}/function/{workflow}/data
 ```
 
 ### 2. Workflow Instances Route
-```
+```http
 GET /{domain}/workflows/{workflow}/instances
 ```
 
@@ -603,7 +603,7 @@ GraphQL format is more readable and supports logical operators.
 ```
 
 **Also Works (Legacy):**
-```
+```text
 status=eq:Active&attributes=amount=gt:500
 ```
 
@@ -729,7 +729,7 @@ GET /banking/workflows/payment-workflow/instances?filter={"invalidColumn":{"eq":
 ## Performance Tips
 
 1. **Use Pagination**: Always use `page` and `pageSize` parameters
-   ```
+   ```text
    ?page=1&pageSize=20
    ```
 

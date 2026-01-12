@@ -219,7 +219,7 @@ flowchart TD
 6. `src/BBT.Workflow.Domain/QueryExtensions/Security/README.md`
 7. `src/BBT.Workflow.Domain/QueryExtensions/SECURITY_IMPLEMENTATION_SUMMARY.md`
 8. `docs/security/queryextensions-security-guide.md`
-9. `ai-docs/queryextensions-security-implementation.md` (this file)
+9. `docs/security/queryextensions-security-implementation.md` (this file)
 
 **Tests:**
 10. `test/BBT.Workflow.Domain.Tests/QueryExtensions/Security/SchemaValidatorTests.cs`
