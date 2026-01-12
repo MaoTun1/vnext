@@ -109,14 +109,14 @@ public sealed class GetInstancesTaskExecutor : TriggerTaskExecutorBase<GetInstan
                 }
 
                 // Step 2: Get data for each instance
+                // Note: ToPagedList uses Items.Count as totalItems estimate since InstanceListWithGroupsResponse doesn't preserve total count
+                var pagedList = instanceListResult.Value!.ToPagedList(task.PageSize, task.Page, instanceListResult.Value.Items.Count);
                 var instanceDataResults = await ProcessDataFunctionListAsync(
                     task.TriggerDomain,
                     task.TriggerFlow,
-                    instanceListResult.Value!,
+                    pagedList,
                     queryService,
                     cancellationToken);
-
-                var pagedList = instanceListResult.Value!;
                 
                 // Build HATEOAS-like response structure for consistency with remote execution
                 var basePath = $"/api/v1/{task.TriggerDomain}/workflows/{task.TriggerFlow}/functions/data";
