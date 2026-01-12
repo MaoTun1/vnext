@@ -23,7 +23,13 @@ public static class OutboxWorkerServiceCollectionExtensions
             .AddAspNetCoreModules(configuration)
             .AddResultResilience(configuration)
             .AddDaprClients()
-            .AddAetherEventBus()
+            .AddAetherEventBus(options =>
+            {
+                options.DefaultSource =
+                    $"urn:vnext:{configuration.GetValue<string?>("ApplicationName")?.ToLowerInvariant()}";
+                options.PrefixEnvironmentToTopic = true;
+                options.PubSubName = configuration["DAPR_PUBSUB_STORE_NAME"]!;
+            })
             .AddDbContext(configuration)
             .AppMapper()
             .AddTelemetry(configuration)

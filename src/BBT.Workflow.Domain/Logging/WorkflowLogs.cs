@@ -515,6 +515,58 @@ public static partial class WorkflowLogs
         Guid parentInstanceId);
 
     /// <summary>
+    /// Logs when a SubFlow state change event is received.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40024,
+        Level = LogLevel.Information,
+        Message = "SubFlow state change received for SubInstance {SubInstanceId}, Parent {ParentInstanceId}, NewState: {NewState}")]
+    public static partial void SubFlowStateChangeReceived(
+        this ILogger logger,
+        Guid subInstanceId,
+        Guid parentInstanceId,
+        string newState);
+
+    /// <summary>
+    /// Logs when a SubFlow state change is successfully applied to parent.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40025,
+        Level = LogLevel.Information,
+        Message = "SubFlow state change applied for SubInstance {SubInstanceId}, Parent {ParentInstanceId}, NewState: {NewState}")]
+    public static partial void SubFlowStateChangeApplied(
+        this ILogger logger,
+        Guid subInstanceId,
+        Guid parentInstanceId,
+        string newState);
+
+    /// <summary>
+    /// Logs when a SubFlow state changed event is received by the hook.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40026,
+        Level = LogLevel.Information,
+        Message = "SubFlow state changed event received for SubInstance {SubInstanceId}, Parent {ParentInstanceId}, NewState: {NewState}")]
+    public static partial void SubFlowStateChangedEventReceived(
+        this ILogger logger,
+        Guid subInstanceId,
+        Guid parentInstanceId,
+        string newState);
+
+    /// <summary>
+    /// Logs when SubFlow state update fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40079,
+        Level = LogLevel.Error,
+        Message = "SubFlow state update failed for SubInstance {SubInstanceId}, Parent {ParentInstanceId}")]
+    public static partial void SubFlowStateUpdateFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid subInstanceId,
+        Guid parentInstanceId);
+
+    /// <summary>
     /// Logs when parent workflow continuation starts after SubFlow completion.
     /// </summary>
     [LoggerMessage(
