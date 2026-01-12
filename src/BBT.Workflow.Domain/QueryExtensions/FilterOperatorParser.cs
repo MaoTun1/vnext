@@ -40,7 +40,7 @@ public static class FilterOperatorParser
                 throw new ArgumentException($"Invalid filter format: {input}");
             }
 
-            return (match.Groups[1].Value.Trim(), match.Groups[2].Value.ToLower(), match.Groups[3].Value.Trim());
+            return (match.Groups[1].Value.Trim(), match.Groups[2].Value.ToLowerInvariant(), match.Groups[3].Value.Trim());
         }
         catch (RegexMatchTimeoutException)
         {

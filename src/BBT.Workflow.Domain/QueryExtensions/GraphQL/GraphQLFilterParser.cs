@@ -237,6 +237,9 @@ public static class GraphQLFilterParser
                     }
                 }
                 break;
+            default:
+                // Unknown node type, ignore
+                break;
         }
     }
 

@@ -237,6 +237,9 @@ public static class FilterFormatDetector
             case "nin":
                 condition.NotIn = value.Split(',').Select(v => ParseValue(v.Trim())).ToArray();
                 break;
+            default:
+                // Unknown operator, ignore
+                break;
         }
     }
 

@@ -33,14 +33,9 @@ public static class GraphQLAggregationService
         CancellationToken cancellationToken = default)
     {
         // Validate schema
-        if (schemaValidator != null)
-        {
-            schema = await schemaValidator.ValidateSchemaAsync(schema, cancellationToken);
-        }
-        else
-        {
-            schema = new SyncSchemaValidator().ValidateSchemaSync(schema);
-        }
+        schema = schemaValidator != null
+            ? await schemaValidator.ValidateSchemaAsync(schema, cancellationToken)
+            : new SyncSchemaValidator().ValidateSchemaSync(schema);
 
         var parameters = new List<NpgsqlParameter>();
         var parameterIndex = 0;
@@ -105,14 +100,9 @@ public static class GraphQLAggregationService
             throw new ArgumentException("GroupBy must have at least one field");
 
         // Validate schema
-        if (schemaValidator != null)
-        {
-            schema = await schemaValidator.ValidateSchemaAsync(schema, cancellationToken);
-        }
-        else
-        {
-            schema = new SyncSchemaValidator().ValidateSchemaSync(schema);
-        }
+        schema = schemaValidator != null
+            ? await schemaValidator.ValidateSchemaAsync(schema, cancellationToken)
+            : new SyncSchemaValidator().ValidateSchemaSync(schema);
 
         var parameters = new List<NpgsqlParameter>();
         var parameterIndex = 0;
@@ -324,10 +314,8 @@ public static class GraphQLAggregationService
             var arrayElements = string.Join(",", parts.Select(p => $"'{p}'"));
             return $"(\"{jsonColumnName}\" #>> ARRAY[{arrayElements}])";
         }
-        else
-        {
-            return $"(\"{jsonColumnName}\" ->> '{field}')";
-        }
+        
+        return $"(\"{jsonColumnName}\" ->> '{field}')";
     }
 
     private static string SanitizeAlias(string field)

@@ -142,15 +142,9 @@ public static class UnifiedFilterService
         }
 
         // Handle regular filter (no aggregations)
-        IQueryable<T> query;
-        if (request.Filter != null)
-        {
-            query = dbSet.ApplyGraphQLFilter(request.Filter, jsonColumnName, "", schema, schemaValidator);
-        }
-        else
-        {
-            query = dbSet;
-        }
+        var query = request.Filter != null
+            ? dbSet.ApplyGraphQLFilter(request.Filter, jsonColumnName, "", schema, schemaValidator)
+            : dbSet;
 
         // Apply include function if provided
         if (includeFunc != null)
@@ -270,6 +264,9 @@ public static class UnifiedFilterService
                         return (false, $"Field '{fieldName}' must have at least one operator");
                 }
                 break;
+            default:
+                // Unknown node type, consider invalid
+                return (false, $"Unknown node type: {node.NodeType}");
         }
 
         return (true, null);

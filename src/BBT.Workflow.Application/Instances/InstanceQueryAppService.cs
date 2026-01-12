@@ -83,19 +83,13 @@ public sealed class InstanceQueryAppService(
                     if (GraphQLFilterParser.TryParseRequest(filterString, out var request) && request != null)
                     {
                         // Extract filter and groupBy from GraphQLFilterRequest
-                        if (request.Filter != null)
-                        {
-                            // Serialize filter node to JSON string
-                            filters = new[] { JsonSerializer.Serialize(request.Filter, new JsonSerializerOptions
+                        filters = request.Filter != null
+                            ? new[] { JsonSerializer.Serialize(request.Filter, new JsonSerializerOptions
                             {
                                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                                 WriteIndented = false
-                            }) };
-                        }
-                        else
-                        {
-                            filters = null;
-                        }
+                            }) }
+                            : null;
 
                         if (request.GroupBy != null)
                         {

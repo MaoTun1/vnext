@@ -175,7 +175,7 @@ public static class InstanceFieldDiscriminator
         var equalIndex = cleanFilter.IndexOf('=');
         if (equalIndex > 0)
         {
-            return cleanFilter.Substring(0, equalIndex);
+            return cleanFilter[..equalIndex];
         }
 
         return cleanFilter ?? string.Empty;

@@ -120,7 +120,7 @@ public static class GraphQLJsonFilterService
         var jsonClauses = new List<string>();
         var instanceClauses = new List<string>();
 
-        BuildSeparatedClauses(node, jsonColumnName, parameters, ref parameterIndex, jsonClauses, instanceClauses, logger);
+        BuildSeparatedClauses(node, jsonColumnName, parameters, jsonClauses, instanceClauses, ref parameterIndex, logger);
 
         var jsonWhereClause = jsonClauses.Count > 0 ? string.Join(" AND ", jsonClauses) : string.Empty;
         var instanceWhereClause = instanceClauses.Count > 0 ? string.Join(" AND ", instanceClauses) : string.Empty;
@@ -135,9 +135,9 @@ public static class GraphQLJsonFilterService
         GraphQLFilterNode node,
         string jsonColumnName,
         List<NpgsqlParameter> parameters,
-        ref int parameterIndex,
         List<string> jsonClauses,
         List<string> instanceClauses,
+        ref int parameterIndex,
         ILogger? logger = null)
     {
         switch (node.NodeType)
@@ -145,7 +145,7 @@ public static class GraphQLJsonFilterService
             case FilterNodeType.And:
                 foreach (var childNode in node.And!)
                 {
-                    BuildSeparatedClauses(childNode, jsonColumnName, parameters, ref parameterIndex, jsonClauses, instanceClauses, logger);
+                    BuildSeparatedClauses(childNode, jsonColumnName, parameters, jsonClauses, instanceClauses, ref parameterIndex, logger);
                 }
                 break;
 
@@ -155,7 +155,7 @@ public static class GraphQLJsonFilterService
                 var orInstanceClauses = new List<string>();
                 foreach (var childNode in node.Or!)
                 {
-                    BuildSeparatedClauses(childNode, jsonColumnName, parameters, ref parameterIndex, orJsonClauses, orInstanceClauses, logger);
+                    BuildSeparatedClauses(childNode, jsonColumnName, parameters, orJsonClauses, orInstanceClauses, ref parameterIndex, logger);
                 }
                 if (orJsonClauses.Count > 0)
                     jsonClauses.Add($"({string.Join(" OR ", orJsonClauses)})");
@@ -166,7 +166,7 @@ public static class GraphQLJsonFilterService
             case FilterNodeType.Not:
                 var notJsonClauses = new List<string>();
                 var notInstanceClauses = new List<string>();
-                BuildSeparatedClauses(node.Not!, jsonColumnName, parameters, ref parameterIndex, notJsonClauses, notInstanceClauses, logger);
+                BuildSeparatedClauses(node.Not!, jsonColumnName, parameters, notJsonClauses, notInstanceClauses, ref parameterIndex, logger);
                 if (notJsonClauses.Count > 0)
                     jsonClauses.Add($"NOT ({string.Join(" AND ", notJsonClauses)})");
                 if (notInstanceClauses.Count > 0)
@@ -178,6 +178,9 @@ public static class GraphQLJsonFilterService
                     node.Attributes!, jsonColumnName, parameters, ref parameterIndex, logger);
                 jsonClauses.AddRange(jsonConditions);
                 instanceClauses.AddRange(instanceConditions);
+                break;
+            default:
+                // Unknown node type, ignore
                 break;
         }
     }
@@ -439,7 +442,7 @@ public static class GraphQLJsonFilterService
             System.Text.Json.JsonValueKind.False => false,
             System.Text.Json.JsonValueKind.Null => null,
             System.Text.Json.JsonValueKind.Array => element.EnumerateArray()
-                .Select(e => ConvertJsonElement(e))
+                .Select(ConvertJsonElement)
                 .ToArray(),
             _ => element.GetRawText()
         };
@@ -526,10 +529,8 @@ public static class GraphQLJsonFilterService
             var arrayElements = string.Join(",", parts.Select(p => $"'{p}'"));
             return $"(\"{jsonColumnName}\" #>> ARRAY[{arrayElements}])";
         }
-        else
-        {
-            return $"(\"{jsonColumnName}\" ->> '{field}')";
-        }
+        
+        return $"(\"{jsonColumnName}\" ->> '{field}')";
     }
 
     private static string BuildNestedJsonContainmentPattern(string field, object? value, bool isNumeric, bool isBoolean)
@@ -593,15 +594,9 @@ public static class GraphQLJsonFilterService
 
         // String comparison
         var stringIndex = parameterIndex++;
-        string stringJsonPattern;
-        if (isNested)
-        {
-            stringJsonPattern = BuildNestedJsonContainmentPattern(field, value, isNumeric: false, isBoolean: false);
-        }
-        else
-        {
-            stringJsonPattern = $"{{\"{field}\":\"{stringValue}\"}}";
-        }
+        var stringJsonPattern = isNested
+            ? BuildNestedJsonContainmentPattern(field, value, isNumeric: false, isBoolean: false)
+            : $"{{\"{field}\":\"{stringValue}\"}}";
         parameters.Add(new NpgsqlParameter { Value = stringJsonPattern, NpgsqlDbType = NpgsqlDbType.Jsonb });
         conditions.Add($"\"{jsonColumnName}\" @> {{{stringIndex}}}");
 
@@ -609,16 +604,9 @@ public static class GraphQLJsonFilterService
         if (decimal.TryParse(stringValue, NumberStyles.Number, CultureInfo.InvariantCulture, out _))
         {
             var numIndex = parameterIndex++;
-            string numJsonPattern;
-            if (isNested)
-            {
-                numJsonPattern = BuildNestedJsonContainmentPattern(field, value, isNumeric: true, isBoolean: false);
-            }
-            else
-            {
-                var numValue = decimal.Parse(stringValue, NumberStyles.Number, CultureInfo.InvariantCulture);
-                numJsonPattern = $"{{\"{field}\":{numValue}}}";
-            }
+            var numJsonPattern = isNested
+                ? BuildNestedJsonContainmentPattern(field, value, isNumeric: true, isBoolean: false)
+                : $"{{\"{field}\":{decimal.Parse(stringValue, NumberStyles.Number, CultureInfo.InvariantCulture)}}}";
             parameters.Add(new NpgsqlParameter { Value = numJsonPattern, NpgsqlDbType = NpgsqlDbType.Jsonb });
             conditions.Add($"\"{jsonColumnName}\" @> {{{numIndex}}}");
         }
@@ -627,16 +615,9 @@ public static class GraphQLJsonFilterService
         if (bool.TryParse(stringValue, out _))
         {
             var boolIndex = parameterIndex++;
-            string boolJsonPattern;
-            if (isNested)
-            {
-                boolJsonPattern = BuildNestedJsonContainmentPattern(field, value, isNumeric: false, isBoolean: true);
-            }
-            else
-            {
-                var boolValue = bool.Parse(stringValue);
-                boolJsonPattern = $"{{\"{field}\":{boolValue.ToString().ToLower()}}}";
-            }
+            var boolJsonPattern = isNested
+                ? BuildNestedJsonContainmentPattern(field, value, isNumeric: false, isBoolean: true)
+                : $"{{\"{field}\":{bool.Parse(stringValue).ToString().ToLowerInvariant()}}}";
             parameters.Add(new NpgsqlParameter { Value = boolJsonPattern, NpgsqlDbType = NpgsqlDbType.Jsonb });
             conditions.Add($"\"{jsonColumnName}\" @> {{{boolIndex}}}");
         }
@@ -654,15 +635,9 @@ public static class GraphQLJsonFilterService
 
         // String comparison
         var stringIndex = parameterIndex++;
-        string stringJsonPattern;
-        if (isNested)
-        {
-            stringJsonPattern = BuildNestedJsonContainmentPattern(field, value, isNumeric: false, isBoolean: false);
-        }
-        else
-        {
-            stringJsonPattern = $"{{\"{field}\":\"{stringValue}\"}}";
-        }
+        var stringJsonPattern = isNested
+            ? BuildNestedJsonContainmentPattern(field, value, isNumeric: false, isBoolean: false)
+            : $"{{\"{field}\":\"{stringValue}\"}}";
         parameters.Add(new NpgsqlParameter { Value = stringJsonPattern, NpgsqlDbType = NpgsqlDbType.Jsonb });
         conditions.Add($"NOT (\"{jsonColumnName}\" @> {{{stringIndex}}})");
 
@@ -670,16 +645,9 @@ public static class GraphQLJsonFilterService
         if (decimal.TryParse(stringValue, NumberStyles.Number, CultureInfo.InvariantCulture, out _))
         {
             var numIndex = parameterIndex++;
-            string numJsonPattern;
-            if (isNested)
-            {
-                numJsonPattern = BuildNestedJsonContainmentPattern(field, value, isNumeric: true, isBoolean: false);
-            }
-            else
-            {
-                var numValue = decimal.Parse(stringValue, NumberStyles.Number, CultureInfo.InvariantCulture);
-                numJsonPattern = $"{{\"{field}\":{numValue}}}";
-            }
+            var numJsonPattern = isNested
+                ? BuildNestedJsonContainmentPattern(field, value, isNumeric: true, isBoolean: false)
+                : $"{{\"{field}\":{decimal.Parse(stringValue, NumberStyles.Number, CultureInfo.InvariantCulture)}}}";
             parameters.Add(new NpgsqlParameter { Value = numJsonPattern, NpgsqlDbType = NpgsqlDbType.Jsonb });
             conditions.Add($"NOT (\"{jsonColumnName}\" @> {{{numIndex}}})");
         }
@@ -688,16 +656,9 @@ public static class GraphQLJsonFilterService
         if (bool.TryParse(stringValue, out _))
         {
             var boolIndex = parameterIndex++;
-            string boolJsonPattern;
-            if (isNested)
-            {
-                boolJsonPattern = BuildNestedJsonContainmentPattern(field, value, isNumeric: false, isBoolean: true);
-            }
-            else
-            {
-                var boolValue = bool.Parse(stringValue);
-                boolJsonPattern = $"{{\"{field}\":{boolValue.ToString().ToLower()}}}";
-            }
+            var boolJsonPattern = isNested
+                ? BuildNestedJsonContainmentPattern(field, value, isNumeric: false, isBoolean: true)
+                : $"{{\"{field}\":{bool.Parse(stringValue).ToString().ToLowerInvariant()}}}";
             parameters.Add(new NpgsqlParameter { Value = boolJsonPattern, NpgsqlDbType = NpgsqlDbType.Jsonb });
             conditions.Add($"NOT (\"{jsonColumnName}\" @> {{{boolIndex}}})");
         }

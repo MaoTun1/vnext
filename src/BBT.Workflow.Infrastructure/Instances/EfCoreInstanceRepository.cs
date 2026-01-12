@@ -226,8 +226,27 @@ public sealed class EfCoreInstanceRepository(
                 return filteredInstances
                     .Include(i => i.DataList);
             }
-            catch (Exception)
+            catch (ArgumentException)
             {
+                // Invalid filter format, fallback to specification-based filtering
+                var dbSet = await GetDbSetAsync();
+                var query = dbSet
+                    .Include(i => i.DataList);
+                var filterSpec = new InstanceFilterSpecification(filters);
+                return filterSpec.Apply(query);
+            }
+            catch (FormatException)
+            {
+                // Invalid filter format, fallback to specification-based filtering
+                var dbSet = await GetDbSetAsync();
+                var query = dbSet
+                    .Include(i => i.DataList);
+                var filterSpec = new InstanceFilterSpecification(filters);
+                return filterSpec.Apply(query);
+            }
+            catch (Microsoft.EntityFrameworkCore.DbUpdateException)
+            {
+                // Database error, fallback to specification-based filtering
                 var dbSet = await GetDbSetAsync();
                 var query = dbSet
                     .Include(i => i.DataList);
@@ -275,8 +294,8 @@ public sealed class EfCoreInstanceRepository(
                 }
                 else
                 {
-                    // For legacy format, use first filter (or combine if needed)
-                    combinedFilter = filters.Length == 1 ? filters[0] : filters[0];
+                    // For legacy format, use first filter
+                    combinedFilter = filters[0];
                 }
             }
 
