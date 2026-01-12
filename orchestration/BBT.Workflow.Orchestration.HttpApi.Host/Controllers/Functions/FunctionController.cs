@@ -26,7 +26,8 @@ namespace BBT.Workflow.Controllers.Instances;
 public sealed class FunctionController(
     IFunctionAppService functionAppService,
     IInstanceQueryAppService queryAppService,
-    IPaginationLinkGenerator linkGenerator) : AetherControllerBase
+    IPaginationLinkGenerator linkGenerator,
+    IServiceScopeFactory serviceScopeFactory) : AetherControllerBase
 {
     [HttpPatch("{domain}/functions")]
     public async Task<IActionResult> GetDomainFunctionsAsync(
@@ -208,8 +209,20 @@ public sealed class FunctionController(
         HateoasPagedList<GetInstanceOutput> instanceListResult,
         CancellationToken cancellationToken)
     {
-        var tasks = instanceListResult.Items.Select(instance =>
-            ProcessLongpoolingFunctionAsync(domain, workflow, instance.Key!, instance.FlowVersion, null, cancellationToken));
+        var tasks = instanceListResult.Items.Select(async instance =>
+        {
+            await using var scope = serviceScopeFactory.CreateAsyncScope();
+            var scopedQueryService = scope.ServiceProvider.GetRequiredService<IInstanceQueryAppService>();
+            var input = new GetInstanceStateInput
+            {
+                Domain = domain,
+                Workflow = workflow,
+                Instance = instance.Key!,
+                Version = instance.FlowVersion,
+                Extensions = null
+            };
+            return await scopedQueryService.GetInstanceStateAsync(input, cancellationToken);
+        });
 
         var results = await Task.WhenAll(tasks);
         var list = results.Where(r => r.IsSuccess).Select(r => r.Value!).ToList();
@@ -296,8 +309,22 @@ public sealed class FunctionController(
         Dictionary<string, string?> queryParams,
         CancellationToken cancellationToken)
     {
-        var tasks = instanceListResult.Items.Select(instance =>
-            ProcessExtensionsFunctionAsync(domain, workflow, instance.Key!, instance.FlowVersion, null, headers, queryParams, cancellationToken));
+        var tasks = instanceListResult.Items.Select(async instance =>
+        {
+            await using var scope = serviceScopeFactory.CreateAsyncScope();
+            var scopedQueryService = scope.ServiceProvider.GetRequiredService<IInstanceQueryAppService>();
+            var input = new GetExtensionsInput
+            {
+                Domain = domain,
+                Workflow = workflow,
+                Instance = instance.Key!,
+                Version = instance.FlowVersion,
+                Extensions = null,
+                Headers = headers,
+                QueryParameters = queryParams
+            };
+            return await scopedQueryService.GetExtensionsAsync(input, cancellationToken);
+        });
 
         var results = await Task.WhenAll(tasks);
         var list = results.Where(r => r.IsSuccess).Select(r => r.Value!).ToList();
@@ -315,8 +342,19 @@ public sealed class FunctionController(
         HateoasPagedList<GetInstanceOutput> instanceListResult,
         CancellationToken cancellationToken)
     {
-        var tasks = instanceListResult.Items.Select(instance =>
-            ProcessSchemaFunctionAsync(domain, workflow, instance.Key!, instance.FlowVersion, string.Empty, cancellationToken));
+        var tasks = instanceListResult.Items.Select(async instance =>
+        {
+            await using var scope = serviceScopeFactory.CreateAsyncScope();
+            var scopedQueryService = scope.ServiceProvider.GetRequiredService<IInstanceQueryAppService>();
+            var input = new GetSchemaInput
+            {
+                Domain = domain,
+                Workflow = workflow,
+                Instance = instance.Key!,
+                Version = instance.FlowVersion
+            };
+            return await scopedQueryService.GetSchemaAsync(input, string.Empty, cancellationToken);
+        });
 
         var results = await Task.WhenAll(tasks);
         var list = results.Where(r => r.IsSuccess).Select(r => r.Value!).ToList();
@@ -334,8 +372,19 @@ public sealed class FunctionController(
         HateoasPagedList<GetInstanceOutput> instanceListResult,
         CancellationToken cancellationToken)
     {
-        var tasks = instanceListResult.Items.Select(instance =>
-            ProcessViewFunctionAsync(domain, workflow, instance.Key!, instance.FlowVersion, string.Empty, string.Empty, cancellationToken));
+        var tasks = instanceListResult.Items.Select(async instance =>
+        {
+            await using var scope = serviceScopeFactory.CreateAsyncScope();
+            var scopedQueryService = scope.ServiceProvider.GetRequiredService<IInstanceQueryAppService>();
+            var input = new GetViewInput
+            {
+                Domain = domain,
+                Workflow = workflow,
+                Instance = instance.Key!,
+                Version = instance.FlowVersion
+            };
+            return await scopedQueryService.GetPlatformSpecificViewAsync(input, string.Empty, string.Empty, cancellationToken);
+        });
 
         var results = await Task.WhenAll(tasks);
         var list = results.Where(r => r.IsSuccess).Select(r => r.Value!).ToList();
@@ -386,8 +435,10 @@ public sealed class FunctionController(
         Dictionary<string, string?> queryParams,
         CancellationToken cancellationToken)
     {
-        var tasks = instanceListResult.Items.Select(instance =>
+        var tasks = instanceListResult.Items.Select(async instance =>
         {
+            await using var scope = serviceScopeFactory.CreateAsyncScope();
+            var scopedQueryService = scope.ServiceProvider.GetRequiredService<IInstanceQueryAppService>();
             var input = new GetInstanceDataInput
             {
                 Domain = domain,
@@ -396,7 +447,7 @@ public sealed class FunctionController(
                 Headers = headers,
                 QueryParameters = queryParams
             };
-            return queryAppService.GetInstanceDataAsync(input, cancellationToken);
+            return await scopedQueryService.GetInstanceDataAsync(input, cancellationToken);
         });
 
         var results = await Task.WhenAll(tasks);
@@ -417,8 +468,12 @@ public sealed class FunctionController(
         Dictionary<string, string?> queryParams,
         CancellationToken cancellationToken)
     {
-        var tasks = instanceListResult.Items.Select(instance =>
-            functionAppService.GetFunctionByInstanceAsync(function, workflow, domain, instance.Key!, headers, queryParams, cancellationToken));
+        var tasks = instanceListResult.Items.Select(async instance =>
+        {
+            await using var scope = serviceScopeFactory.CreateAsyncScope();
+            var scopedFunctionService = scope.ServiceProvider.GetRequiredService<IFunctionAppService>();
+            return await scopedFunctionService.GetFunctionByInstanceAsync(function, workflow, domain, instance.Key!, headers, queryParams, cancellationToken);
+        });
 
         var results = await Task.WhenAll(tasks);
         var list = results.Where(r => r.IsSuccess).Select(r => r.Value!).ToList();
