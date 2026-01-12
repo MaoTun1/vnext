@@ -88,41 +88,41 @@ public sealed class FunctionController(
         {
             return FromResult(instanceListResult);
         }
-
+         var pagedList = instanceListResult.Value!.ToPagedList(parameters.PageSize);
         // Process based on function type
         var functionType = function.ToLowerInvariant();
 
         if (functionType == Definitions.Functions.FunctionTypeConst.Longpooling)
         {
-            return FromResult(await ProcessLongpoolingFunctionListAsync(domain, workflow, instanceListResult.Value!,
+            return FromResult(await ProcessLongpoolingFunctionListAsync(domain, workflow, pagedList,
                 cancellationToken));
         }
 
         if (functionType == Definitions.Functions.FunctionTypeConst.View)
         {
-            return FromResult(await ProcessViewFunctionListAsync(domain, workflow, instanceListResult.Value!,
+            return FromResult(await ProcessViewFunctionListAsync(domain, workflow, pagedList,
                 cancellationToken));
         }
 
         if (functionType == Definitions.Functions.FunctionTypeConst.Data)
         {
-            return FromResult(await ProcessDataFunctionListAsync(domain, workflow, instanceListResult.Value!,
+            return FromResult(await ProcessDataFunctionListAsync(domain, workflow, pagedList,
                 requestContext.Headers, requestContext.QueryParameters, cancellationToken));
         }
 
         if (functionType == Definitions.Functions.FunctionTypeConst.Schema)
         {
-            return FromResult(await ProcessSchemaFunctionListAsync(domain, workflow, instanceListResult.Value!,
+            return FromResult(await ProcessSchemaFunctionListAsync(domain, workflow, pagedList,
                 cancellationToken));
         }
 
         if (functionType == Definitions.Functions.FunctionTypeConst.Extensions)
         {
-            return FromResult(await ProcessExtensionsFunctionListAsync(domain, workflow, instanceListResult.Value!,
+            return FromResult(await ProcessExtensionsFunctionListAsync(domain, workflow, pagedList,
                 requestContext.Headers, requestContext.QueryParameters, cancellationToken));
         }
 
-        return FromResult(await ProcessCustomFunctionListAsync(function, workflow, domain, instanceListResult.Value!,
+        return FromResult(await ProcessCustomFunctionListAsync(function, workflow, domain, pagedList,
             requestContext.Headers, requestContext.QueryParameters, cancellationToken));
     }
 

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using BBT.Aether;
 using BBT.Aether.Domain;
 using BBT.Aether.Domain.EntityFrameworkCore;
@@ -7,10 +8,13 @@ using BBT.Aether.Results;
 using BBT.Workflow.Data;
 using BBT.Workflow.DataSink;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Definitions.GraphQL;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
+using BBT.Workflow.Security;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Instances;
 
@@ -20,7 +24,9 @@ public sealed class EfCoreInstanceRepository(
     IWorkflowMetrics workflowMetrics,
     IRuntimeInfoProvider runtimeInfoProvider,
     IDataSinkManager dataSinkManager,
-    ICurrentSchema currentSchema)
+     ICurrentSchema currentSchema,
+    ISchemaValidator schemaValidator,
+    ILogger<EfCoreInstanceRepository> logger)
     : EfCoreRepository<WorkflowDbContext, Instance, Guid>(dbContext, serviceProvider),
         IInstanceRepository
 {
@@ -209,11 +215,12 @@ public sealed class EfCoreInstanceRepository(
                 // Use ApplyJsonFilters on Instance DbSet - this matches the working pattern
                 // The CTE inside ApplyJsonFilters will handle InstanceData filtering and return Instances
                 var filteredInstances = (await GetDbSetAsync())
-                    .ApplyJsonFilters(
+                    .ApplyFilters(
                         filters: filters,
                         jsonColumnName: "Data", // InstanceData.Data is the JSON column
                         tableName: "InstancesData", // Filter table name
-                        schema: currentSchema.Name ?? "public" // Default schema
+                        schema: currentSchema.Name ?? "public", // Default schema
+                        schemaValidator: schemaValidator // Security validation
                     );
 
                 return filteredInstances
@@ -222,7 +229,8 @@ public sealed class EfCoreInstanceRepository(
             catch (Exception)
             {
                 var dbSet = await GetDbSetAsync();
-                var query = dbSet.Include(i => i.DataList);
+                var query = dbSet
+                    .Include(i => i.DataList);
                 var filterSpec = new InstanceFilterSpecification(filters);
                 return filterSpec.Apply(query);
             }
@@ -230,22 +238,285 @@ public sealed class EfCoreInstanceRepository(
 
         // If no filters, use the standard approach with includes
         var standardDbSet = await GetDbSetAsync();
-        return standardDbSet.Include(i => i.DataList);
+        return standardDbSet
+            .Include(i => i.DataList);
     }
 
     public async Task<HateoasPagedList<Instance>> GetPagedResultsAsync(
         int page,
         int pageSize,
         string[]? filters,
+        string? groupBy = null,
+        string? aggregations = null,
         CancellationToken cancellationToken = default)
     {
-        var query = (await GetFilteredQueryAsync(filters, cancellationToken))
-            .Include(i => i.DataList)
-            .AsSplitQuery()
-            .AsNoTracking();
-        return await query.ToHateoasPagedListAsync(page, pageSize, cancellationToken);
+        // If groupBy or aggregations are provided, use ApplyFilterWithAggregationsAsync
+        if (!string.IsNullOrWhiteSpace(groupBy) || !string.IsNullOrWhiteSpace(aggregations))
+        {
+            var context = await GetDbContextAsync();
+            var dbSet = await GetDbSetAsync();
+
+            // Combine filters into a single JSON string if multiple filters exist
+            string? combinedFilter = null;
+            if (filters != null && filters.Length > 0)
+            {
+                // If filters are in GraphQL format, combine them
+                if (FilterFormatDetector.DetectFormat(filters) == FilterFormat.GraphQL)
+                {
+                    var combinedNode = FilterFormatDetector.CombineFilters(filters);
+                    if (combinedNode != null)
+                    {
+                        combinedFilter = JsonSerializer.Serialize(combinedNode, new JsonSerializerOptions
+                        {
+                            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                            WriteIndented = false
+                        });
+                    }
+                }
+                else
+                {
+                    // For legacy format, use first filter (or combine if needed)
+                    combinedFilter = filters.Length == 1 ? filters[0] : filters[0];
+                }
+            }
+
+            var response = await UnifiedFilterService.ApplyFilterWithAggregationsAsync(
+                context,
+                dbSet,
+                combinedFilter,
+                groupBy,
+                aggregations,
+                "Data",
+                currentSchema.Name ?? "public",
+                query => query.Include(i => i.DataList).AsSplitQuery(),
+                schemaValidator,
+                cancellationToken);
+
+            // If response has groups or aggregations, return empty paged list
+            // (groups and aggregations are handled separately in the response)
+            if (response.Groups != null || response.Aggregations != null)
+            {
+                return new HateoasPagedList<Instance>(
+                    new List<Instance>(),
+                    page,
+                    pageSize,
+                    false);
+            }
+
+            // If response has data, convert to HateoasPagedList
+            if (response.Data != null)
+            {
+                var totalCount = response.Data.Count;
+                var skip = (page - 1) * pageSize;
+                var pagedData = response.Data.Skip(skip).Take(pageSize).ToList();
+                var hasNext = skip + pageSize < totalCount;
+
+                return new HateoasPagedList<Instance>(pagedData, page, pageSize, hasNext);
+            }
+
+            // Fallback to empty list
+            return new HateoasPagedList<Instance>(
+                new List<Instance>(),
+                page,
+                pageSize,
+                false);
+        }
+
+        // Normal flow without groupBy/aggregations
+        // GetFilteredQueryAsync already includes DataList, no need to include again
+        var query = await GetFilteredQueryAsync(filters, cancellationToken);
+
+        // Manually materialize to ensure DataList is loaded
+        var skipCount = (page - 1) * pageSize;
+        var items = await query
+            .Skip(skipCount)
+            .Take(pageSize + 1) // Take one extra to check if there's a next page
+            .ToListAsync(cancellationToken);
+
+        var hasNextPage = items.Count > pageSize;
+        if (hasNextPage)
+        {
+            items = items.Take(pageSize).ToList();
+        }
+
+        return new HateoasPagedList<Instance>(items, page, pageSize, hasNextPage);
     }
 
+    public async Task<(HateoasPagedList<Instance> PagedList, List<GroupSummary>? Groups)> GetPagedResultsWithGroupsAsync(
+        int page,
+        int pageSize,
+        string[]? filters,
+        string? groupBy = null,
+        string? aggregations = null,
+        CancellationToken cancellationToken = default)
+    {
+        // If groupBy is provided, use ApplyFilterWithAggregationsAsync
+        if (!string.IsNullOrWhiteSpace(groupBy))
+        {
+            var context = await GetDbContextAsync();
+            var dbSet = await GetDbSetAsync();
+
+            // Combine filters into a single JSON string if multiple filters exist
+            string? combinedFilter = null;
+            if (filters != null && filters.Length > 0)
+            {
+                // If filters are in GraphQL format, combine them
+                if (FilterFormatDetector.DetectFormat(filters) == FilterFormat.GraphQL)
+                {
+                    var combinedNode = FilterFormatDetector.CombineFilters(filters);
+                    if (combinedNode != null)
+                    {
+                        combinedFilter = JsonSerializer.Serialize(combinedNode, new JsonSerializerOptions
+                        {
+                            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                            WriteIndented = false
+                        });
+                    }
+                }
+                else
+                {
+                    // For legacy format, use first filter
+                    combinedFilter = filters[0];
+                }
+            }
+
+            var response = await UnifiedFilterService.ApplyFilterWithAggregationsAsync(
+                context,
+                dbSet,
+                combinedFilter,
+                groupBy,
+                aggregations,
+                "Data",
+                currentSchema.Name ?? "public",
+                query => query.Include(i => i.DataList).AsSplitQuery(),
+                schemaValidator,
+                cancellationToken);
+
+            // Convert GroupByResponse to GroupSummary
+            List<GroupSummary>? groups = null;
+            if (response.Groups != null && response.Groups.Count > 0)
+            {
+                groups = new List<GroupSummary>();
+                var groupByRequest = GraphQLFilterParser.ParseGroupBy(groupBy);
+                var groupByFields = groupByRequest?.GetFields() ?? new List<string>();
+
+                foreach (var group in response.Groups)
+                {
+                    var summary = new GroupSummary();
+
+                    // Get name from first groupBy field
+                    if (groupByFields.Count > 0 && group.Keys.TryGetValue(groupByFields[0], out var nameValue))
+                    {
+                        summary.Name = nameValue?.ToString() ?? string.Empty;
+                    }
+
+                    // Map aggregations
+                    if (group.Aggregations != null)
+                    {
+                        summary.Count = group.Aggregations.Count;
+                        summary.Sum = group.Aggregations.Sum;
+                        summary.Avg = group.Aggregations.Avg;
+                        summary.Min = group.Aggregations.Min;
+                        summary.Max = group.Aggregations.Max;
+                    }
+
+                    groups.Add(summary);
+                }
+            }
+
+            // Return empty paged list with groups
+            return (new HateoasPagedList<Instance>(
+                new List<Instance>(),
+                page,
+                pageSize,
+                false), groups);
+        }
+
+        // If only aggregations (no groupBy), return empty groups
+        if (!string.IsNullOrWhiteSpace(aggregations))
+        {
+            var context = await GetDbContextAsync();
+            var dbSet = await GetDbSetAsync();
+
+            // Combine filters
+            string? combinedFilter = null;
+            if (filters != null && filters.Length > 0)
+            {
+                if (FilterFormatDetector.DetectFormat(filters) == FilterFormat.GraphQL)
+                {
+                    var combinedNode = FilterFormatDetector.CombineFilters(filters);
+                    if (combinedNode != null)
+                    {
+                        combinedFilter = JsonSerializer.Serialize(combinedNode, new JsonSerializerOptions
+                        {
+                            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                            WriteIndented = false
+                        });
+                    }
+                }
+                else
+                {
+                    combinedFilter = filters[0];
+                }
+            }
+
+            var response = await UnifiedFilterService.ApplyFilterWithAggregationsAsync(
+                context,
+                dbSet,
+                combinedFilter,
+                null, // no groupBy
+                aggregations,
+                "Data",
+                currentSchema.Name ?? "public",
+                query => query.Include(i => i.DataList).AsSplitQuery(),
+                schemaValidator,
+                cancellationToken);
+
+            // Aggregations without groupBy - return empty groups
+            HateoasPagedList<Instance> pagedList;
+            if (response.Data != null)
+            {
+                var totalCount = response.Data.Count;
+                var skip = (page - 1) * pageSize;
+                var pagedData = response.Data.Skip(skip).Take(pageSize).ToList();
+                var hasNext = skip + pageSize < totalCount;
+
+                pagedList = new HateoasPagedList<Instance>(pagedData, page, pageSize, hasNext);
+            }
+            else
+            {
+                pagedList = new HateoasPagedList<Instance>(
+                    new List<Instance>(),
+                    page,
+                    pageSize,
+                    false);
+            }
+
+            return (pagedList, null);
+        }
+
+        // Normal flow without groupBy/aggregations
+        // GetFilteredQueryAsync already includes DataList, no need to include again
+        var query = await GetFilteredQueryAsync(filters, cancellationToken);
+
+        // Manually materialize to ensure DataList is loaded
+        var skipCount = (page - 1) * pageSize;
+        var items = await query
+            .Skip(skipCount)
+            .Take(pageSize + 1) // Take one extra to check if there's a next page
+            .ToListAsync(cancellationToken);
+
+        var hasNextPage = items.Count > pageSize;
+        if (hasNextPage)
+        {
+            items = items.Take(pageSize).ToList();
+        }
+
+        var normalPagedList = new HateoasPagedList<Instance>(items, page, pageSize, hasNextPage);
+        return (normalPagedList, null);
+    }
+
+ 
     public async Task<Result<Instance>> GetActiveAsync(string identifier, CancellationToken cancellationToken = default)
     {
         var instanceResult = await GetResultAsync(identifier, includeDetails: true, cancellationToken);

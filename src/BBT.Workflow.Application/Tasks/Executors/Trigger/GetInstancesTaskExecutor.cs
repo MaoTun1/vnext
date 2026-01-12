@@ -112,11 +112,11 @@ public sealed class GetInstancesTaskExecutor : TriggerTaskExecutorBase<GetInstan
                 var instanceDataResults = await ProcessDataFunctionListAsync(
                     task.TriggerDomain,
                     task.TriggerFlow,
-                    instanceListResult.Value!,
+                    instanceListResult.Value!.ToPagedList(10),
                     queryService,
                     cancellationToken);
 
-                var pagedList = instanceListResult.Value!;
+                var pagedList = instanceListResult.Value!.ToPagedList(10);
                 
                 // Build HATEOAS-like response structure for consistency with remote execution
                 var basePath = $"/api/v1/{task.TriggerDomain}/workflows/{task.TriggerFlow}/functions/data";

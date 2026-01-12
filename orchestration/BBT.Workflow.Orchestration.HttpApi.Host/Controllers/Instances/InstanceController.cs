@@ -236,10 +236,41 @@ public sealed class InstanceController(
         if (response.IsSuccess)
         {
             var route = InstanceUrlTemplates.InstanceList(domain, workflow, InstanceUrlTemplates.GetApiVersionPrefix("1"));
-            var output = linkGenerator.CreateHateoasResult(response.Value!, response.Value!.Items.ToList(), route);
-            return Result.Ok(output).ToAcceptedResult(HttpContext);
+
+            // Check if items contain GroupSummary objects (groupBy case) or GetInstanceOutput objects (normal case)
+            var firstItem = response.Value!.Items.FirstOrDefault();
+            var isGroupByResponse = firstItem is GroupSummary;
+
+            if (isGroupByResponse)
+            {
+                // For groupBy responses, create a simple paged list structure for HATEOAS links
+                var groupSummaries = response.Value!.Items.Cast<GroupSummary>().ToList();
+                var tempPagedList = new HateoasPagedList<GroupSummary>(
+                    groupSummaries,
+                    input.Page,
+                    input.PageSize,
+                    groupSummaries.Count == input.PageSize);
+
+                var hateoasResult = linkGenerator.CreateHateoasResult(tempPagedList, groupSummaries, route);
+                response.Value!.Links = hateoasResult.Links;
+            }
+            else
+            {
+                // Normal case: items are GetInstanceOutput objects
+                var instanceOutputs = response.Value!.Items.Cast<GetInstanceOutput>().ToList();
+                var tempPagedList = new HateoasPagedList<GetInstanceOutput>(
+                    instanceOutputs,
+                    input.Page,
+                    input.PageSize,
+                    instanceOutputs.Count == input.PageSize);
+
+                var hateoasResult = linkGenerator.CreateHateoasResult(tempPagedList, instanceOutputs, route);
+                response.Value!.Links = hateoasResult.Links;
+            }
+
+            return Result.Ok(response.Value).ToAcceptedResult(HttpContext);
         }
-        
+
         return response.ToActionResult(HttpContext);
     }
 
