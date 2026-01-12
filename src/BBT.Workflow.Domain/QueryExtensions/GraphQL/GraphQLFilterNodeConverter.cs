@@ -149,6 +149,12 @@ public sealed class GraphQLFilterNodeConverter : JsonConverter<GraphQLFilterNode
                 throw new JsonException("Expected property name for operator");
 
             var operatorName = reader.GetString()?.ToLowerInvariant();
+            if (string.IsNullOrEmpty(operatorName))
+            {
+                reader.Skip();
+                continue;
+            }
+
             reader.Read();
 
             switch (operatorName)
@@ -198,11 +204,11 @@ public sealed class GraphQLFilterNodeConverter : JsonConverter<GraphQLFilterNode
                 default:
                     // This could be a nested field - handle as nested condition
                     // e.g., {"parent": {"child": {"eq": "value"}}}
-                    if (reader.TokenType == JsonTokenType.StartObject)
+                    if (reader.TokenType == JsonTokenType.StartObject && !string.IsNullOrEmpty(operatorName))
                     {
                         condition.NestedConditions ??= new Dictionary<string, object>();
                         var nestedJson = JsonDocument.ParseValue(ref reader);
-                        condition.NestedConditions[operatorName!] = nestedJson.RootElement.Clone();
+                        condition.NestedConditions[operatorName] = nestedJson.RootElement.Clone();
                     }
                     else
                     {

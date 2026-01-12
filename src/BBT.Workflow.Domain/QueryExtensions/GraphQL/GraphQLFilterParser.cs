@@ -123,7 +123,11 @@ public static class GraphQLFilterParser
 
             return false;
         }
-        catch
+        catch (JsonException)
+        {
+            return false;
+        }
+        catch (ArgumentException)
         {
             return false;
         }

@@ -80,7 +80,12 @@ public static class PostgreSqlJsonFilterService
                     parameters.AddRange(filterParameters);
                 }
             }
-            catch (Exception ex)
+            catch (ArgumentException ex)
+            {
+                // Log error but continue with other filters
+                logger?.LogWarning(ex, "Error parsing JSON filter: {Filter}", filter);
+            }
+            catch (FormatException ex)
             {
                 // Log error but continue with other filters
                 logger?.LogWarning(ex, "Error parsing JSON filter: {Filter}", filter);
@@ -103,7 +108,12 @@ public static class PostgreSqlJsonFilterService
                     parameters.AddRange(filterParameters);
                 }
             }
-            catch (Exception ex)
+            catch (ArgumentException ex)
+            {
+                // Log error but continue with other filters
+                logger?.LogWarning(ex, "Error parsing Instance filter: {Filter}", filter);
+            }
+            catch (FormatException ex)
             {
                 // Log error but continue with other filters
                 logger?.LogWarning(ex, "Error parsing Instance filter: {Filter}", filter);
@@ -201,7 +211,12 @@ public static class PostgreSqlJsonFilterService
                     parameters.AddRange(filterParameters);
                 }
             }
-            catch (Exception)
+            catch (ArgumentException)
+            {
+                // Silently skip invalid filters in BuildFilteredQuery
+                // Caller should handle validation before calling this method
+            }
+            catch (FormatException)
             {
                 // Silently skip invalid filters in BuildFilteredQuery
                 // Caller should handle validation before calling this method

@@ -213,7 +213,9 @@ public sealed class GroupByRequest
         if (!string.IsNullOrEmpty(Field))
             result.Add(Field);
         if (Fields != null)
-            result.AddRange(Fields);
+        {
+            result.AddRange(Fields.Where(f => !string.IsNullOrWhiteSpace(f)));
+        }
         return result.Distinct().ToList();
     }
 }

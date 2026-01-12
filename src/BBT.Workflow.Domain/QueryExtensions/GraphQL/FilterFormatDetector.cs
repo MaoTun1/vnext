@@ -73,6 +73,9 @@ public static class FilterFormatDetector
 
         foreach (var filter in filters)
         {
+            if (string.IsNullOrWhiteSpace(filter))
+                continue;
+
             var format = DetectFormat(filter);
             if (format == FilterFormat.GraphQL)
                 hasGraphQL = true;
@@ -118,6 +121,9 @@ public static class FilterFormatDetector
 
         foreach (var filter in filters)
         {
+            if (string.IsNullOrWhiteSpace(filter))
+                continue;
+
             var node = GraphQLFilterParser.ParseFilter(filter);
             if (node != null && node.NodeType != FilterNodeType.Empty)
             {
@@ -150,10 +156,16 @@ public static class FilterFormatDetector
 
         foreach (var filter in legacyFilters)
         {
+            if (string.IsNullOrWhiteSpace(filter))
+                continue;
+
             try
             {
                 var (field, op, value) = FilterOperatorParser.ParseOperator(filter);
                 
+                if (string.IsNullOrWhiteSpace(field) || string.IsNullOrWhiteSpace(op))
+                    continue;
+
                 if (!attributes.TryGetValue(field, out var condition))
                 {
                     condition = new FieldCondition();
@@ -162,9 +174,13 @@ public static class FilterFormatDetector
 
                 SetOperatorValue(condition, op, value);
             }
-            catch
+            catch (ArgumentException)
             {
-                // Skip invalid filters
+                // Skip invalid filters with argument errors
+            }
+            catch (FormatException)
+            {
+                // Skip invalid filters with format errors
             }
         }
 
@@ -226,6 +242,9 @@ public static class FilterFormatDetector
 
     private static object ParseValue(string value)
     {
+        if (string.IsNullOrWhiteSpace(value))
+            return value;
+
         // Try to parse as number
         if (long.TryParse(value, out var longVal))
             return longVal;

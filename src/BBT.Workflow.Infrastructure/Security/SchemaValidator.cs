@@ -173,9 +173,13 @@ public class SchemaValidator : ISchemaValidator
                 new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = CacheDuration },
                 cancellationToken);
         }
-        catch (Exception)
+        catch (InvalidOperationException)
         {
             // Cache write failed, continue without caching
+        }
+        catch (System.IO.IOException)
+        {
+            // Cache write failed due to IO error, continue without caching
         }
 
         return validSchemas;
@@ -218,9 +222,14 @@ public class SchemaValidator : ISchemaValidator
 
             return schemas;
         }
-        catch (Exception)
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException)
         {
-            // On error, return only system schemas
+            // On database error, return only system schemas
+            return new HashSet<string>(SystemSchemas, StringComparer.OrdinalIgnoreCase);
+        }
+        catch (InvalidOperationException)
+        {
+            // On operation error, return only system schemas
             return new HashSet<string>(SystemSchemas, StringComparer.OrdinalIgnoreCase);
         }
     }

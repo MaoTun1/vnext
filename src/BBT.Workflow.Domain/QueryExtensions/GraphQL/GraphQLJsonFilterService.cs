@@ -337,7 +337,11 @@ public static class GraphQLJsonFilterService
                     parameters.AddRange(conditionParams);
                 }
             }
-            catch (Exception ex)
+            catch (ArgumentException ex)
+            {
+                logger?.LogWarning(ex, "Error building Instance condition for field: {FieldName}", fieldName);
+            }
+            catch (FormatException ex)
             {
                 logger?.LogWarning(ex, "Error building Instance condition for field: {FieldName}", fieldName);
             }

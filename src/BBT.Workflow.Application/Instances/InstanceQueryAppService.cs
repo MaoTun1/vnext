@@ -255,9 +255,9 @@ public sealed class InstanceQueryAppService(
                 var subFlowValue = subFlowResult.Value;
                 
                 // Extract transition names from TransitionItem list
-                var transitionNames = subFlowValue.Transitions
+                var transitionNames = subFlowValue.Transitions?
                     .Select(t => t.Name)
-                    .ToList();
+                    .ToList() ?? new List<string>();
 
                 // Return complete SubFlow state including view extensions and active correlations
                 return new SubFlowStateInfo(

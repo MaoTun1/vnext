@@ -57,7 +57,7 @@ public sealed class EfCoreInstanceRepository(
         catch (Exception ex)
         {
             // Log error but don't fail the main operation
-            Console.WriteLine($"Failed to transfer instance to data sinks: {ex.Message}");
+            logger.LogWarning(ex, "Failed to transfer instance to data sinks");
         }
 
         return result;
@@ -90,7 +90,7 @@ public sealed class EfCoreInstanceRepository(
         catch (Exception ex)
         {
             // Log error but don't fail the main operation
-            Console.WriteLine($"Failed to transfer instance to data sinks: {ex.Message}");
+            logger.LogWarning(ex, "Failed to transfer instance to data sinks");
         }
 
         return result;

@@ -63,7 +63,7 @@ public sealed class InstanceListWithGroupsResponse<T>
     public HateoasPagedList<T> ToPagedList(int pageSize)
     {
         // Estimate hasNext based on items count (this is approximate)
-        var hasNext = Items.Count >pageSize;
+        var hasNext = Items.Count > pageSize;
         var typedItems = Items.OfType<T>().ToList();
         return new HateoasPagedList<T>(typedItems, 1, typedItems.Count, hasNext);
     }

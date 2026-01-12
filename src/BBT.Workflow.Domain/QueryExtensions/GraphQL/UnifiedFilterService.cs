@@ -210,6 +210,10 @@ public static class UnifiedFilterService
         {
             return (false, ex.Message);
         }
+        catch (System.Text.Json.JsonException ex)
+        {
+            return (false, $"Invalid JSON filter format: {ex.Message}");
+        }
         catch (Exception ex)
         {
             return (false, $"Invalid filter format: {ex.Message}");

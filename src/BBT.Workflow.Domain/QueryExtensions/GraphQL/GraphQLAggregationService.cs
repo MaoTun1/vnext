@@ -400,7 +400,6 @@ public static class GraphQLAggregationService
             {
                 response.Max = reader.GetValue(columnIndex);
             }
-            // columnIndex++; // Not needed as last column
         }
 
         return response;
