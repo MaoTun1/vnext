@@ -151,6 +151,14 @@ public static class InstanceColumnConditionBuilder
     }
 
     /// <summary>
+    /// Escape LIKE pattern wildcards (% and _) in user input
+    /// </summary>
+    private static string EscapeLikePattern(string value)
+    {
+        return value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+    }
+
+    /// <summary>
     /// Build LIKE condition (case-insensitive)
     /// </summary>
     private static (string, List<NpgsqlParameter>) BuildLikeCondition(
@@ -159,7 +167,8 @@ public static class InstanceColumnConditionBuilder
         var parameters = new List<NpgsqlParameter>();
         var paramIndex = parameterIndex++;
 
-        parameters.Add(new NpgsqlParameter { Value = $"%{value}%" });
+        var escapedValue = EscapeLikePattern(value);
+        parameters.Add(new NpgsqlParameter { Value = $"%{escapedValue}%" });
 
         var condition = $"s.\"{columnName}\" ILIKE {{{paramIndex}}}";
         return (condition, parameters);
@@ -174,7 +183,8 @@ public static class InstanceColumnConditionBuilder
         var parameters = new List<NpgsqlParameter>();
         var paramIndex = parameterIndex++;
 
-        parameters.Add(new NpgsqlParameter { Value = $"{value}%" });
+        var escapedValue = EscapeLikePattern(value);
+        parameters.Add(new NpgsqlParameter { Value = $"{escapedValue}%" });
 
         var condition = $"s.\"{columnName}\" ILIKE {{{paramIndex}}}";
         return (condition, parameters);
@@ -189,7 +199,8 @@ public static class InstanceColumnConditionBuilder
         var parameters = new List<NpgsqlParameter>();
         var paramIndex = parameterIndex++;
 
-        parameters.Add(new NpgsqlParameter { Value = $"%{value}" });
+        var escapedValue = EscapeLikePattern(value);
+        parameters.Add(new NpgsqlParameter { Value = $"%{escapedValue}" });
 
         var condition = $"s.\"{columnName}\" ILIKE {{{paramIndex}}}";
         return (condition, parameters);

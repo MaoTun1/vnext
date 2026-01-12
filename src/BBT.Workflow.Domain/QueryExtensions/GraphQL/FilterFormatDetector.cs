@@ -55,8 +55,10 @@ public static class FilterFormatDetector
             return FilterFormat.GraphQL;
         }
 
-        // Default to legacy if we can't determine
-        return FilterFormat.Legacy;
+        // Return Empty for unrecognized formats instead of defaulting to Legacy
+        // This prevents malformed input from being passed to PostgreSqlJsonFilterService
+        // which expects valid legacy format and can cause unexpected parsing errors
+        return FilterFormat.Empty;
     }
 
     /// <summary>

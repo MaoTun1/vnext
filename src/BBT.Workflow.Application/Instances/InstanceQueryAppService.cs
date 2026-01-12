@@ -77,12 +77,14 @@ public sealed class InstanceQueryAppService(
                 string? aggregations = input.Aggregations;
 
                 // If filter array has one element, check if it's GraphQLFilterRequest format
+                Definitions.GraphQL.GraphQLFilterRequest? parsedRequest = null;
                 if (input.Filter != null && input.Filter.Length == 1 && string.IsNullOrWhiteSpace(groupBy))
                 {
                     var filterString = input.Filter[0];
                     if (GraphQLFilterParser.TryParseRequest(filterString, out var request) && request != null)
                     {
-                        // Extract filter and groupBy from GraphQLFilterRequest
+                        parsedRequest = request;
+                        // Extract filter and groupBy from GraphQLFilterRequest for backward compatibility path
                         filters = request.Filter != null
                             ? new[] { JsonSerializer.Serialize(request.Filter, new JsonSerializerOptions
                             {
@@ -111,13 +113,31 @@ public sealed class InstanceQueryAppService(
                     }
                 }
 
-                var (pagedList, groups) = await instanceRepository.GetPagedResultsWithGroupsAsync(
-                    input.Page,
-                    input.PageSize,
-                    filters,
-                    groupBy,
-                    aggregations,
-                    ct);
+                // Use optimized path if we have a parsed request (avoids parse-serialize-parse cycle)
+                HateoasPagedList<Instance> pagedList;
+                List<GroupSummary>? groups;
+                if (parsedRequest != null)
+                {
+                    var result = await instanceRepository.GetPagedResultsWithGroupsAsync(
+                        input.Page,
+                        input.PageSize,
+                        parsedRequest,
+                        ct);
+                    pagedList = result.PagedList;
+                    groups = result.Groups;
+                }
+                else
+                {
+                    var result = await instanceRepository.GetPagedResultsWithGroupsAsync(
+                        input.Page,
+                        input.PageSize,
+                        filters,
+                        groupBy,
+                        aggregations,
+                        ct);
+                    pagedList = result.PagedList;
+                    groups = result.Groups;
+                }
 
                 // If groups are present, populate items with groups instead of instances
                 if (groups != null && groups.Count > 0)

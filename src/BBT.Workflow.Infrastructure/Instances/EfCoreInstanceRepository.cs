@@ -423,10 +423,19 @@ public sealed class EfCoreInstanceRepository(
                 {
                     var summary = new GroupSummary();
 
-                    // Get name from first groupBy field
-                    if (groupByFields.Count > 0 && group.Keys.TryGetValue(groupByFields[0], out var nameValue))
+                    // Concatenate all groupBy field values for the name
+                    // This preserves all grouping keys (e.g., "USD_pending" for currency and status)
+                    if (groupByFields.Count > 0 && group.Keys.Count > 0)
                     {
-                        summary.Name = nameValue?.ToString() ?? string.Empty;
+                        var keyValues = new List<string>();
+                        foreach (var field in groupByFields)
+                        {
+                            if (group.Keys.TryGetValue(field, out var keyValue) && keyValue != null)
+                            {
+                                keyValues.Add(keyValue.ToString() ?? string.Empty);
+                            }
+                        }
+                        summary.Name = string.Join("_", keyValues);
                     }
 
                     // Map aggregations
@@ -533,6 +542,120 @@ public sealed class EfCoreInstanceRepository(
 
         var normalPagedList = new HateoasPagedList<Instance>(items, page, pageSize, hasNextPage);
         return (normalPagedList, null);
+    }
+
+    /// <summary>
+    /// Gets paged results with optional groups using parsed GraphQL filter request (optimized - avoids parse-serialize cycle)
+    /// </summary>
+    public async Task<(HateoasPagedList<Instance> PagedList, List<GroupSummary>? Groups)> GetPagedResultsWithGroupsAsync(
+        int page,
+        int pageSize,
+        Definitions.GraphQL.GraphQLFilterRequest? request,
+        CancellationToken cancellationToken = default)
+    {
+        var context = await GetDbContextAsync();
+        var dbSet = await GetDbSetAsync();
+
+        var response = await UnifiedFilterService.ExecuteRequestAsync(
+            context,
+            dbSet,
+            request ?? new Definitions.GraphQL.GraphQLFilterRequest(),
+            "Data",
+            currentSchema.Name ?? "public",
+            query => query.Include(i => i.DataList).AsSplitQuery(),
+            schemaValidator,
+            cancellationToken);
+
+        // Handle GroupBy response
+        if (response.Groups != null && response.Groups.Count > 0)
+        {
+            var groups = new List<GroupSummary>();
+            var groupByFields = request?.GroupBy?.GetFields() ?? new List<string>();
+
+            foreach (var group in response.Groups)
+            {
+                var summary = new GroupSummary();
+
+                // Concatenate all groupBy field values for the name
+                if (groupByFields.Count > 0 && group.Keys.Count > 0)
+                {
+                    var keyValues = new List<string>();
+                    foreach (var field in groupByFields)
+                    {
+                        if (group.Keys.TryGetValue(field, out var keyValue) && keyValue != null)
+                        {
+                            keyValues.Add(keyValue.ToString() ?? string.Empty);
+                        }
+                    }
+                    summary.Name = string.Join("_", keyValues);
+                }
+
+                // Map aggregations
+                if (group.Aggregations != null)
+                {
+                    summary.Count = group.Aggregations.Count;
+                    summary.Sum = group.Aggregations.Sum;
+                    summary.Avg = group.Aggregations.Avg;
+                    summary.Min = group.Aggregations.Min;
+                    summary.Max = group.Aggregations.Max;
+                }
+
+                groups.Add(summary);
+            }
+
+            return (new HateoasPagedList<Instance>(
+                new List<Instance>(),
+                page,
+                pageSize,
+                false), groups);
+        }
+
+        // Handle aggregations without groupBy
+        if (response.Aggregations != null)
+        {
+            HateoasPagedList<Instance> pagedList;
+            if (response.Data != null)
+            {
+                var totalCount = response.Data.Count;
+                var skip = (page - 1) * pageSize;
+                var pagedData = response.Data.Skip(skip).Take(pageSize).ToList();
+                var hasNext = skip + pageSize < totalCount;
+
+                pagedList = new HateoasPagedList<Instance>(pagedData, page, pageSize, hasNext);
+            }
+            else
+            {
+                pagedList = new HateoasPagedList<Instance>(
+                    new List<Instance>(),
+                    page,
+                    pageSize,
+                    false);
+            }
+
+            return (pagedList, null);
+        }
+
+        // Handle regular filter (no aggregations)
+        HateoasPagedList<Instance> resultPagedList;
+        if (response.Data != null)
+        {
+            var totalCount = response.Data.Count;
+            var skip = (page - 1) * pageSize;
+            var pagedData = response.Data.Skip(skip).Take(pageSize).ToList();
+            var hasNext = skip + pageSize < totalCount;
+
+            resultPagedList = new HateoasPagedList<Instance>(pagedData, page, pageSize, hasNext);
+        }
+        else
+        {
+            resultPagedList = new HateoasPagedList<Instance>(
+                new List<Instance>(),
+                page,
+                pageSize,
+                false);
+        }
+
+        return (resultPagedList, null);
     }
 
  

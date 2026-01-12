@@ -60,12 +60,15 @@ public sealed class InstanceListWithGroupsResponse<T>
     /// <summary>
     /// Converts to HateoasPagedList for backward compatibility
     /// </summary>
-    public HateoasPagedList<T> ToPagedList(int pageSize)
+    /// <param name="pageSize">Page size</param>
+    /// <param name="currentPage">Current page number (defaults to 1)</param>
+    /// <param name="totalItems">Total number of items across all pages (defaults to current page count if not provided)</param>
+    public HateoasPagedList<T> ToPagedList(int pageSize, int currentPage = 1, int? totalItems = null)
     {
-        // Estimate hasNext based on items count (this is approximate)
-        var hasNext = Items.Count > pageSize;
         var typedItems = Items.OfType<T>().ToList();
-        return new HateoasPagedList<T>(typedItems, 1, typedItems.Count, hasNext);
+        var total = totalItems ?? typedItems.Count;
+        var hasNext = (currentPage * pageSize) < total;
+        return new HateoasPagedList<T>(typedItems, currentPage, total, hasNext);
     }
 }
 

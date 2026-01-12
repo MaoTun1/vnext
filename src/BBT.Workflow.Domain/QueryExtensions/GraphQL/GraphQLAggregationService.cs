@@ -320,12 +320,36 @@ public static class GraphQLAggregationService
 
     private static string SanitizeAlias(string field)
     {
+        if (string.IsNullOrWhiteSpace(field))
+            throw new ArgumentException("Field name cannot be null or empty", nameof(field));
+
         // Remove "attributes." prefix for cleaner aliases
         if (field.StartsWith("attributes.", StringComparison.OrdinalIgnoreCase))
         {
             field = field.Substring("attributes.".Length);
         }
-        return field.Replace('.', '_');
+
+        // Validate and sanitize: only allow alphanumeric, underscores, and dots
+        // Replace dots with underscores for SQL identifier safety
+        var sanitized = field.Replace('.', '_');
+
+        // Validate that only safe characters remain (alphanumeric and underscores)
+        // Must start with letter or underscore
+        if (sanitized.Length == 0 || (!char.IsLetter(sanitized[0]) && sanitized[0] != '_'))
+        {
+            throw new ArgumentException($"Invalid field name for alias: {field}. Must start with letter or underscore.", nameof(field));
+        }
+
+        // Check for any invalid characters (only allow alphanumeric and underscores)
+        foreach (var c in sanitized)
+        {
+            if (!char.IsLetterOrDigit(c) && c != '_')
+            {
+                throw new ArgumentException($"Invalid character in field name for alias: {field}. Only alphanumeric characters and underscores allowed.", nameof(field));
+            }
+        }
+
+        return sanitized;
     }
 
     private static string ReplacePlaceholders(string sql, int paramCount)
