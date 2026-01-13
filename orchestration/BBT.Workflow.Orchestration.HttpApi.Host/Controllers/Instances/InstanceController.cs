@@ -22,6 +22,7 @@ public sealed class InstanceController(
     IInstanceQueryAppService queryAppService,
     IHttpContextAccessor httpContextAccessor,
     ISubflowCompletionService subflowCompletionService,
+    ISubflowStateService subflowStateService,
     IPaginationLinkGenerator linkGenerator) : AetherControllerBase
 {
     /// <summary>
@@ -111,6 +112,24 @@ public sealed class InstanceController(
     )
     {
         await subflowCompletionService.CompletionAsync(request, cancellationToken);
+        return Ok();
+    }
+
+    /// <summary>
+    /// Updates parent instance with SubFlow's state change.
+    /// Internal endpoint for cross-domain SubFlow state synchronization.
+    /// </summary>
+    [ApiExplorerSettings(IgnoreApi = true)]
+    [HttpPost("{domain}/workflows/{workflow}/instances/{instance}/sub/state")]
+    public async Task<IActionResult> UpdateSubFlowStateAsync(
+        [FromRoute] string domain,
+        [FromRoute] string workflow,
+        [FromRoute] string instance,
+        [FromBody] SubFlowStateChangedInput request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await subflowStateService.UpdateParentStateAsync(request, cancellationToken);
         return Ok();
     }
 

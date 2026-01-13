@@ -24,7 +24,13 @@ public static class InboxWorkerServiceCollectionExtensions
             .AddAspNetCoreModules(configuration)
             .AddResultResilience(configuration)
             .AddDaprClients()
-            .AddEventBus(configuration)
+            .AddAetherEventBus(options =>
+            {
+                options.DefaultSource =
+                    $"urn:vnext:{configuration.GetValue<string?>("ApplicationName")?.ToLowerInvariant()}";
+                options.PrefixEnvironmentToTopic = true;
+                options.PubSubName = configuration["DAPR_PUBSUB_STORE_NAME"]!;
+            })
             .AddDbContext(configuration)
             .AppMapper()
             .AddTelemetry(configuration)

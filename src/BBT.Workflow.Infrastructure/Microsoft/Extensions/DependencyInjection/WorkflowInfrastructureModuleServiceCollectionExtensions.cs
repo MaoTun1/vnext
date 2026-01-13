@@ -89,6 +89,7 @@ public static class WorkflowInfrastructureModuleServiceCollectionExtensions
         
         // Event Hooks
         services.AddEventHook<InstanceSubCompletedEvent, InstanceSubCompletedEventHook>();
+        services.AddEventHook<InstanceSubStateChangedEvent, InstanceSubStateChangedEventHook>();
         services.AddEventHook<InstanceCanceledEvent, InstanceCanceledEventHook>();
         
         // Embedded Script Services

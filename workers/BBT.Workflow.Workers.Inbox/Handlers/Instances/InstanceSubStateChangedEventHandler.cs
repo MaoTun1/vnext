@@ -10,19 +10,21 @@ using BBT.Workflow.SubFlow;
 namespace BBT.Workflow.Workers.Inbox.Handlers;
 
 /// <summary>
-/// Handles the InstanceSubCompletedEvent to process SubFlow/SubProcess completion.
-/// This handler delegates the actual completion logic to ISubflowCompletionService.
+/// Handles the InstanceSubStateChangedEvent to process SubFlow state changes.
+/// This handler delegates the actual state update logic to ISubflowStateService.
+/// Used as fallback when the event hook fails and the event is processed via outbox/inbox.
 /// </summary>
-internal sealed class InstanceSubCompletedEventHandler(
+internal sealed class InstanceSubStateChangedEventHandler(
     ICurrentSchema currentSchema,
     IRuntimeInfoProvider runtimeInfoProvider,
     IServiceScopeFactory scopeFactory,
-    ILogger<InstanceSubCompletedEventHandler> logger) : IEventHandler<InstanceSubCompletedEvent>
+    ILogger<InstanceSubStateChangedEventHandler> logger) : IEventHandler<InstanceSubStateChangedEvent>
 {
     /// <summary>
-    /// Handles the InstanceSubCompletedEvent by delegating to the subflow completion service.
+    /// Handles the InstanceSubStateChangedEvent by delegating to the subflow state service.
+    /// Updates the parent instance's EffectiveState and correlation's SubFlowCurrentState.
     /// </summary>
-    public async Task HandleAsync(CloudEventEnvelope<InstanceSubCompletedEvent> envelope,
+    public async Task HandleAsync(CloudEventEnvelope<InstanceSubStateChangedEvent> envelope,
         CancellationToken cancellationToken)
     {
         var eventData = envelope.Data;
@@ -33,42 +35,40 @@ internal sealed class InstanceSubCompletedEventHandler(
                 eventData.Domain,
                 runtimeInfoProvider.Domain,
                 eventData.SubInstanceId,
-                eventData.InstanceId);
+                eventData.ParentInstanceId);
             return;
         }
 
-        logger.SubFlowEventReceived(
+        logger.SubFlowStateChangedEventReceived(
             eventData.SubInstanceId,
-            eventData.InstanceId,
-            eventData.Domain,
-            eventData.Flow);
+            eventData.ParentInstanceId,
+            eventData.NewState);
 
         using (currentSchema.Use(eventData.Flow))
         {
-            var completedData = new FlowCompletedInput
+            var input = new SubFlowStateChangedInput
             {
+                ParentInstanceId = eventData.ParentInstanceId,
                 SubInstanceId = eventData.SubInstanceId,
-                InstanceId = eventData.InstanceId,
                 Domain = eventData.Domain,
                 Flow = eventData.Flow,
                 Version = eventData.Version,
-                CompletedState = eventData.CompletedState,
-                InstanceData = eventData.InstanceData,
-                CompletedAt = eventData.CompletedAt,
-                Duration = eventData.Duration
+                NewState = eventData.NewState,
+                PreviousState = eventData.PreviousState,
+                ChangedAt = eventData.ChangedAt
             };
 
             await scopeFactory.ExecuteInNewScopeAsync(async sp =>
             {
                 var uowManager = sp.GetRequiredService<IUnitOfWorkManager>();
-                var subflowCompletionService = sp.GetRequiredService<ISubflowCompletionService>();
+                var subflowStateService = sp.GetRequiredService<ISubflowStateService>();
 
                 await using var uow = await uowManager.BeginAsync(new UnitOfWorkOptions
                 {
                     Scope = UnitOfWorkScopeOption.RequiresNew
                 }, cancellationToken);
 
-                await subflowCompletionService.CompletionAsync(completedData, cancellationToken);
+                await subflowStateService.UpdateParentStateAsync(input, cancellationToken);
                 await uow.CommitAsync(cancellationToken);
             });
         }
