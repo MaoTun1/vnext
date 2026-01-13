@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Xml;
 
 namespace BBT.Workflow.Definitions;
 
@@ -18,8 +19,19 @@ public sealed record RetryPolicy
     /// The initial delay before the first retry attempt.
     /// For exponential backoff, this is the base delay.
     /// </summary>
-    [JsonPropertyName("initialDelay")]
+    [JsonIgnore]
     public TimeSpan InitialDelay { get; init; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// The initial delay in ISO 8601 duration format (e.g., "PT1S" for 1 second).
+    /// For exponential backoff, this is the base delay.
+    /// </summary>
+    [JsonPropertyName("initialDelay")]
+    public string InitialDelayIso8601
+    {
+        get => XmlConvert.ToString(InitialDelay);
+        init => InitialDelay = XmlConvert.ToTimeSpan(value);
+    }
 
     /// <summary>
     /// The type of backoff strategy to use between retries.
@@ -39,8 +51,19 @@ public sealed record RetryPolicy
     /// The maximum delay between retry attempts.
     /// Prevents delays from growing unbounded in exponential backoff.
     /// </summary>
-    [JsonPropertyName("maxDelay")]
+    [JsonIgnore]
     public TimeSpan MaxDelay { get; init; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// The maximum delay in ISO 8601 duration format (e.g., "PT5M" for 5 minutes).
+    /// Prevents delays from growing unbounded in exponential backoff.
+    /// </summary>
+    [JsonPropertyName("maxDelay")]
+    public string MaxDelayIso8601
+    {
+        get => XmlConvert.ToString(MaxDelay);
+        init => MaxDelay = XmlConvert.ToTimeSpan(value);
+    }
 
     /// <summary>
     /// Whether to add random jitter to retry delays.
