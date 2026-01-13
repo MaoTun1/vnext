@@ -48,18 +48,34 @@ public sealed class InstanceSubStateChangedEventHook(
 
             if (!result.IsSuccess)
             {
-                logger.SubFlowStateUpdateFailed(
-                    new Exception(result.Error.Message),
+                var error = result.Error;
+                
+                // Log with structured error details
+                logger.LogWarning(
+                    "SubFlow state update failed for SubInstance {SubInstanceId}, Parent {ParentInstanceId}. " +
+                    "Error: [{ErrorCode}] {ErrorMessage}",
                     eventData.SubInstanceId,
-                    eventData.ParentInstanceId);
+                    eventData.ParentInstanceId,
+                    error.Code ?? "unknown",
+                    error.Message);
+
+                // Preserve error context in metadata for diagnostics
+                var metadata = new Dictionary<string, string>
+                {
+                    ["hook_error"] = "SubFlowStateUpdateFailed",
+                    ["error_code"] = error.Code ?? "unknown",
+                    ["error_prefix"] = error.Prefix ?? "unknown",
+                    ["error_message"] = error.Message
+                };
+                
+                if (!string.IsNullOrEmpty(error.Target))
+                {
+                    metadata["error_target"] = error.Target;
+                }
 
                 return EventHookResult.Fail(
-                    new Exception(result.Error.Message),
-                    new Dictionary<string, string>
-                    {
-                        ["hook_error"] = "SubFlowStateUpdateFailed",
-                        ["error_code"] = result.Error.Code ?? "unknown"
-                    });
+                    new InvalidOperationException($"[{error.Code}] {error.Message}"),
+                    metadata);
             }
 
             return EventHookResult.Ok(new Dictionary<string, string>

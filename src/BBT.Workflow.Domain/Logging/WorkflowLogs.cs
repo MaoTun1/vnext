@@ -518,7 +518,7 @@ public static partial class WorkflowLogs
     /// Logs when a SubFlow state change event is received.
     /// </summary>
     [LoggerMessage(
-        EventId = 40024,
+        EventId = 40027,
         Level = LogLevel.Information,
         Message = "SubFlow state change received for SubInstance {SubInstanceId}, Parent {ParentInstanceId}, NewState: {NewState}")]
     public static partial void SubFlowStateChangeReceived(
@@ -531,7 +531,7 @@ public static partial class WorkflowLogs
     /// Logs when a SubFlow state change is successfully applied to parent.
     /// </summary>
     [LoggerMessage(
-        EventId = 40025,
+        EventId = 40028,
         Level = LogLevel.Information,
         Message = "SubFlow state change applied for SubInstance {SubInstanceId}, Parent {ParentInstanceId}, NewState: {NewState}")]
     public static partial void SubFlowStateChangeApplied(
@@ -544,7 +544,7 @@ public static partial class WorkflowLogs
     /// Logs when a SubFlow state changed event is received by the hook.
     /// </summary>
     [LoggerMessage(
-        EventId = 40026,
+        EventId = 40029,
         Level = LogLevel.Information,
         Message = "SubFlow state changed event received for SubInstance {SubInstanceId}, Parent {ParentInstanceId}, NewState: {NewState}")]
     public static partial void SubFlowStateChangedEventReceived(
@@ -837,7 +837,7 @@ public static partial class WorkflowLogs
     /// Logs when a ChildSubflowCancelRequestedEvent is silently ignored because it belongs to a different domain.
     /// </summary>
     [LoggerMessage(
-        EventId = 40025,
+        EventId = 40030,
         Level = LogLevel.Debug,
         Message = "ChildSubflowCancelRequestedEvent silently ignored: event domain {EventDomain} does not match current runtime domain {RuntimeDomain}. Instance {InstanceId}, Flow {Flow}")]
     public static partial void ChildSubflowCancelEventIgnoredDomainMismatch(
@@ -851,7 +851,7 @@ public static partial class WorkflowLogs
     /// Logs when child subflow cancellation succeeds.
     /// </summary>
     [LoggerMessage(
-        EventId = 40024,
+        EventId = 40021,
         Level = LogLevel.Information,
         Message = "Child subflow cancellation succeeded for instance {InstanceId}")]
     public static partial void ChildSubflowCancelSucceeded(
