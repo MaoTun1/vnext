@@ -104,4 +104,10 @@ public static class WorkflowErrorCodes
     public const string TriggerInvalidResponseStructure = "Trigger:500009";
     
     #endregion
+    
+    #region Extension Errors (600xxx)
+    
+    public const string ExtensionExecutionFailed = "Extension:600001";
+    
+    #endregion
 }
