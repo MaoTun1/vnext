@@ -46,7 +46,7 @@ public sealed class NotificationTaskExecutor : TaskExecutorBase<NotificationTask
     public override TaskType TaskType => TaskType.Notification;
 
     /// <inheritdoc />
-    protected override async Task<Result> PrepareInputAsync(
+    protected override async Task<Result<ScriptResponse?>> PrepareInputAsync(
         NotificationTask task,
         TaskExecutorContext context,
         CancellationToken cancellationToken)
@@ -66,16 +66,16 @@ public sealed class NotificationTaskExecutor : TaskExecutorBase<NotificationTask
 
         if (string.IsNullOrEmpty(scriptCode))
         {
-            return Result.Ok();
+            return Result<ScriptResponse?>.Ok(null);
         }
         
-        var result = await ResultExtensions.TryAsync(async ct =>
+        var result = await ResultExtensions.TryAsync<ScriptResponse?>(async ct =>
         {
             var scriptRunner = await _scriptEngine.CompileToInstanceAsync<IMapping>(
                 scriptCode,
                 cancellationToken: ct);
 
-            await scriptRunner.InputHandler(task, context.ScriptContext);
+            return await scriptRunner.InputHandler(task, context.ScriptContext);
         }, cancellationToken, ex => Error.Failure(
             WorkflowErrorCodes.TaskExecution,
             $"Notification task input handler failed: {ex.Message}"));

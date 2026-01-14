@@ -29,7 +29,6 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
     private readonly ITaskPersistenceStrategyFactory _persistenceStrategyFactory;
     private readonly IGuidGenerator _guidGenerator;
     private readonly IWorkflowMetrics _workflowMetrics;
-    private readonly IErrorNormalizer _errorNormalizer;
     private readonly IErrorBoundaryResolver _boundaryResolver;
     private readonly IErrorActionExecutor _actionExecutor;
     private readonly IRetryPolicyFactory _retryPolicyFactory;
@@ -45,7 +44,6 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         ITaskPersistenceStrategyFactory persistenceStrategyFactory,
         IGuidGenerator guidGenerator,
         IWorkflowMetrics workflowMetrics,
-        IErrorNormalizer errorNormalizer,
         IErrorBoundaryResolver boundaryResolver,
         IErrorActionExecutor actionExecutor,
         IRetryPolicyFactory retryPolicyFactory,
@@ -57,7 +55,6 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         _persistenceStrategyFactory = persistenceStrategyFactory;
         _guidGenerator = guidGenerator;
         _workflowMetrics = workflowMetrics;
-        _errorNormalizer = errorNormalizer;
         _boundaryResolver = boundaryResolver;
         _actionExecutor = actionExecutor;
         _retryPolicyFactory = retryPolicyFactory;
@@ -493,6 +490,16 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
 
         // 8. Execute task
         var executeResult = await executorResult.Value!.ExecuteAsync(executorContext, cancellationToken);
+
+        var requestPayload = new
+        {
+            Task = task,
+            executorContext.InputResponse
+        };
+        var requestJson = new JsonData(JsonSerializer.Serialize(
+            requestPayload,
+            JsonSerializerConstants.JsonOptions));
+        instanceTask.SetRequest(requestJson);
 
         stopwatch.Stop();
 
