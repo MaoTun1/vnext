@@ -57,7 +57,13 @@ public sealed class InstanceQueryAppService(
                         input.QueryParameters,
                         cancellationToken);
 
-                    return ConditionalResult<GetInstanceOutput>.Success(result);
+                    // Propagate extension errors - fail-fast behavior
+                    if (!result.IsSuccess)
+                    {
+                        return ConditionalResult<GetInstanceOutput>.Fail(result.Error);
+                    }
+
+                    return ConditionalResult<GetInstanceOutput>.Success(result.Value!);
                 },
                 onFailure: error => ConditionalResult<GetInstanceOutput>.Fail(error));
     }
@@ -149,7 +155,7 @@ public sealed class InstanceQueryAppService(
                 var list = new List<GetInstanceOutput>();
                 foreach (var instance in pagedList.Items)
                 {
-                    var instanceOutput = await BuildInstanceOutputAsync(
+                    var instanceOutputResult = await BuildInstanceOutputAsync(
                         input.Domain,
                         input.Extension,
                         input.Workflow,
@@ -160,7 +166,16 @@ public sealed class InstanceQueryAppService(
                         input.QueryParameters,
                         ct);
 
-                    list.Add(instanceOutput);
+                    // Propagate extension errors - fail-fast behavior
+                    if (!instanceOutputResult.IsSuccess)
+                    {
+                        throw new UserFriendlyException(
+                            instanceOutputResult.Error.Code,
+                            instanceOutputResult.Error.Message,
+                            instanceOutputResult.Error.Detail).WithData("Target", instanceOutputResult.Error.Target ?? string.Empty);
+                    }
+
+                    list.Add(instanceOutputResult.Value!);
                 }
 
                 var resultPagedList = new HateoasPagedList<GetInstanceOutput>(list, pagedList.CurrentPage, pagedList.PageSize,
@@ -183,7 +198,7 @@ public sealed class InstanceQueryAppService(
                 var transitions = new List<GetInstanceOutput>();
                 foreach (var instanceData in instance.DataList.OrderBy(d => d.EnteredAt))
                 {
-                    var transitionOutput = await BuildInstanceOutputAsync(
+                    var transitionOutputResult = await BuildInstanceOutputAsync(
                         input.Domain,
                         input.Extension,
                         input.Workflow,
@@ -194,7 +209,13 @@ public sealed class InstanceQueryAppService(
                         input.QueryParameters,
                         cancellationToken);
 
-                    transitions.Add(transitionOutput);
+                    // Propagate extension errors - fail-fast behavior
+                    if (!transitionOutputResult.IsSuccess)
+                    {
+                        return Result<GetInstanceHistoryOutput>.Fail(transitionOutputResult.Error);
+                    }
+
+                    transitions.Add(transitionOutputResult.Value!);
                 }
 
                 return Result<GetInstanceHistoryOutput>.Ok(new GetInstanceHistoryOutput
@@ -342,7 +363,7 @@ public sealed class InstanceQueryAppService(
         return instance.EnsureNotNull(WorkflowErrors.InstanceNotFound(instanceIdentifier));
     }
 
-    private async Task<GetInstanceOutput> BuildInstanceOutputAsync(
+    private async Task<Result<GetInstanceOutput>> BuildInstanceOutputAsync(
         string domain,
         string[]? extensionRequested,
         string workflow,
@@ -371,7 +392,7 @@ public sealed class InstanceQueryAppService(
 
         if (flow == null)
         {
-            return response;
+            return Result<GetInstanceOutput>.Ok(response);
         }
 
         var scriptContext = await scriptContextFactory.NewBuilder(instanceRepository)
@@ -384,6 +405,7 @@ public sealed class InstanceQueryAppService(
             .WithQueryParameters(queryParameters)
             .BuildAsync(cancellationToken);
 
+        // Execute extensions with fail-fast behavior
         var extensionsResult = await instanceExtensionService.ProcessExtensionsAsync(
             extensionRequested,
             scriptContext,
@@ -391,10 +413,15 @@ public sealed class InstanceQueryAppService(
             currentScope,
             cancellationToken);
 
-        // Extensions are optional enrichment - use empty dictionary if processing fails
-        response.Extensions = extensionsResult.ValueOrDefault(new Dictionary<string, object>())!;
+        // Propagate extension errors - fail-fast behavior
+        if (!extensionsResult.IsSuccess)
+        {
+            return Result<GetInstanceOutput>.Fail(extensionsResult.Error);
+        }
 
-        return response;
+        response.Extensions = extensionsResult.Value!;
+
+        return Result<GetInstanceOutput>.Ok(response);
     }
 
     public async Task<ConditionalResult<GetInstanceDataOutput>> GetInstanceDataAsync(
@@ -451,6 +478,7 @@ public sealed class InstanceQueryAppService(
                         .WithQueryParameters(input.QueryParameters)
                         .BuildAsync(cancellationToken);
 
+                    // Execute extensions with fail-fast behavior
                     var extensionsResult = await instanceExtensionService.ProcessExtensionsAsync(
                         input.Extensions,
                         scriptContext,
@@ -458,8 +486,13 @@ public sealed class InstanceQueryAppService(
                         ExtensionScope.GetInstance,
                         cancellationToken);
 
-                    // Extensions are optional enrichment - use empty dictionary if processing fails
-                    result.Extensions = extensionsResult.ValueOrDefault(new Dictionary<string, object>())!;
+                    // Propagate extension errors - fail-fast behavior
+                    if (!extensionsResult.IsSuccess)
+                    {
+                        return ConditionalResult<GetInstanceDataOutput>.Fail(extensionsResult.Error);
+                    }
+
+                    result.Extensions = extensionsResult.Value!;
 
                     return ConditionalResult<GetInstanceDataOutput>.Success(result);
                 },
@@ -744,7 +777,7 @@ public sealed class InstanceQueryAppService(
             .WithQueryParameters(input.QueryParameters)
             .BuildAsync(cancellationToken);
 
-        // Execute extensions
+        // Execute extensions with fail-fast behavior
         var extensionsResult = await instanceExtensionService.ProcessExtensionsAsync(
             input.Extensions ?? [],
             scriptContext,
@@ -752,10 +785,16 @@ public sealed class InstanceQueryAppService(
             ExtensionScope.GetInstance,
             cancellationToken);
 
+        // Propagate extension errors - fail-fast behavior
+        if (!extensionsResult.IsSuccess)
+        {
+            return Result<GetExtensionsOutput>.Fail(extensionsResult.Error);
+        }
+
         // Return extension results
         return Result<GetExtensionsOutput>.Ok(new GetExtensionsOutput
         {
-            Extensions = extensionsResult.ValueOrDefault(new Dictionary<string, object>())!
+            Extensions = extensionsResult.Value!
         });
     }
 
