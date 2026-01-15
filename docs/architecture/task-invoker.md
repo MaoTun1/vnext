@@ -68,8 +68,13 @@ public static class TaskTypes
     public const string DirectTrigger = "directtrigger";
     public const string SubProcess = "subprocess";
     public const string GetInstanceData = "getinstancedata";
+    public const string GetInstances = "getinstances";
 }
 ```
+
+**Mapping Notes:**
+- `StartTask` and `GetInstanceDataTask` are mapped directly to bindings.
+- `DirectTriggerTask`, `SubProcessTask`, and `GetInstancesTask` require runtime context and are handled by dedicated remote executors with pre-built bindings.
 
 ### 2. TaskEnvelope
 
@@ -133,7 +138,29 @@ public sealed class TaskInvocationResult
         string? body = null,
         long executionDurationMs = 0,
         string? taskType = null,
+        Dictionary<string, string>? headers = null,
+        object? data = null,
         Dictionary<string, object>? metadata = null);
+}
+```
+
+### 4. TaskInvokeRequest and Trace Context
+
+Remote invocation wraps the envelope with trace context:
+
+```csharp
+public sealed class TaskTraceContext
+{
+    public Guid InstanceId { get; init; }
+    public string Domain { get; init; } = string.Empty;
+    public string WorkflowKey { get; init; } = string.Empty;
+    public string? WorkflowVersion { get; init; }
+}
+
+public sealed class TaskInvokeRequest
+{
+    public required TaskEnvelope Envelope { get; init; }
+    public TaskTraceContext? TraceContext { get; init; }
 }
 ```
 
@@ -237,6 +264,18 @@ public sealed class DaprServiceBinding
 }
 ```
 
+### DaprHttpEndpointBinding
+
+```csharp
+public sealed class DaprHttpEndpointBinding
+{
+    public required string EndpointName { get; init; }
+    public required string Path { get; init; }
+    public string Method { get; init; } = "GET";
+    public string? Body { get; init; }
+}
+```
+
 ### HttpTaskBinding
 
 ```csharp
@@ -280,10 +319,13 @@ public sealed class DaprPubSubBinding
 ```csharp
 public sealed class NotificationBinding
 {
+    public string? BindingName { get; init; }
+    public string Operation { get; init; } = "create";
     public string? Body { get; init; }
+    public string[]? To { get; init; }
     public string? Subject { get; init; }
-    public string? To { get; init; }
     public Dictionary<string, string>? Metadata { get; init; }
+    public string? BindingKind { get; init; }
 }
 ```
 
@@ -295,20 +337,31 @@ public sealed class StartTriggerBinding
     public required string Domain { get; init; }
     public required string Workflow { get; init; }
     public string? Version { get; init; }
+    public string? Key { get; init; }
     public object? Body { get; init; }
+    public string[]? Tags { get; init; }
     public Dictionary<string, string>? Headers { get; init; }
     public bool Sync { get; init; } = true;
+    public bool UseDapr { get; init; } = false;
+    public string? BaseUrl { get; init; }
+    public string? DaprAppId { get; init; }
 }
 
 public sealed class DirectTriggerBinding
 {
     public required string Domain { get; init; }
     public required string Workflow { get; init; }
-    public required string Transition { get; init; }
-    public required string Instance { get; init; }
-    public object? Body { get; init; }
+    public required string TransitionName { get; init; }
+    public Guid? InstanceId { get; set; }
+    public string? Key { get; set; }
+    public string? Version { get; set; }
+    public string[]? Tags { get; set; }
+    public JsonElement? Body { get; init; }
     public Dictionary<string, string>? Headers { get; init; }
     public bool Sync { get; init; } = true;
+    public bool UseDapr { get; init; } = false;
+    public string? BaseUrl { get; init; }
+    public string? DaprAppId { get; init; }
 }
 
 public sealed class GetInstanceDataBinding
@@ -316,8 +369,42 @@ public sealed class GetInstanceDataBinding
     public required string Domain { get; init; }
     public required string Workflow { get; init; }
     public required string Instance { get; init; }
-    public List<string>? Extensions { get; init; }
+    public string[]? Extensions { get; init; }
     public string? ETag { get; init; }
+    public bool UseDapr { get; init; } = false;
+    public string? BaseUrl { get; init; }
+    public string? DaprAppId { get; init; }
+}
+
+public sealed class GetInstancesBinding
+{
+    public required string Domain { get; init; }
+    public required string Workflow { get; init; }
+    public int Page { get; init; } = 1;
+    public int PageSize { get; init; } = 10;
+    public string? Sort { get; init; }
+    public string[]? Filter { get; init; }
+    public bool UseDapr { get; init; } = false;
+    public string? BaseUrl { get; init; }
+    public string? DaprAppId { get; init; }
+}
+
+public sealed class SubProcessBinding
+{
+    public required string Domain { get; init; }
+    public required string Workflow { get; init; }
+    public string? Version { get; init; }
+    public required Guid InstanceId { get; init; }
+    public string? Callback { get; init; }
+    public string? Key { get; set; }
+    public JsonElement? Body { get; init; }
+    public string[]? Tags { get; init; }
+    public string? Headers { get; init; }
+    public Dictionary<string, object>? ExtraProperties { get; init; }
+    public bool Sync { get; init; } = true;
+    public bool UseDapr { get; init; } = false;
+    public string? BaseUrl { get; init; }
+    public string? DaprAppId { get; init; }
 }
 ```
 
@@ -506,6 +593,8 @@ public sealed class RemoteInvokerService : IRemoteInvokerService
         TaskTraceContext traceContext,
         CancellationToken cancellationToken = default)
     {
+        var stopwatch = Stopwatch.StartNew();
+
         var request = new TaskInvokeRequest
         {
             Envelope = envelope,
@@ -528,13 +617,32 @@ public sealed class RemoteInvokerService : IRemoteInvokerService
             return await _daprClient.InvokeMethodAsync<TaskInvokeResponse>(httpRequest, ct);
         }, cancellationToken);
 
+        stopwatch.Stop();
+
         if (!result.IsSuccess)
         {
             return Result<TaskInvocationResult>.Ok(TaskInvocationResult.Failure(
-                error: result.Error.Message ?? "Remote invocation failed"));
+                error: result.Error.Message ?? "Remote invocation failed",
+                statusCode: 500,
+                executionDurationMs: stopwatch.ElapsedMilliseconds,
+                taskType: taskType));
         }
 
-        return Result<TaskInvocationResult>.Ok(result.Value!.Result!);
+        var response = result.Value!;
+        var remoteResult = new TaskInvocationResult
+        {
+            IsSuccess = response.Result!.IsSuccess,
+            StatusCode = response.Result.StatusCode,
+            Body = response.Result.Body,
+            Data = response.Result.Data,
+            ErrorMessage = response.Result.ErrorMessage,
+            Headers = response.Result.Headers,
+            TaskType = response.Result.TaskType,
+            Metadata = response.Result.Metadata,
+            ExecutionDurationMs = stopwatch.ElapsedMilliseconds
+        };
+
+        return Result<TaskInvocationResult>.Ok(remoteResult);
     }
 
     public TaskTraceContext CreateTraceContext(ScriptContext scriptContext)
@@ -611,6 +719,7 @@ public static IServiceCollection AddExecutionServices(this IServiceCollection se
     services.AddSingleton<ITaskInvoker, DirectTriggerRemoteInvoker>();
     services.AddSingleton<ITaskInvoker, SubProcessRemoteInvoker>();
     services.AddSingleton<ITaskInvoker, GetInstanceDataRemoteInvoker>();
+    services.AddSingleton<ITaskInvoker, GetInstancesRemoteInvoker>();
     
     return services;
 }

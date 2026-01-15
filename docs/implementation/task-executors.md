@@ -2,6 +2,152 @@
 
 ## Overview
 
+The task execution system runs workflow tasks using dedicated executors, a shared execution engine, and a coordinator that orchestrates parallel/sequential execution. It follows the Result pattern for error propagation and uses a template method in `TaskExecutorBase<TTask>` to enforce a consistent lifecycle.
+
+## Architecture
+
+```
+TaskCoordinator (orchestrates order/parallelism)
+    ↓
+TaskExecutionEngine (single-task lifecycle, error boundaries)
+    ↓
+TaskExecutorRegistry → ITaskExecutor
+    ↓
+TaskExecutorBase<TTask> (prepare → invoke → post → output)
+```
+
+Remote execution goes through `RemoteInvokerService` and the Execution Service using `TaskEnvelope` and `TaskInvocationResult`.
+
+## Core Components
+
+### TaskCoordinator
+
+`TaskCoordinator` groups tasks by `Order`, executes groups sequentially, and runs same-order tasks in parallel. It delegates single-task execution to `TaskExecutionEngine` and uses evaluators for condition/timer scripts.
+
+### TaskExecutionEngine
+
+`TaskExecutionEngine` runs a single task and applies error boundaries:
+
+- Builds boundary chain (Task → State → Global).
+- Resolves retry policy and executes via Polly.
+- Resolves fallback actions (Abort, Retry, Rollback, Notify, Log, Ignore).
+- Persists `InstanceTask` via `ITaskPersistenceStrategyFactory`.
+
+### TaskExecutorBase (Template Method)
+
+`TaskExecutorBase<TTask>` defines the lifecycle:
+
+1. Validate
+2. PrepareInput
+3. PreProcess
+4. Invoke
+5. PostProcess
+6. ProcessOutput
+7. CreateResponse
+
+It returns `Result<StandardTaskResponse>` and does not intercept business errors from remote invocations.
+
+### TaskExecutorContext
+
+```csharp
+public sealed record TaskExecutorContext(
+    WorkflowTask Task,
+    OnExecuteTask OnExecuteTask,
+    ScriptContext ScriptContext,
+    Guid? InstanceTransitionId,
+    TaskTrigger TaskTrigger)
+{
+    public TaskType TaskType => Task.GetTaskType();
+}
+```
+
+### StandardTaskResponse
+
+```csharp
+public sealed class StandardTaskResponse
+{
+    public dynamic? Data { get; set; }
+    public int? StatusCode { get; set; }
+    public bool IsSuccess { get; set; } = true;
+    public string? ErrorMessage { get; set; }
+    public Dictionary<string, string>? Headers { get; set; }
+    public Dictionary<string, object>? Metadata { get; set; }
+    public long? ExecutionDurationMs { get; set; }
+    public string? TaskType { get; set; }
+}
+```
+
+## Built-in Executors
+
+Executors live under `BBT.Workflow.Application/Tasks/Executors` and include:
+
+- HTTP: `HttpTaskExecutor`
+- Dapr: `DaprServiceTaskExecutor`, `DaprBindingTaskExecutor`, `DaprHttpEndpointTaskExecutor`, `DaprPubSubTaskExecutor`
+- Script: `ScriptTaskExecutor`
+- Notification: `NotificationTaskExecutor`
+- Human: `HumanTaskExecutor`
+- Trigger: `StartTriggerTaskExecutor`, `DirectTriggerTaskExecutor`, `SubProcessTaskExecutor`, `GetInstanceDataTaskExecutor`, `GetInstancesTaskExecutor`
+
+## Remote Invocation Flow
+
+Remote tasks are mapped to `TaskEnvelope` via `TaskBindingMapper` and executed through `RemoteInvokerService` using Dapr invocation. The execution service returns `TaskInvocationResult`:
+
+```csharp
+public sealed class TaskInvocationResult
+{
+    public bool IsSuccess { get; init; }
+    public int? StatusCode { get; init; }
+    public string? Body { get; init; }
+    public object? Data { get; init; }
+    public string? ErrorMessage { get; init; }
+    public Dictionary<string, string>? Headers { get; init; }
+    public long ExecutionDurationMs { get; init; }
+    public string? TaskType { get; init; }
+    public Dictionary<string, object>? Metadata { get; init; }
+}
+```
+
+`TaskBindingMapper` supports remote bindings for:
+
+- `HttpTask`
+- `DaprServiceTask`
+- `DaprBindingTask`
+- `DaprHttpEndpointTask`
+- `DaprPubSubTask`
+- `NotificationTask`
+- `StartTask` and `GetInstanceDataTask` (basic bindings)
+
+`DirectTriggerTask` and `SubProcessTask` require runtime context and are handled by trigger executors.
+
+## Dependency Injection
+
+Task services are registered via `AddTaskHandlers()`:
+
+```csharp
+services.AddTaskHandlers();
+```
+
+This registers executors, evaluators, task coordination, persistence strategies, factories, and scripting services (see `TaskServiceCollectionExtensions`).
+
+## Best Practices
+
+- Prefer `TaskExecutorBase<TTask>` and override only needed lifecycle steps.
+- Use Result pattern consistently; never throw for business errors.
+- Use `TaskBindingMapper` for remote bindings and keep mapping logic in one place.
+- Keep mapping scripts minimal and deterministic.
+
+## Implementation References
+
+- `src/BBT.Workflow.Application/Tasks/Coordinator/TaskCoordinator.cs`
+- `src/BBT.Workflow.Application/Tasks/Coordinator/TaskExecutionEngine.cs`
+- `src/BBT.Workflow.Application/Tasks/Executors/Core/TaskExecutorBase.cs`
+- `src/BBT.Workflow.Domain/Tasks/Executors/Core/TaskExecutorContext.cs`
+- `src/BBT.Workflow.Application/Tasks/Executors/Remote/RemoteInvokerService.cs`
+- `src/BBT.Workflow.Application/Tasks/Mapping/TaskBindingMapper.cs`
+# Task Executors
+
+## Overview
+
 The Task Execution System orchestrates and executes different types of tasks within workflow transitions. It implements the **Template Method Pattern** for consistent task lifecycle management and supports both local and remote task execution through a clean separation of concerns.
 
 ## Architecture

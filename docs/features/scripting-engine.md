@@ -2,44 +2,21 @@
 
 ## Overview
 
-The BBT Workflow Engine includes a powerful scripting engine that enables dynamic C# script compilation and execution at runtime. This engine uses Microsoft's Roslyn compiler APIs to provide seamless integration of custom business logic within workflow definitions.
+The BBT Workflow Engine includes a scripting engine that compiles C# code into runtime instances using Roslyn. Scripts are compiled to strongly-typed interfaces and executed by the workflow runtime (mappings, conditions, timers, subflow mappings).
 
 ## Core Components
 
 ### 1. IScriptEngine Interface
 
-The main interface that combines script running and compilation capabilities:
+The main interface provides compilation capabilities:
 
 ```csharp
-public interface IScriptEngine : IScriptRunner, IScriptCompiler
+public interface IScriptEngine : IScriptCompiler
 {
 }
 ```
 
-### 2. Script Runner (IScriptRunner)
-
-Provides capabilities for executing C# scripts dynamically at runtime:
-
-```csharp
-public interface IScriptRunner
-{
-    Task<object?> EvaluateAsync(
-        string code,
-        Func<ScriptOptions, ScriptOptions>? configureScriptOptions = null,
-        Type? returnType = null,
-        object? globals = null,
-        CancellationToken cancellationToken = default);
-
-    Task<T> EvaluateAsync<T>(
-        string code,
-        Func<ScriptOptions, ScriptOptions>? configureScriptOptions = null,
-        Type? returnType = null,
-        object? globals = null,
-        CancellationToken cancellationToken = default);
-}
-```
-
-### 3. Script Compiler (IScriptCompiler)
+### 2. Script Compiler (IScriptCompiler)
 
 Provides capabilities for compiling C# code into executable instances:
 
@@ -54,28 +31,46 @@ public interface IScriptCompiler
 }
 ```
 
+### 3. Evaluator and Script Services
+
+- `IEvaluator` compiles script code and caches compiled types.
+- `IScriptServices` provides Dapr, logging, and configuration to `ScriptBase` instances.
+
 ## Script Engine Implementation
 
 ### Core Features
 
-- **Roslyn Integration**: Uses Microsoft.CodeAnalysis.CSharp.Scripting for compilation
-- **Caching**: Scripts are cached for improved performance
-- **Global Functions**: Built-in functions available to all scripts
-- **DAPR Integration**: Secure access to secrets and services through DAPR
+- **Roslyn Integration**: Uses `CSharpCompilation` with C# 12
+- **Caching**: Compiled script types are cached by `CSharpEvaluator`
+- **ScriptBase Injection**: `IScriptServices` is injected into `ScriptBase` instances
+- **Dapr Integration**: Secure access to secrets via `ScriptServices` + Dapr client
 - **Automatic Assembly References**: Default .NET and workflow assemblies included
+- **Metrics**: Compilation outcomes and duration are recorded via `IWorkflowMetrics`
+
+**Implementation locations:**
+- `src/BBT.Workflow.Application/Scripting/ScriptEngine.cs`
+- `modules/BBT.Workflow.Modules.Scripting/BBT/Workflow/Scripting/Evaluators/CSharpEvaluator.cs`
+- `modules/BBT.Workflow.Modules.Scripting/BBT/Workflow/Scripting/Functions/ScriptBase.cs`
+
+Embedded script delivery (used by notification tasks) is documented in
+[Embedded Scripts and Dapr](../infrastructure/embedded-scripts-and-dapr.md).
 
 ### Default References and Imports
 
 The engine automatically includes essential references and using statements:
 
 ```csharp
-private static readonly MetadataReference[] DefaultReferences = new[]
-{
+private static readonly MetadataReference[] DefaultReferences =
+[
     MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
     MetadataReference.CreateFromFile(typeof(IMapping).Assembly.Location),
+    MetadataReference.CreateFromFile(typeof(TimerSchedule).Assembly.Location),
     MetadataReference.CreateFromFile(typeof(Task).Assembly.Location),
-    MetadataReference.CreateFromFile(typeof(Dictionary<,>).Assembly.Location)
-};
+    MetadataReference.CreateFromFile(typeof(Dictionary<,>).Assembly.Location),
+    MetadataReference.CreateFromFile(typeof(Microsoft.CSharp.RuntimeBinder.CSharpArgumentInfo).Assembly.Location),
+    MetadataReference.CreateFromFile(typeof(ScriptBase).Assembly.Location),
+    MetadataReference.CreateFromFile(typeof(JsonSerializableAttribute).Assembly.Location)
+];
 
 private static readonly string[] DefaultUsings =
 {
@@ -85,10 +80,16 @@ private static readonly string[] DefaultUsings =
     "System.Collections.Generic",
     "System.Threading",
     "System.Threading.Tasks",
+    "System.Dynamic",
+    "System.Text.Json",
+    "System.Text.Json.Serialization",
+    "BBT.Workflow.Shared",
     "BBT.Workflow.Scripting",
     "BBT.Workflow.Definitions",
     "BBT.Workflow.Instances",
-    "BBT.Workflow.Runtime"
+    "BBT.Workflow.Runtime",
+    "BBT.Workflow.Scripting.Functions",
+    "BBT.Workflow.Definitions.Timer"
 };
 ```
 
@@ -106,18 +107,7 @@ public interface IMapping
 }
 ```
 
-### 2. IScriptExecution Interface
-
-For general script execution:
-
-```csharp
-public interface IScriptExecution
-{
-    Task<object?> ExecuteAsync(ScriptContext context, CancellationToken cancellationToken);
-}
-```
-
-### 3. IConditionMapping Interface
+### 2. IConditionMapping Interface
 
 For conditional logic evaluation:
 
@@ -128,7 +118,7 @@ public interface IConditionMapping
 }
 ```
 
-### 4. ITimerMapping Interface
+### 3. ITimerMapping Interface
 
 For flexible timer scheduling with Dapr-compatible functionality:
 
@@ -138,6 +128,13 @@ public interface ITimerMapping
     Task<TimerSchedule> Handler(ScriptContext context);
 }
 ```
+
+### 4. Other Mapping Contracts
+
+The scripting module also provides:
+
+- `ITransitionMapping` for transition-level data mapping
+- `ISubFlowMapping` and `ISubProcessMapping` for subflow/subprocess data exchange
 
 The enhanced `ITimerMapping` interface supports:
 
@@ -172,70 +169,75 @@ public class PaymentDueTimerRule : ITimerMapping
 The `ScriptContext` provides execution context to scripts:
 
 ```csharp
-public sealed class ScriptContext
+public class ScriptContext
 {
+    public dynamic? Body { get; private set; }
+    public dynamic? Headers { get; private set; }
+    public dynamic? RouteValues { get; private set; }
+    public dynamic? QueryParameters { get; private set; }
     public Instance Instance { get; private set; }
-    public Workflow Workflow { get; private set; }
-    public Transition? Transition { get; private set; }
-    public JsonElement? Attributes { get; private set; }
-    public object? Body { get; private set; }
-    public IReadOnlyDictionary<string, string>? Headers { get; private set; }
-    public Dictionary<string, object?> RouteValues { get; private set; }
-    public Guid TransitionId { get; private set; }
+    public Definitions.Workflow Workflow { get; private set; }
+    public IRuntimeInfoProvider Runtime { get; private set; }
+    public Transition Transition { get; private set; }
+    public Dictionary<string, dynamic> Definitions { get; private set; }
+    public Dictionary<string, dynamic?> TaskResponse { get; private set; }
+    public Dictionary<string, dynamic?> OutputResponse { get; private set; }
+    public Dictionary<string, dynamic> MetaData { get; private set; }
 
-    // Builder pattern for construction
-    public class Builder
+    public sealed class Builder
     {
+        public Builder SetBody(object? body) { /* ... */ }
+        public Builder SetHeaders(object? headers) { /* ... */ }
+        public Builder SetRouteValues(object? routeValues) { /* ... */ }
+        public Builder SetQueryParameters(object? queryParameters) { /* ... */ }
+        public Builder SetWorkflow(Definitions.Workflow workflow) { /* ... */ }
         public Builder SetInstance(Instance instance) { /* ... */ }
-        public Builder SetWorkflow(Workflow workflow) { /* ... */ }
-        public Builder SetTransition(Transition transition) { /* ... */ }
-        public Builder SetAttributes(JsonElement attributes) { /* ... */ }
-        public Builder SetHeaders(IReadOnlyDictionary<string, string>? headers) { /* ... */ }
+        public Builder SetTransition(Transition? transition) { /* ... */ }
+        public Builder SetRuntime(IRuntimeInfoProvider runtime) { /* ... */ }
+        public Builder SetDefinitions(Dictionary<string, object> definitions) { /* ... */ }
+        public Builder SetTaskResponse(Dictionary<string, object?> taskResponse) { /* ... */ }
+        public Builder SetOutputResponse(Dictionary<string, object?> outputResponse) { /* ... */ }
+        public Builder SetMetadata(Dictionary<string, object> metadata) { /* ... */ }
         public ScriptContext Build() { /* ... */ }
     }
 }
 ```
 
+### Script Context Factory
+
+`IScriptContextFactory` builds `ScriptContext` instances using a fluent builder. The default `ScriptContextFactory` wires `IComponentCacheStore` and `IInstanceRepository` into `ScriptContextBuilder` to populate workflow and instance state.
+
 ## Global Script Functions
 
-### DAPR Secret Functions
-
-The engine provides built-in functions for secure secret management through DAPR:
-
-```csharp
-public class GlobalScriptFunctions
-{
-    public string GetSecret(string storeName, string secretStore, string secretKey);
-    public Dictionary<string, string> GetSecrets(string storeName, string secretStore);
-    public async Task<string> GetSecretAsync(string storeName, string secretStore, string secretKey);
-    public async Task<Dictionary<string, string>> GetSecretsAsync(string storeName, string secretStore);
-}
-```
+Scripts inherit from `ScriptBase` to access global helpers (secrets, logging, configuration, and dynamic helpers). These helpers rely on `IScriptServices`, injected after compilation.
 
 ### Usage Examples
 
-**1. Basic Script Evaluation:**
+**1. Using Global Functions:**
 ```csharp
-// Simple expression evaluation
-var result = await scriptEngine.EvaluateAsync("1 + 2");
-// Returns: 3
+var secretScript = @"
+    using System.Threading.Tasks;
+    using BBT.Workflow.Scripting;
+    using BBT.Workflow.Definitions;
+    using BBT.Workflow.Scripting.Functions;
 
-// String manipulation
-var greeting = await scriptEngine.EvaluateAsync<string>("\"Hello, \" + \"World!\"");
-// Returns: "Hello, World!"
-```
+    public class SecretMapping : ScriptBase, IMapping
+    {
+        public Task<ScriptResponse> InputHandler(WorkflowTask task, ScriptContext context)
+        {
+            var apiKey = GetSecret(""dapr_store"", ""secret_store"", ""Asgard_ApiKey"");
+            return Task.FromResult(new ScriptResponse { Data = new { apiKey } });
+        }
 
-**2. Using Global Functions:**
-```csharp
-string secretScript = @"
-    var apiKey = GetSecret(""dapr_store"", ""secret_store"", ""Asgard_ApiKey"");
-    return ""API Key: "" + apiKey;
+        public Task<ScriptResponse> OutputHandler(ScriptContext context)
+            => Task.FromResult(new ScriptResponse());
+    }
 ";
 
-var result = await scriptEngine.EvaluateAsync<string>(secretScript);
+var mapping = await scriptEngine.CompileToInstanceAsync<IMapping>(secretScript);
 ```
 
-**3. Compiling Task Mapping:**
+**2. Compiling Task Mapping:**
 ```csharp
 var mappingCode = @"
     using System.Threading.Tasks;
@@ -249,12 +251,12 @@ var mappingCode = @"
             var httpTask = (task as HttpTask)!;
             
             // Set dynamic URL based on context
-            httpTask.Url = ""https://api.example.com/customers/"" + context.Attributes?.GetProperty(""customerId"").GetString();
+            httpTask.Url = ""https://api.example.com/customers/"" + context.Body?.customerId?.ToString();
             
             // Prepare request data
             var requestData = new
             {
-                customerId = context.Attributes?.GetProperty(""customerId"").GetString(),
+                customerId = context.Body?.customerId?.ToString(),
                 action = ""verification""
             };
 
@@ -275,7 +277,7 @@ var mappingCode = @"
             {
                 verified = context.Body?.verified ?? false,
                 timestamp = DateTime.UtcNow,
-                customerId = context.Attributes?.GetProperty(""customerId"").GetString()
+                customerId = context.Body?.customerId?.ToString()
             };
 
             return Task.FromResult(new ScriptResponse
@@ -291,35 +293,42 @@ var mappingInstance = await scriptEngine.CompileToInstanceAsync<IMapping>(mappin
 
 ## Script Execution Patterns
 
-### 1. Simple Script Tasks
+### 1. Task Mappings (IMapping)
 
-For basic data transformation:
+Use `IMapping` for task input/output transformations and audit data:
 
 ```csharp
-var scriptTask = new ScriptTask
-{
-    Key = "calculate-interest",
-    Script = new ScriptCode
+var mappingCode = @"
+    using System.Threading.Tasks;
+    using BBT.Workflow.Scripting;
+    using BBT.Workflow.Definitions;
+
+    public class CalculateInterest : IMapping
     {
-        Code = @"
-            var principal = context.attributes.loanAmount;
-            var rate = context.attributes.interestRate;
-            var years = context.attributes.termYears;
-            
+        public Task<ScriptResponse> InputHandler(WorkflowTask task, ScriptContext context)
+            => Task.FromResult(new ScriptResponse());
+
+        public Task<ScriptResponse> OutputHandler(ScriptContext context)
+        {
+            var principal = context.Body.loanAmount;
+            var rate = context.Body.interestRate;
+            var years = context.Body.termYears;
+
             var monthlyRate = rate / 12 / 100;
             var payments = years * 12;
-            
-            var monthlyPayment = principal * (monthlyRate * Math.Pow(1 + monthlyRate, payments)) / 
+            var monthlyPayment = principal * (monthlyRate * Math.Pow(1 + monthlyRate, payments)) /
                                (Math.Pow(1 + monthlyRate, payments) - 1);
-            
-            return new { 
-                monthlyPayment = Math.Round(monthlyPayment, 2),
-                totalPayment = Math.Round(monthlyPayment * payments, 2)
-            };
-        ",
-        Language = ScriptLanguage.CSharp
+
+            return Task.FromResult(new ScriptResponse
+            {
+                Data = new {
+                    monthlyPayment = Math.Round(monthlyPayment, 2),
+                    totalPayment = Math.Round(monthlyPayment * payments, 2)
+                }
+            });
+        }
     }
-};
+";
 ```
 
 ### 2. Conditional Scripts
@@ -332,8 +341,8 @@ var conditionCode = @"
     {
         public Task<bool> Handler(ScriptContext context)
         {
-            var creditScore = context.Attributes?.creditScore ?? 0;
-            var loanAmount = context.Attributes?.loanAmount ?? 0;
+            var creditScore = context.Body?.creditScore ?? 0;
+            var loanAmount = context.Body?.loanAmount ?? 0;
             
             // Approve if credit score > 700 and loan amount < 100000
             var approved = creditScore > 700 && loanAmount < 100000;
@@ -353,25 +362,41 @@ Using LINQ and complex transformations:
 
 ```csharp
 var dataProcessingScript = @"
-    var customers = context.attributes.customers.EnumerateArray()
-        .Select(c => new {
-            Id = c.GetProperty(""id"").GetString(),
-            Name = c.GetProperty(""name"").GetString(),
-            Score = c.GetProperty(""creditScore"").GetInt32()
-        })
-        .Where(c => c.Score > 650)
-        .OrderByDescending(c => c.Score)
-        .Take(10)
-        .ToList();
-    
-    return new { 
-        eligibleCustomers = customers,
-        count = customers.Count,
-        averageScore = customers.Any() ? customers.Average(c => c.Score) : 0
-    };
+    using System.Threading.Tasks;
+    using BBT.Workflow.Scripting;
+    using BBT.Workflow.Definitions;
+
+    public class CustomerFilter : IMapping
+    {
+        public Task<ScriptResponse> InputHandler(WorkflowTask task, ScriptContext context)
+            => Task.FromResult(new ScriptResponse());
+
+        public Task<ScriptResponse> OutputHandler(ScriptContext context)
+        {
+            var customers = context.Body.customers.EnumerateArray()
+                .Select(c => new {
+                    Id = c.GetProperty(""id"").GetString(),
+                    Name = c.GetProperty(""name"").GetString(),
+                    Score = c.GetProperty(""creditScore"").GetInt32()
+                })
+                .Where(c => c.Score > 650)
+                .OrderByDescending(c => c.Score)
+                .Take(10)
+                .ToList();
+
+            return Task.FromResult(new ScriptResponse
+            {
+                Data = new {
+                    eligibleCustomers = customers,
+                    count = customers.Count,
+                    averageScore = customers.Any() ? customers.Average(c => c.Score) : 0
+                }
+            });
+        }
+    }
 ";
 
-var result = await scriptEngine.EvaluateAsync(dataProcessingScript);
+var mapping = await scriptEngine.CompileToInstanceAsync<IMapping>(dataProcessingScript);
 ```
 
 ## Script Base Classes
@@ -511,7 +536,7 @@ public class DynamicDataMapping : ScriptBase, IMapping
 {
     public Task<ScriptResponse> InputHandler(WorkflowTask task, ScriptContext context)
     {
-        var attributes = context.Attributes;
+        var attributes = context.Body;
         
         // Check if properties exist before accessing
         if (HasProperty(attributes, "customerId"))
@@ -562,9 +587,9 @@ var scriptWithBase = @"
                 var apiKey = GetSecret(""dapr_store"", ""secret_store"", ""api_key"");
                 
                 // Check dynamic properties safely
-                if (HasProperty(context.Attributes, ""customerId""))
+        if (HasProperty(context.Body, ""customerId""))
                 {
-                    var customerId = GetPropertyValue(context.Attributes, ""customerId"");
+            var customerId = GetPropertyValue(context.Body, ""customerId"");
                     LogTrace($""Processing for customer: {customerId}"");
                 }
                 
@@ -618,48 +643,20 @@ var mappingInstance = await scriptEngine.CompileToInstanceAsync<IMapping>(script
 
 ## Performance Optimization
 
-### 1. Script Caching
+### 1. Script Type Caching
 
-The engine automatically caches compiled scripts:
-
-```csharp
-private static readonly ConcurrentDictionary<string, Script<object>> ScriptCache = new();
-
-public async Task<object?> EvaluateAsync(string code, ...)
-{
-    if (!ScriptCache.TryGetValue(code, out var cachedScript))
-    {
-        cachedScript = CSharpScript.Create(code, scriptOptions);
-        ScriptCache[code] = cachedScript;
-    }
-    
-    var state = await cachedScript.RunAsync(globals, cancellationToken);
-    return state.ReturnValue;
-}
-```
-
-### 2. Lazy Reference Loading
-
-Default references are loaded lazily:
+`CSharpEvaluator` caches compiled types by code hash and reuses the same assembly for identical scripts:
 
 ```csharp
-private static readonly Lazy<MetadataReference[]> DefaultReferences = new(() => new[]
-{
-    MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-    // ... other references
-});
+public int CachedTypeCount => _typeCache.Count;
+
+// Uses a collectible AssemblyLoadContext per compiled script
+// and injects IScriptServices into ScriptBase instances.
 ```
 
-### 3. Optimized Compilation
+### 2. Default References and Usings
 
-Scripts are compiled with optimization enabled:
-
-```csharp
-public static ScriptOptions Default => ScriptOptions.Default
-    .WithOptimizationLevel(OptimizationLevel.Release)
-    .AddReferences(/* default references */)
-    .AddImports(/* default usings */);
-```
+`ScriptEngine` merges caller-provided references/usings with cached defaults, avoiding repeated allocation and lookup.
 
 ## Error Handling
 
@@ -670,48 +667,21 @@ try
 {
     var instance = await scriptEngine.CompileToInstanceAsync<IMapping>(code);
 }
-catch (CompilationErrorException ex)
+catch (InvalidOperationException ex)
 {
-    // Handle compilation errors
-    logger.LogError(ex, "Script compilation failed: {Errors}", ex.Diagnostics);
-}
-```
-
-### Runtime Errors
-
-```csharp
-try
-{
-    var result = await scriptEngine.EvaluateAsync(code);
-}
-catch (Exception ex)
-{
-    // Handle runtime execution errors
-    logger.LogError(ex, "Script execution failed");
+    // Handle compilation errors (CSharpEvaluator throws InvalidOperationException)
+    logger.LogError(ex, "Script compilation failed");
 }
 ```
 
 ## Integration with Task Executors
 
-Script tasks integrate seamlessly with the task execution system:
+Task executors compile the script to the appropriate interface and invoke handlers:
 
 ```csharp
-public sealed class ScriptTaskExecutor : ITaskExecutor
-{
-    public async Task<object?> ExecuteAsync(
-        WorkflowTask task,
-        string scriptCode,
-        ScriptContext context,
-        CancellationToken cancellationToken = default)
-    {
-        var scriptRunner = await ScriptEngine.CompileToInstanceAsync<IMapping>(
-            scriptCode, 
-            cancellationToken: cancellationToken);
-
-        var response = await scriptRunner.OutputHandler(context);
-        return response.Data;
-    }
-}
+var mapping = await scriptEngine.CompileToInstanceAsync<IMapping>(scriptCode, cancellationToken: cancellationToken);
+var inputResponse = await mapping.InputHandler(task, context);
+var outputResponse = await mapping.OutputHandler(context);
 ```
 
 ## Best Practices
@@ -766,36 +736,12 @@ public async Task TestScriptExecution()
 
 ### Module Registration
 
-```csharp
-public static IServiceCollection AddApplicationModule(this IServiceCollection services)
-{
-    // Scripting service
-    services.AddScoped<IScriptEngine, ScriptEngine>();
-    
-    // DAPR client for script functions
-    services.AddDapr();
-    
-    return services;
-}
-```
-
-### Script Options Configuration
+Register script services, evaluator, and engine with DI:
 
 ```csharp
-services.Configure<ScriptOptions>(options =>
-{
-    options.WithOptimizationLevel(OptimizationLevel.Release);
-    options.AddReferences(additionalReferences);
-    options.AddImports(additionalUsings);
-});
+services.AddScoped<IScriptServices, ScriptServices>();
+services.AddSingleton<IEvaluator, CSharpEvaluator>();
+services.AddScoped<IScriptEngine, ScriptEngine>();
 ```
 
 The scripting engine provides a powerful and flexible foundation for implementing dynamic business logic within workflows, enabling developers to create sophisticated workflow behaviors without requiring code recompilation or deployment.
-
-## Development Tools
-
-For efficient development of CSX scripts, use the automated development tools:
-
-- **Workflow Development Automation**: Automatically converts CSX files to base64 encoded JSON
-- **File Watching**: Real-time updates when CSX files change
-- **VS Code Integration**: Keyboard shortcuts and tasks for rapid development 

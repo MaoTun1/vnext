@@ -75,6 +75,7 @@ Concrete implementation that:
 - Uses `ITaskConditionService` to execute condition scripts
 - Uses `IScriptContextFactory` to build script contexts
 - Returns structured evaluation results using the Result pattern
+- Supports `DefaultAutoTransition` without a rule (auto-satisfied)
 - Logs evaluation outcomes and errors
 - Caches ScriptContext in the TransitionExecutionContext using `GetOrBuildScriptContextAsync`
 
@@ -114,7 +115,7 @@ public sealed class AutoConditionEvaluator(
 Updated pipeline step that:
 1. Evaluates all automatic transitions for the target state
 2. Finds the first satisfied transition
-3. Enqueues the winning transition for inline execution via `PipelineDirectives.EnqueueInlineAuto`
+3. Requests the winning transition via `PipelineDirectives.RequestNextTransition`
 
 **Location**: `src/BBT.Workflow.Application/Execution/Transitions/Pipeline/Steps/`
 
@@ -145,27 +146,21 @@ public sealed class RunAutomaticTransitionsStep(
 }
 ```
 
-## Inline Auto Chain Execution
+**Note:** The step returns `StepOutcome.Continue()` after requesting `NextTransition`. The pipeline consumes the request after the current transition completes.
+
+## Sync Dispatch Chain Execution
 
 When an automatic transition is satisfied, it is **not** executed immediately. Instead:
 
-1. **Enqueue**: The winning transition is enqueued to `PipelineDirectives.InlineAutoQueue`
-2. **Snapshot**: After pipeline completion, `DirectivesSnapshot` captures the queue
-3. **Post-Commit**: `TransitionRunner` processes the queue after UoW commit
+1. **Request**: The winning transition is set as `NextTransition` on `PipelineDirectives`
+2. **Finalize**: The current transition completes normally
+3. **Chain**: `TransitionPipeline` consumes `NextTransition` and starts the next transition in the same sync dispatch loop
 
 ```csharp
-private static void EnqueueWinningTransition(TransitionExecutionContext context, AutoConditionEvaluation winner)
+private static void RequestWinningTransition(TransitionExecutionContext context, AutoConditionEvaluation winner)
 {
-    var command = ReentryCommand.ForAutomatic(
-        context.InstanceId,
-        context.Domain,
-        context.WorkflowKey,
-        winner.TransitionKey,
-        context.ExecutionChainId,
-        context.ChainDepth,
-        context.Headers);
-
-    context.Directives.EnqueueInlineAuto(command);
+    context.Directives.RequestNextTransition(
+        new NextTransitionRequest(winner.TransitionKey, "auto"));
 }
 ```
 
@@ -173,13 +168,13 @@ private static void EnqueueWinningTransition(TransitionExecutionContext context,
 
 ### Evaluation Flow
 
-1. When a state has automatic transitions, `RunAutomaticTransitionsStep` evaluates each one
+1. When a state has automatic transitions, `RunAutomaticTransitionsStep` evaluates them in `TriggerKind` order
 2. For each transition:
    - If the rule is missing → **Fail** with validation error (pipeline stops)
    - If evaluation succeeds → Return **Satisfied** or **NotSatisfied** based on condition result
    - If a technical error occurs → **Fail** with technical error (pipeline stops)
-3. After all evaluations:
-   - If at least one is **Satisfied** → Enqueue the first satisfied transition for inline execution
+3. After evaluations (short-circuits on first satisfied):
+   - If at least one is **Satisfied** → Request the first satisfied transition for sync dispatch
    - If all are **NotSatisfied** → **Continue pipeline** (soft-fail), log warning, stay in current state
    - If any **Failed** → Fail immediately with the error
 
@@ -189,85 +184,29 @@ The system distinguishes three scenarios:
 
 | Scenario | Status | Result | Behavior |
 |----------|--------|--------|----------|
-| Condition is true | Satisfied | First winner enqueued | Transition executes via TransitionRunner inline chain |
+| Condition is true | Satisfied | NextTransition requested | Transition chained by `TransitionPipeline` |
 | All conditions false | NotSatisfied | Pipeline continues | Instance stays in current state |
 | Script error, missing rule | Failed | Pipeline fails | Error propagated to caller |
 
 **Key Point**: When no automatic transition is satisfied, this is **not an error**. The instance remains in its current state, and the workflow can continue via other triggers (manual, timer, event).
 
-## TransitionRunner Integration
+## TransitionPipeline Integration
 
-The `TransitionRunner` orchestrates the entire transition chain with isolated DI scope and UoW per hop:
+The `TransitionPipeline` owns the sync dispatch loop and executes chained transitions after the current pipeline completes:
 
 ```csharp
-public sealed class TransitionRunner(
-    IServiceScopeFactory scopeFactory,
-    IOptions<ReentryOptions> options,
-    ILogger<TransitionRunner> logger) : ITransitionRunner
-{
-    /// <summary>
-    /// Runs transitions in a loop, each in its own DI scope + RequiresNew UoW.
-    /// Post-commit: enqueues inline auto chain transitions from DirectivesSnapshot.
-    /// </summary>
-    [Trace]
-    public async Task<Result<TransitionOutput>> RunAsync(
-        WorkflowExecutionContext context,
-        CancellationToken cancellationToken = default)
-    {
-        var queue = new Queue<WorkflowExecutionContext>();
-        queue.Enqueue(context);
+var nextTransition = context.Directives.ConsumeNextTransition();
+if (nextTransition is null)
+    return Result<TransitionExecutionContext>.Ok(context);
 
-        var hop = 0;
-        TransitionOutput? lastOutput = null;
-
-        while (queue.TryDequeue(out var current))
-        {
-            hop++;
-
-            // Guard: prevent infinite loops
-            if (hop > _options.MaxAutoHops)
-            {
-                logger.MaxAutoHopsExceeded(_options.MaxAutoHops, instanceGuid, current.Execution?.ExecutionChainId);
-                return Result<TransitionOutput>.Fail(
-                    Error.Validation("auto.chain.maxhops", $"Auto chain exceeded max hops: {_options.MaxAutoHops}"));
-            }
-
-            // Execute in isolated scope + UoW
-            var hopResult = await ExecuteHopAsync(current, cancellationToken);
-            if (!hopResult.IsSuccess)
-                return Result<TransitionOutput>.Fail(hopResult.Error);
-
-            var coreOutput = hopResult.Value!;
-            lastOutput = coreOutput.Output;
-
-            // POST-COMMIT: enqueue inline auto chain transitions
-            if (coreOutput.DirectivesSnapshot.HasQueuedTransitions)
-            {
-                foreach (var cmd in coreOutput.DirectivesSnapshot.InlineAutoQueue)
-                {
-                    var nextCmd = cmd with { ChainDepth = cmd.ChainDepth + 1 };
-                    
-                    if (nextCmd.ChainDepth <= _options.MaxAutoHops)
-                    {
-                        queue.Enqueue(WorkflowExecutionContext.From(nextCmd));
-                    }
-                }
-            }
-        }
-
-        return lastOutput is null
-            ? Result<TransitionOutput>.Fail(Error.Failure("transition.output.missing", "Transition output missing"))
-            : Result<TransitionOutput>.Ok(lastOutput);
-    }
-}
+currentWorkflowContext = CreateNextWorkflowContext(context, nextTransition);
 ```
 
 ### Key Design Decisions
 
-1. **Isolated DI Scope per Hop**: Each transition runs in a new DI scope with `RequiresNew` UoW
-2. **Post-Commit Processing**: Inline auto chain is processed AFTER UoW commit
-3. **DirectivesSnapshot**: Captures queue state for cross-UoW boundary transfer
-4. **MaxAutoHops Guard**: Prevents infinite loops with configurable limit
+1. **Sync dispatch chain**: Automatic transitions are requested by directives and executed in the same pipeline loop
+2. **Post-commit safety**: External calls run as post-commit jobs outside the distributed lock
+3. **Deterministic chain**: Only the first satisfied auto transition is chained
 
 ## Key Benefits
 
@@ -279,17 +218,15 @@ public sealed class TransitionRunner(
 6. **Proper separation**: Business logic (which transition) vs technical concerns (how to evaluate)
 7. **Testability**: Easier to unit test without catching exceptions
 8. **Aether SDK integration**: Uses `[Trace]` aspect for automatic span creation
-9. **Post-commit safety**: Auto chain runs after UoW commit for data consistency
+9. **Post-commit safety**: External side effects run after lock release
 
 ## Dependency Injection
 
-The services are registered in the Application module:
+The services are registered via `AddPipelineServices()` inside `AddApplicationModule()`:
 
 ```csharp
-// In WorkflowApplicationModuleServiceCollectionExtensions.AddTransitionPipeline()
-services.AddScoped<IAutoConditionEvaluator, AutoConditionEvaluator>();
-services.AddScoped<ITransitionRunner, TransitionRunner>();
-services.AddScoped<IWorkflowExecutionCore, WorkflowExecutionService>();
+// In WorkflowApplicationModuleServiceCollectionExtensions.AddApplicationModule()
+services.AddPipelineServices();
 ```
 
 ## Testing Considerations
@@ -301,8 +238,8 @@ When testing automatic transitions:
 3. **Test all NotSatisfied**: Ensure pipeline continues (soft-fail) and instance stays in current state
 4. **Test technical errors**: Script compilation errors, missing rules should fail the pipeline
 5. **Verify logging**: Check that `WorkflowLogs.AutoTransitionConditionNotSatisfied` is called when no winner
-6. **Test inline execution chain**: Verify `TransitionRunner` correctly processes enqueued transitions
-7. **Test MaxAutoHops**: Verify chain depth limits are enforced
+6. **Test sync dispatch chain**: Verify `NextTransitionRequest` triggers the next transition
+7. **Test chain depth**: Verify `Execution.ChainDepth` increments across chained transitions
 
 ## Migration Notes
 
@@ -327,11 +264,11 @@ Expected performance improvements:
 - **No exceptions**: Eliminates exception construction and stack unwinding for false conditions
 - **Cached ScriptContext**: ScriptContext is created once and reused via `GetOrBuildScriptContextAsync`
 - **Structured logging**: Better performance than exception-based logging
-- **Inline execution**: No background job overhead for auto chains (post-commit inline processing)
+- **Sync dispatch chain**: No background job overhead for auto transitions
 
 ## Related Documentation
 
-- [Transition Pipeline Architecture](transition-pipeline-architecture.md)
-- [Result Pattern](result-pattern-railway.md)
+- [Transition Pipeline Architecture](../architecture/transition-pipeline.md)
+- [Result Pattern](../sdk/result-pattern.md)
 - [Scripting Engine](scripting-engine.md)
-- [Task Executors](task-executors.md)
+- [Task Executors](../implementation/task-executors.md)
