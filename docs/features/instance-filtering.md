@@ -2,40 +2,77 @@
 
 ## Overview
 
-The BBT Workflow Engine provides powerful filtering capabilities for workflow instances using **PostgreSQL native JSONB operations**. The filtering system allows you to query instances based on their JSON attributes stored in the `InstanceData.Data` column with high performance and flexibility.
+The BBT Workflow Engine supports instance filtering with two formats:
+
+- **Legacy format** (`field=operator:value`) for simple query strings.
+- **GraphQL-style JSON** for complex filters, grouping, and aggregations.
+
+Filtering targets both **Instance table columns** and **JSON attributes** stored in `InstancesData.Data`, using PostgreSQL JSONB operators and GraphQL-aware SQL generation.
 
 ## Architecture
 
-The filtering system is built on three main components:
+The filtering system is built on these main components:
 
 ```
-┌─────────────────────┐    ┌──────────────────────┐    ┌─────────────────────┐
-│   API Controller    │    │  Application Layer   │    │ PostgreSQL Native   │
-│                     │    │                      │    │                     │
-│ Query Parameters    │───▶│  Filter Processing   │───▶│   JSONB Operators   │
-│ ?filter=attributes=field=op:val│    │                      │    │                     │
-└─────────────────────┘    └──────────────────────┘    └─────────────────────┘
+┌─────────────────────┐    ┌──────────────────────────┐    ┌──────────────────────┐
+│   API Controller    │    │  Application Layer       │    │ PostgreSQL Native    │
+│                     │    │                          │    │                      │
+│ Query Parameters    │───▶│  UnifiedFilterService     │───▶│  JSONB + CTE Query    │
+│ filter / groupBy    │    │  GraphQLFilterParser      │    │  InstancesData join  │
+└─────────────────────┘    └──────────────────────────┘    └──────────────────────┘
 ```
 
 ### Components
 
-- **FilterOperatorParser**: Parses filter expressions from query parameters
-- **PostgreSqlJsonFilterService**: Builds native PostgreSQL JSONB queries
-- **InstanceRepository**: Executes optimized database queries with Common Table Expressions (CTE)
+- **FilterFormatDetector**: Determines legacy vs GraphQL JSON format
+- **GraphQLFilterParser / UnifiedFilterService**: Builds filter nodes and executes GraphQL filters
+- **PostgreSqlJsonFilterService**: Executes legacy filters via JSONB + CTE
+- **InstanceFieldDiscriminator**: Splits Instance column filters vs JSON attribute filters
+- **InputValidator / ISchemaValidator**: Validates filter length, schema, and table names
+- **InstanceRepository**: Executes filtered queries and group/aggregation responses
 
 ## Filter Syntax
 
-### Basic Format
+### Legacy Format
 
 ```
 filter=attributes={field}={operator}:{value}
+filter={instanceField}={operator}:{value}
 ```
 
-### Multiple Filters
+Multiple filters are passed as repeated `filter` parameters:
 
 ```
-?filter=attributes=clientId=eq:122&filter=attributes=testValue=gt:2
+?filter=attributes=clientId=eq:122&filter=status=eq:Active
 ```
+
+### GraphQL-Style JSON Format
+
+```
+filter={"attributes":{"clientId":{"eq":"122"}}}
+```
+
+Logical operators are supported:
+
+```
+filter={"and":[{"status":{"eq":"Active"}},{"attributes":{"amount":{"gt":500}}}]}
+```
+
+### GraphQL Filter Request (with groupBy/aggregations)
+
+You can send a full request envelope in `filter`:
+
+```
+filter={"filter":{"status":{"eq":"Active"}},"groupBy":{"field":"attributes.status"},"aggregations":{"count":true}}
+```
+
+Alternatively, pass `groupBy` and `aggregations` as query parameters:
+
+```
+?filter={"status":{"eq":"Active"}}&groupBy={"field":"attributes.status"}&aggregations={"count":true}
+```
+
+**Format precedence:** If any `filter` value is GraphQL JSON, the request is handled as GraphQL format.
 
 ### URL Encoding
 
@@ -45,6 +82,32 @@ When using special characters, ensure proper URL encoding:
 ?filter=attributes%3Dname%3Dlike%3AJohn%20Doe    # John Doe
 ?filter=attributes%3Demail%3Dstartswith%3Atest%40 # test@
 ```
+
+## Filterable Fields
+
+### Instance Columns
+
+Filters can target these Instance columns:
+
+| Field | Notes |
+|-------|-------|
+| `key` | Instance key |
+| `flow` | Workflow key |
+| `status` | Accepts names or codes (`Active`/`A`, `Busy`/`B`, `Completed`/`C`, `Faulted`/`F`, `Passive`/`P`) |
+| `currentState` / `state` | State name (state is an alias) |
+| `createdAt` | Creation timestamp |
+| `modifiedAt` | Modification timestamp |
+| `completedAt` | Completion timestamp |
+| `isTransient` | Boolean flag |
+
+### JSON Attributes
+
+Any JSON field in `InstancesData.Data` can be queried using:
+
+- **Legacy**: `attributes=field=operator:value`
+- **GraphQL**: `{"attributes":{"field":{"operator":value}}}`
+
+GraphQL filters can also target Instance columns directly at the top level (e.g., `{"status":{"eq":"Active"}}`).
 
 ## Supported Operators
 
@@ -80,9 +143,11 @@ When using special characters, ensure proper URL encoding:
 | `in` | Value in list | `filter=attributes=clientId=in:122,177,83` | `(Data ->> 'clientId') IN ('122','177','83')` |
 | `nin` | Value not in list | `filter=attributes=clientId=nin:122,177` | `(Data ->> 'clientId') NOT IN ('122','177')` |
 
+**GraphQL-only operator:** `isNull` (e.g., `{"attributes":{"field":{"isNull":true}}}`)
+
 ## Data Type Support
 
-The filtering system automatically handles different data types:
+The filtering system automatically handles different data types. GraphQL JSON filters preserve native JSON types, while legacy filters pass values as strings.
 
 ### String Values
 ```json
@@ -185,6 +250,16 @@ curl -X GET "http://localhost:4201/api/v1.0/{domain}/workflows/my-workflow/insta
 ```
 **Result:** Returns instances that are NOT completed or cancelled
 
+## Group By and Aggregations
+
+Group and aggregate results using GraphQL JSON parameters:
+
+```bash
+curl -X GET "http://localhost:4201/api/v1.0/{domain}/workflows/my-workflow/instances?filter={\"status\":{\"eq\":\"Active\"}}&groupBy={\"field\":\"attributes.status\"}&aggregations={\"count\":true}"
+```
+
+When grouping, the response `items` list contains group summaries with `name`, `count`, and optional `sum`, `avg`, `min`, `max` fields.
+
 ## Performance Considerations
 
 ### PostgreSQL Optimization
@@ -193,7 +268,8 @@ The filtering system uses PostgreSQL native JSONB operators for optimal performa
 
 - **JSONB Containment (`@>`)**: Used for equality checks, leverages GIN indexes
 - **JSON Field Extraction (`->>`)**: Used for comparisons and text operations
-- **Common Table Expressions (CTE)**: Optimizes complex queries with joins
+- **Common Table Expressions (CTE)**: Filters latest `InstancesData` and joins back to `Instances`
+- **Instance Column Conditions**: Applied on the outer query using `InstanceColumnConditionBuilder`
 
 ### Recommended Indexes
 
@@ -232,17 +308,27 @@ public async Task<IActionResult> GetInstanceListAsync(
     [FromRoute] string workflow,
     [FromQuery] string[]? filter = null,
     [FromQuery] string[]? extension = null,
+    [FromQuery] string? groupBy = null,
+    [FromQuery] string? aggregations = null,
     [FromQuery] [Range(1, 1000)] int page = 1,
     [FromQuery] [Range(1, 100)] int pageSize = 10,
     [FromQuery] string? sort = null,
     CancellationToken cancellationToken = default)
 ```
 
+**Notes:**
+- `filter` accepts legacy or GraphQL JSON (array via repeated query parameters).
+- `groupBy` and `aggregations` are parsed via `GraphQLFilterParser` and executed by `UnifiedFilterService`.
+- When `filter` contains a full `GraphQLFilterRequest` envelope, `InstanceQueryAppService` parses it directly.
+
 ### Response Format
+
+Instance list responses use `InstanceListWithGroupsResponse`:
 
 ```json
 {
-  "data": [
+  "links": { "self": "...", "next": "..." },
+  "items": [
     {
       "id": "123e4567-e89b-12d3-a456-426614174000",
       "flow": "my-workflow",
@@ -254,17 +340,13 @@ public async Task<IActionResult> GetInstanceListAsync(
         "testValue": 4,
         "status": "pending"
       },
-      "etag": "abc123def456"
+      "etag": "\"abc123def456\""
     }
-  ],
-  "pagination": {
-    "page": 1,
-    "pageSize": 10,
-    "totalCount": 1,
-    "totalPages": 1
-  }
+  ]
 }
 ```
+
+When `groupBy` is used, `items` contains group summaries (e.g., `name`, `count`, `sum`, `avg`, `min`, `max`) and links may be omitted.
 
 ## Error Handling
 
@@ -296,17 +378,7 @@ HTTP 400 Bad Request
 
 ### Fallback Behavior
 
-If PostgreSQL native filtering fails, the system automatically falls back to Entity Framework Core filtering:
-
-```csharp
-catch (Exception ex)
-{
-    // Fallback to EF Core filters
-    Console.WriteLine($"PostgreSQL filter failed, falling back to EF Core filters: {ex.Message}");
-    var filterSpec = new InstanceFilterSpecification(filters);
-    return filterSpec.Apply(query);
-}
-```
+For legacy filters, `EfCoreInstanceRepository` falls back to `InstanceFilterSpecification` when filter parsing fails (e.g., invalid format or DB update exceptions). GraphQL filters are validated by `UnifiedFilterService` and `GraphQLFilterParser` before execution.
 
 ## Best Practices
 
@@ -319,9 +391,10 @@ catch (Exception ex)
 
 ### Security Considerations
 
-1. **Input sanitization**: The system automatically sanitizes field names to prevent SQL injection
-2. **Field validation**: Only alphanumeric characters, dots, and underscores are allowed in field names
-3. **Parameter binding**: All values are properly parameterized in SQL queries
+1. **Input validation**: `InputValidator` enforces max filter count, length, and field depth
+2. **Schema/table validation**: `ISchemaValidator` whitelists schema and table names
+3. **Field sanitization**: Field names are sanitized and validated before SQL construction
+4. **Parameter binding**: All values are parameterized via `NpgsqlParameter`
 
 ### Development Guidelines
 
@@ -376,9 +449,14 @@ The filtering system is backward compatible and automatically handles:
 
 ## Conclusion
 
-The instance filtering system provides a robust, high-performance solution for querying workflow instances based on their JSON attributes. By leveraging PostgreSQL native JSONB operations, it delivers excellent performance while maintaining flexibility and ease of use.
+The instance filtering system supports both legacy and GraphQL-style filters, with optional groupBy and aggregation support. It uses PostgreSQL JSONB operations for performance while keeping a safe validation layer for schemas and fields.
 
 For additional questions or advanced use cases, refer to the source code in:
 - `BBT.Workflow.Domain/QueryExtensions/PostgreSqlJsonFilterService.cs`
-- `BBT.Workflow.Domain/QueryExtensions/FilterOperatorParser.cs`
+- `BBT.Workflow.Domain/QueryExtensions/GraphQL/UnifiedFilterService.cs`
+- `BBT.Workflow.Domain/QueryExtensions/GraphQL/GraphQLFilterParser.cs`
+- `BBT.Workflow.Domain/QueryExtensions/InstanceFieldDiscriminator.cs`
+- `BBT.Workflow.Domain/QueryExtensions/InstanceColumnConditionBuilder.cs`
+- `BBT.Workflow.Domain/Security/InputValidator.cs`
+- `BBT.Workflow.Domain/Security/ISchemaValidator.cs`
 - `BBT.Workflow.Infrastructure/Instances/EfCoreInstanceRepository.cs`

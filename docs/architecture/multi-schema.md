@@ -2,7 +2,7 @@
 
 ## Overview
 
-The BBT Workflow Engine provides comprehensive multi-schema support, enabling dynamic database schema creation and management for multi-flow scenarios. This architecture allows different workflows to operate in isolated database schemas while sharing the same application infrastructure, providing excellent separation of concerns and scalability.
+The BBT Workflow Engine provides multi-schema support for isolating workflow data per schema while sharing the same application infrastructure. Schema resolution and switching are provided by the Aether SDK, while schema creation/migration and validation are orchestrated by workflow-specific services.
 
 > **Note**: Multi-schema functionality is now provided by the **Aether SDK** (`BBT.Aether.MultiSchema`). This document describes how the workflow engine utilizes Aether's multi-schema capabilities.
 
@@ -54,7 +54,7 @@ The BBT Workflow Engine provides comprehensive multi-schema support, enabling dy
 
 ## Core Components (Aether SDK)
 
-The multi-schema support is now provided by **Aether SDK** (`BBT.Aether.MultiSchema`). The workflow engine uses the following Aether-provided components:
+Multi-schema support is provided by **Aether SDK** (`BBT.Aether.MultiSchema` and `BBT.Aether.AspNetCore.MultiSchema`). The workflow engine uses the following Aether-provided components:
 
 ### 1. ICurrentSchema Interface (Aether SDK)
 
@@ -78,10 +78,10 @@ Schema resolution is configured during application startup using Aether's `AddSc
 ```csharp
 services.AddSchemaResolution(options =>
 {
-    options.HeaderKey = "X-Workflow";       // HTTP header for schema
-    options.QueryStringKey = "workflow";     // Query string parameter
-    options.RouteValueKey = "workflow";      // Route value key
-    options.ThrowIfNotFound = false;         // Graceful fallback
+    options.HeaderKey = "X-Workflow";
+    options.QueryStringKey = "workflow";
+    options.RouteValueKey = "workflow";
+    options.ThrowIfNotFound = false;
 });
 ```
 
@@ -124,7 +124,7 @@ services.AddAetherDbContext<WorkflowDbContext>((sp, options) =>
 
     options.ReplaceService<IMigrationsSqlGenerator, MultiSchemaNpgsqlMigrationsSqlGenerator>();
     options.AddInterceptors(
-        sp.GetRequiredService<NpgsqlSchemaConnectionInterceptor>(), // Aether SDK interceptor
+        sp.GetRequiredService<NpgsqlSchemaConnectionInterceptor>(),
         sp.GetRequiredService<WorkflowDatabaseInterceptor>(),
         sp.GetRequiredService<WorkflowTransactionInterceptor>()
     );
@@ -135,6 +135,17 @@ services.AddAetherDbContext<WorkflowDbContext>((sp, options) =>
 
 - **`NpgsqlSchemaConnectionInterceptor`**: Aether SDK interceptor that automatically sets the PostgreSQL `search_path` based on `ICurrentSchema.Name`.
 - **`MultiSchemaNpgsqlMigrationsSqlGenerator`**: Custom migration SQL generator for multi-schema support.
+
+### Schema Migration Orchestration
+
+The workflow runtime wraps schema creation and migration with distributed locking to prevent concurrent migrations:
+
+- **`IMultiSchemaMigrator<TContext>`**: Creates schema and applies pending migrations.
+- **`ISchemaMigrationOrchestrator`**: Adds distributed lock protection during migrations.
+
+### Schema Validation
+
+Schema names are validated via `ISchemaValidator` implementations (e.g., `SyncSchemaValidator`) to ensure PostgreSQL-compatible, safe identifiers.
 
 ## Schema Context Usage Patterns
 
@@ -244,6 +255,8 @@ Schema names should follow PostgreSQL identifier rules:
 - Lowercase letters, digits, and underscores only
 - Must start with a letter or underscore
 - Maximum 63 characters (PostgreSQL limit)
+
+Schema names are formatted using `ISchemaNameFormatter` before creation and migration to enforce consistent naming.
 
 ### 3. Error Handling
 

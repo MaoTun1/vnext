@@ -2,34 +2,35 @@
 
 ## Overview
 
-The BBT Workflow Engine implements a sophisticated multi-level caching strategy to optimize performance for workflow definitions, instances, and domain data. The caching system combines local in-memory caching with distributed Redis caching to provide high-performance data access while maintaining consistency across multiple application instances.
+The BBT Workflow Engine uses a multi-level caching strategy for workflow definitions and related components. The cache combines local in-memory snapshots with a distributed cache provider (via Aether SDK) and a runtime backend fallback to keep reads fast while preserving correctness across multiple instances.
 
 ## Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                Application Layer                        │
-│  ┌─────────────────┐  ┌─────────────────┐             │
-│  │  IComponentCache│  │ IInstanceCache  │             │
-│  │      Store      │  │     Store       │             │
-│  └─────────────────┘  └─────────────────┘             │
+│  ┌───────────────────────────────────────────────────┐ │
+│  │              ComponentCacheStore                  │ │
+│  └───────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────┘
+                           │
+┌─────────────────────────────────────────────────────────┐
+│              Domain Cache Context                       │
+│  ┌───────────────────────────────────────────────────┐ │
+│  │ CacheSet<T> (Workflows, Tasks, Schemas, ...)       │ │
+│  └───────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────┘
                            │
 ┌─────────────────────────────────────────────────────────┐
 │              Multi-Level Cache System                   │
-│  ┌─────────────────┐  ┌─────────────────┐             │
-│  │   Local Cache   │  │ Distributed     │             │
-│  │  (In-Memory)    │  │  Cache (Redis)  │             │
-│  │                 │  │                 │             │
-│  │ • Fast Access   │  │ • Shared State  │             │
-│  │ • Thread-Safe   │  │ • Persistence   │             │
-│  │ • Indexed       │  │ • Scalability   │             │
-│  └─────────────────┘  └─────────────────┘             │
+│  ┌─────────────────┐  ┌──────────────────────────────┐ │
+│  │ Local Snapshot  │  │ Distributed Cache (Aether)   │ │
+│  │ (In-Memory)     │  │                              │ │
+│  └─────────────────┘  └──────────────────────────────┘ │
 └─────────────────────────────────────────────────────────┘
                            │
 ┌─────────────────────────────────────────────────────────┐
-│                Database Layer                           │
-│              (PostgreSQL)                               │
+│            Runtime Backend (IRuntimeService)            │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -37,7 +38,7 @@ The BBT Workflow Engine implements a sophisticated multi-level caching strategy 
 
 ### 1. Domain Cache Context
 
-The central orchestrator for all workflow-related caching. Each `CacheSet<T>` is backed by an `ICacheBackend<T>` for database fallback:
+The central orchestrator for cached workflow definitions and related components. Each `CacheSet<T>` is backed by an `ICacheBackend<T>` for runtime fallback:
 
 ```csharp
 public class DomainCacheContext : CacheContext, IDomainCacheContext, IDisposable
@@ -107,7 +108,7 @@ public class CacheSet<T>(
 **Key Features:**
 - **Lock-free reads**: Uses immutable snapshots for fast, concurrent reads
 - **CAS-based writes**: Uses `Interlocked.CompareExchange` for thread-safe updates
-- **Multi-layer caching**: Local → Distributed (Redis) → Database backend
+- **Multi-layer caching**: Local → Distributed → Runtime backend
 - **Automatic cleanup**: TTL and capacity-based eviction
 
 ### 3. Component Cache Store
@@ -117,13 +118,47 @@ Provides high-level API for accessing cached workflow components:
 ```csharp
 public interface IComponentCacheStore
 {
-    Task<Workflow> GetFlowAsync(string domain, string key, string? version, CancellationToken cancellationToken = default);
-    Task<WorkflowTask> GetTaskAsync(string domain, string key, string? version, CancellationToken cancellationToken = default);
-    Task<SchemaDefinition> GetSchemaAsync(string domain, string key, string? version, CancellationToken cancellationToken = default);
-    Task<Function> GetFunctionAsync(string domain, string key, string? version, CancellationToken cancellationToken = default);
-    Task<View> GetViewAsync(string domain, string key, string? version, CancellationToken cancellationToken = default);
-    Task<Extension> GetExtensionAsync(string domain, string key, string? version, CancellationToken cancellationToken = default);
-    Task SetAsync<T>(T entity, CancellationToken cancellationToken = default) where T : class, IDomainEntity;
+    Task<Result<Workflow>> GetFlowAsync(string domain, string key, string? version, CancellationToken cancellationToken = default);
+    Task<Result<WorkflowTask>> GetTaskAsync(string domain, string key, string? version, CancellationToken cancellationToken = default);
+    Task<Result<SchemaDefinition>> GetSchemaAsync(string domain, string key, string? version, CancellationToken cancellationToken = default);
+    Task<Result<Function>> GetFunctionAsync(string domain, string key, string? version, CancellationToken cancellationToken = default);
+    Task<Result<View>> GetViewAsync(string domain, string key, string? version, CancellationToken cancellationToken = default);
+    Task<Result<Extension>> GetExtensionAsync(string domain, string key, string? version, CancellationToken cancellationToken = default);
+    Task<Result<IEnumerable<Extension>>> GetAllExtensionsAsync(string domain, CancellationToken cancellationToken = default);
+    Task<Result> SetAsync<T>(T entity, CancellationToken cancellationToken = default)
+        where T : class, IDomainEntity, IReferenceSetter;
+}
+```
+
+## Dependency Injection
+
+Caching services are registered via `AddCacheServices()` inside `AddApplicationModule()`:
+
+```csharp
+public static IServiceCollection AddApplicationModule(this IServiceCollection services)
+{
+    services.AddCacheServices();
+    return services;
+}
+
+private static void AddCacheServices(this IServiceCollection services)
+{
+    services.AddSingleton<ComponentCacheStore>();
+    services.AddSingleton<IComponentCacheStore>(sp =>
+    {
+        var store = sp.GetRequiredService<ComponentCacheStore>();
+        var metrics = sp.GetRequiredService<IWorkflowMetrics>();
+        var logger = sp.GetRequiredService<ILogger<MetricsAwareComponentCacheStore>>();
+        return store.WithMetrics(metrics, logger);
+    });
+
+    services.AddSingleton<IDomainCacheContext, DomainCacheContext>();
+    services.AddSingleton<ICacheBackend<Workflow>, RuntimeCacheBackend<Workflow>>();
+    services.AddSingleton<ICacheBackend<WorkflowTask>, RuntimeCacheBackend<WorkflowTask>>();
+    services.AddSingleton<ICacheBackend<SchemaDefinition>, RuntimeCacheBackend<SchemaDefinition>>();
+    services.AddSingleton<ICacheBackend<Function>, RuntimeCacheBackend<Function>>();
+    services.AddSingleton<ICacheBackend<View>, RuntimeCacheBackend<View>>();
+    services.AddSingleton<ICacheBackend<Extension>, RuntimeCacheBackend<Extension>>();
 }
 ```
 
@@ -131,29 +166,16 @@ public interface IComponentCacheStore
 
 ### 1. Entity Cache Keys
 
-Each domain entity implements a consistent cache key format:
+Cache keys are derived from the entity `ComponentKey`, domain, key, and version:
 
 ```csharp
-public interface IDomainEntity : IHasKey, IHasVersion, IHasDomain
-{
-    string CacheKey { get; }
-}
-
-// Example implementations
-public class Workflow
-{
-    public string CacheKey => $"{nameof(Workflow)}:{Domain}:{Flow}:{Key}:{Version}";
-}
-
-public class WorkflowTask
-{
-    public string CacheKey => $"{nameof(WorkflowTask)}:{Domain}:{Flow}:{Key}:{Version}";
-}
+private static string CreateCacheKey(T entity)
+    => $"{entity.ComponentKey}:{entity.Domain}:{entity.Key}:{entity.Version}";
 ```
 
 ### 2. Version-Based Indexing
 
-The system maintains version indexes for efficient latest version retrieval:
+The system maintains version indexes (`domain:key`) for efficient latest version retrieval:
 
 ```csharp
 private void UpdateIndex(Dictionary<string, SortedSet<string>> index, T entity)
@@ -171,19 +193,14 @@ private void UpdateIndex(Dictionary<string, SortedSet<string>> index, T entity)
 }
 ```
 
-### 3. Schema-Aware Cache Keys
+### 3. Reference Rehydration
 
-For multi-schema scenarios, cache keys include schema information:
+When data comes from distributed cache or backend, the cache ensures references are populated if missing:
 
 ```csharp
-public class CoreModelCacheKey : ModelCacheKey
+private void EnsureReferenceIsSet(T entity, string cacheKey)
 {
-    readonly string? _schema = (context as WorkflowDbContext)?.SchemaName ?? "public";
-    
-    public override int GetHashCode()
-    {
-        return HashCode.Combine(base.GetHashCode(), _schema);
-    }
+    // Parses cache key and sets reference if missing
 }
 ```
 
@@ -206,7 +223,7 @@ public async Task<Result<T>> GetAsync(string cacheKey, CancellationToken cancell
         return Result<T>.Ok(item.Value);
     }
 
-    // 2) Distributed cache - network errors will throw
+    // 2) Distributed cache - errors are logged and fallback continues
     try
     {
         var fromDistributed = await distributedCache.GetAsync<T>(cacheKey, cancellationToken);
@@ -222,7 +239,7 @@ public async Task<Result<T>> GetAsync(string cacheKey, CancellationToken cancell
         _logger.LogError(ex, "Error reading from distributed cache for {CacheKey}", cacheKey);
     }
 
-    // 3) Database backend fallback
+    // 3) Runtime backend fallback
     var fromDbResult = await backend.LoadAsync(domain, key, version, cancellationToken);
     if (!fromDbResult.IsSuccess)
         return fromDbResult;
@@ -235,9 +252,10 @@ public async Task<Result<T>> GetAsync(string cacheKey, CancellationToken cancell
 
 ### 2. Distributed Cache (Aether SDK)
 
-**Purpose**: Shared state across application instances
-**Implementation**: `IDistributedCacheService` from Aether SDK
-**Scope**: All application instances
+**Purpose**: Shared state across application instances  
+**Implementation**: `IDistributedCacheService` from Aether SDK  
+**Scope**: All application instances  
+**Note**: The concrete provider (e.g., Redis) is configured outside this module.
 
 ```csharp
 public async Task<Result> SetAsync(T entity, CancellationToken cancellationToken = default)
@@ -254,7 +272,7 @@ public async Task<Result> SetAsync(T entity, CancellationToken cancellationToken
 }
 ```
 
-### 3. Database Backend (ICacheBackend<T>)
+### 3. Runtime Backend (ICacheBackend<T>)
 
 **Purpose**: Ultimate source of truth when cache misses occur
 **Implementation**: `ICacheBackend<T>` interface with runtime service
@@ -270,80 +288,20 @@ public interface ICacheBackend<T>
 }
 ```
 
-## Redis Configuration
-
-### 1. Standalone Configuration
-
-```json
-{
-  "Redis": {
-    "Mode": "Standalone",
-    "InstanceName": "workflow-api",
-    "ConnectionTimeout": 5000,
-    "DefaultDatabase": 0,
-    "Password": "",
-    "Ssl": false,
-    "Standalone": {
-      "EndPoints": ["localhost:6379"]
-    },
-    "RetryPolicy": {
-      "MaxRetries": 3,
-      "RetryTimeout": 1000
-    }
-  }
-}
-```
-
-### 2. Cluster Configuration
-
-```json
-{
-  "Redis": {
-    "Mode": "Cluster",
-    "InstanceName": "workflow-api",
-    "ConnectionTimeout": 5000,
-    "DefaultDatabase": 0,
-    "Password": "ENV_REDIS_PASSWORD",
-    "Ssl": false,
-    "Cluster": {
-      "EndPoints": [
-        "redis-cluster-1.example.com:6379",
-        "redis-cluster-2.example.com:6379",
-        "redis-cluster-3.example.com:6379"
-      ]
-    }
-  }
-}
-```
-
 ## Cache Initialization
 
-### 1. Hosted Service for Cache Warm-up
+### 1. RuntimeCacheInitializer
+
+Cache warm-up is handled by `RuntimeCacheInitializer`, which loads all definition types and initializes the `IDomainCacheContext`:
 
 ```csharp
-public class CacheInitializationHostedService : IHostedService
+public sealed class RuntimeCacheInitializer : IRuntimeCacheInitializer
 {
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        // Load all system components into cache
-        var flows = await GetComponentAsync<Workflow>(RuntimeSysSchemaInfo.Flows, cancellationToken);
-        var tasks = await GetComponentAsync<WorkflowTask>(RuntimeSysSchemaInfo.Tasks, cancellationToken);
-        var functions = await GetComponentAsync<Function>(RuntimeSysSchemaInfo.Functions, cancellationToken);
-        var views = await GetComponentAsync<View>(RuntimeSysSchemaInfo.Views, cancellationToken);
-        var schemas = await GetComponentAsync<SchemaDefinition>(RuntimeSysSchemaInfo.Schemas, cancellationToken);
-        var extensions = await GetComponentAsync<Extension>(RuntimeSysSchemaInfo.Extensions, cancellationToken);
-
-        var initialData = new Dictionary<Type, object>
-        {
-            { typeof(Workflow), flows },
-            { typeof(WorkflowTask), tasks },
-            { typeof(SchemaDefinition), schemas },
-            { typeof(Function), functions },
-            { typeof(View), views },
-            { typeof(Extension), extensions }
-        };
-
-        await context.InitializeAsync(initialData, cancellationToken);
+        // Load workflows, tasks, functions, views, schemas, extensions in parallel
+        // Build initialData dictionary and call domainCacheContext.InitializeAsync(...)
+        // Optionally register domain via IDomainRegistrationService when discovery is enabled
     }
 }
 ```
@@ -351,47 +309,38 @@ public class CacheInitializationHostedService : IHostedService
 ### 2. Bulk Loading
 
 ```csharp
-public async Task LoadAllAsync(object data, CancellationToken cancellationToken = default)
+public Task LoadAllAsync(object data, CancellationToken cancellationToken = default)
 {
     if (data is not IEnumerable<T> entities)
         throw new ArgumentException($"Invalid data type for {typeof(T).Name}");
 
-    var allEntities = new Dictionary<string, T>();
-    var allIndex = new Dictionary<string, SortedSet<string>>();
-    
+    var entries = new Dictionary<string, CacheItem<T>>();
+    var index = new Dictionary<string, SortedSet<string>>();
+
     foreach (var entity in entities)
     {
-        var cacheKey = entity.CacheKey;
-        
-        // Store in distributed cache
-        await cacheResolver().SetAsync(cacheKey, entity, CacheOptions, cancellationToken);
-        
-        // Store in local cache
-        allEntities[cacheKey] = entity;
-        UpdateIndex(allIndex, entity);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var cacheKey = CreateCacheKey(entity);
+        var item = new CacheItem<T>(entity);
+        entries[cacheKey] = item;
+        UpdateIndex(index, entity);
     }
 
-    // Update local cache atomically
-    _cacheLock.EnterWriteLock();
-    try
-    {
-        _localCache = allEntities;
-        _index.Clear();
-        foreach (var kvp in allIndex)
-        {
-            _index[kvp.Key] = kvp.Value;
-        }
-    }
-    finally
-    {
-        _cacheLock.ExitWriteLock();
-    }
+    var snapshot = new CacheSnapshot<T>(
+        entries.ToImmutableDictionary(),
+        index.ToImmutableDictionary(kvp => kvp.Key, kvp => new SortedSet<string>(kvp.Value)));
+
+    Interlocked.Exchange(ref _snapshot, snapshot);
+    return Task.CompletedTask;
 }
 ```
 
 ## Version Management
 
 ### 1. Semantic Version Comparison
+
+`CacheSet<T>` uses `SemVersionComparer` for ordering and `InstanceDataVersionComparer` for smart version matching (latest, full, artifact, partial).
 
 ```csharp
 public class SemVersionComparer : IComparer<string>
@@ -410,32 +359,15 @@ public class SemVersionComparer : IComparer<string>
 
 ### 2. Latest Version Retrieval
 
+`CacheSet<T>` uses the in-memory index to resolve the latest version, and falls back to the backend if needed:
+
 ```csharp
-public async Task<T?> GetLatestByNameAsync(
-    string domain, 
-    string flow, 
+public Task<Result<T>> GetLatestByNameAsync(
+    string domain,
     string name,
     CancellationToken cancellationToken = default)
 {
-    string? latestVersion;
-
-    _cacheLock.EnterReadLock();
-    try
-    {
-        string indexKey = CreateIndexKey(domain, name);
-        if (!_index.TryGetValue(indexKey, out var versionSet) || versionSet.Count == 0)
-        {
-            return null;
-        }
-        latestVersion = versionSet.Max; // Highest version due to SemVersionComparer
-    }
-    finally
-    {
-        _cacheLock.ExitReadLock();
-    }
-
-    var latestCacheKey = CreateCacheKeyWithT(domain, flow, name, latestVersion);
-    return await GetAsync(latestCacheKey, cancellationToken);
+    // Check snapshot index for latest version, otherwise load from backend
 }
 ```
 
@@ -533,160 +465,34 @@ public int Cleanup(TimeSpan? ttl = null, int? maxItems = null, CancellationToken
 }
 ```
 
-## Performance Optimizations
-
-### 1. Connection Pooling
-
-```csharp
-services.AddHttpClient<HttpTaskExecutor>(client =>
-{
-    client.Timeout = TimeSpan.FromSeconds(30);
-})
-.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-{
-    MaxConnectionsPerServer = 10
-});
-```
-
-### 2. Lazy Loading and Initialization
-
-```csharp
-private static readonly Lazy<MetadataReference[]> DefaultReferences = new(() => new[]
-{
-    MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-    MetadataReference.CreateFromFile(typeof(IMapping).Assembly.Location),
-    // ... other references
-});
-```
-
-### 3. Optimized Serialization
-
-```csharp
-public static class JsonSerializerConstants
-{
-    public static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
-}
-```
-
-## Multi-Schema Cache Support
-
-### 1. Schema-Aware Model Caching
-
-```csharp
-public class DynamicSchemaModelCacheKeyFactory : IModelCacheKeyFactory
-{
-    public object Create(DbContext context, bool designTime)
-        => new CoreModelCacheKey(context, designTime);
-}
-
-class CoreModelCacheKey : ModelCacheKey
-{
-    readonly string? _schema = (context as WorkflowDbContext)?.SchemaName ?? "public";
-    
-    protected override bool Equals(ModelCacheKey other)
-    {
-        return base.Equals(other)
-               && other is CoreModelCacheKey otherKey
-               && otherKey._schema == _schema;
-    }
-}
-```
-
-### 2. Schema Context Management
-
-```csharp
-public async Task<T> GetAsync<T>(
-    string domain,
-    string flow,
-    string key,
-    string? version,
-    CancellationToken cancellationToken = default)
-    where T : class, IDomainEntity
-{
-    var cacheSet = GetCacheSet<T>();
-
-    var entity = version.IsNullOrEmpty()
-        ? await cacheSet.GetLatestByNameAsync(domain, flow, key, cancellationToken)
-        : await cacheSet.GetAsync($"{typeof(T).Name}:{domain}:{flow}:{key}:{version}", cancellationToken);
-
-    if (entity == null)
-    {
-        throw new EntityNotFoundException(typeof(T), new { domain, key, version });
-    }
-
-    return entity;
-}
-```
-
 ## Monitoring and Diagnostics
 
 ### 1. Cache Performance Metrics
 
+Metrics are collected by `MetricsAwareComponentCacheStore`, which wraps cache reads and records hit/miss:
+
 ```csharp
-public class CacheSet<T>
+private async Task<Result<T>> ExecuteWithMetricsAsync<T>(
+    string cacheTypeName,
+    Func<Task<Result<T>>> operation)
 {
-    private readonly ILogger _logger;
-    
-    public async Task<T?> GetAsync(string cacheKey, CancellationToken cancellationToken = default)
+    var result = await operation();
+    if (result.IsSuccess)
     {
-        var stopwatch = Stopwatch.StartNew();
-        
-        // Check local cache first
-        var localResult = GetFromLocalCache(cacheKey);
-        if (localResult != null)
-        {
-            _logger.LogDebug("Cache hit (local): {CacheKey} in {ElapsedMs}ms", 
-                cacheKey, stopwatch.ElapsedMilliseconds);
-            return localResult;
-        }
-        
-        // Check distributed cache
-        var distributedResult = await GetFromDistributedCache(cacheKey, cancellationToken);
-        if (distributedResult != null)
-        {
-            _logger.LogDebug("Cache hit (distributed): {CacheKey} in {ElapsedMs}ms", 
-                cacheKey, stopwatch.ElapsedMilliseconds);
-            return distributedResult;
-        }
-        
-        _logger.LogDebug("Cache miss: {CacheKey} in {ElapsedMs}ms", 
-            cacheKey, stopwatch.ElapsedMilliseconds);
-        return null;
+        workflowMetrics.RecordCacheHit(cacheTypeName);
     }
+    else
+    {
+        workflowMetrics.RecordCacheMiss(cacheTypeName);
+    }
+
+    return result;
 }
 ```
 
-### 2. Health Checks
+### 2. Metrics Integration
 
-```csharp
-public class CacheHealthCheck : IHealthCheck
-{
-    public async Task<HealthCheckResult> CheckHealthAsync(
-        HealthCheckContext context, 
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            // Test Redis connectivity
-            await _distributedCache.SetStringAsync("health_check", "ok", cancellationToken);
-            var result = await _distributedCache.GetStringAsync("health_check", cancellationToken);
-            
-            return result == "ok" 
-                ? HealthCheckResult.Healthy("Cache is operational")
-                : HealthCheckResult.Unhealthy("Cache test failed");
-        }
-        catch (Exception ex)
-        {
-            return HealthCheckResult.Unhealthy("Cache is unavailable", ex);
-        }
-    }
-}
-```
+`MetricsAwareComponentCacheStore` decorates cache access to record hit/miss and approximate size metrics without changing cache behavior.
 
 ## Result Pattern Integration
 
@@ -698,7 +504,8 @@ Following the Result Pattern guidelines:
 
 - **Expected Errors (Cache Miss)** → `Result.NotFound` - Domain error, expected scenario
 - **Validation Errors (Invalid Key)** → `Result.Validation` - Input validation failure
-- **Infrastructure Errors (Network, DB)** → Exception - Unexpected errors bubble up to middleware
+- **Distributed Cache Errors** → Logged and fallback continues to backend
+- **Backend Infrastructure Errors** → Exceptions bubble up to middleware
 
 ### Error Handling Strategy
 
@@ -758,7 +565,7 @@ public static class WorkflowErrorCodes
 
 ### Cache Backend Implementation
 
-The `RuntimeCacheBackend` follows Result Pattern guidelines:
+`RuntimeCacheBackend` loads entities through `IRuntimeService` and applies smart version matching:
 
 ```csharp
 public async Task<Result<T>> LoadAsync(
@@ -767,18 +574,37 @@ public async Task<Result<T>> LoadAsync(
     string? version,
     CancellationToken cancellationToken = default)
 {
-    // Infrastructure exceptions (DB, connection) bubble up - expected per Railway Pattern
-    var entity = await runtimeService.GetAsync<T>(key, version, cancellationToken);
-    
-    if (entity is null)
+    runtimeInfoProvider.Check(domain);
+
+    if (InstanceDataVersionComparer.IsFullVersion(version))
     {
-        return Result<T>.Fail(Error.NotFound(
-            WorkflowErrorCodes.CacheItemNotFound,
-            $"{typeof(T).Name} not found in runtime backend",
-            $"{domain}/{key}@{version}"));
+        var entity = await runtimeService.GetAsync<T>(key, version!, cancellationToken);
+        return entity is null
+            ? Result<T>.Fail(CacheErrors.ItemNotFoundInBackend<T>(domain, key, version))
+            : Result<T>.Ok(entity);
     }
-    
-    return Result<T>.Ok(entity);
+
+    var all = await runtimeService.GetAsync<T>(cancellationToken);
+    var bestMatchVersion = InstanceDataVersionComparer.FindBestMatch(
+        all.Where(e => e is not null &&
+                       string.Equals(e.Domain, domain, StringComparison.OrdinalIgnoreCase) &&
+                       string.Equals(e.Key, key, StringComparison.OrdinalIgnoreCase))
+           .Select(e => e!.Version)
+           .ToList(),
+        version);
+
+    if (string.IsNullOrEmpty(bestMatchVersion))
+        return Result<T>.Fail(CacheErrors.ItemNotFoundInBackend<T>(domain, key, version));
+
+    var matched = all.FirstOrDefault(e =>
+        e is not null &&
+        string.Equals(e.Domain, domain, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(e.Key, key, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(e.Version, bestMatchVersion, StringComparison.OrdinalIgnoreCase));
+
+    return matched is null
+        ? Result<T>.Fail(CacheErrors.ItemNotFoundInBackend<T>(domain, key, version))
+        : Result<T>.Ok(matched);
 }
 ```
 
@@ -799,7 +625,7 @@ The cache uses a three-tier lookup strategy with the Result pattern:
 │     ├─ MISS → Continue to step 3                        │
 │     └─ ERROR → Log and continue to step 3               │
 ├─────────────────────────────────────────────────────────┤
-│  3. Database Backend (ICacheBackend<T>)                 │
+│  3. Runtime Backend (ICacheBackend<T>)                  │
 │     ├─ FOUND → Update both caches → Return Ok           │
 │     └─ NOT_FOUND → Return Result<T>.Fail(NotFound)      │
 └─────────────────────────────────────────────────────────┘
@@ -808,7 +634,7 @@ The cache uses a three-tier lookup strategy with the Result pattern:
 **Key Points:**
 - Local cache uses immutable snapshots for lock-free reads
 - Distributed cache errors are logged but don't fail the request
-- Database backend is the ultimate source of truth
+- Runtime backend is the ultimate source of truth
 - Result pattern provides explicit success/failure handling
 
 ### Metrics Integration with Result Pattern
@@ -843,93 +669,6 @@ private async Task<Result<T>> ExecuteWithMetricsAsync<T>(string cacheTypeName, F
         workflowMetrics.RecordCacheMiss(cacheTypeName);
         logger.LogWarning(ex, "Cache operation failed for {CacheType}", cacheTypeName);
         throw;
-    }
-}
-```
-
-### Railway Pipeline with Cache Operations
-
-```csharp
-// Example: Workflow execution with cache integration
-public async Task<Result<WorkflowInstance>> ExecuteWorkflowAsync(
-    ExecuteWorkflowCommand cmd,
-    CancellationToken cancellationToken)
-{
-    return await Result
-        .Ok(cmd)
-        .BindAsync(ValidateCommandAsync)
-        .BindAsync(async ctx => 
-        {
-            // Get workflow from cache (returns Result)
-            var workflowResult = await cacheStore.GetFlowAsync(
-                ctx.Domain, 
-                ctx.WorkflowKey, 
-                ctx.Version, 
-                cancellationToken);
-                
-            if (!workflowResult.IsSuccess)
-            {
-                return Result<ExecutionContext>.Fail(workflowResult.Error);
-            }
-            
-            return Result<ExecutionContext>.Ok(new ExecutionContext
-            {
-                Command = ctx,
-                Workflow = workflowResult.Value
-            });
-        })
-        .BindAsync(ExecuteTransitionAsync)
-        .TapAsync(PublishEventAsync);
-}
-```
-
-### Extension Methods for Railway Operations
-
-```csharp
-public static class CacheResultExtensions
-{
-    /// <summary>
-    /// Ensures entity exists in cache, returning appropriate error if not found
-    /// </summary>
-    public static Result<T> EnsureCacheHit<T>(
-        this Result<T> result, 
-        string entityType, 
-        string identifier)
-    {
-        if (!result.IsSuccess && result.Error.Prefix == ErrorCodes.Prefixes.NotFound)
-        {
-            return Result<T>.Fail(Error.NotFound(
-                WorkflowErrorCodes.CacheItemNotFound,
-                $"{entityType} not found in cache: {identifier}",
-                identifier));
-        }
-        
-        return result;
-    }
-    
-    /// <summary>
-    /// Gets cached entity by reference with Result pattern
-    /// </summary>
-    public static Task<Result<T>> GetCachedAsync<T>(
-        this IComponentCacheStore store,
-        IReference reference,
-        CancellationToken cancellationToken = default)
-        where T : class, IDomainEntity, IReferenceSetter
-    {
-        if (typeof(T) == typeof(Workflow))
-            return (Task<Result<T>>)(object)store.GetFlowAsync(reference, cancellationToken);
-        if (typeof(T) == typeof(WorkflowTask))
-            return (Task<Result<T>>)(object)store.GetTaskAsync(reference, cancellationToken);
-        if (typeof(T) == typeof(SchemaDefinition))
-            return (Task<Result<T>>)(object)store.GetSchemaAsync(reference, cancellationToken);
-        if (typeof(T) == typeof(Function))
-            return (Task<Result<T>>)(object)store.GetFunctionAsync(reference, cancellationToken);
-        if (typeof(T) == typeof(View))
-            return (Task<Result<T>>)(object)store.GetViewAsync(reference, cancellationToken);
-        if (typeof(T) == typeof(Extension))
-            return (Task<Result<T>>)(object)store.GetExtensionAsync(reference, cancellationToken);
-            
-        throw new NotSupportedException($"Type {typeof(T).Name} is not supported");
     }
 }
 ```
@@ -983,7 +722,7 @@ var result = await componentCache.GetFlowAsync("banking", "loan-approval", null,
 
 if (!result.IsSuccess)
 {
-    logger.LogWarning("Workflow not found: {Error}", result.Error.Message);
+    logger.LogDebug("Workflow not found: {Error}", result.Error.Message);
     return Result<WorkflowInstance>.Fail(result.Error);
 }
 
@@ -1039,7 +778,8 @@ await cacheContext.Workflows.LoadAllAsync(workflows, cancellationToken);
 ### 3. Error Handling with Result Pattern
 - **Cache Miss (Expected)**: Return `Result.NotFound` - this is a domain condition, not an error to throw
 - **Validation Errors**: Return `Result.Validation` for invalid cache keys or entity data
-- **Infrastructure Errors**: Let exceptions bubble up (DB connection, network timeout) - middleware will handle
+- **Distributed Cache Errors**: Log and continue to backend fallback
+- **Backend Infrastructure Errors**: Let exceptions bubble up (DB connection, runtime access) - middleware will handle
 - **Never use `Result.Try`** for cache operations - cache miss is expected, not exceptional
 - Always check `Result.IsSuccess` before accessing `Result.Value`
 - Use Railway Pattern for composing cache operations with business logic
@@ -1054,9 +794,9 @@ await cacheContext.Workflows.LoadAllAsync(workflows, cancellationToken);
 - **DO** return `Result<T>` for Get operations
 - **DO** return `Result` for Set/Invalidate operations  
 - **DO** use `Result.NotFound` for cache misses
-- **DO** let infrastructure exceptions throw naturally
+- **DO** let backend infrastructure exceptions throw naturally
 - **DON'T** wrap cache operations in try-catch unless handling specific infrastructure errors
 - **DON'T** use `Result.Try` - cache miss is an expected domain scenario
 - **DON'T** treat cache miss as an exception - it's normal flow
 
-The caching strategy provides excellent performance while maintaining data consistency across the distributed workflow engine, enabling high-throughput workflow processing with minimal database load. The Result Pattern integration ensures predictable, composable error handling aligned with Railway Pattern best practices. 
+The caching strategy provides excellent performance while maintaining data consistency across the distributed workflow engine, enabling high-throughput workflow processing with minimal backend load. The Result Pattern integration ensures predictable, composable error handling aligned with Railway Pattern best practices. 
