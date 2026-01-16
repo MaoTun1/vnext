@@ -289,6 +289,7 @@ public static class InstanceColumnConditionBuilder
             "Key" => ColumnType.String,
             "Flow" => ColumnType.String,
             "CurrentState" => ColumnType.String,
+            "EffectiveState" => ColumnType.String,
             "Status" => ColumnType.String,
             "CreatedAt" => ColumnType.DateTime,
             "ModifiedAt" => ColumnType.DateTime,
