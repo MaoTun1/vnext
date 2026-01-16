@@ -16,7 +16,7 @@ public static class InstanceFieldDiscriminator
         "Key",
         "Flow",
         "CurrentState",
-        "State", // Alias for CurrentState
+        "State", // Alias for EffectiveState
         "Status",
         "CreatedAt",
         "ModifiedAt",
@@ -71,9 +71,9 @@ public static class InstanceFieldDiscriminator
         if (string.IsNullOrWhiteSpace(fieldName))
             throw new ArgumentException("Field name cannot be null or empty", nameof(fieldName));
 
-        // Handle alias: "State" -> "CurrentState"
+        // Handle alias: "State" -> "EffectiveState"
         if (fieldName.Equals("State", StringComparison.OrdinalIgnoreCase))
-            return "CurrentState";
+            return "EffectiveState";
 
         // Find the matching column name (case-insensitive match)
         var matchedColumn = InstanceColumns.FirstOrDefault(c => 
