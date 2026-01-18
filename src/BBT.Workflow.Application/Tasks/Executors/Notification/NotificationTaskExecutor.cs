@@ -2,6 +2,8 @@ using System.Text;
 using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Execution;
+using BBT.Workflow.Gateway;
+using BBT.Workflow.Instances;
 using BBT.Workflow.Logging;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks.Mapping;
@@ -22,24 +24,23 @@ public sealed class NotificationTaskExecutor : TaskExecutorBase<NotificationTask
     private readonly IRemoteInvokerService _remoteInvoker;
     private readonly IScriptEngine _scriptEngine;
     private readonly INotificationScriptProvider _scriptProvider;
+    private readonly IInstanceQueryGateway _instanceQueryGateway;
 
     /// <summary>
     /// Initializes a new instance of NotificationTaskExecutor.
     /// </summary>
-    /// <param name="remoteInvoker">The remote invoker service for task execution.</param>
-    /// <param name="scriptEngine">The script engine for mapping execution.</param>
-    /// <param name="scriptProvider">The notification script provider for default scripts.</param>
-    /// <param name="logger">The logger.</param>
     public NotificationTaskExecutor(
         IRemoteInvokerService remoteInvoker,
         IScriptEngine scriptEngine,
         INotificationScriptProvider scriptProvider,
+        IInstanceQueryGateway instanceQueryGateway,
         ILogger<NotificationTaskExecutor> logger)
         : base(logger)
     {
         _remoteInvoker = remoteInvoker;
         _scriptEngine = scriptEngine;
         _scriptProvider = scriptProvider;
+        _instanceQueryGateway = instanceQueryGateway;
     }
 
     /// <inheritdoc />
@@ -67,6 +68,17 @@ public sealed class NotificationTaskExecutor : TaskExecutorBase<NotificationTask
         if (string.IsNullOrEmpty(scriptCode))
         {
             return Result<ScriptResponse?>.Ok(null);
+        }
+
+        var stateResult = await InjectInstanceStateAsync(context, cancellationToken);
+        if (!stateResult.IsSuccess)
+        {
+            Logger.TaskInputHandlerFailed(
+                task.Key,
+                TaskType.ToString(),
+                context.ScriptContext.Instance.Id,
+                stateResult.Error.Message ?? "Failed to resolve instance state");
+            return Result<ScriptResponse?>.Fail(stateResult.Error);
         }
         
         var result = await ResultExtensions.TryAsync<ScriptResponse?>(async ct =>
@@ -182,5 +194,36 @@ public sealed class NotificationTaskExecutor : TaskExecutorBase<NotificationTask
         }
 
         return result;
+    }
+
+    private async Task<Result> InjectInstanceStateAsync(
+        TaskExecutorContext context,
+        CancellationToken cancellationToken)
+    {
+        var instance = context.ScriptContext.Instance;
+        var instanceIdentifier = !string.IsNullOrWhiteSpace(instance.Key)
+            ? instance.Key
+            : instance.Id.ToString();
+
+        var input = new GetFunctionWithInstanceInput
+        {
+            Domain = context.ScriptContext.Workflow.Domain,
+            Workflow = context.ScriptContext.Workflow.Key,
+            Instance = instanceIdentifier,
+            Version = context.ScriptContext.Workflow.Version,
+            Extensions = null
+        };
+
+        var stateResult = await _instanceQueryGateway.GetFunctionWithStateAsync(input, cancellationToken);
+        if (!stateResult.IsSuccess)
+        {
+            return Result.Fail(Error.Failure(
+                WorkflowErrorCodes.TaskExecution,
+                $"Notification task state fetch failed: {stateResult.Error.Message}",
+                detail: stateResult.Error.Detail));
+        }
+
+        context.ScriptContext.SetBody(new { state = stateResult.Value });
+        return Result.Ok();
     }
 }
