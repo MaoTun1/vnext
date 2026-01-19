@@ -56,6 +56,21 @@ public sealed class LocalInstanceQueryGateway : IInstanceQueryGateway
     }
 
     /// <inheritdoc />
+    public async Task<Result<InstanceListWithGroupsResponse<GetInstanceOutput>>> GetInstanceListAsync(
+        GetInstanceListInput input,
+        CancellationToken cancellationToken = default)
+    {
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        var currentSchema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
+        var queryService = scope.ServiceProvider.GetRequiredService<IInstanceQueryAppService>();
+
+        using (currentSchema.Use(input.Workflow))
+        {
+            return await queryService.GetInstanceListAsync(input, cancellationToken);
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<Result<GetInstanceHistoryOutput>> GetInstanceHistoryAsync(
         GetInstanceHistoryInput input,
         CancellationToken cancellationToken = default)

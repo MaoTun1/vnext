@@ -48,7 +48,7 @@ public sealed class InstanceQueryAppService(
 
                     var result = await BuildInstanceOutputAsync(
                         input.Domain,
-                        input.Extension,
+                        input.Extensions,
                         input.Workflow,
                         instance,
                         instance.LatestData,
@@ -200,7 +200,7 @@ public sealed class InstanceQueryAppService(
                 {
                     var transitionOutputResult = await BuildInstanceOutputAsync(
                         input.Domain,
-                        input.Extension,
+                        input.Extensions,
                         input.Workflow,
                         instance,
                         instanceData,
