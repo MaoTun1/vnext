@@ -6,6 +6,27 @@ and DDD. It ships two API hosts:
 - **Orchestration API**: client-facing workflow/instance operations
 - **Execution API**: internal task execution and background processing
 
+## Prerequisites
+
+- .NET 10 SDK (10.0.101 or later)
+- Docker (for container builds)
+
+### First-Time Setup (.NET 10)
+
+If you're building with .NET 10 for the first time, run the setup script once:
+
+**macOS/Linux:**
+```bash
+./scripts/setup-netstandard-ref.sh
+```
+
+**Windows:**
+```powershell
+.\scripts\setup-netstandard-ref.ps1
+```
+
+This installs the `NETStandard.Library.Ref` targeting pack required by PostSharp. See [.NET 10 Setup Guide](docs/guides/net10-setup.md) for details.
+
 ## Quick Start
 
 ```bash
