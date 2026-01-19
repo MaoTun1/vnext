@@ -1,7 +1,10 @@
+using System;
 using System.Net.Http.Json;
 using System.Text.Json;
+using BBT.Workflow.ExceptionHandling;
 using BBT.Workflow.Runtime;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -17,6 +20,7 @@ public sealed class DomainRegistrationService(
     IRuntimeInfoProvider runtimeInfoProvider,
     IOptions<ServiceDiscoveryOptions> serviceDiscoveryOptions,
     IConfiguration configuration,
+    IHostEnvironment hostEnvironment,
     ILogger<DomainRegistrationService> logger) : IDomainRegistrationService
 {
     /// <summary>
@@ -43,6 +47,14 @@ public sealed class DomainRegistrationService(
                 "Domain registration skipped: '{ConfigKey}' is not configured",
                 VNextApiBaseUrlKey);
             return;
+        }
+
+        if (IsLocalhostBaseUrl(vNextApiBaseUrl) && !hostEnvironment.IsDevelopment())
+        {
+            throw new InvalidConfigurationException(
+                $"Invalid configuration: '{VNextApiBaseUrlKey}' points to localhost ('{vNextApiBaseUrl}') " +
+                $"in environment '{hostEnvironment.EnvironmentName}'. " +
+                "Use a reachable base URL in non-development environments.");
         }
 
         var domainName = runtimeInfoProvider.Domain;
@@ -106,4 +118,24 @@ public sealed class DomainRegistrationService(
                 domainName);
         }
     }
+
+    private static bool IsLocalhostBaseUrl(string baseUrl)
+    {
+        if (Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        {
+            return IsLocalhostHost(uri.Host);
+        }
+
+        return ContainsLocalhostToken(baseUrl);
+    }
+
+    private static bool IsLocalhostHost(string host)
+        => host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+           || host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+           || host.Equals("::1", StringComparison.OrdinalIgnoreCase);
+
+    private static bool ContainsLocalhostToken(string baseUrl)
+        => baseUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase)
+           || baseUrl.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+           || baseUrl.Contains("::1", StringComparison.OrdinalIgnoreCase);
 }
