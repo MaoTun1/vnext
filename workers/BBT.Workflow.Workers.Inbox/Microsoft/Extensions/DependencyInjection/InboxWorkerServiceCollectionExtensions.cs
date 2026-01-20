@@ -42,7 +42,6 @@ public static class InboxWorkerServiceCollectionExtensions
             .AddExceptionHandling()
             .AddRuntimeMiddleware()
             .AddHeaderService()
-            .AddWorkflowHttpClient() // TODO: Düşün!!!!
             .AddHostedServices()
             .AddAppHealthChecks();
         
