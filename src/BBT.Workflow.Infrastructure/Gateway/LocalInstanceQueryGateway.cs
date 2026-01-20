@@ -126,7 +126,9 @@ public sealed class LocalInstanceQueryGateway : IInstanceQueryGateway
                 Domain = input.Domain,
                 Workflow = input.Workflow,
                 Version = input.Version,
-                Instance = input.Instance
+                Instance = input.Instance,
+                Headers=input.Headers,
+                QueryParameters=input.QueryParams
             };
             return await queryService.GetPlatformSpecificViewAsync(viewInput, platform, transitionKey, cancellationToken);
         }
