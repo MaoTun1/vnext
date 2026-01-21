@@ -39,14 +39,23 @@ public sealed class DomainRegistrationService(
     public async Task RegisterDomainAsync(CancellationToken cancellationToken = default)
     {
         var options = serviceDiscoveryOptions.Value;
+
+        // Check if service discovery is enabled
+        if (!options.Enabled)
+        {
+            logger.LogDebug("Service discovery is disabled. Skipping domain registration");
+            return;
+        }
+
+        logger.LogInformation("Service discovery is enabled. Starting domain registration...");
+
         var vNextApiBaseUrl = configuration[VNextApiBaseUrlKey];
 
         if (string.IsNullOrWhiteSpace(vNextApiBaseUrl))
         {
-            logger.LogWarning(
-                "Domain registration skipped: '{ConfigKey}' is not configured",
-                VNextApiBaseUrlKey);
-            return;
+            throw new InvalidConfigurationException(
+                $"Service discovery is enabled, but '{VNextApiBaseUrlKey}' is not configured. " +
+                "Either disable service discovery or configure the base URL.");
         }
 
         if (IsLocalhostBaseUrl(vNextApiBaseUrl) && !hostEnvironment.IsDevelopment())
@@ -63,7 +72,7 @@ public sealed class DomainRegistrationService(
         var appId = configuration["DAPR_APP_ID"];
         
         logger.LogInformation(
-            "Starting domain registration for domain '{DomainName}' with baseUrl '{BaseUrl}' and healthUrl '{HealthUrl}' to registry '{RegistryUrl}'",
+            "Registering domain '{DomainName}' with baseUrl '{BaseUrl}' and healthUrl '{HealthUrl}' to registry '{RegistryUrl}'",
             domainName, baseUrl, healthUrl, options.BaseUrl);
 
         var requestBody = new
@@ -100,22 +109,25 @@ public sealed class DomainRegistrationService(
             else
             {
                 var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                logger.LogWarning(
-                    "Domain registration failed for domain '{DomainName}'. Status: {StatusCode}, Error: {Error}",
-                    domainName, response.StatusCode, errorContent);
+                var reason = $"HTTP {(int)response.StatusCode} - {errorContent}";
+                
+                throw new DomainRegistrationFailedException(domainName, requestUrl, reason);
             }
+        }
+        catch (DomainRegistrationFailedException)
+        {
+            // Re-throw domain registration exceptions as-is
+            throw;
         }
         catch (HttpRequestException ex)
         {
-            logger.LogWarning(ex,
-                "Domain registration HTTP request failed for domain '{DomainName}'. Registry might be unavailable at '{RegistryUrl}'",
-                domainName, requestUrl);
+            var reason = $"HTTP request failed: {ex.Message}. Registry might be unavailable.";
+            throw new DomainRegistrationFailedException(domainName, requestUrl, reason);
         }
         catch (TaskCanceledException ex) when (ex.CancellationToken != cancellationToken)
         {
-            logger.LogWarning(ex,
-                "Domain registration request timed out for domain '{DomainName}'",
-                domainName);
+            var reason = "Request timed out. Registry might be slow or unavailable.";
+            throw new DomainRegistrationFailedException(domainName, requestUrl, reason);
         }
     }
 
