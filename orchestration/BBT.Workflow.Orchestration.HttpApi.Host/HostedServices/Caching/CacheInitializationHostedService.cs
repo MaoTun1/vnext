@@ -30,6 +30,12 @@ public class CacheInitializationHostedService(
             logger.LogCritical(ex, "Domain registration failed. Application startup will be aborted.");
             throw;
         }
+        catch (InvalidConfigurationException ex)
+        {
+            // Configuration errors are critical and should crash the application
+            logger.LogCritical(ex, "Invalid configuration detected. Application startup will be aborted.");
+            throw;
+        }
         catch (Exception ex)
         {
             // Other exceptions during cache initialization are logged but don't crash the application
