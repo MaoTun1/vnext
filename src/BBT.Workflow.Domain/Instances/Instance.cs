@@ -421,6 +421,44 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     }
 
     /// <summary>
+    /// Propagates the EffectiveState to parent instance.
+    /// Updates this instance's EffectiveState and publishes an event to notify parent if this is a SubFlow.
+    /// This enables recursive propagation of EffectiveState up the parent chain.
+    /// </summary>
+    /// <param name="effectiveState">The new effective state to propagate</param>
+    /// <remarks>
+    /// This method does NOT change CurrentState - only EffectiveState is updated.
+    /// Used by parent instances to reflect the deepest active SubFlow's state.
+    /// The recursion happens through event-driven propagation:
+    /// 1. Child updates its EffectiveState
+    /// 2. If child is also a SubFlow, it publishes event to its parent
+    /// 3. Parent receives event and calls this method again
+    /// 4. Chain continues until root parent is reached
+    /// 
+    /// Idempotency: If EffectiveState already matches the target state, no update or event is triggered.
+    /// This prevents duplicate events and unnecessary processing.
+    /// </remarks>
+    public void PropagateEffectiveStateToParent(string effectiveState)
+    {
+        var currentEffectiveState = GetEffectiveState;
+        
+        // Idempotency: If already at this state, skip update
+        if (currentEffectiveState == effectiveState)
+        {
+            return;
+        }
+        
+        // Update EffectiveState
+        SetEffectiveState(effectiveState);
+        
+        // If this instance is also a SubFlow, propagate upward to its parent
+        if (IsSubFlow)
+        {
+            PublishSubStateChangedEvent(currentEffectiveState, effectiveState);
+        }
+    }
+
+    /// <summary>
     /// Publishes an event to notify the parent instance about SubFlow state change.
     /// This enables cross-domain communication for state synchronization.
     /// </summary>
