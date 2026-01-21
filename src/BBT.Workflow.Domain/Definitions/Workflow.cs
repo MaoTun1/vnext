@@ -32,6 +32,7 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
         WorkflowTimeout timeout,
         Transition cancel,
         Transition updateData,
+        Transition exit,
         List<LanguageLabel> labels,
         List<Reference> functions,
         List<Reference> features,
@@ -45,6 +46,7 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
         Timeout = timeout;
         Cancel = cancel;
         UpdateData = updateData;
+        Exit = exit;
         this.labels = labels;
         this.functions = functions ?? [];
         this.features = features ?? [];
@@ -113,6 +115,12 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     /// </summary>
     [JsonInclude] [JsonPropertyName("updateData")]
     public Transition? UpdateData { get; private set; }
+
+    /// <summary>
+    /// Defines the exit configuration for this workflow.
+    /// When configured, allows the workflow to be exited via the exit transition.
+    /// </summary>
+    public Transition? Exit { get; private set; }
 
     /// <summary>
     /// Global error boundary for the workflow.
@@ -247,6 +255,11 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
         UpdateData = updateData;
     }
 
+    public void SetExit(Transition exit)
+    {
+        Exit = exit;
+    }
+
     public void SetErrorBoundary(ErrorBoundary errorBoundary)
     {
         ErrorBoundary = errorBoundary;
@@ -313,7 +326,8 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
         return FindSharedTransition(key)
                ?? (StartTransition.Key == key ? StartTransition : null)
                ?? (Cancel?.Key == key ? Cancel : null)
-               ?? (UpdateData?.Key == key ? UpdateData : null);
+               ?? (UpdateData?.Key == key ? UpdateData : null)
+               ?? (Exit?.Key == key ? Exit : null);
     }
 
     public Transition? ResolveTransition(string key, State currentState)
@@ -346,6 +360,15 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
                 throw new UpdateDataNotConfiguredForWorkflowException(Key);
 
             return UpdateData.Key;
+        }
+
+        if (string.Equals(requestedKey, WellKnownTransitionKeys.Exit, StringComparison.OrdinalIgnoreCase))
+        {
+            // If this flow does not have exit configuration, "exit" is not supported
+            if (Exit is null)
+                throw new ExitNotConfiguredForWorkflowException(Key);
+
+            return Exit.Key;
         }
 
         return requestedKey;

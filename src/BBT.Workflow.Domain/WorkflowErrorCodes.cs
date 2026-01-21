@@ -40,6 +40,7 @@ public static class WorkflowErrorCodes
     public const string SubflowStartFailed = "Instance:100023";
     public const string UpdateDataNotConfiguredForWorkflow = "Instance:100024";
     public const string ActiveInstanceAlreadyExists = "Instance:100025";
+    public const string ExitNotConfiguredForWorkflow = "Instance:100026";
     
     #endregion
     
