@@ -107,6 +107,7 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     /// Defines the cancellation configuration for this workflow.
     /// When configured, allows the workflow to be canceled via the cancel transition.
     /// </summary>
+    [JsonInclude] [JsonPropertyName("cancel")]
     public Transition? Cancel { get; private set; }
 
     /// <summary>
@@ -120,6 +121,7 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     /// Defines the exit configuration for this workflow.
     /// When configured, allows the workflow to be exited via the exit transition.
     /// </summary>
+    [JsonInclude] [JsonPropertyName("exit")]
     public Transition? Exit { get; private set; }
 
     /// <summary>
