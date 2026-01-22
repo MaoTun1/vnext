@@ -298,6 +298,22 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
             : Result<State>.Fail(WorkflowErrors.StateNotFound(Key, key));
     }
 
+    /// <summary>
+    /// Gets a state by key, resolving well-known state keys (like $self) to actual states.
+    /// </summary>
+    /// <param name="key">The state key to retrieve</param>
+    /// <param name="currentStateKey">The current state key, used to resolve $self references</param>
+    /// <returns>Result containing the resolved state or an error if not found</returns>
+    public Result<State> GetState(string key, string currentStateKey)
+    {
+        // Domain Logic: Resolve well-known state keys
+        var resolvedKey = WellKnownStateKeys.ReservedTargetKeys.Contains(key)
+            ? currentStateKey  // $self resolves to current state
+            : key;
+
+        return GetState(resolvedKey);
+    }
+
     public State? FindState(string key)
     {
         return States.FirstOrDefault(s => s.Key == key);
