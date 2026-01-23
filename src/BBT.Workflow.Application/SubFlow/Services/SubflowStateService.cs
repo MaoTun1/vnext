@@ -73,8 +73,8 @@ public sealed class SubflowStateService(
         // Update correlation's SubFlowCurrentState with timestamp
         correlation.UpdateSubFlowState(input.NewState, input.ChangedAt);
 
-        // Propagate EffectiveState to parent (and recursively upward if parent is also a SubFlow)
-        parentInstance.PropagateEffectiveStateToParent(input.NewState);
+        // Propagate EffectiveState with type and subtype to parent (and recursively upward if parent is also a SubFlow)
+        parentInstance.PropagateEffectiveStateToParent(input.NewState, input.NewStateType, input.NewStateSubType);
 
         await instanceRepository.UpdateAsync(parentInstance, true, cancellationToken);
 

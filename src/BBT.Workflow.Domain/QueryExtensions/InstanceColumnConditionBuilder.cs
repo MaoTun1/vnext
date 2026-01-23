@@ -290,6 +290,8 @@ public static class InstanceColumnConditionBuilder
             "Flow" => ColumnType.String,
             "CurrentState" => ColumnType.String,
             "EffectiveState" => ColumnType.String,
+            "EffectiveStateType" => ColumnType.Integer,
+            "EffectiveStateSubType" => ColumnType.Integer,
             "Status" => ColumnType.String,
             "CreatedAt" => ColumnType.DateTime,
             "ModifiedAt" => ColumnType.DateTime,
@@ -309,6 +311,7 @@ public static class InstanceColumnConditionBuilder
             ColumnType.String => new NpgsqlParameter { Value = value },
             ColumnType.DateTime => CreateDateTimeParameter(value),
             ColumnType.Boolean => CreateBooleanParameter(value),
+            ColumnType.Integer => CreateIntegerParameter(value),
             _ => new NpgsqlParameter { Value = value }
         };
     }
@@ -338,6 +341,19 @@ public static class InstanceColumnConditionBuilder
 
         throw new ArgumentException($"Invalid Boolean value: {value}");
     }
+    
+    /// <summary>
+    /// Create Integer parameter with proper parsing
+    /// </summary>
+    private static NpgsqlParameter CreateIntegerParameter(string value)
+    {
+        if (int.TryParse(value, out var intValue))
+        {
+            return new NpgsqlParameter { Value = intValue, NpgsqlDbType = NpgsqlDbType.Integer };
+        }
+
+        throw new ArgumentException($"Invalid Integer value: {value}");
+    }
 
     /// <summary>
     /// Column data type enumeration
@@ -346,7 +362,8 @@ public static class InstanceColumnConditionBuilder
     {
         String,
         DateTime,
-        Boolean
+        Boolean,
+        Integer
     }
 }
 
