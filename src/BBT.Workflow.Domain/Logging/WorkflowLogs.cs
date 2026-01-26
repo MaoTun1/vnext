@@ -313,6 +313,31 @@ public static partial class WorkflowLogs
         int attemptedCount,
         int hops);
 
+    /// <summary>
+    /// Logs when scheduled jobs are being canceled for a state's transitions.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10056,
+        Level = LogLevel.Debug,
+        Message = "Canceling scheduled jobs for instance {InstanceId}, state {StateKey}, transitions: {TransitionKeys}")]
+    public static partial void ScheduledJobsCanceling(
+        this ILogger logger,
+        Guid instanceId,
+        string stateKey,
+        string transitionKeys);
+
+    /// <summary>
+    /// Logs when scheduled jobs cancellation fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10057,
+        Level = LogLevel.Warning,
+        Message = "Failed to cancel scheduled jobs for instance {InstanceId}, transitions: {TransitionKeys}")]
+    public static partial void ScheduledJobsCancellationFailed(
+        this ILogger logger,
+        Guid instanceId,
+        string transitionKeys);
+
     #endregion
 
     #region Task Execution
@@ -846,6 +871,112 @@ public static partial class WorkflowLogs
         Level = LogLevel.Error,
         Message = "Instance cancellation processing failed for instance {InstanceId}")]
     public static partial void InstanceCanceledProcessingFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid instanceId);
+
+    #endregion
+
+    #region Instance Completion Cleanup
+
+    /// <summary>
+    /// Logs when an InstanceCompletedCleanupEvent is received.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40090,
+        Level = LogLevel.Information,
+        Message = "InstanceCompletedCleanupEvent received for instance {InstanceId} in {Flow}")]
+    public static partial void InstanceCompletedCleanupEventReceived(
+        this ILogger logger,
+        Guid instanceId,
+        string flow);
+
+    /// <summary>
+    /// Logs when an InstanceCompletedCleanupEvent is silently ignored because it belongs to a different domain.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40091,
+        Level = LogLevel.Debug,
+        Message = "InstanceCompletedCleanupEvent silently ignored: event domain {EventDomain} does not match current runtime domain {RuntimeDomain}. Instance {InstanceId}, Flow {Flow}")]
+    public static partial void InstanceCompletedCleanupEventIgnoredDomainMismatch(
+        this ILogger logger,
+        string eventDomain,
+        string runtimeDomain,
+        Guid instanceId,
+        string flow);
+
+    /// <summary>
+    /// Logs when instance completion cleanup processing succeeds.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40092,
+        Level = LogLevel.Information,
+        Message = "Instance completion cleanup succeeded for instance {InstanceId}")]
+    public static partial void InstanceCompletedCleanupSucceeded(
+        this ILogger logger,
+        Guid instanceId);
+
+    /// <summary>
+    /// Logs when instance completion cleanup processing fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40093,
+        Level = LogLevel.Error,
+        Message = "Instance completion cleanup processing failed for instance {InstanceId}")]
+    public static partial void InstanceCompletedCleanupProcessingFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid instanceId);
+
+    #endregion
+
+    #region Instance Fault Cleanup
+
+    /// <summary>
+    /// Logs when an InstanceFaultedCleanupEvent is received.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40094,
+        Level = LogLevel.Information,
+        Message = "InstanceFaultedCleanupEvent received for instance {InstanceId} in {Flow}")]
+    public static partial void InstanceFaultedCleanupEventReceived(
+        this ILogger logger,
+        Guid instanceId,
+        string flow);
+
+    /// <summary>
+    /// Logs when an InstanceFaultedCleanupEvent is silently ignored because it belongs to a different domain.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40095,
+        Level = LogLevel.Debug,
+        Message = "InstanceFaultedCleanupEvent silently ignored: event domain {EventDomain} does not match current runtime domain {RuntimeDomain}. Instance {InstanceId}, Flow {Flow}")]
+    public static partial void InstanceFaultedCleanupEventIgnoredDomainMismatch(
+        this ILogger logger,
+        string eventDomain,
+        string runtimeDomain,
+        Guid instanceId,
+        string flow);
+
+    /// <summary>
+    /// Logs when instance fault cleanup processing succeeds.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40096,
+        Level = LogLevel.Information,
+        Message = "Instance fault cleanup succeeded for instance {InstanceId}")]
+    public static partial void InstanceFaultedCleanupSucceeded(
+        this ILogger logger,
+        Guid instanceId);
+
+    /// <summary>
+    /// Logs when instance fault cleanup processing fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40097,
+        Level = LogLevel.Error,
+        Message = "Instance fault cleanup processing failed for instance {InstanceId}")]
+    public static partial void InstanceFaultedCleanupProcessingFailed(
         this ILogger logger,
         Exception exception,
         Guid instanceId);
