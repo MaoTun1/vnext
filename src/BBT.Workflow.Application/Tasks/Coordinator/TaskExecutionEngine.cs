@@ -139,7 +139,7 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         {
             // Execute with Polly - includes first attempt + retries
             var result = await pollyPolicy.ExecuteAsync(
-                async ct => await ExecuteCoreAsync(onExecuteTask, instanceTransitionId, taskTrigger, context, ct),
+                async ct => await ExecuteCoreAsync(onExecuteTask, instanceTransitionId, taskTrigger, context, boundaryChain, ct),
                 cancellationToken);
 
             totalStopwatch.Stop();
@@ -425,6 +425,7 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         Guid? instanceTransitionId,
         TaskTrigger taskTrigger,
         ScriptContext context,
+        CompiledBoundaryChain boundaryChain,
         CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -540,13 +541,39 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         }
         _workflowMetrics.FinishTaskExecution(taskTypeStr, workflowKey);
 
-        // 11. Handle business failure - return raw result for Polly evaluation
+        // 11. Handle business failure
         if (!response.IsSuccess)
         {
             var executionError = _errorFactory.CreateFromResponse(
                 response, task.Key, taskTypeStr, stopwatch.ElapsedMilliseconds);
 
-            // Return failure - Polly will decide whether to retry based on IsSuccess
+            // Critical Decision: Check if ErrorBoundary is configured
+            // - No boundary: Developer manages via auto-transitions (e.g., 404 → NotFound state)
+            // - Has boundary: Apply retry/fallback policies
+            if (!boundaryChain.HasAnyBoundary)
+            {
+                // No ErrorBoundary - let flow continue with auto-transitions
+                _logger.LogDebug(
+                    "Task {TaskKey} failed with business error (StatusCode: {StatusCode}), " +
+                    "but no ErrorBoundary is defined. Flow will continue with auto-transitions.",
+                    task.Key, response.StatusCode);
+
+                var failureSummary = TaskExecutionSummary.Failure(
+                    task.Key, taskTypeStr, executionError.ErrorMessage,
+                    response.StatusCode, stopwatch.ElapsedMilliseconds);
+
+                // Return success to let pipeline continue (auto-transitions will handle routing)
+                return Result<TasksExecutionResult>.Ok(
+                    TasksExecutionResult.SuccessWithFailedTasks(
+                        [failureSummary], stopwatch.ElapsedMilliseconds));
+            }
+
+            // ErrorBoundary exists - return failure for Polly retry evaluation
+            _logger.LogDebug(
+                "Task {TaskKey} failed with business error (StatusCode: {StatusCode}). " +
+                "ErrorBoundary is configured - Polly will evaluate retry policy.",
+                task.Key, response.StatusCode);
+
             return Result<TasksExecutionResult>.Ok(new TasksExecutionResult
             {
                 IsSuccess = false,
@@ -554,7 +581,7 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
                 FailedTaskKeys = [task.Key],
                 FailedTask = onExecuteTask,
                 TaskError = executionError,
-                BoundaryAction = null, // No boundary action - raw result for retry
+                BoundaryAction = null, // No boundary action yet - raw result for retry
                 ExecutedTasks = [],
                 TotalExecutionDurationMs = stopwatch.ElapsedMilliseconds
             });
