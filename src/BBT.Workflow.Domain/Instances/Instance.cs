@@ -262,18 +262,21 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         {
             var latestData = LatestData;
             var contractInfo = ExtraProperties.ToSubFlowContractInfo();
-            AddDistributedEvent(new InstanceSubCompletedEvent
+            if (contractInfo.Id != Guid.Empty)
             {
-                SubInstanceId = Id,
-                InstanceId = contractInfo.Id,
-                Domain = contractInfo.Domain,
-                Flow = contractInfo.Flow,
-                Version = contractInfo.Version,
-                CompletedState = GetCurrentState,
-                InstanceData = latestData?.Data.JsonElement,
-                CompletedAt = CompletedAt.Value,
-                Duration = Duration
-            });
+                AddDistributedEvent(new InstanceSubCompletedEvent
+                {
+                    SubInstanceId = Id,
+                    InstanceId = contractInfo.Id,
+                    Domain = contractInfo.Domain,
+                    Flow = contractInfo.Flow,
+                    Version = contractInfo.Version,
+                    CompletedState = GetCurrentState,
+                    InstanceData = latestData?.Data.JsonElement,
+                    CompletedAt = CompletedAt.Value,
+                    Duration = Duration
+                });
+            }
         }
     }
 
@@ -516,19 +519,22 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     private void PublishSubStateChangedEvent(string previousState, string newState)
     {
         var contractInfo = ExtraProperties.ToSubFlowContractInfo();
-        AddDistributedEvent(new InstanceSubStateChangedEvent
+        if (contractInfo.Id != Guid.Empty)
         {
-            ParentInstanceId = contractInfo.Id,
-            SubInstanceId = Id,
-            Domain = contractInfo.Domain,
-            Flow = contractInfo.Flow,
-            Version = contractInfo.Version,
-            NewState = newState,
-            PreviousState = previousState,
-            NewStateType = (int)(EffectiveStateType ?? StateType.Intermediate),
-            NewStateSubType = (int)(EffectiveStateSubType ?? StateSubType.None),
-            ChangedAt = DateTime.UtcNow
-        });
+            AddDistributedEvent(new InstanceSubStateChangedEvent
+            {
+                ParentInstanceId = contractInfo.Id,
+                SubInstanceId = Id,
+                Domain = contractInfo.Domain,
+                Flow = contractInfo.Flow,
+                Version = contractInfo.Version,
+                NewState = newState,
+                PreviousState = previousState,
+                NewStateType = (int)(EffectiveStateType ?? StateType.Intermediate),
+                NewStateSubType = (int)(EffectiveStateSubType ?? StateSubType.None),
+                ChangedAt = DateTime.UtcNow
+            });
+        }
     }
 
     public void ChangeState(State state)
