@@ -1,11 +1,11 @@
 using BBT.Workflow.Discovery;
-using BBT.Workflow.ExceptionHandling;
 
 namespace BBT.Workflow.HostedServices;
 
 /// <summary>
 /// Background service that handles domain registration and bulk cache initialization at startup.
 /// Registers the current domain with service discovery, then fetches and caches all active domains.
+/// Any failure during domain discovery initialization is considered critical and will abort application startup.
 /// </summary>
 public sealed class DomainDiscoveryInitializationHostedService(
     IServiceScopeFactory scopeFactory,
@@ -29,19 +29,11 @@ public sealed class DomainDiscoveryInitializationHostedService(
             
             logger.LogInformation("Domain discovery initialization completed successfully");
         }
-        catch (DomainRegistrationFailedException ex)
-        {
-            logger.LogCritical(ex, "Domain registration failed. Application startup will be aborted.");
-            throw;
-        }
-        catch (InvalidConfigurationException ex)
-        {
-            logger.LogCritical(ex, "Invalid discovery configuration. Application startup will be aborted.");
-            throw;
-        }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error during domain discovery initialization. Application will continue without discovery cache.");
+            // All domain discovery initialization failures are critical and abort application startup
+            logger.LogCritical(ex, "Domain discovery initialization failed. Application startup will be aborted.");
+            throw;
         }
     }
 }
