@@ -237,11 +237,25 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         return snapshot;
     }
 
-    public void Complete()
+    /// <summary>
+    /// Completes the instance and publishes completion cleanup event.
+    /// Sets the instance status to Completed and records the completion time.
+    /// </summary>
+    /// <param name="domain">The domain of the instance.</param>
+    public void Complete(string domain)
     {
         Status = InstanceStatus.Completed;
         CompletedAt = DateTime.UtcNow;
         Duration = CompletedAt - CreatedAt;
+
+        // Publish cleanup event to cancel all scheduled jobs
+        AddDistributedEvent(new InstanceCompletedCleanupEvent
+        {
+            InstanceId = Id,
+            Domain = domain,
+            Flow = Flow,
+            CompletedAt = CompletedAt.Value
+        });
 
         // Publish completion event for SubItems (SubFlow or SubProcess)
         if (IsSubItem)
@@ -263,11 +277,25 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
         }
     }
 
-    public void Fault()
+    /// <summary>
+    /// Marks the instance as faulted and publishes fault cleanup event.
+    /// Sets the instance status to Faulted and records the completion time.
+    /// </summary>
+    /// <param name="domain">The domain of the instance.</param>
+    public void Fault(string domain)
     {
         Status = InstanceStatus.Faulted;
         CompletedAt = DateTime.UtcNow;
         Duration = CompletedAt - CreatedAt;
+        
+        // Publish cleanup event to cancel all scheduled jobs
+        AddDistributedEvent(new InstanceFaultedCleanupEvent
+        {
+            InstanceId = Id,
+            Domain = domain,
+            Flow = Flow,
+            FaultedAt = CompletedAt.Value
+        });
     }
 
     /// <summary>
