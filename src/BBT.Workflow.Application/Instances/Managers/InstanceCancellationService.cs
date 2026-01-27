@@ -101,9 +101,10 @@ public sealed class InstanceCancellationService(
 
             await Task.WhenAll(processingTasks);
 
-            logger.LogInformation(
-                "Canceled {Count} scheduled jobs for instance {InstanceId}, transitions: {TransitionKeys}",
-                jobsToCancel.Count, instanceId, string.Join(", ", transitionKeys));
+            logger.StateTransitionsJobsCanceled(
+                jobsToCancel.Count,
+                instanceId,
+                string.Join(", ", transitionKeys));
 
             return Result.Ok();
         }

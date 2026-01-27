@@ -35,9 +35,7 @@ public sealed class InstanceCompletedCleanupEventHook(
         EventHookContext context,
         CancellationToken cancellationToken = default)
     {
-        logger.LogInformation(
-            "Processing cleanup for completed instance {InstanceId}, flow: {Flow}",
-            eventData.InstanceId, eventData.Flow);
+        logger.InstanceCompletedCleanupHookProcessing(eventData.InstanceId, eventData.Flow);
 
         try
         {
@@ -52,9 +50,7 @@ public sealed class InstanceCompletedCleanupEventHook(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, 
-                "Failed to process cleanup for completed instance {InstanceId}",
-                eventData.InstanceId);
+            logger.InstanceCompletedCleanupHookFailed(ex, eventData.InstanceId);
 
             return EventHookResult.Fail(ex, new Dictionary<string, string>
             {

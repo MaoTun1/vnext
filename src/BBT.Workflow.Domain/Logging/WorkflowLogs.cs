@@ -338,6 +338,19 @@ public static partial class WorkflowLogs
         Guid instanceId,
         string transitionKeys);
 
+    /// <summary>
+    /// Logs when state-specific scheduled jobs are successfully canceled.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10058,
+        Level = LogLevel.Information,
+        Message = "Canceled {Count} scheduled jobs for instance {InstanceId}, transitions: {TransitionKeys}")]
+    public static partial void StateTransitionsJobsCanceled(
+        this ILogger logger,
+        int count,
+        Guid instanceId,
+        string transitionKeys);
+
     #endregion
 
     #region Task Execution
@@ -624,6 +637,20 @@ public static partial class WorkflowLogs
         Exception exception,
         Guid subInstanceId,
         Guid parentInstanceId);
+
+    /// <summary>
+    /// Logs when SubFlow state update fails with error details.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40102,
+        Level = LogLevel.Warning,
+        Message = "SubFlow state update failed for SubInstance {SubInstanceId}, Parent {ParentInstanceId}. Error: [{ErrorCode}] {ErrorMessage}")]
+    public static partial void SubFlowStateUpdateFailedWithError(
+        this ILogger logger,
+        Guid subInstanceId,
+        Guid parentInstanceId,
+        string errorCode,
+        string errorMessage);
 
     /// <summary>
     /// Logs when parent workflow continuation starts after SubFlow completion.
@@ -928,6 +955,30 @@ public static partial class WorkflowLogs
         Exception exception,
         Guid instanceId);
 
+    /// <summary>
+    /// Logs when processing cleanup for completed instance (event hook).
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40098,
+        Level = LogLevel.Information,
+        Message = "Processing cleanup for completed instance {InstanceId}, flow: {Flow}")]
+    public static partial void InstanceCompletedCleanupHookProcessing(
+        this ILogger logger,
+        Guid instanceId,
+        string flow);
+
+    /// <summary>
+    /// Logs when completed instance cleanup hook fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40099,
+        Level = LogLevel.Error,
+        Message = "Failed to process cleanup for completed instance {InstanceId}")]
+    public static partial void InstanceCompletedCleanupHookFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid instanceId);
+
     #endregion
 
     #region Instance Fault Cleanup
@@ -977,6 +1028,30 @@ public static partial class WorkflowLogs
         Level = LogLevel.Error,
         Message = "Instance fault cleanup processing failed for instance {InstanceId}")]
     public static partial void InstanceFaultedCleanupProcessingFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid instanceId);
+
+    /// <summary>
+    /// Logs when processing cleanup for faulted instance (event hook).
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40100,
+        Level = LogLevel.Information,
+        Message = "Processing cleanup for faulted instance {InstanceId}, flow: {Flow}")]
+    public static partial void InstanceFaultedCleanupHookProcessing(
+        this ILogger logger,
+        Guid instanceId,
+        string flow);
+
+    /// <summary>
+    /// Logs when faulted instance cleanup hook fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40101,
+        Level = LogLevel.Error,
+        Message = "Failed to process cleanup for faulted instance {InstanceId}")]
+    public static partial void InstanceFaultedCleanupHookFailed(
         this ILogger logger,
         Exception exception,
         Guid instanceId);
