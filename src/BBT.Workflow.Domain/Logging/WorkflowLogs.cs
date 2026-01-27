@@ -1267,4 +1267,85 @@ public static partial class WorkflowLogs
         int jobCount);
 
     #endregion
+
+    #region Service Discovery
+
+    /// <summary>
+    /// Logs when bulk domain cache refresh starts.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 50001,
+        Level = LogLevel.Information,
+        Message = "Bulk domain cache refresh started")]
+    public static partial void BulkCacheRefreshStarted(
+        this ILogger logger);
+
+    /// <summary>
+    /// Logs when bulk domain cache refresh completes successfully.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 50002,
+        Level = LogLevel.Information,
+        Message = "Bulk domain cache refreshed: {DomainCount} domains cached")]
+    public static partial void BulkCacheRefreshed(
+        this ILogger logger,
+        int domainCount);
+
+    /// <summary>
+    /// Logs when bulk domain cache refresh fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 50003,
+        Level = LogLevel.Warning,
+        Message = "Bulk domain cache refresh failed: {Error}")]
+    public static partial void BulkCacheRefreshFailed(
+        this ILogger logger,
+        string error);
+
+    /// <summary>
+    /// Logs when fetching a page of domain registrations.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 50004,
+        Level = LogLevel.Debug,
+        Message = "Fetching page {Page} of domain registrations")]
+    public static partial void FetchingDomainPage(
+        this ILogger logger,
+        int page);
+
+    /// <summary>
+    /// Logs when a domain is not found in the bulk cache.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 50005,
+        Level = LogLevel.Warning,
+        Message = "Domain {Domain} not found in bulk cache")]
+    public static partial void DomainNotFoundInCache(
+        this ILogger logger,
+        string domain);
+
+    /// <summary>
+    /// Logs when querying a single domain from the discovery registry.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 50006,
+        Level = LogLevel.Information,
+        Message = "Querying single domain '{Domain}' from discovery registry")]
+    public static partial void QueryingSingleDomain(
+        this ILogger logger,
+        string domain);
+
+    /// <summary>
+    /// Logs when a domain is successfully resolved from the registry.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 50007,
+        Level = LogLevel.Information,
+        Message = "Domain '{Domain}' resolved from registry: {BaseUrl}")]
+    public static partial void DomainResolvedFromRegistry(
+        this ILogger logger,
+        string domain,
+        string baseUrl);
+
+    #endregion
 }
