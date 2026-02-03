@@ -223,6 +223,8 @@ public sealed class SubProcessRemoteInvoker : ITaskInvoker<SubProcessBinding>
             queryParams.Add($"version={Uri.EscapeDataString(binding.Version)}");
         if (binding.Sync)
             queryParams.Add("sync=true");
+        else
+            queryParams.Add("sync=false");
 
         queryParams.Add("strictIdempotency=true");
 
