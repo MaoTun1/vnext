@@ -23,6 +23,7 @@ public sealed class GetInstancesTaskExecutor : TriggerTaskExecutorBase<GetInstan
 {
     private readonly IInstanceQueryGateway _instanceQueryGateway;
     private readonly IDomainDiscoveryResolver _endpointResolver;
+    private readonly IUrlTemplateBuilder _urlTemplateBuilder;
 
     /// <summary>
     /// Initializes a new instance of GetInstancesTaskExecutor.
@@ -33,11 +34,13 @@ public sealed class GetInstancesTaskExecutor : TriggerTaskExecutorBase<GetInstan
         IRemoteInvokerService remoteInvoker,
         IInstanceQueryGateway instanceQueryGateway,
         IDomainDiscoveryResolver endpointResolver,
+        IUrlTemplateBuilder urlTemplateBuilder,
         ILogger<GetInstancesTaskExecutor> logger)
         : base(scriptEngine, runtimeInfoProvider, remoteInvoker, logger)
     {
         _instanceQueryGateway = instanceQueryGateway;
         _endpointResolver = endpointResolver;
+        _urlTemplateBuilder = urlTemplateBuilder;
     }
 
     /// <inheritdoc />
@@ -111,7 +114,10 @@ public sealed class GetInstancesTaskExecutor : TriggerTaskExecutorBase<GetInstan
                 cancellationToken);
 
             // Build HATEOAS-like response structure for consistency with remote execution
-            var basePath = $"/api/v1/{task.TriggerDomain}/workflows/{task.TriggerFlow}/functions/data";
+            var basePath = _urlTemplateBuilder.BuildFunctionListUrl(
+                task.TriggerDomain, 
+                task.TriggerFlow, 
+                "data");
             var responseData = new
             {
                 links = new

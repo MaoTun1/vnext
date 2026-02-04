@@ -23,7 +23,8 @@ public sealed class InstanceController(
     IHttpContextAccessor httpContextAccessor,
     ISubflowCompletionService subflowCompletionService,
     ISubflowStateService subflowStateService,
-    IPaginationLinkGenerator linkGenerator) : AetherControllerBase
+    IPaginationLinkGenerator linkGenerator,
+    IUrlTemplateBuilder urlTemplateBuilder) : AetherControllerBase
 {
     /// <summary>
     /// Starts a new workflow instance.
@@ -244,7 +245,7 @@ public sealed class InstanceController(
             Extension = extension,
             Page = page,
             PageSize = pageSize,
-            PageUrl = InstanceUrlTemplates.InstanceList(domain, workflow),
+            PageUrl = urlTemplateBuilder.BuildInstanceListUrl(domain, workflow),
             Filter = filter,
             Sort = sort,
             Headers = requestContext.Headers,
@@ -254,7 +255,7 @@ public sealed class InstanceController(
         var response = await queryAppService.GetInstanceListAsync(input, cancellationToken);
         if (response.IsSuccess)
         {
-            var route = InstanceUrlTemplates.InstanceList(domain, workflow, InstanceUrlTemplates.GetApiVersionPrefix("1"));
+            var route = urlTemplateBuilder.BuildInstanceListUrl(domain, workflow);
 
             // Check if items contain GroupSummary objects (groupBy case) or GetInstanceOutput objects (normal case)
             var firstItem = response.Value!.Items.FirstOrDefault();
