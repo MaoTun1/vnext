@@ -52,9 +52,9 @@ public sealed class InstanceController(
         {
             Instance = new CreateInstanceInput
             {
-                Key = request.Key,
-                Tags = request.Tags,
-                Attributes = request.Attributes
+                Key = request?.Key,
+                Tags = request?.Tags,
+                Attributes = request?.Attributes
             }
         };
         var httpContext = httpContextAccessor.HttpContext;
