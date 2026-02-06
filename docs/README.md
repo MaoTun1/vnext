@@ -57,6 +57,10 @@ The BBT Workflow Engine is a comprehensive, domain-driven workflow management sy
 ### Security
 - [QueryExtensions Security](./security/queryextensions-security.md)
 
+### Breaking Changes
+- [Function–Workflow Validation (EN)](./breaking-changes/function-workflow-validation-en.md) – Functions with scope `I` or `F` must be declared in the workflow’s `functions` array
+- [Function–Workflow Validation (TR)](./breaking-changes/function-workflow-validation-tr.md) – Scope `I` veya `F` olan fonksiyonlar workflow’un `functions` dizisinde tanımlı olmalıdır
+
 ## Key Features
 
 ### Core Capabilities

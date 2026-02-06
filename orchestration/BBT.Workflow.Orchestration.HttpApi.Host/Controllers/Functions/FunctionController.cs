@@ -478,20 +478,23 @@ public sealed class FunctionController(
         Dictionary<string, string?> queryParams,
         CancellationToken cancellationToken)
     {
-        var tasks = instanceListResult.Items.Select(async instance =>
+       var tasks = instanceListResult.Items.Select(async instance =>
         {
             await using var scope = serviceScopeFactory.CreateAsyncScope();
             var scopedFunctionService = scope.ServiceProvider.GetRequiredService<IFunctionAppService>();
             return await scopedFunctionService.GetFunctionByInstanceAsync(function, workflow, domain, instance.Key!, headers, queryParams, cancellationToken);
         });
-
+ 
         var results = await Task.WhenAll(tasks);
-        var list = results.Where(r => r.IsSuccess).Select(r => r.Value!).ToList();
-
-        var route = urlTemplateBuilder.BuildFunctionListUrl(domain, workflow, function,
+        if (results.Any(r => !r.IsSuccess))
+            return Result<HateoasPagedResultDto<Dictionary<string, dynamic?>>>.Fail(results.First(r => !r.IsSuccess).Error);
+ 
+        var list = results.Select(r => r.Value!).ToList();
+        var route = InstanceUrlTemplates.FunctionList(domain, workflow, function,
             InstanceUrlTemplates.GetApiVersionPrefix("1"));
         var output = linkGenerator.CreateHateoasResult(instanceListResult, list, route);
         return Result<HateoasPagedResultDto<Dictionary<string, dynamic?>>>.Ok(output);
+   
     }
 
     #endregion

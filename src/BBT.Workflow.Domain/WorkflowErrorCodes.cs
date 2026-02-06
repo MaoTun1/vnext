@@ -116,6 +116,11 @@ public static class WorkflowErrorCodes
     public const string ExtensionExecutionFailed = "Extension:600001";
     
     #endregion
+    #region Function Errors (800xxx)
+    
+    public const string FunctionNotInWorkflow = "Function:800001";
+    
+    #endregion
     
     #region Discovery Errors (700xxx)
     
