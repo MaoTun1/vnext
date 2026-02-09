@@ -27,7 +27,6 @@ public class TransitionPipeline
     private readonly IInstanceRepository _instanceRepository;
     private readonly ITransitionValidationService _validationService;
     private readonly ILogger<TransitionPipeline> _logger;
-
     /// <summary>
     /// Default lock lease duration in seconds.
     /// </summary>

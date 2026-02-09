@@ -150,6 +150,8 @@ public sealed class Workflow : IDomainEntity, IReference, IReferenceSetter, IHas
     [JsonInclude] [JsonPropertyName("states")]
     private List<State> states = new();
 
+    [JsonInclude] public Reference? Schema { get; private set; }
+
     /// <summary>
     /// It is a content set with multiple language options for the content to be displayed to the user.
     /// </summary>

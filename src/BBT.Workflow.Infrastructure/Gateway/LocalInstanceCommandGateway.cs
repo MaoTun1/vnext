@@ -31,14 +31,16 @@ public sealed class LocalInstanceCommandGateway : IInstanceCommandGateway
         StartInstanceInput input,
         CancellationToken cancellationToken = default)
     {
-        await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        var currentSchema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
-        var commandService = scope.ServiceProvider.GetRequiredService<IInstanceCommandAppService>();
-
-        using (currentSchema.Use(input.Workflow))
+        return await _serviceScopeFactory.ExecuteWithWorkflowAsync<StartInstanceOutput>(input.Domain, input.Workflow, input.Version, async (sp, cancellationToken) =>
         {
-            return await commandService.StartAsync(input, cancellationToken);
-        }
+            var currentSchema = sp.GetRequiredService<ICurrentSchema>();
+            var commandService = sp.GetRequiredService<IInstanceCommandAppService>();
+
+            using (currentSchema.Use(input.Workflow))
+            {
+                return await commandService.StartAsync(input, cancellationToken);
+            }
+        }, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -48,14 +50,16 @@ public sealed class LocalInstanceCommandGateway : IInstanceCommandGateway
     {
         // StartSubAsync uses the same StartAsync endpoint but with sub-specific handling
         // The IInstanceCommandAppService.StartAsync handles both normal and sub-flow starts
-        await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        var currentSchema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
-        var commandService = scope.ServiceProvider.GetRequiredService<IInstanceCommandAppService>();
-
-        using (currentSchema.Use(input.Workflow))
+        return await _serviceScopeFactory.ExecuteWithWorkflowAsync<StartInstanceOutput>(input.Domain, input.Workflow, input.Version, async (sp, cancellationToken) =>
         {
-            return await commandService.StartAsync(input, cancellationToken);
-        }
+            var currentSchema = sp.GetRequiredService<ICurrentSchema>();
+            var commandService = sp.GetRequiredService<IInstanceCommandAppService>();
+
+            using (currentSchema.Use(input.Workflow))
+            {
+                return await commandService.StartAsync(input, cancellationToken);
+            }
+        }, cancellationToken);
     }
 
     /// <inheritdoc />
