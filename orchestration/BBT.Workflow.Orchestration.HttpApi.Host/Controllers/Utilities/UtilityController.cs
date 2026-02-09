@@ -1,6 +1,9 @@
 using BBT.Aether.AspNetCore.Controllers;
+using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Definitions.Events;
 using BBT.Workflow.Discovery;
+using BBT.Workflow.Logging;
 using BBT.Workflow.Runtime;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -17,9 +20,12 @@ namespace BBT.Workflow.Orchestration.Controllers.Utilities;
 [ServiceFilter(typeof(ResponseHeaderFilter))]
 public sealed class UtilityController(
     IDefinitionAppService definitionAppService,
+    IRuntimeCacheInitializer runtimeCacheInitializer,
     IRuntimeInfoProvider runtimeInfoProvider,
     IOptions<RuntimeOptions> runtimeOptions,
-    IDomainDiscoveryResolver domainDiscoveryResolver) : AetherControllerBase
+    IDomainDiscoveryResolver domainDiscoveryResolver,
+    IConfiguration configuration,
+    ILogger<UtilityController> logger) : AetherControllerBase
 {
     /// <summary>
     /// Retrieves the current runtime configuration information.
@@ -71,5 +77,47 @@ public sealed class UtilityController(
     {
         await domainDiscoveryResolver.RefreshBulkCacheAsync(cancellationToken);
         return Ok(new { message = "Discovery cache refreshed successfully" });
+    }
+
+    /// <summary>
+    /// Handles broadcast cache invalidation requests from Dapr subscription.
+    /// All pods receive this message via vnext-pubsub-broadcast.
+    /// Updates only in-memory cache since distributed cache is already updated by initiating pod.
+    /// </summary>
+    /// <param name="eventData">Cache invalidation event data.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    /// <returns>Result of the cache invalidation operation.</returns>
+    /// <response code="200">Returns result of cache invalidation.</response>
+    [ApiExplorerSettings(IgnoreApi = true)]
+    [HttpPost("utilities/cache/invalidate")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> InvalidateCacheViaBroadcastAsync(
+        [FromBody] DefinitionCacheInvalidationEvent eventData,
+        CancellationToken cancellationToken = default)
+    {
+        var podInstance = Environment.GetEnvironmentVariable("HOSTNAME") 
+            ?? Environment.GetEnvironmentVariable("POD_NAME") 
+            ?? Environment.MachineName;
+        var hostEnvironment = configuration["ASPNETCORE_ENVIRONMENT"];
+        // Environment match validation
+        if (!string.Equals(eventData.Environment, hostEnvironment, StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogDebug(
+                "Definition cache invalidation ignored - environment mismatch. PodInstance: {PodInstance}, EventEnvironment: {EventEnvironment}, CurrentEnvironment: {CurrentEnvironment}",
+                podInstance, eventData.Environment, hostEnvironment);
+            return Ok();
+        }
+        
+        logger.DefinitionCacheInvalidationReceived(
+            podInstance,
+            eventData.Domain, 
+            eventData.RequestedBy);
+        
+        // Update only in-memory cache (distributed cache already updated by initiating pod)
+        await runtimeCacheInitializer.InitializeAsync(cancellationToken);
+        
+        logger.DefinitionCacheInvalidationSucceeded(podInstance);
+            
+        return Ok();
     }
 } 

@@ -1296,6 +1296,56 @@ public static partial class WorkflowLogs
 
     #endregion
 
+    #region Instance Retry
+ 
+    /// <summary>
+    /// Logs when an instance retry is requested.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 20050,
+        Level = LogLevel.Information,
+        Message = "Instance retry requested for {InstanceId} in workflow {WorkflowKey}")]
+    public static partial void InstanceRetryRequested(
+        this ILogger logger,
+        string instanceId,
+        string workflowKey);
+ 
+    /// <summary>
+    /// Logs when an instance is successfully unfaulted.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 20051,
+        Level = LogLevel.Information,
+        Message = "Instance {InstanceId} unfaulted, ready for retry")]
+    public static partial void InstanceUnfaulted(
+        this ILogger logger,
+        Guid instanceId);
+ 
+    /// <summary>
+    /// Logs when an instance retry succeeds.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 20052,
+        Level = LogLevel.Information,
+        Message = "Instance {InstanceId} retry succeeded")]
+    public static partial void InstanceRetrySucceeded(
+        this ILogger logger,
+        Guid instanceId);
+ 
+    /// <summary>
+    /// Logs when an instance retry fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 20053,
+        Level = LogLevel.Warning,
+        Message = "Instance {InstanceId} retry failed: {Reason}")]
+    public static partial void InstanceRetryFailed(
+        this ILogger logger,
+        Guid instanceId,
+        string reason);
+ 
+    #endregion
+
     #region Service Discovery
 
     /// <summary>
@@ -1404,6 +1454,58 @@ public static partial class WorkflowLogs
         Guid instanceId,
         string errorCode,
         string errorMessage);
+
+    #endregion
+
+    #region Cache Invalidation
+
+    /// <summary>
+    /// Logs when a definition cache invalidation request is received via broadcast.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 50020,
+        Level = LogLevel.Information,
+        Message = "Definition cache invalidation received. PodInstance: {PodInstance}, Domain: {Domain}, RequestedBy: {RequestedBy}")]
+    public static partial void DefinitionCacheInvalidationReceived(
+        this ILogger logger,
+        string podInstance,
+        string domain,
+        string requestedBy);
+
+    /// <summary>
+    /// Logs when a definition cache invalidation request is ignored due to domain mismatch.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 50021,
+        Level = LogLevel.Debug,
+        Message = "Definition cache invalidation ignored - domain mismatch. PodInstance: {PodInstance}, Domain: {Domain}")]
+    public static partial void DefinitionCacheInvalidationIgnoredDomainMismatch(
+        this ILogger logger,
+        string podInstance,
+        string domain);
+
+    /// <summary>
+    /// Logs when definition cache invalidation succeeds.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 50022,
+        Level = LogLevel.Information,
+        Message = "Definition cache invalidation succeeded. PodInstance: {PodInstance}")]
+    public static partial void DefinitionCacheInvalidationSucceeded(
+        this ILogger logger,
+        string podInstance);
+
+    /// <summary>
+    /// Logs when definition cache invalidation fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 50023,
+        Level = LogLevel.Error,
+        Message = "Definition cache invalidation failed. PodInstance: {PodInstance}, Error: {Error}")]
+    public static partial void DefinitionCacheInvalidationFailed(
+        this ILogger logger,
+        string podInstance,
+        string error);
 
     #endregion
 }

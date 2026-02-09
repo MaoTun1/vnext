@@ -41,6 +41,8 @@ public static class WorkflowErrorCodes
     public const string UpdateDataNotConfiguredForWorkflow = "Instance:100024";
     public const string ActiveInstanceAlreadyExists = "Instance:100025";
     public const string ExitNotConfiguredForWorkflow = "Instance:100026";
+    public const string InstanceNotFaulted = "Instance:100027";
+    public const string NoIncompleteTransitionFound = "Instance:100028";
     
     #endregion
     
@@ -112,6 +114,11 @@ public static class WorkflowErrorCodes
     #region Extension Errors (600xxx)
     
     public const string ExtensionExecutionFailed = "Extension:600001";
+    
+    #endregion
+    #region Function Errors (800xxx)
+    
+    public const string FunctionNotInWorkflow = "Function:800001";
     
     #endregion
     

@@ -186,7 +186,7 @@ public sealed class SubProcessRemoteInvoker : ITaskInvoker<SubProcessBinding>
         HttpResponseMessage response,
         long executionDurationMs,
         CancellationToken cancellationToken)
-    {
+        {
         var responseHeaders = InvokerHelpers.MergeHeaders(response.Headers, response.Content.Headers);
         var content = await response.Content.ReadAsStringAsync(cancellationToken);
         var responseData = InvokerHelpers.TryParseJson(content);
@@ -216,13 +216,15 @@ public sealed class SubProcessRemoteInvoker : ITaskInvoker<SubProcessBinding>
 
     private static string BuildPath(SubProcessBinding binding)
     {
-        var path = $"/api/v1/{binding.Domain}/workflows/sub/{binding.Workflow}/instances/start";
+        var path = $"/api/v1/{binding.Domain}/workflows/{binding.Workflow}/sub/instances/start";
 
         var queryParams = new List<string>();
         if (!string.IsNullOrEmpty(binding.Version))
             queryParams.Add($"version={Uri.EscapeDataString(binding.Version)}");
         if (binding.Sync)
             queryParams.Add("sync=true");
+        else
+            queryParams.Add("sync=false");
 
         queryParams.Add("strictIdempotency=true");
 
@@ -341,6 +343,9 @@ public sealed class SubProcessRemoteInvoker : ITaskInvoker<SubProcessBinding>
                 TaskType, taskKey);
         }
 
-        return _httpClientFactory.CreateClient(clientName);
+        var client = _httpClientFactory.CreateClient(clientName);
+        client.Timeout = TimeSpan.FromSeconds(binding.TimeoutSeconds);
+        
+        return client;
     }
 }
