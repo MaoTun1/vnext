@@ -8,6 +8,7 @@ using BBT.Aether.MultiSchema.EntityFrameworkCore.Interceptors;
 using BBT.Workflow;
 using BBT.Workflow.BackgroundJobs.Handlers;
 using BBT.Workflow.Data;
+using BBT.Workflow.DefinitionContext;
 using BBT.Workflow.Headers;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
@@ -63,6 +64,7 @@ public static class WorkflowApiBaseServiceCollectionExtensions
         
         services.AddEndpointsApiExplorer();
         services.AddAetherApiVersioning(apiTitle: "vNext API");
+        services.AddScoped<IWorkflowContext, WorkflowContext>();
 
         services.AddControllers()
             .AddJsonOptions(options =>
