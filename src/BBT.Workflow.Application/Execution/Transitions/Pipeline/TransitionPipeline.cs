@@ -3,6 +3,7 @@ using BBT.Aether.Aspects;
 using BBT.Aether.DistributedLock;
 using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Execution;
 using BBT.Workflow.Execution.PostCommit;
 using BBT.Workflow.Execution.Validation;
 using BBT.Workflow.Instances;
@@ -213,20 +214,7 @@ public class TransitionPipeline
                     state.CurrentStep, context, cancellationToken);
 
                 if (!stepResult.IsSuccess)
-                {
-                    // Check if boundary abort was requested (handled but no transition)
-                    // Pipeline stops but instance is NOT marked as faulted
-                    if (context.Directives.BoundaryAbortRequested)
-                    {
-                        _logger.LogInformation(
-                            "Boundary abort requested for workflow {WorkflowKey}. Stopping pipeline without fault.",
-                            context.Workflow.Key);
-                        return Result.Ok();
-                    }
-
-                    // Unhandled error - this will cause fault
                     return Result.Fail(stepResult.Error);
-                }
 
                 // Determine flow control based on step outcome
                 var flowControl = DetermineFlowControl(stepResult.Value!, state.CurrentStep, context, state);
@@ -323,7 +311,8 @@ public class TransitionPipeline
                 ChainDepth = currentContext.ChainDepth + 1,
                 ResumeFrom = null
             },
-            IsReentry = true
+            IsReentry = true,
+            IsErrorBoundaryTransition = string.Equals(nextTransition.Reason, TransitionRequestReasons.ErrorBoundary, StringComparison.OrdinalIgnoreCase)
         };
     }
 

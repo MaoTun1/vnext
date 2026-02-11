@@ -260,7 +260,7 @@ public class ScriptContext(ILogger<ScriptContext> logger) : IDisposable, IAsyncD
     /// essential for making context-aware decisions in mapping implementations.
     /// </remarks>
     public Instance Instance { get; private set; }
-
+    
     /// <summary>
     /// The workflow definition that describes the structure, states, transitions, and tasks
     /// for the current workflow execution context.
