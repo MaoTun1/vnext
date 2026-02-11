@@ -351,6 +351,17 @@ public static partial class WorkflowLogs
         Guid instanceId,
         string transitionKeys);
 
+    /// <summary>
+    /// Logs when error boundary Abort action is executed; instance will be marked Faulted.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10059,
+        Level = LogLevel.Information,
+        Message = "Abort for task {TaskKey}. Instance will be marked Faulted.")]
+    public static partial void ErrorBoundaryAbortInstanceFaulted(
+        this ILogger logger,
+        string taskKey);
+
     #endregion
 
     #region Task Execution
