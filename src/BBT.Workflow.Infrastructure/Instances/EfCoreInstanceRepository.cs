@@ -290,20 +290,40 @@ public sealed class EfCoreInstanceRepository(
                 // If filters are in GraphQL format, combine them
                 if (FilterFormatDetector.DetectFormat(filters) == FilterFormat.GraphQL)
                 {
-                    var combinedNode = FilterFormatDetector.CombineFilters(filters);
-                    if (combinedNode != null)
+                    // Single element may be full request format (filter + groupBy); extract .Filter so query params win
+                    if (filters.Length == 1 && GraphQLFilterParser.TryParseRequest(filters[0], out var parsedRequest) && parsedRequest?.Filter != null)
                     {
-                        combinedFilter = JsonSerializer.Serialize(combinedNode, new JsonSerializerOptions
+                        combinedFilter = JsonSerializer.Serialize(parsedRequest.Filter, new JsonSerializerOptions
                         {
                             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                             WriteIndented = false
                         });
                     }
+                    else
+                    {
+                        var combinedNode = FilterFormatDetector.CombineFilters(filters);
+                        if (combinedNode != null)
+                        {
+                            combinedFilter = JsonSerializer.Serialize(combinedNode, new JsonSerializerOptions
+                            {
+                                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                                WriteIndented = false
+                            });
+                        }
+                    }
                 }
                 else
                 {
-                    // For legacy format, use first filter
-                    combinedFilter = filters[0];
+                    // For legacy format, convert to GraphQL filter node so ParseFilter receives valid JSON
+                    var legacyNode = FilterFormatDetector.ConvertLegacyToGraphQL(filters);
+                    if (legacyNode != null)
+                    {
+                        combinedFilter = JsonSerializer.Serialize(legacyNode, new JsonSerializerOptions
+                        {
+                            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                            WriteIndented = false
+                        });
+                    }
                 }
             }
 
@@ -390,20 +410,40 @@ public sealed class EfCoreInstanceRepository(
                 // If filters are in GraphQL format, combine them
                 if (FilterFormatDetector.DetectFormat(filters) == FilterFormat.GraphQL)
                 {
-                    var combinedNode = FilterFormatDetector.CombineFilters(filters);
-                    if (combinedNode != null)
+                    // Single element may be full request format (filter + groupBy); extract .Filter so groupBy param wins
+                    if (filters.Length == 1 && GraphQLFilterParser.TryParseRequest(filters[0], out var parsedRequest) && parsedRequest?.Filter != null)
                     {
-                        combinedFilter = JsonSerializer.Serialize(combinedNode, new JsonSerializerOptions
+                        combinedFilter = JsonSerializer.Serialize(parsedRequest.Filter, new JsonSerializerOptions
                         {
                             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                             WriteIndented = false
                         });
                     }
+                    else
+                    {
+                        var combinedNode = FilterFormatDetector.CombineFilters(filters);
+                        if (combinedNode != null)
+                        {
+                            combinedFilter = JsonSerializer.Serialize(combinedNode, new JsonSerializerOptions
+                            {
+                                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                                WriteIndented = false
+                            });
+                        }
+                    }
                 }
                 else
                 {
-                    // For legacy format, use first filter
-                    combinedFilter = filters[0];
+                    // For legacy format, convert to GraphQL filter node so ParseFilter receives valid JSON
+                    var legacyNode = FilterFormatDetector.ConvertLegacyToGraphQL(filters);
+                    if (legacyNode != null)
+                    {
+                        combinedFilter = JsonSerializer.Serialize(legacyNode, new JsonSerializerOptions
+                        {
+                            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                            WriteIndented = false
+                        });
+                    }
                 }
             }
 
