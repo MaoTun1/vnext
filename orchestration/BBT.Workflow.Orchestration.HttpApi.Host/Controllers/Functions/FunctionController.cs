@@ -215,6 +215,14 @@ public sealed class FunctionController(
             return AuthorizeResultToActionResult(result);
         }
 
+        if (functionType == Definitions.Functions.FunctionTypeConst.AuthorizationMatrix)
+        {
+            var version = parameters.Version ?? requestContext.QueryParameters.GetValueOrDefault("version", null);
+            var result = await authorizeAppService.GetAuthorizationMatrixForInstanceAsync(
+                domain, workflow, instance, version, cancellationToken);
+            return FromResult(result);
+        }
+
         return FromResult(await functionAppService.GetFunctionByInstanceAsync(function, workflow, domain, instance,
             requestContext.Headers, requestContext.QueryParameters, cancellationToken));
     }

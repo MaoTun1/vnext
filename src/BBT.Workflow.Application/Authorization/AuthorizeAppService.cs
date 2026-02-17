@@ -2,6 +2,7 @@ using BBT.Aether.Application.Services;
 using BBT.Aether.Results;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Gateway;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Logging;
 using BBT.Workflow.Runtime;
@@ -12,12 +13,14 @@ namespace BBT.Workflow.Authorization;
 /// <summary>
 /// Application service for authorize and authorization matrix system functions.
 /// Evaluates role grants: DENY always wins; if no DENY match, any ALLOW match yields allowed.
+/// When instance has active subflow, forwards authorize request to subflow via IAuthorizeGateway.
 /// </summary>
 public sealed class AuthorizeAppService(
     IServiceProvider serviceProvider,
     IRuntimeInfoProvider runtimeInfoProvider,
     IComponentCacheStore componentCacheStore,
     IInstanceRepository instanceRepository,
+    IAuthorizeGateway authorizeGateway,
     ILogger<AuthorizeAppService> logger) : ApplicationService(serviceProvider), IAuthorizeAppService
 {
     /// <inheritdoc />
@@ -75,6 +78,23 @@ public sealed class AuthorizeAppService(
             instance = instanceResult;
 
         var wf = workflowResult.Value!;
+
+        // When instance has active subflow, forward authorize to subflow instance (local or remote via gateway)
+        if (instance?.Subflow != null)
+        {
+            var subflow = instance.Subflow;
+            return await authorizeGateway.GetAuthorizeResultForInstanceAsync(
+                subflow.SubFlowDomain,
+                subflow.SubFlowName,
+                subflow.SubFlowInstanceId.ToString(),
+                role,
+                transitionKey,
+                functionKey,
+                version,
+                checkQueryRoles,
+                cancellationToken);
+        }
+
         var allowed = await EvaluateAuthorizeAsync(wf, role, transitionKey, functionKey, instance, checkQueryRoles, componentCacheStore, domain, workflowVersion, cancellationToken);
         logger.AuthorizeRequest(domain, workflow, role, allowed);
         return Result<AuthorizeOutput>.Ok(new AuthorizeOutput { Allowed = allowed });
@@ -138,6 +158,35 @@ public sealed class AuthorizeAppService(
 
         logger.AuthorizationMatrixRequest(domain, workflow);
         return Result<AuthorizationMatrixOutput>.Ok(output);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<AuthorizationMatrixOutput>> GetAuthorizationMatrixForInstanceAsync(
+        string domain,
+        string workflow,
+        string instanceId,
+        string? version = null,
+        CancellationToken cancellationToken = default)
+    {
+        runtimeInfoProvider.Check(domain);
+
+        Instance? instance = null;
+        var instanceResult = await instanceRepository.FindByIdentifierAsync(instanceId, cancellationToken);
+        if (instanceResult is not null)
+            instance = instanceResult;
+
+        if (instance?.Subflow != null)
+        {
+            var subflow = instance.Subflow;
+            return await authorizeGateway.GetAuthorizationMatrixForInstanceAsync(
+                subflow.SubFlowDomain,
+                subflow.SubFlowName,
+                subflow.SubFlowInstanceId.ToString(),
+                version,
+                cancellationToken);
+        }
+
+        return await GetAuthorizationMatrixAsync(domain, workflow, version, cancellationToken);
     }
 
     private static void AddTransition(

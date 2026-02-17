@@ -51,4 +51,15 @@ public interface IAuthorizeAppService : IApplicationService
         string workflow,
         string? version = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the authorization matrix in instance context. When instance has active subflow, returns subflow's matrix; otherwise returns workflow's matrix.
+    /// </summary>
+    /// <param name="version">Optional workflow version. Empty/null = latest.</param>
+    Task<Result<AuthorizationMatrixOutput>> GetAuthorizationMatrixForInstanceAsync(
+        string domain,
+        string workflow,
+        string instanceId,
+        string? version = null,
+        CancellationToken cancellationToken = default);
 }

@@ -200,7 +200,7 @@ public sealed class State : IHasKey
     /// </summary>
     public bool HasOnlyManualOrEventTransitions => 
         !Transitions.Any() || 
-        Transitions.All(t => t.TriggerType == TriggerType.Manual || t.TriggerType == TriggerType.Event);
+        Transitions.Any(t => t.TriggerType == TriggerType.Manual || t.TriggerType == TriggerType.Event);
 
     public IReadOnlyList<string> TransitionKeys() => Transitions.Select(t => t.Key).ToList();
 

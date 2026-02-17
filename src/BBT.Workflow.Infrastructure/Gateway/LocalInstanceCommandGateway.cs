@@ -1,12 +1,11 @@
 using BBT.Aether.MultiSchema;
 using BBT.Aether.Results;
 using BBT.Aether.Uow;
-using BBT.Workflow.Gateway;
 using BBT.Workflow.Instances;
 using BBT.Workflow.SubFlow;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace BBT.Workflow.Infrastructure.Gateway;
+namespace BBT.Workflow.Gateway;
 
 /// <summary>
 /// Local implementation of instance command gateway.
