@@ -58,6 +58,11 @@ public sealed class FunctionController(
         return FromResult(response);
     }
 
+    /// <summary>
+    /// Gets a paged list of workflow instances for the given function (View, Data, Schema, etc.).
+    /// For function type Data: filter, sort and orderBy are applied. orderBy wins over sort when both provided.
+    /// </summary>
+    /// <param name="orderBy">OrderBy JSON (Data function only): {"field":"...","direction":"asc|desc"} or {"fields":[...]}. If provided with sort, orderBy wins.</param>
     [HttpGet("{domain}/workflows/{workflow}/functions/{function}")]
     public async Task<IActionResult> GetFunctionByKeyAsync(
         [FromRoute] string domain,
@@ -67,6 +72,8 @@ public sealed class FunctionController(
         CancellationToken cancellationToken = default)
     {
         var requestContext = HttpContext.GetRequestBindingContext();
+        var functionType = function.ToLowerInvariant();
+        var isDataFunction = functionType == Definitions.Functions.FunctionTypeConst.Data;
 
         var getInstanceListInput = new GetInstanceListInput
         {
@@ -74,11 +81,9 @@ public sealed class FunctionController(
             Page = parameters.Page,
             PageSize = parameters.PageSize,
             PageUrl = urlTemplateBuilder.BuildFunctionListUrl(domain, workflow, function),
-            Sort = parameters.Sort,
+            Sort = isDataFunction ? (parameters.OrderBy ?? parameters.Sort) : parameters.Sort,
             Workflow = workflow,
-            Filter = function.ToLowerInvariant() == Definitions.Functions.FunctionTypeConst.Data
-                ? parameters.Filter
-                : [],
+            Filter = isDataFunction ? parameters.Filter : null,
             Headers = requestContext.Headers,
             QueryParameters = requestContext.QueryParameters
         };
@@ -92,8 +97,6 @@ public sealed class FunctionController(
         
         var pagedList = instanceListResult.Value!.ToPagedList(parameters.PageSize);
         // Process based on function type
-        var functionType = function.ToLowerInvariant();
-
         if (functionType == Definitions.Functions.FunctionTypeConst.Longpooling)
         {
             return FromResult(await ProcessLongpoolingFunctionListAsync(domain, workflow, pagedList,
