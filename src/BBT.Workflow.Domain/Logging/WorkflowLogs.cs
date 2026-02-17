@@ -1519,4 +1519,34 @@ public static partial class WorkflowLogs
         string error);
 
     #endregion
+
+    #region Authorization (authorize / permissions)
+
+    /// <summary>
+    /// Logs when authorize system function is invoked.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 50030,
+        Level = LogLevel.Information,
+        Message = "Authorize request. Domain: {Domain}, Workflow: {Workflow}, Role: {Role}, Allowed: {Allowed}")]
+    public static partial void AuthorizeRequest(
+        this ILogger logger,
+        string domain,
+        string workflow,
+        string role,
+        bool allowed);
+
+    /// <summary>
+    /// Logs when authorization matrix system function is invoked.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 50031,
+        Level = LogLevel.Information,
+        Message = "Authorization matrix request. Domain: {Domain}, Workflow: {Workflow}")]
+    public static partial void AuthorizationMatrixRequest(
+        this ILogger logger,
+        string domain,
+        string workflow);
+
+    #endregion
 }
