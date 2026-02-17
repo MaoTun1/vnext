@@ -60,6 +60,11 @@ public sealed class FunctionController(
         return FromResult(response);
     }
 
+    /// <summary>
+    /// Gets a paged list of workflow instances for the given function (View, Data, Schema, etc.).
+    /// For function type Data: filter, sort and orderBy are applied. orderBy wins over sort when both provided.
+    /// </summary>
+    /// <param name="orderBy">OrderBy JSON (Data function only): {"field":"...","direction":"asc|desc"} or {"fields":[...]}. If provided with sort, orderBy wins.</param>
     [HttpGet("{domain}/workflows/{workflow}/functions/{function}")]
     public async Task<IActionResult> GetFunctionByKeyAsync(
         [FromRoute] string domain,
@@ -91,17 +96,16 @@ public sealed class FunctionController(
             return FromResult(result);
         }
 
+
         var getInstanceListInput = new GetInstanceListInput
         {
             Domain = domain,
             Page = parameters.Page,
             PageSize = parameters.PageSize,
             PageUrl = urlTemplateBuilder.BuildFunctionListUrl(domain, workflow, function),
-            Sort = parameters.Sort,
+            Sort = parameters.OrderBy ?? parameters.Sort,
             Workflow = workflow,
-            Filter = function.ToLowerInvariant() == Definitions.Functions.FunctionTypeConst.Data
-                ? parameters.Filter
-                : [],
+            Filter =parameters.Filter ,
             Headers = requestContext.Headers,
             QueryParameters = requestContext.QueryParameters
         };

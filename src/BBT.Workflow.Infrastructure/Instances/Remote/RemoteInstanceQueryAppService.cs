@@ -200,12 +200,9 @@ public sealed class RemoteInstanceQueryAppService(
                 queryParams.Add($"sort={Uri.EscapeDataString(input.Sort)}");
             }
 
-            if (input.Filter?.Length > 0)
+            if (!string.IsNullOrWhiteSpace(input.Filter))
             {
-                foreach (var filter in input.Filter)
-                {
-                    queryParams.Add($"filter={Uri.EscapeDataString(filter)}");
-                }
+                queryParams.Add($"filter={Uri.EscapeDataString(input.Filter)}");
             }
 
             if (!string.IsNullOrWhiteSpace(input.GroupBy))
