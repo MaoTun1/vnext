@@ -215,6 +215,9 @@ public static class WorkflowApiBaseServiceCollectionExtensions
             opt.Map(WorkflowErrorCodes.TransitionLocked, HttpStatusCode.Conflict);
             opt.Map(WorkflowErrorCodes.AutoTransitionConditionNotMet, HttpStatusCode.BadRequest);
             opt.Map(WorkflowErrorCodes.UnauthorizedTransition, HttpStatusCode.Forbidden);
+            opt.Map(WorkflowErrorCodes.AuthorizationRoleDenied, HttpStatusCode.Forbidden);
+            opt.Map(WorkflowErrorCodes.AuthorizeRequiresExactlyOneTarget, HttpStatusCode.BadRequest);
+            opt.Map(WorkflowErrorCodes.AuthorizeQueryRolesRequiresInstance, HttpStatusCode.BadRequest);
             opt.Map(WorkflowErrorCodes.InvalidState, HttpStatusCode.BadRequest);
             opt.Map(WorkflowErrorCodes.NotFoundTransition, HttpStatusCode.NotFound);
             opt.Map(WorkflowErrorCodes.NotFoundInitialState, HttpStatusCode.NotFound);
