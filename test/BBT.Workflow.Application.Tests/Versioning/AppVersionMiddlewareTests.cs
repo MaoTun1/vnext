@@ -1,6 +1,7 @@
+using System;
 using System.Threading.Tasks;
 using BBT.Workflow.Middlewares;
-using BBT.Workflow.Versioning;
+using BBT.Workflow.Runtime;
 using Microsoft.AspNetCore.Http;
 using NSubstitute;
 using Shouldly;
@@ -14,12 +15,12 @@ namespace BBT.Workflow.Application.Tests.Versioning;
 /// </summary>
 public class AppVersionMiddlewareTests
 {
-    private readonly IAppVersionProvider _versionProvider;
+    private readonly IRuntimeInfoProvider _runtimeInfoProvider;
 
     public AppVersionMiddlewareTests()
     {
-        _versionProvider = Substitute.For<IAppVersionProvider>();
-        _versionProvider.GetVersion().Returns("3.2.1");
+        _runtimeInfoProvider = Substitute.For<IRuntimeInfoProvider>();
+        _runtimeInfoProvider.Version.Returns("3.2.1");
     }
 
     [Fact]
@@ -27,7 +28,7 @@ public class AppVersionMiddlewareTests
     {
         // Arrange
         var context = new DefaultHttpContext();
-        var middleware = new AppVersionMiddleware(_ => Task.CompletedTask, _versionProvider);
+        var middleware = new AppVersionMiddleware(_ => Task.CompletedTask, _runtimeInfoProvider);
 
         // Act
         await middleware.InvokeAsync(context);
@@ -46,7 +47,7 @@ public class AppVersionMiddlewareTests
         {
             nextCalled = true;
             return Task.CompletedTask;
-        }, _versionProvider);
+        }, _runtimeInfoProvider);
 
         // Act
         await middleware.InvokeAsync(context);
@@ -56,17 +57,16 @@ public class AppVersionMiddlewareTests
     }
 
     [Fact]
-    public async Task InvokeAsync_WhenVersionIsUnknown_ShouldStillAddHeader()
+    public async Task InvokeAsync_WhenNextThrows_ShouldStillHaveHeader()
     {
         // Arrange
-        _versionProvider.GetVersion().Returns("unknown");
         var context = new DefaultHttpContext();
-        var middleware = new AppVersionMiddleware(_ => Task.CompletedTask, _versionProvider);
+        var middleware = new AppVersionMiddleware(
+            _ => throw new InvalidOperationException("boom"),
+            _runtimeInfoProvider);
 
-        // Act
-        await middleware.InvokeAsync(context);
-
-        // Assert
-        context.Response.Headers["X-App-Version"].ToString().ShouldBe("unknown");
+        // Act & Assert
+        await Should.ThrowAsync<InvalidOperationException>(() => middleware.InvokeAsync(context));
+        context.Response.Headers["X-App-Version"].ToString().ShouldBe("3.2.1");
     }
 }
