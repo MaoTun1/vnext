@@ -15,6 +15,7 @@ public static class ExecutionApiApplicationBuilderExtensions
     public static WebApplication UseExecutionApiModule(this WebApplication app)
     {
         app.UseAetherAmbientServiceProvider();
+        app.UseAppVersion();
         if (app.Environment.IsDevelopment())
         {
             app.UseDeveloperExceptionPage();

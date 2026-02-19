@@ -18,7 +18,7 @@ public static class ExecutionApiServiceCollectionExtensions
     {
         var configuration = services.GetConfiguration();
         services
-            .AddAetherDomain()
+            .AddDomainModule()
             .AddAetherApplication()
             .AddAetherInfrastructure()
             .AddAspNetCoreModules(configuration)
