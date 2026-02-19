@@ -1,4 +1,4 @@
-using BBT.Workflow.Versioning;
+using BBT.Workflow.Runtime;
 using Microsoft.AspNetCore.Http;
 
 namespace BBT.Workflow.Middlewares;
@@ -8,7 +8,7 @@ namespace BBT.Workflow.Middlewares;
 /// Registered early in the pipeline (before exception handler) to ensure
 /// the header is present on both success and error responses.
 /// </summary>
-public sealed class AppVersionMiddleware(RequestDelegate next, IAppVersionProvider versionProvider)
+public sealed class AppVersionMiddleware(RequestDelegate next, IRuntimeInfoProvider runtimeInfoProvider)
 {
     private const string HEADER_NAME = "X-App-Version";
 
@@ -17,7 +17,7 @@ public sealed class AppVersionMiddleware(RequestDelegate next, IAppVersionProvid
     /// </summary>
     public Task InvokeAsync(HttpContext context)
     {
-        context.Response.Headers[HEADER_NAME] = versionProvider.GetVersion();
+        context.Response.Headers[HEADER_NAME] = runtimeInfoProvider.Version;
         return next(context);
     }
 }

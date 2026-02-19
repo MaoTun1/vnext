@@ -13,7 +13,6 @@ using BBT.Workflow.Headers;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Runtime;
 using BBT.Workflow.Schemas;
-using BBT.Workflow.Versioning;
 using Dapr.Jobs.Extensions;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.EntityFrameworkCore;
@@ -52,23 +51,10 @@ public static class WorkflowApiBaseServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Registers the application version provider as a singleton.
-    /// Reads APP_VERSION environment variable, falls back to "unknown".
-    /// </summary>
-    /// <param name="services">The service collection</param>
-    /// <returns>The service collection for chaining</returns>
-    public static IServiceCollection AddAppVersionProvider(this IServiceCollection services)
-    {
-        services.AddSingleton<IAppVersionProvider, AppVersionProvider>();
-        return services;
-    }
-
     public static IServiceCollection AddAspNetCoreModules(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddAetherAmbientServiceProvider();
         services.AddJsonSerializerOptions();
-        services.AddAppVersionProvider();
         services.AddAetherCore(options =>
         {
             options.Environment ??= Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
