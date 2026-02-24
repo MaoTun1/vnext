@@ -10,7 +10,7 @@ namespace BBT.Workflow.Instances;
 /// <summary>
 /// Instance
 /// </summary>
-public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTime, IHasExtraProperties
+public sealed class Instance : AggregateRoot<Guid>, ICreationAuditedObject, IModifyAuditedObject, IHasExtraProperties
 {  
     private Instance()
     {
@@ -125,6 +125,26 @@ public sealed class Instance : AggregateRoot<Guid>, IHasCreatedAt, IHasModifyTim
     /// Modified at
     /// </summary>
     public DateTime? ModifiedAt { get; set; }
+    
+    /// <summary>
+    /// Creator user identifier.
+    /// </summary>
+    public string? CreatedBy { get; set; }
+    
+    /// <summary>
+    /// Creator behalf-of user identifier.
+    /// </summary>
+    public string? CreatedByBehalfOf { get; set; }
+    
+    /// <summary>
+    /// Modifier user identifier.
+    /// </summary>
+    public string? ModifiedBy { get; set; }
+    
+    /// <summary>
+    /// Modifier behalf-of user identifier.
+    /// </summary>
+    public string? ModifiedByBehalfOf { get; set; }
 
     public bool IsTransient { get; private set; }
 
