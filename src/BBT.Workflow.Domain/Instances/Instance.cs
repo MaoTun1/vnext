@@ -238,6 +238,10 @@ public sealed class Instance : AggregateRoot<Guid>, ICreationAuditedObject, IMod
             EffectiveState = EffectiveState,
             Duration = Duration,
             Tags = [.. Tags],
+            CreatedBy = CreatedBy,
+            CreatedByBehalfOf = CreatedByBehalfOf,
+            ModifiedBy = ModifiedBy,
+            ModifiedByBehalfOf = ModifiedByBehalfOf,
             ExtraProperties = new ExtraPropertyDictionary(ExtraProperties)
         };
 

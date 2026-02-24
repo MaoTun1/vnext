@@ -312,28 +312,19 @@ public sealed class AuthorizeAppService(
         if (roleGrants.Any(g => string.Equals(g.Role, PredefinedInstanceRoles.PreviousUser, StringComparison.Ordinal)))
             previousUserCreatedBy = (await instanceTransitionRepository.GetLastCompletedManualTransitionAsync(instance.Id, cancellationToken))?.CreatedBy;
 
-        foreach (var g in roleGrants)
+        bool IsMatch(RoleGrant g)
         {
-            if (g.IsDeny)
-            {
-                var resolvedValue = ResolvePredefinedRole(g.Role, instance, previousUserCreatedBy);
-                if (resolvedValue != null && !string.IsNullOrEmpty(currentActorUserName) && string.Equals(currentActorUserName, resolvedValue, StringComparison.Ordinal))
-                    return false;
-                if (resolvedValue == null && string.Equals(g.Role, normalizedRole, StringComparison.OrdinalIgnoreCase))
-                    return false;
-            }
+            var resolvedValue = ResolvePredefinedRole(g.Role, instance, previousUserCreatedBy);
+            if (resolvedValue != null)
+                return !string.IsNullOrEmpty(currentActorUserName) && string.Equals(currentActorUserName, resolvedValue, StringComparison.Ordinal);
+            return string.Equals(g.Role, normalizedRole, StringComparison.OrdinalIgnoreCase);
         }
 
-        foreach (var g in roleGrants)
-        {
-            if (!g.IsAllow)
-                continue;
-            var resolvedValue = ResolvePredefinedRole(g.Role, instance, previousUserCreatedBy);
-            if (resolvedValue != null && !string.IsNullOrEmpty(currentActorUserName) && string.Equals(currentActorUserName, resolvedValue, StringComparison.Ordinal))
-                return true;
-            if (resolvedValue == null && string.Equals(g.Role, normalizedRole, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
+        if (roleGrants.Any(g => g.IsDeny && IsMatch(g)))
+            return false;
+
+        if (roleGrants.Any(g => g.IsAllow && IsMatch(g)))
+            return true;
 
         return false;
     }
