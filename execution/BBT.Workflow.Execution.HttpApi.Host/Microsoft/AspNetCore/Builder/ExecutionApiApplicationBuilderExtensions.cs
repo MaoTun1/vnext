@@ -30,6 +30,7 @@ public static class ExecutionApiApplicationBuilderExtensions
         app.MapSubscribeHandler();
         app.UseHttpsRedirection();
         app.UseCorrelationId();
+        app.UseParentInstanceIdEnrichment();
         app.UseSecurityHeaders();
         app.UseCurrentUser();
         app.UseStaticFiles();
