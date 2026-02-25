@@ -31,6 +31,7 @@ public static class OrchestrationApiApplicationBuilderExtensions
         app.UseHttpsRedirection();
         app.UseRuntime();
         app.UseCorrelationId();
+        app.UseParentInstanceIdEnrichment();
         app.UseSecurityHeaders();
         app.UseCurrentUser();
         app.UseStaticFiles();

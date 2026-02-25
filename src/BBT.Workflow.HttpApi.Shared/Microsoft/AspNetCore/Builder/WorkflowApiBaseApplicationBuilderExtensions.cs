@@ -34,6 +34,18 @@ public static class WorkflowApiBaseApplicationBuilderExtensions
     }
 
     /// <summary>
+    /// Adds middleware that reads X-Parent-Instance-Id from the request and enriches Activity (tag/baggage) and log scope
+    /// so that traces and logs for subflow/subprocess requests are searchable by parent instance ID.
+    /// Should be registered after UseCorrelationId() and before controllers.
+    /// </summary>
+    /// <param name="app">The application builder</param>
+    /// <returns>The application builder for chaining</returns>
+    public static IApplicationBuilder UseParentInstanceIdEnrichment(this IApplicationBuilder app)
+    {
+        return app.UseMiddleware<ParentInstanceIdEnrichmentMiddleware>();
+    }
+
+    /// <summary>
     /// Adds HTTP metrics middleware to the pipeline
     /// </summary>
     public static IApplicationBuilder UseWorkflowHttpMetrics(this IApplicationBuilder app)
