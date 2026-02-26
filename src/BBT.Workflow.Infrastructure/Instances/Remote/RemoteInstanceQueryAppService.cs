@@ -2,6 +2,9 @@ using System.Text.Json;
 using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Discovery;
+using BBT.Aether.Users;
+using BBT.Workflow.CurrentUser;
+using BBT.Workflow.Remote;
 using BBT.Workflow.Remote.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -34,7 +37,8 @@ internal sealed record ServiceErrorInfo
 public sealed class RemoteInstanceQueryAppService(
     HttpClient httpClient,
     IOptions<RemoteOptions> options,
-    IDomainDiscoveryResolver endpointResolver)
+    IDomainDiscoveryResolver endpointResolver,
+    ICurrentUser currentUser)
     : IRemoteInstanceQueryAppService
 {
     private readonly RemoteOptions _options = options.Value;
@@ -82,13 +86,16 @@ public sealed class RemoteInstanceQueryAppService(
                 relativePath += "?" + string.Join("&", queryParams);
 
             var requestUri = new Uri(endpoint.BaseUrl, relativePath.TrimStart('/'));
-            var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
 
             // Add If-None-Match header for ETag support
             if (!string.IsNullOrEmpty(input.IfNoneMatch))
             {
                 requestMessage.Headers.TryAddWithoutValidation("If-None-Match", input.IfNoneMatch);
             }
+
+            var forwardHeaders = currentUser.ToForwardHeaders();
+            CurrentUserForwardHeadersHelper.MergeIntoRequest(requestMessage, forwardHeaders, input.Headers);
 
             var response = await httpClient.SendAsync(requestMessage, cancellationToken);
 
@@ -143,13 +150,16 @@ public sealed class RemoteInstanceQueryAppService(
                 relativePath += "?" + string.Join("&", queryParams);
 
             var requestUri = new Uri(endpoint.BaseUrl, relativePath.TrimStart('/'));
-            var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
 
             // Add If-None-Match header for ETag support
             if (!string.IsNullOrEmpty(input.IfNoneMatch))
             {
                 requestMessage.Headers.TryAddWithoutValidation("If-None-Match", input.IfNoneMatch);
             }
+
+            var forwardHeaders = currentUser.ToForwardHeaders();
+            CurrentUserForwardHeadersHelper.MergeIntoRequest(requestMessage, forwardHeaders, input.Headers);
 
             var response = await httpClient.SendAsync(requestMessage, cancellationToken);
 
@@ -227,7 +237,10 @@ public sealed class RemoteInstanceQueryAppService(
                 relativePath += "?" + string.Join("&", queryParams);
 
             var requestUri = new Uri(endpoint.BaseUrl, relativePath.TrimStart('/'));
-            var response = await httpClient.GetAsync(requestUri, cancellationToken);
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
+            var forwardHeaders = currentUser.ToForwardHeaders();
+            CurrentUserForwardHeadersHelper.MergeIntoRequest(requestMessage, forwardHeaders, input.Headers);
+            var response = await httpClient.SendAsync(requestMessage, cancellationToken);
 
             return await HandleResponseAsync<InstanceListWithGroupsResponse<GetInstanceOutput>>(response, cancellationToken);
         }
@@ -273,7 +286,10 @@ public sealed class RemoteInstanceQueryAppService(
                 relativePath += "?" + string.Join("&", queryParams);
 
             var requestUri = new Uri(endpoint.BaseUrl, relativePath.TrimStart('/'));
-            var response = await httpClient.GetAsync(requestUri, cancellationToken);
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
+            var forwardHeaders = currentUser.ToForwardHeaders();
+            CurrentUserForwardHeadersHelper.MergeIntoRequest(requestMessage, forwardHeaders, input.Headers);
+            var response = await httpClient.SendAsync(requestMessage, cancellationToken);
 
             // Status code → Result.Fail (per Railway Pattern)
             return await HandleResponseAsync<GetInstanceHistoryOutput>(response, cancellationToken);
@@ -321,11 +337,19 @@ public sealed class RemoteInstanceQueryAppService(
                 }
             }
 
+            if (!string.IsNullOrEmpty(input.Role))
+            {
+                queryParams.Add($"role={Uri.EscapeDataString(input.Role)}");
+            }
+
             if (queryParams.Count > 0)
                 relativePath += "?" + string.Join("&", queryParams);
 
             var requestUri = new Uri(endpoint.BaseUrl, relativePath.TrimStart('/'));
-            var response = await httpClient.GetAsync(requestUri, cancellationToken);
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
+            var forwardHeaders = currentUser.ToForwardHeaders();
+            CurrentUserForwardHeadersHelper.MergeIntoRequest(requestMessage, forwardHeaders, input.Headers);
+            var response = await httpClient.SendAsync(requestMessage, cancellationToken);
 
             // Status code → Result.Fail (per Railway Pattern)
             return await HandleResponseAsync<GetInstanceStateOutput>(response, cancellationToken);
@@ -389,7 +413,10 @@ public sealed class RemoteInstanceQueryAppService(
                 relativePath += "?" + string.Join("&", queryParams);
 
             var requestUri = new Uri(endpoint.BaseUrl, relativePath.TrimStart('/'));
-            var response = await httpClient.GetAsync(requestUri, cancellationToken);
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
+            var forwardHeaders = currentUser.ToForwardHeaders();
+            CurrentUserForwardHeadersHelper.MergeIntoRequest(requestMessage, forwardHeaders, input.Headers);
+            var response = await httpClient.SendAsync(requestMessage, cancellationToken);
 
             // Status code → Result.Fail (per Railway Pattern)
             return await HandleResponseAsync<GetViewOutput>(response, cancellationToken);
@@ -434,7 +461,10 @@ public sealed class RemoteInstanceQueryAppService(
                 relativePath += "&" + string.Join("&", queryParams);
 
             var requestUri = new Uri(endpoint.BaseUrl, relativePath.TrimStart('/'));
-            var response = await httpClient.GetAsync(requestUri, cancellationToken);
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
+            var forwardHeaders = currentUser.ToForwardHeaders();
+            CurrentUserForwardHeadersHelper.MergeIntoRequest(requestMessage, forwardHeaders, input.Headers);
+            var response = await httpClient.SendAsync(requestMessage, cancellationToken);
 
             // Status code → Result.Fail (per Railway Pattern)
             return await HandleResponseAsync<DTOs.GetSchemaOutput>(response, cancellationToken);
@@ -486,7 +516,10 @@ public sealed class RemoteInstanceQueryAppService(
                 relativePath += "?" + string.Join("&", queryParams);
 
             var requestUri = new Uri(endpoint.BaseUrl, relativePath.TrimStart('/'));
-            var response = await httpClient.GetAsync(requestUri, cancellationToken);
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
+            var forwardHeaders = currentUser.ToForwardHeaders();
+            CurrentUserForwardHeadersHelper.MergeIntoRequest(requestMessage, forwardHeaders, input.Headers);
+            var response = await httpClient.SendAsync(requestMessage, cancellationToken);
 
             // Status code → Result.Fail (per Railway Pattern)
             return await HandleResponseAsync<DTOs.GetExtensionsOutput>(response, cancellationToken);

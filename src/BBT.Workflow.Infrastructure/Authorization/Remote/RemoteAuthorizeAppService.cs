@@ -5,6 +5,9 @@ using BBT.Workflow.Definitions;
 using BBT.Workflow.Discovery;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Instances.Remote;
+using BBT.Aether.Users;
+using BBT.Workflow.CurrentUser;
+using BBT.Workflow.Remote;
 using BBT.Workflow.Remote.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -18,7 +21,8 @@ namespace BBT.Workflow.Authorization.Remote;
 public sealed class RemoteAuthorizeAppService(
     HttpClient httpClient,
     IOptions<RemoteOptions> options,
-    IDomainDiscoveryResolver endpointResolver)
+    IDomainDiscoveryResolver endpointResolver,
+    ICurrentUser currentUser)
     : IRemoteAuthorizeAppService
 {
     private readonly RemoteOptions _options = options.Value;
@@ -69,7 +73,10 @@ public sealed class RemoteAuthorizeAppService(
                 relativePath += "?" + string.Join("&", queryParams);
 
             var requestUri = new Uri(endpoint.BaseUrl, relativePath.TrimStart('/'));
-            var response = await httpClient.GetAsync(requestUri, cancellationToken);
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
+            var forwardHeaders = currentUser.ToForwardHeaders();
+            CurrentUserForwardHeadersHelper.MergeIntoRequest(requestMessage, forwardHeaders, null);
+            var response = await httpClient.SendAsync(requestMessage, cancellationToken);
 
             // 200 and 403 both return AuthorizeOutput body (allowed true/false)
             if (response.StatusCode == HttpStatusCode.OK || response.StatusCode == HttpStatusCode.Forbidden)
@@ -109,7 +116,10 @@ public sealed class RemoteAuthorizeAppService(
                 relativePath += "?version=" + Uri.EscapeDataString(version);
 
             var requestUri = new Uri(endpoint.BaseUrl, relativePath.TrimStart('/'));
-            var response = await httpClient.GetAsync(requestUri, cancellationToken);
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, requestUri);
+            var forwardHeaders = currentUser.ToForwardHeaders();
+            CurrentUserForwardHeadersHelper.MergeIntoRequest(requestMessage, forwardHeaders, null);
+            var response = await httpClient.SendAsync(requestMessage, cancellationToken);
 
             if (response.StatusCode == HttpStatusCode.OK)
             {

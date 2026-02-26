@@ -3,6 +3,9 @@ using System.Text.Json;
 using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Discovery;
+using BBT.Aether.Users;
+using BBT.Workflow.CurrentUser;
+using BBT.Workflow.Remote;
 using BBT.Workflow.Remote.Configuration;
 using BBT.Workflow.SubFlow;
 using Microsoft.Extensions.Options;
@@ -16,7 +19,8 @@ namespace BBT.Workflow.Instances.Remote;
 public sealed class RemoteInstanceCommandAppService(
     HttpClient httpClient,
     IOptions<RemoteOptions> options,
-    IDomainDiscoveryResolver endpointResolver)
+    IDomainDiscoveryResolver endpointResolver,
+    ICurrentUser currentUser)
     : IRemoteInstanceCommandAppService
 {
     private readonly RemoteOptions _options = options.Value;
@@ -77,14 +81,8 @@ public sealed class RemoteInstanceCommandAppService(
                 Content = content
             };
 
-            if (input.Headers != null)
-                foreach (var header in input.Headers)
-                {
-                    if (!IsRestrictedHeader(header.Key))
-                    {
-                        requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                    }
-                }
+            var forwardHeaders = currentUser.ToForwardHeaders();
+            CurrentUserForwardHeadersHelper.MergeIntoRequest(requestMessage, forwardHeaders, input.Headers, IsRestrictedHeader);
 
             var response = await httpClient.SendAsync(requestMessage, cancellationToken);
 
@@ -151,14 +149,8 @@ public sealed class RemoteInstanceCommandAppService(
                 Content = content
             };
 
-            if (input.Headers != null)
-                foreach (var header in input.Headers)
-                {
-                    if (!IsRestrictedHeader(header.Key))
-                    {
-                        requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                    }
-                }
+            var forwardHeaders = currentUser.ToForwardHeaders();
+            CurrentUserForwardHeadersHelper.MergeIntoRequest(requestMessage, forwardHeaders, input.Headers, IsRestrictedHeader);
 
             var response = await httpClient.SendAsync(requestMessage, cancellationToken);
 
@@ -218,13 +210,8 @@ public sealed class RemoteInstanceCommandAppService(
                 Content = content
             };
 
-            foreach (var header in input.Headers)
-            {
-                if (!IsRestrictedHeader(header.Key))
-                {
-                    requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                }
-            }
+            var forwardHeaders = currentUser.ToForwardHeaders();
+            CurrentUserForwardHeadersHelper.MergeIntoRequest(requestMessage, forwardHeaders, input.Headers, IsRestrictedHeader);
 
             var response = await httpClient.SendAsync(requestMessage, cancellationToken);
 
@@ -270,6 +257,9 @@ public sealed class RemoteInstanceCommandAppService(
             {
                 Content = content
             };
+
+            var forwardHeaders = currentUser.ToForwardHeaders();
+            CurrentUserForwardHeadersHelper.MergeIntoRequest(requestMessage, forwardHeaders, null, IsRestrictedHeader);
 
             var response = await httpClient.SendAsync(requestMessage, cancellationToken);
 
@@ -318,6 +308,9 @@ public sealed class RemoteInstanceCommandAppService(
             {
                 Content = content
             };
+
+            var forwardHeaders = currentUser.ToForwardHeaders();
+            CurrentUserForwardHeadersHelper.MergeIntoRequest(requestMessage, forwardHeaders, null, IsRestrictedHeader);
 
             var response = await httpClient.SendAsync(requestMessage, cancellationToken);
 

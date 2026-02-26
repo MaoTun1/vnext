@@ -6,6 +6,9 @@ using BBT.Workflow.Definitions;
 using BBT.Workflow.Discovery;
 using BBT.Workflow.Instances;
 using BBT.Workflow.Instances.Remote;
+using BBT.Aether.Users;
+using BBT.Workflow.CurrentUser;
+using BBT.Workflow.Remote;
 using BBT.Workflow.Remote.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -18,7 +21,8 @@ namespace BBT.Workflow.Infrastructure.Instances.Remote;
 public sealed class RemoteInstanceRetryAppService(
     HttpClient httpClient,
     IOptions<RemoteOptions> options,
-    IDomainDiscoveryResolver endpointResolver)
+    IDomainDiscoveryResolver endpointResolver,
+    ICurrentUser currentUser)
     : IRemoteInstanceRetryAppService
 {
     private readonly RemoteOptions _options = options.Value;
@@ -74,14 +78,8 @@ public sealed class RemoteInstanceRetryAppService(
                 Content = content
             };
 
-            // Forward headers
-            foreach (var header in input.Headers)
-            {
-                if (!IsRestrictedHeader(header.Key))
-                {
-                    requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                }
-            }
+            var forwardHeaders = currentUser.ToForwardHeaders();
+            CurrentUserForwardHeadersHelper.MergeIntoRequest(requestMessage, forwardHeaders, input.Headers, IsRestrictedHeader);
 
             var response = await httpClient.SendAsync(requestMessage, cancellationToken);
 
