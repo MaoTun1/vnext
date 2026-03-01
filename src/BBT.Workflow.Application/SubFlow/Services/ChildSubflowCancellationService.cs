@@ -1,8 +1,6 @@
-using BBT.Aether.Application.Services;
 using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Gateway;
-using BBT.Workflow.Instances;
 using BBT.Workflow.Logging;
 using Microsoft.Extensions.Logging;
 
@@ -18,10 +16,9 @@ namespace BBT.Workflow.SubFlow;
 /// making it reusable across different consumers (handlers, hooks, controllers).
 /// </remarks>
 public sealed class ChildSubflowCancellationService(
-    IServiceProvider serviceProvider,
     IInstanceCommandGateway instanceCommandGateway,
     ILogger<ChildSubflowCancellationService> logger)
-    : ApplicationService(serviceProvider), IChildSubflowCancellationService
+    :  IChildSubflowCancellationService
 {
     /// <inheritdoc />
     public async Task<Result> CancelChildSubflowAsync(
