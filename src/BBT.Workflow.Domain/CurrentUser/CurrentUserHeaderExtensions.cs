@@ -5,8 +5,9 @@ namespace BBT.Workflow.CurrentUser;
 /// <summary>
 /// Header key constants aligned with Aether claim types used by HeaderCurrentUserResolver.
 /// Used when building ICurrentUser from a request headers dictionary (e.g. in background job execution scope).
+/// Also used when forwarding current user to remote or subflow requests.
 /// </summary>
-internal static class CurrentUserHeaderKeys
+public static class CurrentUserHeaderKeys
 {
     public const string UserId = "userId";
     public const string UserName = "sub";
@@ -16,6 +17,14 @@ internal static class CurrentUserHeaderKeys
     public const string ActorSub = "act_sub";
     public const string ActorUserId = "act_uid";
     public const string ConsentId = "consent_id";
+
+    /// <summary>
+    /// All header keys that should be forwarded to remote/subflow requests so the downstream can resolve ICurrentUser.
+    /// </summary>
+    public static readonly string[] ForwardKeys =
+    [
+        UserId, UserName, Name, SurName, Role, ActorSub, ActorUserId, ConsentId
+    ];
 }
 
 /// <summary>
@@ -59,6 +68,32 @@ public static class CurrentUserHeaderExtensions
             actorUserId,
             actorUserName,
             consentId);
+    }
+
+    /// <summary>
+    /// Builds the forward headers dictionary from the current user for remote/subflow requests.
+    /// Downstream can resolve ICurrentUser from these headers.
+    /// </summary>
+    public static Dictionary<string, string?> ToForwardHeaders(this ICurrentUser currentUser)
+    {
+        var headers = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrEmpty(currentUser.Id))
+            headers[CurrentUserHeaderKeys.UserId] = currentUser.Id;
+        if (!string.IsNullOrEmpty(currentUser.UserName))
+            headers[CurrentUserHeaderKeys.UserName] = currentUser.UserName;
+        if (!string.IsNullOrEmpty(currentUser.Name))
+            headers[CurrentUserHeaderKeys.Name] = currentUser.Name;
+        if (!string.IsNullOrEmpty(currentUser.Surname))
+            headers[CurrentUserHeaderKeys.SurName] = currentUser.Surname;
+        if (currentUser.Roles is { Length: > 0 })
+            headers[CurrentUserHeaderKeys.Role] = string.Join(",", currentUser.Roles);
+        if (!string.IsNullOrEmpty(currentUser.ActorUserId))
+            headers[CurrentUserHeaderKeys.ActorUserId] = currentUser.ActorUserId;
+        if (!string.IsNullOrEmpty(currentUser.ActorUserName))
+            headers[CurrentUserHeaderKeys.ActorSub] = currentUser.ActorUserName;
+        if (!string.IsNullOrEmpty(currentUser.ConsentId))
+            headers[CurrentUserHeaderKeys.ConsentId] = currentUser.ConsentId;
+        return headers;
     }
 
     private static string? GetHeader(IReadOnlyDictionary<string, string?> headers, string key)

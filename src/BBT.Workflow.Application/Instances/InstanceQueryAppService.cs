@@ -2,6 +2,7 @@ using BBT.Aether;
 using BBT.Aether.Application.Services;
 using BBT.Aether.Domain.Entities;
 using BBT.Aether.Results;
+using BBT.Workflow.Authorization;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Logging;
@@ -15,6 +16,7 @@ using BBT.Workflow.Shared;
 using System.Text.Json;
 using BBT.Workflow.Definitions.GraphQL;
 using BBT.Workflow.Tasks.Coordinator;
+
 namespace BBT.Workflow.Instances;
 
 public sealed class InstanceQueryAppService(
@@ -27,6 +29,7 @@ public sealed class InstanceQueryAppService(
     IInstanceQueryGateway instanceQueryGateway,
     ITaskConditionService taskConditionService,
     IUrlTemplateBuilder urlTemplateBuilder,
+    ITransitionAuthorizationManager transitionAuthorizationManager,
     ILogger<InstanceQueryAppService> logger)
     : ApplicationService(serviceProvider), IInstanceQueryAppService
 {
@@ -92,7 +95,8 @@ public sealed class InstanceQueryAppService(
                     {
                         parsedRequest = request;
                         // Apply sort from query param (overrides envelope orderBy when provided)
-                        if (!string.IsNullOrWhiteSpace(input.Sort) && GraphQLFilterParser.ParseOrderBy(input.Sort) is { } orderBy)
+                        if (!string.IsNullOrWhiteSpace(input.Sort) && GraphQLFilterParser.ParseOrderBy(input.Sort) is
+                                { } orderBy)
                         {
                             parsedRequest.OrderBy = orderBy;
                         }
@@ -171,13 +175,15 @@ public sealed class InstanceQueryAppService(
                         throw new UserFriendlyException(
                             instanceOutputResult.Error.Code,
                             instanceOutputResult.Error.Message,
-                            instanceOutputResult.Error.Detail).WithData("Target", instanceOutputResult.Error.Target ?? string.Empty);
+                            instanceOutputResult.Error.Detail).WithData("Target",
+                            instanceOutputResult.Error.Target ?? string.Empty);
                     }
 
                     list.Add(instanceOutputResult.Value!);
                 }
 
-                var resultPagedList = new HateoasPagedList<GetInstanceOutput>(list, pagedList.CurrentPage, pagedList.PageSize,
+                var resultPagedList = new HateoasPagedList<GetInstanceOutput>(list, pagedList.CurrentPage,
+                    pagedList.PageSize,
                     pagedList.HasNext);
 
                 return InstanceListWithGroupsResponse<GetInstanceOutput>.FromPagedList(resultPagedList, null);
@@ -263,13 +269,14 @@ public sealed class InstanceQueryAppService(
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>SubFlowStateInfo containing transitions, state, view extensions, and active correlations from SubFlow</returns>
     private async Task<SubFlowStateInfo> GetSubFlowTransitionsAsync(
-    InstanceCorrelationInfo activeSubFlowCorrelation,
-    Instance mainInstance,
-    BBT.Workflow.Definitions.Workflow currentWorkflow,
-    string[]? extensions,
-    Dictionary<string, string?> headers,
-    Dictionary<string, string?> queryParams,
-    CancellationToken cancellationToken = default)
+        InstanceCorrelationInfo activeSubFlowCorrelation,
+        Instance mainInstance,
+        BBT.Workflow.Definitions.Workflow currentWorkflow,
+        string[]? extensions,
+        Dictionary<string, string?> headers,
+        Dictionary<string, string?> queryParams,
+        string? role,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -279,7 +286,10 @@ public sealed class InstanceQueryAppService(
                 Workflow = activeSubFlowCorrelation.SubFlowName,
                 Version = activeSubFlowCorrelation.SubFlowVersion,
                 Instance = activeSubFlowCorrelation.SubFlowInstanceId.ToString(),
-                Extensions = extensions
+                Extensions = extensions,
+                Headers = headers,
+                QueryParams = queryParams,
+                Role = role
             };
 
             var subFlowResult = await instanceQueryGateway.GetFunctionWithStateAsync(
@@ -289,7 +299,7 @@ public sealed class InstanceQueryAppService(
             if (subFlowResult.IsSuccess && subFlowResult.Value != null)
             {
                 var subFlowValue = subFlowResult.Value;
-                
+
                 // Extract transition names from TransitionItem list
                 var transitionNames = subFlowValue.Transitions?
                     .Select(t => t.Name)
@@ -383,7 +393,7 @@ public sealed class InstanceQueryAppService(
         {
             Id = instance.Id,
             Flow = instance.Flow,
-            FlowVersion =flow?.Version ?? string.Empty,
+            FlowVersion = flow?.Version ?? string.Empty,
             Etag = instanceData?.ETag ?? string.Empty,
             Domain = domain,
             Key = instance.Key!,
@@ -463,7 +473,8 @@ public sealed class InstanceQueryAppService(
                             input.Extensions,
                             cancellationToken);
 
-                        result.Extensions = subFlowExtensionsResult.Value?.Extensions ?? new Dictionary<string, object>();
+                        result.Extensions = subFlowExtensionsResult.Value?.Extensions ??
+                                            new Dictionary<string, object>();
 
                         return ConditionalResult<GetInstanceDataOutput>.Success(result);
                     }
@@ -560,7 +571,7 @@ public sealed class InstanceQueryAppService(
     /// Builds the complete instance state output including transitions, correlations, and view information.
     /// When there's an active SubFlow, includes the SubFlow's view extensions in data href and merges active correlations.
     /// </summary>
-private async Task<Result<GetInstanceStateOutput>> BuildInstanceStateOutputAsync(
+    private async Task<Result<GetInstanceStateOutput>> BuildInstanceStateOutputAsync(
         Instance instance,
         Definitions.Workflow currentWorkflow,
         GetInstanceStateInput input,
@@ -576,91 +587,88 @@ private async Task<Result<GetInstanceStateOutput>> BuildInstanceStateOutputAsync
             .FirstOrDefault();
 
         var subFlowStateInfo = activeSubFlowCorrelation != null
-            ? await GetSubFlowTransitionsAsync(activeSubFlowCorrelation, instance, currentWorkflow, input.Extensions,input.Headers,input.QueryParams, cancellationToken)
+            ? await GetSubFlowTransitionsAsync(activeSubFlowCorrelation, instance, currentWorkflow, input.Extensions,
+                input.Headers, input.QueryParams, input.Role, cancellationToken)
             : GetMainFlowTransitions(instance, currentWorkflow, transitionInfo);
 
-        // Build transition items with href links
-        var transitionItems = subFlowStateInfo.AvailableTransitions.Select(transitionKey => new TransitionItem
-        {
-            Name = transitionKey,
-            Href = urlTemplateBuilder.BuildTransitionUrl(input.Domain, input.Workflow, instance.Id.ToString(), transitionKey),
-            Schema = new HrefBase { Href = urlTemplateBuilder.BuildSchemaUrl(input.Domain, input.Workflow, instance.Id.ToString(), transitionKey) }
-        }).ToList();
-
-        // Get current state using Railway pattern
-        return currentWorkflow.GetState(instance.CurrentState!)
+        var stateResult = currentWorkflow.GetState(instance.CurrentState!)
             .Ensure(
                 state => state != null,
-                Error.NotFound("notfound", $"State {instance.CurrentState} not found in workflow {input.Workflow}"))
-           .Map(currentStateValue =>
+                Error.NotFound("notfound", $"State {instance.CurrentState} not found in workflow {input.Workflow}"));
+        if (!stateResult.IsSuccess)
+            return Result<GetInstanceStateOutput>.Fail(stateResult.Error);
+
+        var currentStateValue = stateResult.Value!;
+        var keysForTransitions = subFlowStateInfo.AvailableTransitions;
+        if (!string.IsNullOrWhiteSpace(input.Role))
+            keysForTransitions = (await transitionAuthorizationManager.FilterAuthorizedTransitionKeysAsync(
+                    currentWorkflow, currentStateValue, instance, keysForTransitions, input.Role!, cancellationToken))
+                .ToList();
+
+        var transitionItems = keysForTransitions.Select(transitionKey => new TransitionItem
+        {
+            Name = transitionKey,
+            Href = urlTemplateBuilder.BuildTransitionUrl(input.Domain, input.Workflow, instance.Id.ToString(),
+                transitionKey),
+            Schema = new HrefBase
             {
-                // Get view definition from main flow
-                var viewDefinition = GetViewDefinition(instance, currentWorkflow, currentStateValue);
+                Href = urlTemplateBuilder.BuildSchemaUrl(input.Domain, input.Workflow, instance.Id.ToString(),
+                    transitionKey)
+            }
+        }).ToList();
 
-                // Get extensions and loadData from first view entry (if available)
-                // For state output, we use the first/default view entry's extensions
-                var firstViewEntry = viewDefinition?.Views.FirstOrDefault();
-                var viewExtensions = firstViewEntry?.Extensions ?? [];
-                var viewLoadData = firstViewEntry?.LoadData ?? false;
+        var viewDefinition = GetViewDefinition(instance, currentWorkflow, currentStateValue);
+        var firstViewEntry = viewDefinition?.Views.FirstOrDefault();
+        var viewExtensions = firstViewEntry?.Extensions ?? [];
+        var viewLoadData = firstViewEntry?.LoadData ?? false;
+        var allExtensions = subFlowStateInfo.SubFlowData != null
+            ? ExtractExtensionsFromDataHref(subFlowStateInfo.SubFlowData.Href)
+            : (input.Extensions ?? []).Concat(viewExtensions).ToArray();
+        var dataHref = new DataHref
+        {
+            Href = allExtensions.Length > 0
+                ? urlTemplateBuilder.BuildDataWithExtensionsUrl(input.Domain, input.Workflow, instance.Id.ToString(),
+                    allExtensions)
+                : urlTemplateBuilder.BuildDataUrl(input.Domain, input.Workflow, instance.Id.ToString())
+        };
+        var viewHref = new ViewHref
+        {
+            Href = urlTemplateBuilder.BuildViewUrl(input.Domain, input.Workflow, instance.Id.ToString()),
+            LoadData = subFlowStateInfo.SubFlowView?.LoadData ?? viewLoadData
+        };
+        var mainFlowCorrelationHrefs = transitionInfo.ActiveCorrelations.Select(correlation =>
+            new ActiveCorrelationHref
+            {
+                CorrelationId = correlation.CorrelationId,
+                ParentState = correlation.ParentState,
+                SubFlowInstanceId = correlation.SubFlowInstanceId,
+                SubFlowType = correlation.SubFlowType,
+                SubFlowDomain = correlation.SubFlowDomain,
+                SubFlowName = correlation.SubFlowName,
+                SubFlowVersion = correlation.SubFlowVersion,
+                IsCompleted = correlation.IsCompleted,
+                Href = allExtensions.Length > 0
+                    ? urlTemplateBuilder.BuildDataWithExtensionsUrl(correlation.SubFlowDomain, correlation.SubFlowName,
+                        correlation.SubFlowInstanceId.ToString(), allExtensions)
+                    : urlTemplateBuilder.BuildDataUrl(correlation.SubFlowDomain, correlation.SubFlowName,
+                        correlation.SubFlowInstanceId.ToString())
+            }).ToList();
+        var allActiveCorrelations = subFlowStateInfo.SubFlowActiveCorrelations != null
+            ? mainFlowCorrelationHrefs.Concat(subFlowStateInfo.SubFlowActiveCorrelations).ToList()
+            : mainFlowCorrelationHrefs;
 
-                // Build data href with extensions
-                // If SubFlow is active, use SubFlow's extensions; otherwise use main flow extensions
-                var allExtensions = subFlowStateInfo.SubFlowData != null
-                    ? ExtractExtensionsFromDataHref(subFlowStateInfo.SubFlowData.Href)
-                    : (input.Extensions ?? []).Concat(viewExtensions).ToArray();
-
-                var dataHref = new DataHref
-                {
-                    Href = allExtensions.Length > 0
-                        ? urlTemplateBuilder.BuildDataWithExtensionsUrl(input.Domain, input.Workflow, instance.Id.ToString(),
-                            allExtensions)
-                        : urlTemplateBuilder.BuildDataUrl(input.Domain, input.Workflow, instance.Id.ToString())
-                };
-
-                // Build view href - use SubFlow view's LoadData if available, otherwise use main flow
-                var viewHref = new ViewHref
-                {
-                    Href = urlTemplateBuilder.BuildViewUrl(input.Domain, input.Workflow, instance.Id.ToString()),
-                    LoadData = subFlowStateInfo.SubFlowView?.LoadData ?? viewLoadData
-                };
-
-                // Build active correlations with href links from main flow
-                var mainFlowCorrelationHrefs = transitionInfo.ActiveCorrelations.Select(correlation =>
-                    new ActiveCorrelationHref
-                    {
-                        CorrelationId = correlation.CorrelationId,
-                        ParentState = correlation.ParentState,
-                        SubFlowInstanceId = correlation.SubFlowInstanceId,
-                        SubFlowType = correlation.SubFlowType,
-                        SubFlowDomain = correlation.SubFlowDomain,
-                        SubFlowName = correlation.SubFlowName,
-                        SubFlowVersion = correlation.SubFlowVersion,
-                        IsCompleted = correlation.IsCompleted,
-                        Href = allExtensions.Length > 0
-                            ? urlTemplateBuilder.BuildDataWithExtensionsUrl(correlation.SubFlowDomain, correlation.SubFlowName,
-                                correlation.SubFlowInstanceId.ToString(),
-                                allExtensions)
-                            : urlTemplateBuilder.BuildDataUrl(correlation.SubFlowDomain, correlation.SubFlowName,
-                                correlation.SubFlowInstanceId.ToString())
-                    }).ToList();
-
-                // Merge SubFlow active correlations if available
-                var allActiveCorrelations = subFlowStateInfo.SubFlowActiveCorrelations != null
-                    ? mainFlowCorrelationHrefs.Concat(subFlowStateInfo.SubFlowActiveCorrelations).ToList()
-                    : mainFlowCorrelationHrefs;
-
-                return new GetInstanceStateOutput
-                {
-                    Data = dataHref,
-                    View = viewHref,
-                    State = subFlowStateInfo.CurrentState ?? string.Empty,
-                    Status = subFlowStateInfo.Status,
-                    ActiveCorrelations = allActiveCorrelations,
-                    Transitions = transitionItems,
-                    ETag = instance.LatestData?.ETag ?? string.Empty
-                };
-            });
+        return Result<GetInstanceStateOutput>.Ok(new GetInstanceStateOutput
+        {
+            Data = dataHref,
+            View = viewHref,
+            State = subFlowStateInfo.CurrentState ?? string.Empty,
+            Status = subFlowStateInfo.Status,
+            ActiveCorrelations = allActiveCorrelations,
+            Transitions = transitionItems,
+            ETag = instance.LatestData?.ETag ?? string.Empty
+        });
     }
+
     /// <summary>
     /// Extracts extension parameters from a data href URL.
     /// </summary>
@@ -684,7 +692,8 @@ private async Task<Result<GetInstanceStateOutput>> BuildInstanceStateOutputAsync
 
         if (queryParams.TryGetValue("extensions", out var extensionsValues))
         {
-            return extensionsValues.SelectMany(v => v?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? []).ToArray();
+            return extensionsValues.SelectMany(v => v?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? [])
+                .ToArray();
         }
 
         return [];
@@ -1038,8 +1047,8 @@ private async Task<Result<GetInstanceStateOutput>> BuildInstanceStateOutputAsync
         State currentState,
         string? platform,
         string? transitionKey = null,
-        Dictionary<string, string?>? headers=null,
-        Dictionary<string, string?>? queryParams=null, 
+        Dictionary<string, string?>? headers = null,
+        Dictionary<string, string?>? queryParams = null,
         CancellationToken cancellationToken = default)
     {
         var subFlowViewResult = await instanceQueryGateway.GetFunctionWithViewAsync(
@@ -1049,9 +1058,8 @@ private async Task<Result<GetInstanceStateOutput>> BuildInstanceStateOutputAsync
                 Domain = instance.Subflow!.SubFlowDomain,
                 Workflow = instance.Subflow!.SubFlowName,
                 Version = instance.Subflow!.SubFlowVersion,
-                Headers=headers,
-                QueryParams=queryParams
-
+                Headers = headers,
+                QueryParams = queryParams
             },
             platform?.ToLowerInvariant(),
             transitionKey,

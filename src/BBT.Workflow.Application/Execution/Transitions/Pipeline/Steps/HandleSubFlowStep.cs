@@ -58,7 +58,11 @@ public sealed class HandleSubFlowStep(
     /// </summary>
     private Error CreateConfigInvalidError(TransitionExecutionContext context)
     {
-        logger.SubFlowConfigInvalid(context.Target!.Key, context.InstanceId);
+        if (context.Target?.SubFlow == null)
+        {
+            logger.SubFlowConfigInvalid(context.Target!.Key, context.InstanceId);    
+        }
+        
         return WorkflowErrors.ConfigInvalid(context.InstanceId, context.Target.Key);
     }
 

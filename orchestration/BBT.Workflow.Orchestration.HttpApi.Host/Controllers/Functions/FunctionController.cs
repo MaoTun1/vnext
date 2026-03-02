@@ -3,6 +3,7 @@ using BBT.Aether.Application.Dtos;
 using BBT.Aether.AspNetCore.Controllers;
 using BBT.Aether.AspNetCore.Pagination;
 using BBT.Aether.Results;
+using BBT.Aether.Users;
 using BBT.Workflow.Authorization;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Domain.Shared;
@@ -28,6 +29,7 @@ public sealed class FunctionController(
     IFunctionAppService functionAppService,
     IAuthorizeAppService authorizeAppService,
     IInstanceQueryAppService queryAppService,
+    ICurrentUser currentUser,
     IPaginationLinkGenerator linkGenerator,
     IServiceScopeFactory serviceScopeFactory,
     IUrlTemplateBuilder urlTemplateBuilder) : AetherControllerBase
@@ -255,6 +257,8 @@ public sealed class FunctionController(
         Dictionary<string, string?> queryParams,
         CancellationToken cancellationToken)
     {
+        // State function uses role from ICurrentUser (claims bound by middleware), not query string.
+        var role = currentUser.Roles?.FirstOrDefault();
         var input = new GetInstanceStateInput
         {
             Domain = domain,
@@ -263,7 +267,8 @@ public sealed class FunctionController(
             Version = version,
             Extensions = extensions,
             Headers = headers,
-            QueryParams = queryParams
+            QueryParams = queryParams,
+            Role = role
         };
         return await queryAppService.GetInstanceStateAsync(input, cancellationToken);
     }

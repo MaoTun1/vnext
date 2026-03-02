@@ -101,7 +101,10 @@ public sealed class LocalInstanceQueryGateway : IInstanceQueryGateway
                 Workflow = input.Workflow,
                 Version = input.Version,
                 Instance = input.Instance,
-                Extensions = input.Extensions
+                Extensions = input.Extensions,
+                Headers = input.Headers,
+                QueryParams = input.QueryParams,
+                Role = input.Role
             };
             return await queryService.GetInstanceStateAsync(stateInput, cancellationToken);
         }

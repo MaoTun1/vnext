@@ -54,6 +54,7 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         services.AddScoped<IInstanceQueryAppService, InstanceQueryAppService>();
         services.AddScoped<IInstanceRetryAppService, InstanceRetryAppService>();
         services.AddScoped<IFunctionAppService, FunctionAppService>();
+        services.AddScoped<ITransitionAuthorizationManager, TransitionAuthorizationManager>();
         services.AddScoped<IAuthorizeAppService, AuthorizeAppService>();
         services.AddScoped<IInstanceExtensionService, InstanceExtensionService>();
         services.AddScoped<ISubflowCompletionService, SubflowCompletionService>();
