@@ -67,4 +67,12 @@ public interface IInstanceQueryAppService : IApplicationService
     Task<Result<GetExtensionsOutput>> GetExtensionsAsync(
         GetExtensionsInput input,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retrieves the runtime hierarchy of an instance as a recursive tree.
+    /// Includes direct and indirect child subflow/subprocess instances.
+    /// </summary>
+    Task<Result<GetInstanceHierarchyOutput>> GetInstanceHierarchyAsync(
+        GetInstanceHierarchyInput input,
+        CancellationToken cancellationToken = default);
 }
