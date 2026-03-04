@@ -18,6 +18,7 @@ using BBT.Workflow.Shared;
 using System.Text.Json;
 using BBT.Workflow.Definitions.GraphQL;
 using BBT.Workflow.Tasks.Coordinator;
+using BBT.Aether.MultiSchema;
 
 namespace BBT.Workflow.Instances;
 
@@ -26,11 +27,13 @@ public sealed class InstanceQueryAppService(
     IRuntimeInfoProvider runtimeInfoProvider,
     IComponentCacheStore componentCacheStore,
     IInstanceRepository instanceRepository,
+    IInstanceCorrelationRepository instanceCorrelationRepository,
     IInstanceExtensionService instanceExtensionService,
     IScriptContextFactory scriptContextFactory,
     IInstanceQueryGateway instanceQueryGateway,
     ITaskConditionService taskConditionService,
     IUrlTemplateBuilder urlTemplateBuilder,
+    ICurrentSchema currentSchema,
     ITransitionAuthorizationManager transitionAuthorizationManager,
     ICurrentUser currentUser,
     ILogger<InstanceQueryAppService> logger)
@@ -1137,7 +1140,104 @@ public sealed class InstanceQueryAppService(
         // Return subflow view directly (remote call already handled view selection)
         return subFlowViewResult.Value!;
     }
-
+        /// <inheritdoc />
+    public async Task<Result<GetInstanceHierarchyOutput>> GetInstanceHierarchyAsync(
+        GetInstanceHierarchyInput input,
+        CancellationToken cancellationToken = default)
+    {
+        runtimeInfoProvider.Check(input.Domain);
+ 
+        var instanceResult = await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken);
+        if (!instanceResult.IsSuccess)
+        {
+            return Result<GetInstanceHierarchyOutput>.Fail(instanceResult.Error);
+        }
+ 
+        var instance = instanceResult.Value!;
+        var flowResult = await componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, null, cancellationToken);
+        var flowVersion = flowResult.IsSuccess ? flowResult.Value?.Version : null;
+ 
+        var rootNode = new InstanceHierarchyNode
+        {
+            Id = instance.Id,
+            Key = instance.Key,
+            Flow = instance.Flow,
+            Domain = input.Domain,
+            FlowVersion = flowVersion ?? string.Empty,
+            CurrentState = instance.CurrentState,
+            Status = instance.Status,
+            SubFlowType = null,
+            IsCompleted = instance.Status == InstanceStatus.Completed,
+            CompletedAt = instance.CompletedAt,
+            ParentState = null
+        };
+ 
+        rootNode.Children = await BuildHierarchyTreeAsync(
+            instance.Id,
+            input.Workflow,
+            input.Domain,
+            cancellationToken);
+ 
+        return Result<GetInstanceHierarchyOutput>.Ok(new GetInstanceHierarchyOutput { Root = rootNode });
+    }
+ 
+    private async Task<List<InstanceHierarchyNode>> BuildHierarchyTreeAsync(
+        Guid parentInstanceId,
+        string parentFlow,
+        string domain,
+        CancellationToken cancellationToken)
+    {
+        List<InstanceCorrelation> correlations;
+        using (currentSchema.Use(parentFlow))
+        {
+            correlations = await instanceCorrelationRepository.GetByParentAsync(parentInstanceId, cancellationToken);
+        }
+ 
+        if (correlations.Count == 0)
+        {
+            return [];
+        }
+ 
+        var children = new List<InstanceHierarchyNode>();
+        foreach (var correlation in correlations)
+        {
+            var childFlow = correlation.SubFlowName;
+            var childDomain = correlation.SubFlowDomain;
+            Instance? childInstance = null;
+ 
+            using (currentSchema.Use(childFlow))
+            {
+                childInstance = await instanceRepository.FindByIdentifierAsReadOnlyAsync(
+                    correlation.SubFlowInstanceId.ToString(),
+                    cancellationToken);
+            }
+ 
+            var node = new InstanceHierarchyNode
+            {
+                Id = correlation.SubFlowInstanceId,
+                Key = childInstance?.Key,
+                Flow = childFlow,
+                Domain = childDomain,
+                FlowVersion = correlation.SubFlowVersion,
+                CurrentState = correlation.SubFlowCurrentState ?? childInstance?.CurrentState,
+                Status = childInstance?.Status ?? (correlation.IsCompleted ? InstanceStatus.Completed : InstanceStatus.Active),
+                SubFlowType = correlation.SubFlowType,
+                IsCompleted = correlation.IsCompleted,
+                CompletedAt = correlation.CompletedAt,
+                ParentState = correlation.ParentState
+            };
+ 
+            node.Children = await BuildHierarchyTreeAsync(
+                correlation.SubFlowInstanceId,
+                childFlow,
+                childDomain,
+                cancellationToken);
+ 
+            children.Add(node);
+        }
+ 
+        return children;
+    }
     /// <summary>
     /// Builds a GetViewOutput from a View and ViewEntry.
     /// </summary>

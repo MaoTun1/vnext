@@ -35,6 +35,7 @@ The BBT Workflow Engine is a comprehensive, domain-driven workflow management sy
 - [Timer Execution](./features/timer-execution.md) - Enhanced timer execution and scheduling
 - [Instance Filtering](./features/instance-filtering.md) - Advanced filtering capabilities for workflow instances
 - [Master Schema Field-Level Visibility](./features/master-schema-field-visibility.md) - Role-based field visibility for instance data using schema `roles` vocabulary
+- [Instance Hierarchy Function](./features/instance-hierarchy-function-en.md) - Runtime hierarchy tree for instances with nested subflows
 - [Caching Strategy](./features/caching-strategy.md) - Distributed caching implementation and patterns
 
 ### Infrastructure & Operations

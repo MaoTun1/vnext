@@ -150,7 +150,11 @@ public sealed class FunctionController(
             return FromResult(await ProcessExtensionsFunctionListAsync(domain, workflow, pagedList,
                 requestContext.Headers, requestContext.QueryParameters, cancellationToken));
         }
-
+        if (functionType == Definitions.Functions.FunctionTypeConst.Hierarchy)
+        {
+            return FromResult(await ProcessHierarchyFunctionListAsync(domain, workflow, pagedList,
+                cancellationToken));
+        }
         return FromResult(await ProcessCustomFunctionListAsync(function, workflow, domain, pagedList,
             requestContext.Headers, requestContext.QueryParameters, cancellationToken));
     }
@@ -227,7 +231,17 @@ public sealed class FunctionController(
                 domain, workflow, instance, version, cancellationToken);
             return FromResult(result);
         }
-
+        if (functionType == Definitions.Functions.FunctionTypeConst.Hierarchy)
+        {
+            var input = new GetInstanceHierarchyInput
+            {
+                Domain = domain,
+                Workflow = workflow,
+                Instance = instance
+            };
+            var result = await queryAppService.GetInstanceHierarchyAsync(input, cancellationToken);
+            return FromResult(result);
+        }
         return FromResult(await functionAppService.GetFunctionByInstanceAsync(function, workflow, domain, instance,
             requestContext.Headers, requestContext.QueryParameters, cancellationToken));
     }
@@ -438,7 +452,34 @@ public sealed class FunctionController(
 
         return Result<HateoasPagedResultDto<GetSchemaOutput>>.Ok(output);
     }
-
+    private async Task<Result<HateoasPagedResultDto<GetInstanceHierarchyOutput>>> ProcessHierarchyFunctionListAsync(
+        string domain,
+        string workflow,
+        HateoasPagedList<GetInstanceOutput> instanceListResult,
+        CancellationToken cancellationToken)
+    {
+        var tasks = instanceListResult.Items.Select(async instance =>
+        {
+            await using var scope = serviceScopeFactory.CreateAsyncScope();
+            var scopedQueryService = scope.ServiceProvider.GetRequiredService<IInstanceQueryAppService>();
+            var input = new GetInstanceHierarchyInput
+            {
+                Domain = domain,
+                Workflow = workflow,
+                Instance = instance.Key!
+            };
+            return await scopedQueryService.GetInstanceHierarchyAsync(input, cancellationToken);
+        });
+ 
+        var results = await Task.WhenAll(tasks);
+        var list = results.Where(r => r.IsSuccess).Select(r => r.Value!).ToList();
+ 
+        var route = urlTemplateBuilder.BuildFunctionListUrl(domain, workflow,
+            Definitions.Functions.FunctionTypeConst.Hierarchy, InstanceUrlTemplates.GetApiVersionPrefix("1"));
+        var output = linkGenerator.CreateHateoasResult(instanceListResult, list, route);
+ 
+        return Result<HateoasPagedResultDto<GetInstanceHierarchyOutput>>.Ok(output);
+    }
     private async Task<Result<HateoasPagedResultDto<GetViewOutput>>> ProcessViewFunctionListAsync(
         string domain,
         string workflow,
