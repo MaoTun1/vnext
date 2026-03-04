@@ -58,8 +58,6 @@ public sealed class RemoteInstanceRetryAppService(
             var relativePath = InstanceUrlTemplates.Retry(input.Domain, input.Workflow, input.Instance, ApiVersionPrefix);
 
             var queryParams = new List<string>();
-            if (!string.IsNullOrEmpty(input.Version))
-                queryParams.Add($"version={Uri.EscapeDataString(input.Version)}");
             if (input.Sync)
                 queryParams.Add("sync=true");
 

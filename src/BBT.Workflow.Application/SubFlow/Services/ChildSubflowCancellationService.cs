@@ -38,10 +38,7 @@ public sealed class ChildSubflowCancellationService(
                 var result = await instanceCommandGateway.TransitionAsync(
                     instanceId,
                     WellKnownTransitionKeys.Cancel,
-                    new Instances.TransitionInput(
-                        domain: domain,
-                        workflow: flow,
-                        version: version),
+                    new Instances.TransitionInput(domain, flow),
                     cancellationToken: cancellationToken);
 
                 if (result.IsSuccess)
