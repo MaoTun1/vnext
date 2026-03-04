@@ -2,9 +2,11 @@ using BBT.Aether;
 using BBT.Aether.Application.Services;
 using BBT.Aether.Domain.Entities;
 using BBT.Aether.Results;
+using BBT.Aether.Users;
 using BBT.Workflow.Authorization;
 using BBT.Workflow.Caching;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Definitions.Schemas;
 using BBT.Workflow.Logging;
 using BBT.Workflow.Extentions;
 using BBT.Workflow.Gateway;
@@ -33,6 +35,7 @@ public sealed class InstanceQueryAppService(
     IUrlTemplateBuilder urlTemplateBuilder,
     ICurrentSchema currentSchema,
     ITransitionAuthorizationManager transitionAuthorizationManager,
+    ICurrentUser currentUser,
     ILogger<InstanceQueryAppService> logger)
     : ApplicationService(serviceProvider), IInstanceQueryAppService
 {
@@ -435,7 +438,43 @@ public sealed class InstanceQueryAppService(
 
         response.Extensions = extensionsResult.Value!;
 
+        response.Attributes = await ApplySchemaFieldFilterAsync(flow, response.Attributes, instance, cancellationToken) ?? response.Attributes;
+
         return Result<GetInstanceOutput>.Ok(response);
+    }
+
+    /// <summary>
+    /// Applies master schema field-level visibility: filters instance data by effective caller roles
+    /// (static roles from header; when instance is present, also $InstanceStarter and $PreviousUser when matched).
+    /// Returns filtered JsonElement or original if workflow has no schema or schema has no roles.
+    /// </summary>
+    private async Task<JsonElement?> ApplySchemaFieldFilterAsync(
+        Definitions.Workflow? workflow,
+        JsonElement? data,
+        Instance? instance = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (workflow?.Schema is null || !data.HasValue)
+            return data;
+        var element = data.GetValueOrDefault();
+        if (element.ValueKind != JsonValueKind.Object)
+            return data;
+
+        var schemaResult = await componentCacheStore.GetSchemaAsync(workflow.Schema, cancellationToken);
+        if (!schemaResult.IsSuccess)
+            return data;
+
+        var pathRoleGrants = SchemaRolesParser.ParsePropertyRoles(schemaResult.Value!.Schema);
+        if (pathRoleGrants.Count == 0)
+            return data;
+
+        var callerRoles = instance != null
+            ? await transitionAuthorizationManager.GetEffectiveCallerRolesForFieldVisibilityAsync(instance, cancellationToken)
+            : currentUser.Roles;
+        var visiblePaths = SchemaFieldVisibilityService.GetVisiblePaths(pathRoleGrants, callerRoles);
+        var pathsWithRoles = new HashSet<string>(pathRoleGrants.Keys, StringComparer.Ordinal);
+        var filtered = InstanceDataRoleFilter.FilterByVisiblePaths(element, pathsWithRoles, visiblePaths);
+        return filtered;
     }
 
     public async Task<ConditionalResult<GetInstanceDataOutput>> GetInstanceDataAsync(
@@ -467,6 +506,8 @@ public sealed class InstanceQueryAppService(
                         Data = instance.LatestData?.Data.JsonElement,
                         Etag = instance.LatestData?.ETag ?? string.Empty
                     };
+
+                    result.Data = await ApplySchemaFieldFilterAsync(flow, result.Data, instance, cancellationToken) ?? result.Data;
 
                     // If there's an active SubFlow and extensions are requested, fetch from SubFlow
                     if (instance.Subflow != null)

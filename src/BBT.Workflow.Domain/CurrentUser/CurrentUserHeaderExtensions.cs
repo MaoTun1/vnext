@@ -17,14 +17,6 @@ public static class CurrentUserHeaderKeys
     public const string ActorSub = "act_sub";
     public const string ActorUserId = "act_uid";
     public const string ConsentId = "consent_id";
-
-    /// <summary>
-    /// All header keys that should be forwarded to remote/subflow requests so the downstream can resolve ICurrentUser.
-    /// </summary>
-    public static readonly string[] ForwardKeys =
-    [
-        UserId, UserName, Name, SurName, Role, ActorSub, ActorUserId, ConsentId
-    ];
 }
 
 /// <summary>
@@ -54,7 +46,7 @@ public static class CurrentUserHeaderExtensions
         var rolesHeader = GetHeader(headers, CurrentUserHeaderKeys.Role);
         var roles = string.IsNullOrEmpty(rolesHeader)
             ? null
-            : rolesHeader.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            : ParseRolesFromHeader(rolesHeader);
         var actorUserId = GetHeader(headers, CurrentUserHeaderKeys.ActorUserId);
         var actorUserName = GetHeader(headers, CurrentUserHeaderKeys.ActorSub);
         var consentId = GetHeader(headers, CurrentUserHeaderKeys.ConsentId);
@@ -94,6 +86,21 @@ public static class CurrentUserHeaderExtensions
         if (!string.IsNullOrEmpty(currentUser.ConsentId))
             headers[CurrentUserHeaderKeys.ConsentId] = currentUser.ConsentId;
         return headers;
+    }
+
+    /// <summary>
+    /// Parses the role header value into an array of role strings.
+    /// Supports multiple roles separated by comma or space (e.g. "role1, role2" or "role1 role2").
+    /// </summary>
+    public static string[]? ParseRolesFromHeader(string? roleHeaderValue)
+    {
+        if (string.IsNullOrWhiteSpace(roleHeaderValue))
+            return null;
+        var roles = roleHeaderValue!
+            .Split([',', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => s.Length > 0)
+            .ToArray();
+        return roles.Length == 0 ? null : roles;
     }
 
     private static string? GetHeader(IReadOnlyDictionary<string, string?> headers, string key)
