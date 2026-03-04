@@ -399,7 +399,7 @@ public sealed class InstanceQueryAppService(
         {
             Id = instance.Id,
             Flow = instance.Flow,
-            FlowVersion = instance.FlowVersion ?? flow?.Version ?? string.Empty,
+            FlowVersion = instance.FlowVersion,
             Etag = instanceData?.ETag ?? string.Empty,
             Domain = domain,
             Key = instance.Key!,

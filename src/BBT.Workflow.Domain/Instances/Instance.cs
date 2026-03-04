@@ -496,14 +496,6 @@ public sealed class Instance : AggregateRoot<Guid>, ICreationAuditedObject, IMod
         Key = Check.NotNullOrWhiteSpace(key, nameof(key), InstanceConstants.MaxKeyLength);
     }
 
-    /// <summary>
-    /// Sets the flow version pinned to this instance at start. Null is allowed (treated as latest at runtime).
-    /// </summary>
-    public void SetFlowVersion(string? version)
-    {
-        FlowVersion = version == null ? null : Check.Length(version, nameof(version), WorkflowConstants.MaxVersionLength);
-    }
-
     private void SetState(string currentState)
     {
         CurrentState = Check.Length(currentState, nameof(currentState), StateConstants.MaxKeyLength);
