@@ -31,7 +31,7 @@ public sealed class TransitionAuthorizationManager(
         if (instance != null)
             return await EvaluateRolesWithPredefinedAsync(role, roleGrants, instance, cancellationToken);
 
-        return EvaluateRoles(role, roleGrants);
+        return EvaluateRolesStatic(role, roleGrants);
     }
 
     /// <inheritdoc />
@@ -72,7 +72,7 @@ public sealed class TransitionAuthorizationManager(
             return true; // No roles defined → allow
         if (instance != null)
             return await EvaluateRolesWithPredefinedAsync(role, roleGrants, instance, cancellationToken);
-        return EvaluateRoles(role, roleGrants);
+        return EvaluateRolesStatic(role, roleGrants);
     }
 
     /// <summary>
@@ -124,8 +124,9 @@ public sealed class TransitionAuthorizationManager(
 
     /// <summary>
     /// Evaluates role against role grants (static only). DENY always wins; else any ALLOW match → true.
+    /// Used by transition/function authorization and by schema field-level visibility.
     /// </summary>
-    private static bool EvaluateRoles(string role, IReadOnlyCollection<RoleGrant> roleGrants)
+    public static bool EvaluateRolesStatic(string role, IReadOnlyCollection<RoleGrant> roleGrants)
     {
         if (roleGrants.Count == 0)
             return true; // No roles defined → allow

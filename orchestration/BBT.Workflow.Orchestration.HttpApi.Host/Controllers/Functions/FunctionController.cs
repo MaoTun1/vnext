@@ -80,7 +80,7 @@ public sealed class FunctionController(
 
         if (functionType == Definitions.Functions.FunctionTypeConst.Authorize)
         {
-            var role = requestContext.QueryParameters.GetValueOrDefault("role", null);
+            var role = currentUser.Roles?.Length > 0 ? string.Join(",", currentUser.Roles) : requestContext.QueryParameters.GetValueOrDefault("role", null);
             var transitionKey = requestContext.QueryParameters.GetValueOrDefault("transitionKey", null);
             var functionKey = requestContext.QueryParameters.GetValueOrDefault("functionKey", null);
             var version = requestContext.QueryParameters.GetValueOrDefault("version", null);
@@ -210,8 +210,7 @@ public sealed class FunctionController(
 
         if (functionType == Definitions.Functions.FunctionTypeConst.Authorize)
         {
-            var role = parameters.Role ??
-                       requestContext.QueryParameters.GetValueOrDefault("role", null) ?? string.Empty;
+            var role = currentUser.Roles?.Length > 0 ? string.Join(",", currentUser.Roles) : (parameters.Role ?? requestContext.QueryParameters.GetValueOrDefault("role", null) ?? string.Empty);
             var version = parameters.Version ?? requestContext.QueryParameters.GetValueOrDefault("version", null);
             var checkQueryRoles = parameters.QueryRoles == true
                 || string.Equals(requestContext.QueryParameters.GetValueOrDefault("queryRoles", null), "true", StringComparison.OrdinalIgnoreCase);
