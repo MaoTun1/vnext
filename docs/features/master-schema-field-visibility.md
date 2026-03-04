@@ -13,11 +13,14 @@ This feature implements [GitHub #402](https://github.com/burgan-tech/vnext/issue
 - **DENY overrides ALLOW:** If any of the caller's roles match a `deny` grant for that field, the field is hidden even if another role has `allow`.
 - **Scope:** Applies only to **function response** and **instance query** endpoints that return instance data (Data function, GetInstance, GetInstanceList). The existing `authorize` and `permissions` endpoints are unchanged.
 
-## Role Source: Request Header and CurrentUser
+## Role Source: Request Header, CurrentUser, and Predefined Instance Roles
 
-- Caller roles are taken from **`ICurrentUser.Roles`**.
-- `Roles` is populated from the request header **`role`**: the header value is split by **space or comma** (e.g. `role: maker, approver` or `role: maker approver`), trimmed, and stored as an array. This is done via `CurrentUserHeaderExtensions.ParseRolesFromHeader` and when building the current user from headers (e.g. `ChangeFromHeaders`).
-- Authorize endpoints also use `ICurrentUser.Roles`; if any of the caller's roles is allowed for the requested transition/function/query roles, the result is allowed.
+- **Static roles:** Caller roles are taken from **`ICurrentUser.Roles`**. `Roles` is populated from the request header **`role`**: the header value is split by **space or comma** (e.g. `role: maker, approver` or `role: maker approver`), trimmed, and stored as an array. This is done via `CurrentUserHeaderExtensions.ParseRolesFromHeader` and when building the current user from headers (e.g. `ChangeFromHeaders`).
+- **Effective caller roles for instance data:** When returning instance data (GetInstance, GetInstanceData, list Attributes), the list of roles used for field visibility is **expanded** to include predefined instance roles when the current user matches:
+  - **`$InstanceStarter`** is added when `ICurrentUser.ActorUserName` equals the instance’s **CreatedBy** (the user who started the instance).
+  - **`$PreviousUser`** is added when `ICurrentUser.ActorUserName` equals the **CreatedBy** of the last completed **manual** transition for that instance.
+- So schema properties that declare `roles: [{ "role": "$InstanceStarter", "grant": "allow" }]` or `$PreviousUser` will show or hide correctly based on whether the caller is the instance starter or the previous actor. This resolution is done by `ITransitionAuthorizationManager.GetEffectiveCallerRolesForFieldVisibilityAsync` and is consistent with transition/function authorize semantics.
+- Authorize endpoints also use `ICurrentUser.Roles` (and, when an instance is present, the same predefined-role resolution for transitions); if any of the caller's roles is allowed for the requested transition/function/query roles, the result is allowed.
 
 ## Schema Format: `roles` Vocabulary
 
@@ -69,7 +72,8 @@ Current ETag behaviour is unchanged. Role-based ETag variation may be addressed 
 | Schema roles parser | `BBT.Workflow.Domain/Definitions/Schemas/SchemaRolesParser.cs` | Parses schema `properties` and `roles` into path → RoleGrant[] |
 | Field visibility | `BBT.Workflow.Application/Authorization/SchemaFieldVisibilityService.cs` | Computes visible paths from caller roles and path role grants (DENY/ALLOW) |
 | JSON filter | `BBT.Workflow.Application/Authorization/InstanceDataRoleFilter.cs` | Filters a JsonElement to only include visible paths |
-| Integration | `InstanceQueryAppService` | Applies filter in GetInstanceDataAsync and BuildInstanceOutputAsync using ICurrentUser.Roles |
+| Integration | `InstanceQueryAppService` | Applies filter in GetInstanceDataAsync and BuildInstanceOutputAsync using effective caller roles (static + $InstanceStarter / $PreviousUser when instance present) |
+| Effective roles | `ITransitionAuthorizationManager.GetEffectiveCallerRolesForFieldVisibilityAsync` | Builds static roles plus $InstanceStarter / $PreviousUser when CurrentUser.ActorUserName matches instance.CreatedBy or last manual transition CreatedBy |
 | CurrentUser roles | `BBT.Workflow.Domain/CurrentUser/CurrentUserHeaderExtensions.cs` | `ParseRolesFromHeader`: splits header `role` by space or comma → array for Roles |
 
 ## Out of Scope

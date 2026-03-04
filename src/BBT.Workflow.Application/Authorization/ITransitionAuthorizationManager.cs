@@ -57,4 +57,16 @@ public interface ITransitionAuthorizationManager
         IReadOnlyCollection<RoleGrant> roleGrants,
         Instance? instance,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Builds the effective caller roles list for schema field-level visibility.
+    /// Returns static roles (ICurrentUser.Roles); when instance is present, adds $InstanceStarter if
+    /// CurrentUser.ActorUserName equals Instance.CreatedBy, and $PreviousUser if it equals the last manual transition's CreatedBy.
+    /// </summary>
+    /// <param name="instance">Optional instance for resolving predefined roles.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>List of role strings to use when evaluating schema path visibility.</returns>
+    Task<IReadOnlyList<string>> GetEffectiveCallerRolesForFieldVisibilityAsync(
+        Instance? instance,
+        CancellationToken cancellationToken = default);
 }

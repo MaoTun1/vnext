@@ -435,19 +435,21 @@ public sealed class InstanceQueryAppService(
 
         response.Extensions = extensionsResult.Value!;
 
-        response.Attributes = await ApplySchemaFieldFilterAsync(flow, response.Attributes, cancellationToken) ?? response.Attributes;
+        response.Attributes = await ApplySchemaFieldFilterAsync(flow, response.Attributes, instance, cancellationToken) ?? response.Attributes;
 
         return Result<GetInstanceOutput>.Ok(response);
     }
 
     /// <summary>
-    /// Applies master schema field-level visibility: filters instance data by caller roles (ICurrentUser.Roles).
+    /// Applies master schema field-level visibility: filters instance data by effective caller roles
+    /// (static roles from header; when instance is present, also $InstanceStarter and $PreviousUser when matched).
     /// Returns filtered JsonElement or original if workflow has no schema or schema has no roles.
     /// </summary>
     private async Task<JsonElement?> ApplySchemaFieldFilterAsync(
         Definitions.Workflow? workflow,
         JsonElement? data,
-        CancellationToken cancellationToken)
+        Instance? instance = null,
+        CancellationToken cancellationToken = default)
     {
         if (workflow?.Schema is null || !data.HasValue)
             return data;
@@ -463,7 +465,9 @@ public sealed class InstanceQueryAppService(
         if (pathRoleGrants.Count == 0)
             return data;
 
-        var callerRoles = currentUser.Roles;
+        var callerRoles = instance != null
+            ? await transitionAuthorizationManager.GetEffectiveCallerRolesForFieldVisibilityAsync(instance, cancellationToken)
+            : currentUser.Roles;
         var visiblePaths = SchemaFieldVisibilityService.GetVisiblePaths(pathRoleGrants, callerRoles);
         var pathsWithRoles = new HashSet<string>(pathRoleGrants.Keys, StringComparer.Ordinal);
         var filtered = InstanceDataRoleFilter.FilterByVisiblePaths(element, pathsWithRoles, visiblePaths);
@@ -500,7 +504,7 @@ public sealed class InstanceQueryAppService(
                         Etag = instance.LatestData?.ETag ?? string.Empty
                     };
 
-                    result.Data = await ApplySchemaFieldFilterAsync(flow, result.Data, cancellationToken) ?? result.Data;
+                    result.Data = await ApplySchemaFieldFilterAsync(flow, result.Data, instance, cancellationToken) ?? result.Data;
 
                     // If there's an active SubFlow and extensions are requested, fetch from SubFlow
                     if (instance.Subflow != null)

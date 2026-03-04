@@ -75,6 +75,33 @@ public sealed class TransitionAuthorizationManager(
         return EvaluateRolesStatic(role, roleGrants);
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<string>> GetEffectiveCallerRolesForFieldVisibilityAsync(
+        Instance? instance,
+        CancellationToken cancellationToken = default)
+    {
+        var roles = currentUser.Roles is { Length: > 0 }
+            ? new List<string>(currentUser.Roles)
+            : new List<string>();
+
+        if (instance == null)
+            return roles;
+
+        var actorUserName = currentUser.ActorUserName?.Trim();
+        if (!string.IsNullOrEmpty(actorUserName))
+        {
+            if (string.Equals(actorUserName, instance.CreatedBy?.Trim(), StringComparison.Ordinal))
+                roles.Add(PredefinedInstanceRoles.InstanceStarter);
+
+            var lastManual = await instanceTransitionRepository.GetLastCompletedManualTransitionAsync(instance.Id, cancellationToken);
+            var previousUserCreatedBy = lastManual?.CreatedBy?.Trim();
+            if (!string.IsNullOrEmpty(previousUserCreatedBy) && string.Equals(actorUserName, previousUserCreatedBy, StringComparison.Ordinal))
+                roles.Add(PredefinedInstanceRoles.PreviousUser);
+        }
+
+        return roles;
+    }
+
     /// <summary>
     /// Evaluates role grants with resolution of predefined instance roles ($InstanceStarter, $PreviousUser).
     /// </summary>
