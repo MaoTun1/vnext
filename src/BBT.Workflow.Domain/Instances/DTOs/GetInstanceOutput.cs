@@ -43,6 +43,34 @@ public sealed class GetInstanceOutput
 /// </summary>
 public sealed class InstanceMetadataDto
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="InstanceMetadataDto"/> class.
+    /// </summary>
+    public InstanceMetadataDto()
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="InstanceMetadataDto"/> class from an <see cref="Instance"/> entity.
+    /// </summary>
+    /// <param name="instance">The instance entity.</param>
+    public InstanceMetadataDto(Instance instance)
+    {
+        CurrentState = instance.CurrentState;
+        EffectiveState = instance.EffectiveState;
+        Status = instance.Status;
+        EffectiveStateType = instance.EffectiveStateType;
+        EffectiveStateSubType = instance.EffectiveStateSubType;
+        CompletedAt = instance.CompletedAt;
+        Duration = instance.Duration?.TotalSeconds;
+        CreatedAt = instance.CreatedAt;
+        ModifiedAt = instance.ModifiedAt;
+        CreatedBy = instance.CreatedBy;
+        CreatedByBehalfOf = instance.CreatedByBehalfOf;
+        ModifiedBy = instance.ModifiedBy;
+        ModifiedByBehalfOf = instance.ModifiedByBehalfOf;
+    }
+    
     /// <summary>Current state key (engine internal state).</summary>
     public string? CurrentState { get; set; }
 

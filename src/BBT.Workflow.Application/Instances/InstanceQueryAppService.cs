@@ -405,22 +405,7 @@ public sealed class InstanceQueryAppService(
             Key = instance.Key!,
             Tags = instance.Tags,
             Attributes = instanceData?.Data.JsonElement,
-            Metadata = new InstanceMetadataDto
-            {
-                CurrentState = instance.CurrentState,
-                EffectiveState = instance.EffectiveState,
-                Status = instance.Status,
-                EffectiveStateType = instance.EffectiveStateType,
-                EffectiveStateSubType = instance.EffectiveStateSubType,
-                CompletedAt = instance.CompletedAt,
-                Duration = instance.Duration?.TotalSeconds,
-                CreatedAt = instance.CreatedAt,
-                ModifiedAt = instance.ModifiedAt,
-                CreatedBy = instance.CreatedBy,
-                CreatedByBehalfOf = instance.CreatedByBehalfOf,
-                ModifiedBy = instance.ModifiedBy,
-                ModifiedByBehalfOf = instance.ModifiedByBehalfOf
-            }
+            Metadata = new InstanceMetadataDto(instance)
         };
 
         if (flow == null)
