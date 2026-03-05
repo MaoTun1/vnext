@@ -1240,16 +1240,18 @@ public sealed class InstanceQueryAppService(
     }
     /// <summary>
     /// Builds a GetViewOutput from a View and ViewEntry.
+    /// Content is returned as JSON object/array for Json, DeepLink, Http, URN when parseable; otherwise as string (including Html, Markdown and parse failures).
     /// </summary>
     /// <param name="view">The view to build output from</param>
     /// <param name="viewEntry">The view entry containing extensions and loadData information</param>
-    /// <returns>GetViewOutput with view content</returns>
+    /// <returns>GetViewOutput with view content typed by view type</returns>
     private GetViewOutput BuildViewOutput(View view, ViewEntry viewEntry)
     {
+        var content = view.GetContentAsTyped();
         return new GetViewOutput
         {
             Key = view.Key,
-            Content = view.Content,
+            Content = content,
             Type = view.Type.ToString(),
             Display = view.Display,
             Label = ""
