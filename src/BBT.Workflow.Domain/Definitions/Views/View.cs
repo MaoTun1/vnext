@@ -102,9 +102,6 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
     /// <returns>Parsed JSON as <see cref="JsonElement"/> for JSON-structured types when parseable; otherwise the original content string.</returns>
     public object GetContentAsTyped()
     {
-        if (Type is ViewType.Html or ViewType.Markdown)
-            return Content;
-
         if (Type is ViewType.Json or ViewType.DeepLink or ViewType.Http or ViewType.URN)
         {
             try
