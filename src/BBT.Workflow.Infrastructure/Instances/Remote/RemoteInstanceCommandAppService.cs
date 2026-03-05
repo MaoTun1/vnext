@@ -190,8 +190,6 @@ public sealed class RemoteInstanceCommandAppService(
                 transitionKey, ApiVersionPrefix);
 
             var queryParams = new List<string>();
-            if (!string.IsNullOrEmpty(input.Version))
-                queryParams.Add($"version={Uri.EscapeDataString(input.Version)}");
             if (input.Sync)
                 queryParams.Add("sync=true");
 

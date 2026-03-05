@@ -391,7 +391,7 @@ public sealed class InstanceQueryAppService(
         Dictionary<string, string?>? queryParameters,
         CancellationToken cancellationToken)
     {
-        var flowResult = await componentCacheStore.GetFlowAsync(domain, workflow, null, cancellationToken);
+        var flowResult = await componentCacheStore.GetFlowAsync(domain, workflow, instance.FlowVersion ?? null, cancellationToken);
 
         var flow = flowResult.IsSuccess ? flowResult.Value! : null;
 
@@ -399,7 +399,7 @@ public sealed class InstanceQueryAppService(
         {
             Id = instance.Id,
             Flow = instance.Flow,
-            FlowVersion = flow?.Version ?? string.Empty,
+            FlowVersion = instance.FlowVersion,
             Etag = instanceData?.ETag ?? string.Empty,
             Domain = domain,
             Key = instance.Key!,

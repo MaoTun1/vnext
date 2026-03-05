@@ -157,18 +157,11 @@ public sealed class InstanceController(
         [FromRoute] string instance,
         [FromRoute] string transitionKey,
         [FromBody] TransitionDataInput? data = null,
-        [FromQuery] string? version = null,
         [FromQuery] bool sync = false,
         CancellationToken cancellationToken = default
     )
     {
-        if (version.IsNullOrEmpty())
-        {
-            var flowInfo = HttpContext.GetWorkflowInfo();
-            version = flowInfo?.Version;
-        }
-
-        var input = new TransitionInput(domain, workflow, version, data, sync);
+        var input = new TransitionInput(domain, workflow, data, sync);
         var httpContext = httpContextAccessor.HttpContext;
         if (httpContext is not null)
         {
@@ -192,7 +185,6 @@ public sealed class InstanceController(
     /// <param name="workflow">The workflow name.</param>
     /// <param name="instance">The instance identifier (ID or key).</param>
     /// <param name="data">Optional transition data to pass during retry.</param>
-    /// <param name="version">Optional workflow version.</param>
     /// <param name="sync">Whether to execute synchronously.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="200">Instance retry executed successfully</response>
@@ -207,7 +199,6 @@ public sealed class InstanceController(
         [FromRoute] string workflow,
         [FromRoute] string instance,
         [FromBody] TransitionDataInput? data = null,
-        [FromQuery] string? version = null,
         [FromQuery] bool sync = false,
         CancellationToken cancellationToken = default)
     {
@@ -225,7 +216,6 @@ public sealed class InstanceController(
             Workflow = workflow,
             Instance = instance,
             Data = data,
-            Version = version,
             Sync = sync,
             Headers = headers,
             RouteValues = routeValues
