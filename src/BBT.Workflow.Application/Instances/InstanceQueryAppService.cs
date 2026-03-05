@@ -661,31 +661,28 @@ public sealed class InstanceQueryAppService(
             var subFlowItemsByName =
                 subFlowStateInfo.SubFlowTransitionItems.ToDictionary(t => t.Name, StringComparer.Ordinal);
             transitionItems = keysForTransitions
-                .Where(key => subFlowItemsByName.TryGetValue(key, out _))
-                .Select(transitionKey =>
+                .Select(key => (Key: key, SubFlowItem: subFlowItemsByName.GetValueOrDefault(key)))
+                .Where(t => t.SubFlowItem is not null)
+                .Select(t => new TransitionItem
                 {
-                    var subFlowItem = subFlowItemsByName[transitionKey];
-                    return new TransitionItem
+                    Name = t.Key,
+                    Href = urlTemplateBuilder.BuildTransitionUrl(input.Domain, input.Workflow,
+                        instance.Id.ToString(),
+                        t.Key),
+                    View = new ViewHref
                     {
-                        Name = transitionKey,
-                        Href = urlTemplateBuilder.BuildTransitionUrl(input.Domain, input.Workflow,
+                        Href = urlTemplateBuilder.BuildViewUrl(input.Domain, input.Workflow, instance.Id.ToString(),
+                            t.Key),
+                        HasView = t.SubFlowItem!.View?.HasView ?? false,
+                        LoadData = t.SubFlowItem.View?.LoadData ?? false,
+                    },
+                    Schema = new SchemaHref
+                    {
+                        Href = urlTemplateBuilder.BuildSchemaUrl(input.Domain, input.Workflow,
                             instance.Id.ToString(),
-                            transitionKey),
-                        View = new ViewHref
-                        {
-                            Href = urlTemplateBuilder.BuildViewUrl(input.Domain, input.Workflow, instance.Id.ToString(),
-                                transitionKey),
-                            HasView = subFlowItem.View?.HasView ?? false,
-                            LoadData = subFlowItem.View?.LoadData ?? false,
-                        },
-                        Schema = new SchemaHref
-                        {
-                            Href = urlTemplateBuilder.BuildSchemaUrl(input.Domain, input.Workflow,
-                                instance.Id.ToString(),
-                                transitionKey),
-                            HasSchema = subFlowItem.Schema?.HasSchema ?? false
-                        }
-                    };
+                            t.Key),
+                        HasSchema = t.SubFlowItem.Schema?.HasSchema ?? false
+                    }
                 })
                 .ToList();
         }
