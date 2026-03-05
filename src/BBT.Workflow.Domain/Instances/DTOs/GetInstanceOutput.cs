@@ -1,4 +1,5 @@
 using System.Text.Json;
+using BBT.Workflow.Definitions;
 
 namespace BBT.Workflow.Instances;
 
@@ -29,8 +30,57 @@ public sealed class GetInstanceOutput
     }
     private string? _etag = string.Empty;
     public List<string>? Tags { get; set; } = [];
+    /// <summary>
+    /// Instance metadata (state, audit, duration). Excludes fields already at root (id, key, flow, domain, flowVersion, eTag, tags).
+    /// </summary>
+    public InstanceMetadataDto? Metadata { get; set; }
     public JsonElement? Attributes { get; set; }
     public Dictionary<string, object>? Extensions { get; set; }
+}
+
+/// <summary>
+/// Instance metadata returned in GetInstanceOutput. Contains state, audit and duration fields only; root identity fields are not duplicated.
+/// </summary>
+public sealed class InstanceMetadataDto
+{
+    /// <summary>Current state key (engine internal state).</summary>
+    public string? CurrentState { get; set; }
+
+    /// <summary>Effective state exposed to callers (e.g. SubFlow state when active).</summary>
+    public string? EffectiveState { get; set; }
+
+    /// <summary>Instance status (Active, Completed, Faulted, etc.).</summary>
+    public InstanceStatus? Status { get; set; }
+
+    /// <summary>Type of the effective state (Initial, Intermediate, Finish, SubFlow, Wizard).</summary>
+    public StateType? EffectiveStateType { get; set; }
+
+    /// <summary>Subtype of the effective state (None, Success, Error, Terminated, Suspended, Busy, Human).</summary>
+    public StateSubType? EffectiveStateSubType { get; set; }
+
+    /// <summary>When the instance completed. Null if not completed.</summary>
+    public DateTime? CompletedAt { get; set; }
+
+    /// <summary>Total duration in seconds from creation to completion. Null if not completed.</summary>
+    public double? Duration { get; set; }
+
+    /// <summary>When the instance was created.</summary>
+    public DateTime CreatedAt { get; set; }
+
+    /// <summary>When the instance was last modified.</summary>
+    public DateTime? ModifiedAt { get; set; }
+
+    /// <summary>Creator user identifier.</summary>
+    public string? CreatedBy { get; set; }
+
+    /// <summary>Creator behalf-of user identifier.</summary>
+    public string? CreatedByBehalfOf { get; set; }
+
+    /// <summary>Modifier user identifier.</summary>
+    public string? ModifiedBy { get; set; }
+
+    /// <summary>Modifier behalf-of user identifier.</summary>
+    public string? ModifiedByBehalfOf { get; set; }
 }
 
 /// <summary>
