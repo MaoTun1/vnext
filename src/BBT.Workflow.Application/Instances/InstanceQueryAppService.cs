@@ -311,9 +311,15 @@ public sealed class InstanceQueryAppService(
                     .Select(t => t.Name)
                     .ToList() ?? new List<string>();
 
+                // Include parent's shared transitions (for current state) so clients can discover and call them while in subflow
+                var availableTransitions = MergeWithParentAvailableTransitions(
+                    transitionNames,
+                    mainInstance,
+                    currentWorkflow);
+                    
                 // Return complete SubFlow state including view extensions, active correlations, and transition items (with HasView)
                 return new SubFlowStateInfo(
-                    AvailableTransitions: transitionNames,
+                    AvailableTransitions: availableTransitions,
                     CurrentState: subFlowValue.State,
                     Status: subFlowValue.Status,
                     SubFlowData: subFlowValue.Data,
@@ -334,6 +340,23 @@ public sealed class InstanceQueryAppService(
 
         // Fallback to main flow transitions
         return GetMainFlowTransitions(mainInstance, currentWorkflow);
+    }
+
+    /// <summary>
+    /// Merges subflow transition names with the parent workflow's shared transitions only (manual/event, available in current state).
+    /// When in active subflow, clients see subflow transitions plus parent's shared transitions; state-level parent transitions are not included.
+    /// </summary>
+    private static List<string> MergeWithParentAvailableTransitions(
+        List<string> subflowTransitionNames,
+        Instance mainInstance,
+        BBT.Workflow.Definitions.Workflow currentWorkflow)
+    {
+        var stateResult = currentWorkflow.GetState(mainInstance.GetCurrentState);
+        if (!stateResult.IsSuccess)
+            return subflowTransitionNames;
+
+        var parentSharedOnly = currentWorkflow.GetAvailableSharedTransitionKeysOnly(stateResult.Value!);
+        return subflowTransitionNames.Union(parentSharedOnly).ToList();
     }
 
     /// <summary>
@@ -406,7 +429,8 @@ public sealed class InstanceQueryAppService(
             Domain = domain,
             Key = instance.Key!,
             Tags = instance.Tags,
-            Attributes = instanceData?.Data.JsonElement
+            Attributes = instanceData?.Data.JsonElement,
+            Metadata = new InstanceMetadataDto(instance)
         };
 
         if (flow == null)
@@ -1298,16 +1322,18 @@ public sealed class InstanceQueryAppService(
 
     /// <summary>
     /// Builds a GetViewOutput from a View and ViewEntry.
+    /// Content is returned as JSON object/array for Json, DeepLink, Http, URN when parseable; otherwise as string (including Html, Markdown and parse failures).
     /// </summary>
     /// <param name="view">The view to build output from</param>
     /// <param name="viewEntry">The view entry containing extensions and loadData information</param>
-    /// <returns>GetViewOutput with view content</returns>
+    /// <returns>GetViewOutput with view content typed by view type</returns>
     private GetViewOutput BuildViewOutput(View view, ViewEntry viewEntry)
     {
+        var content = view.GetContentAsTyped();
         return new GetViewOutput
         {
             Key = view.Key,
-            Content = view.Content,
+            Content = content,
             Type = view.Type.ToString(),
             Display = view.Display,
             Label = ""

@@ -95,6 +95,28 @@ public sealed class View : IDomainEntity, IViewReference, IReferenceSetter
         return $"{nameof(View)}:{domain}:{flow}:{key}:{version}";
     }
 
+    /// <summary>
+    /// Returns content typed by <see cref="Type"/>: for Json, DeepLink, Http, URN attempts JSON parse (on failure returns original string);
+    /// for Html, Markdown returns the content string. Used when exposing view content (e.g. view function response).
+    /// </summary>
+    /// <returns>Parsed JSON as <see cref="JsonElement"/> for JSON-structured types when parseable; otherwise the original content string.</returns>
+    public object GetContentAsTyped()
+    {
+        if (Type is ViewType.Json or ViewType.DeepLink or ViewType.Http or ViewType.URN)
+        {
+            try
+            {
+                return JsonSerializer.Deserialize<JsonElement>(Content);
+            }
+            catch (JsonException)
+            {
+                return Content;
+            }
+        }
+
+        return Content;
+    }
+
     private void SetKey(string key)
     {
         Key = Check.NotNullOrWhiteSpace(key, nameof(Key), ViewConstants.MaxKeyLength);
