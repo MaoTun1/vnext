@@ -311,9 +311,15 @@ public sealed class InstanceQueryAppService(
                     .Select(t => t.Name)
                     .ToList() ?? new List<string>();
 
+                // Include parent's shared transitions (for current state) so clients can discover and call them while in subflow
+                var availableTransitions = MergeWithParentAvailableTransitions(
+                    transitionNames,
+                    mainInstance,
+                    currentWorkflow);
+
                 // Return complete SubFlow state including view extensions and active correlations
                 return new SubFlowStateInfo(
-                    AvailableTransitions: transitionNames,
+                    AvailableTransitions: availableTransitions,
                     CurrentState: subFlowValue.State,
                     Status: subFlowValue.Status,
                     SubFlowData: subFlowValue.Data,
@@ -333,6 +339,23 @@ public sealed class InstanceQueryAppService(
 
         // Fallback to main flow transitions
         return GetMainFlowTransitions(mainInstance, currentWorkflow);
+    }
+
+    /// <summary>
+    /// Merges subflow transition names with the parent workflow's shared transitions only (manual/event, available in current state).
+    /// When in active subflow, clients see subflow transitions plus parent's shared transitions; state-level parent transitions are not included.
+    /// </summary>
+    private static List<string> MergeWithParentAvailableTransitions(
+        List<string> subflowTransitionNames,
+        Instance mainInstance,
+        BBT.Workflow.Definitions.Workflow currentWorkflow)
+    {
+        var stateResult = currentWorkflow.GetState(mainInstance.GetCurrentState);
+        if (!stateResult.IsSuccess)
+            return subflowTransitionNames;
+
+        var parentSharedOnly = currentWorkflow.GetAvailableSharedTransitionKeysOnly(stateResult.Value!);
+        return subflowTransitionNames.Union(parentSharedOnly).ToList();
     }
 
     /// <summary>
