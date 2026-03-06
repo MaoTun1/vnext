@@ -427,7 +427,8 @@ public sealed class InstanceQueryAppService(
             Domain = domain,
             Key = instance.Key!,
             Tags = instance.Tags,
-            Attributes = instanceData?.Data.JsonElement
+            Attributes = instanceData?.Data.JsonElement,
+            Metadata = new InstanceMetadataDto(instance)
         };
 
         if (flow == null)
