@@ -241,6 +241,7 @@ public sealed class InstanceController(
         [FromRoute] string workflow,
         [FromRoute] string instance,
         [FromQuery] string[]? extensions = null,
+        [FromQuery] string? version = null,
         CancellationToken cancellationToken = default)
     {
         var requestContext = HttpContext.GetRequestBindingContext();
@@ -252,6 +253,7 @@ public sealed class InstanceController(
             Instance = instance,
             Extensions = extensions,
             IfNoneMatch = ifNoneMatch,
+            Version = version,
             Headers = requestContext.Headers,
             QueryParameters = requestContext.QueryParameters
         };
@@ -281,6 +283,7 @@ public sealed class InstanceController(
         [FromQuery][Range(1, 100)] int pageSize = 10,
         [FromQuery] string? sort = null,
         [FromQuery] string? orderBy = null,
+        [FromQuery] string? version = null,
         CancellationToken cancellationToken = default)
     {
         var requestContext = HttpContext.GetRequestBindingContext();
@@ -295,6 +298,7 @@ public sealed class InstanceController(
             PageUrl = urlTemplateBuilder.BuildInstanceListUrl(domain, workflow),
             Filter = filter,
             Sort = orderBy ?? sort,
+            Version = version,
             Headers = requestContext.Headers,
             QueryParameters = requestContext.QueryParameters
         };
@@ -347,6 +351,7 @@ public sealed class InstanceController(
         [FromRoute] string workflow,
         [FromRoute] string instance,
         [FromQuery] string[]? extension = null,
+        [FromQuery] string? version = null,
         CancellationToken cancellationToken = default)
     {
         var requestContext = HttpContext.GetRequestBindingContext();
@@ -357,6 +362,7 @@ public sealed class InstanceController(
             Workflow = workflow,
             Instance = instance,
             Extensions = extension,
+            Version = version,
             Headers = requestContext.Headers,
             QueryParameters = requestContext.QueryParameters
         };
@@ -372,6 +378,7 @@ public sealed class InstanceController(
         [FromRoute] string domain,
         [FromRoute] string workflow,
         [FromRoute] string instance,
+        [FromQuery] string? version = null,
         CancellationToken cancellationToken = default)
     {
         var requestContext = HttpContext.GetRequestBindingContext();
@@ -382,6 +389,7 @@ public sealed class InstanceController(
             Workflow = workflow,
             Instance = instance,
             IfNoneMatch = ifNoneMatch,
+            Version = version,
             Headers = requestContext.Headers,
             QueryParameters = requestContext.QueryParameters
         };

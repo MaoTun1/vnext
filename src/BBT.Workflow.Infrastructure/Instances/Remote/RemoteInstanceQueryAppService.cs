@@ -54,6 +54,11 @@ public sealed class RemoteInstanceQueryAppService(
             var relativePath = InstanceUrlTemplates.Instance(input.Domain, input.Workflow, input.Instance, ApiVersionPrefix);
 
             var queryParams = new List<string>();
+            if (!string.IsNullOrEmpty(input.Version))
+            {
+                queryParams.Add($"version={Uri.EscapeDataString(input.Version)}");
+            }
+
             if (input.Extensions?.Length > 0)
             {
                 foreach (var ext in input.Extensions)
@@ -118,6 +123,11 @@ public sealed class RemoteInstanceQueryAppService(
             var relativePath = InstanceUrlTemplates.Data(input.Domain, input.Workflow, input.Instance, ApiVersionPrefix);
 
             var queryParams = new List<string>();
+            if (!string.IsNullOrEmpty(input.Version))
+            {
+                queryParams.Add($"version={Uri.EscapeDataString(input.Version)}");
+            }
+
             if (input.Extensions?.Length > 0)
             {
                 foreach (var ext in input.Extensions)
@@ -205,6 +215,11 @@ public sealed class RemoteInstanceQueryAppService(
                 queryParams.Add($"aggregations={Uri.EscapeDataString(input.Aggregations)}");
             }
 
+            if (!string.IsNullOrEmpty(input.Version))
+            {
+                queryParams.Add($"version={Uri.EscapeDataString(input.Version)}");
+            }
+
             if (input.Extension?.Length > 0)
             {
                 foreach (var ext in input.Extension)
@@ -254,6 +269,11 @@ public sealed class RemoteInstanceQueryAppService(
             var relativePath = InstanceUrlTemplates.InstanceHistory(input.Domain, input.Workflow, input.Instance, ApiVersionPrefix);
 
             var queryParams = new List<string>();
+            if (!string.IsNullOrEmpty(input.Version))
+            {
+                queryParams.Add($"version={Uri.EscapeDataString(input.Version)}");
+            }
+
             if (input.Extensions?.Length > 0)
             {
                 foreach (var ext in input.Extensions)
@@ -347,7 +367,6 @@ public sealed class RemoteInstanceQueryAppService(
     /// </summary>
     public async Task<Result<GetViewOutput>> GetFunctionWithViewAsync(
         GetFunctionWithInstanceInput input,
-        string? platform,
         string? transitionKey,
         CancellationToken cancellationToken = default)
     {
@@ -369,11 +388,6 @@ public sealed class RemoteInstanceQueryAppService(
             if (!string.IsNullOrEmpty(input.Version))
             {
                 queryParams.Add($"{nameof(input.Version).ToLowerInvariant()}={Uri.EscapeDataString(input.Version)}");
-            }
-
-            if (!string.IsNullOrEmpty(platform))
-            {
-                queryParams.Add($"{nameof(platform)}={Uri.EscapeDataString(platform)}");
             }
             
             if (!string.IsNullOrEmpty(transitionKey))

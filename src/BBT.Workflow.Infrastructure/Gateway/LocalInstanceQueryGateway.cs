@@ -113,7 +113,6 @@ public sealed class LocalInstanceQueryGateway : IInstanceQueryGateway
     /// <inheritdoc />
     public async Task<Result<GetViewOutput>> GetFunctionWithViewAsync(
         GetFunctionWithInstanceInput input,
-        string? platform,
         string? transitionKey,
         CancellationToken cancellationToken = default)
     {
@@ -132,7 +131,7 @@ public sealed class LocalInstanceQueryGateway : IInstanceQueryGateway
                 Headers=input.Headers,
                 QueryParameters=input.QueryParams
             };
-            return await queryService.GetPlatformSpecificViewAsync(viewInput, platform, transitionKey, cancellationToken);
+            return await queryService.GetViewAsync(viewInput, transitionKey, cancellationToken);
         }
     }
 

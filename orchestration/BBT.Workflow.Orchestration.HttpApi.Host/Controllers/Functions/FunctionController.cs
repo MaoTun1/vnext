@@ -182,7 +182,7 @@ public sealed class FunctionController(
         if (functionType == Definitions.Functions.FunctionTypeConst.View)
         {
             return FromResult(await ProcessViewFunctionAsync(domain, workflow, instance, parameters.Version,
-                parameters.Platform, parameters.TransitionKey, requestContext.Headers, requestContext.QueryParameters,
+                parameters.TransitionKey, requestContext.Headers, requestContext.QueryParameters,
                 cancellationToken));
         }
 
@@ -322,7 +322,6 @@ public sealed class FunctionController(
         string workflow,
         string instance,
         string? version,
-        string? platform,
         string? transitionKey,
         Dictionary<string, string?> headers,
         Dictionary<string, string?> queryParams,
@@ -338,9 +337,8 @@ public sealed class FunctionController(
             QueryParameters = queryParams
         };
 
-        return await queryAppService.GetPlatformSpecificViewAsync(
+        return await queryAppService.GetViewAsync(
             input,
-            platform ?? string.Empty,
             transitionKey ?? string.Empty,
             cancellationToken);
     }
@@ -497,7 +495,7 @@ public sealed class FunctionController(
                 Instance = instance.Key!,
                 Version = instance.FlowVersion
             };
-            return await scopedQueryService.GetPlatformSpecificViewAsync(input, string.Empty, string.Empty,
+            return await scopedQueryService.GetViewAsync(input,  string.Empty,
                 cancellationToken);
         });
 
