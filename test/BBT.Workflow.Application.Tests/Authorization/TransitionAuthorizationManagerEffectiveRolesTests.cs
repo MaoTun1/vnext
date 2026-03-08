@@ -57,7 +57,7 @@ public sealed class TransitionAuthorizationManagerEffectiveRolesTests
     public async Task GetEffectiveCallerRolesForFieldVisibilityAsync_WhenActorIsInstanceStarter_AddsInstanceStarterRole()
     {
         var instanceId = System.Guid.NewGuid();
-        var instance = Instance.Create(instanceId, "test-flow", "key");
+        var instance = Instance.Create(instanceId, "test-flow", "1.0.0", "key");
         instance.CreatedBy = "alice";
 
         _currentUser.Roles.Returns(new[] { "viewer" });
@@ -76,7 +76,7 @@ public sealed class TransitionAuthorizationManagerEffectiveRolesTests
     public async Task GetEffectiveCallerRolesForFieldVisibilityAsync_WhenActorIsPreviousUser_AddsPreviousUserRole()
     {
         var instanceId = System.Guid.NewGuid();
-        var instance = Instance.Create(instanceId, "test-flow", "key");
+        var instance = Instance.Create(instanceId, "test-flow", "1.0.0","key");
         instance.CreatedBy = "bob";
 
         var lastTransition = InstanceTransition.Create(
@@ -105,7 +105,7 @@ public sealed class TransitionAuthorizationManagerEffectiveRolesTests
     public async Task GetEffectiveCallerRolesForFieldVisibilityAsync_WhenActorIsBothStarterAndPreviousUser_AddsBothPredefinedRoles()
     {
         var instanceId = System.Guid.NewGuid();
-        var instance = Instance.Create(instanceId, "test-flow", "key");
+        var instance = Instance.Create(instanceId, "test-flow", "1.0.0","key");
         instance.CreatedBy = "alice";
 
         var lastTransition = InstanceTransition.Create(
@@ -134,7 +134,7 @@ public sealed class TransitionAuthorizationManagerEffectiveRolesTests
     public async Task GetEffectiveCallerRolesForFieldVisibilityAsync_WhenActorMatchesNeither_ReturnsOnlyStaticRoles()
     {
         var instanceId = System.Guid.NewGuid();
-        var instance = Instance.Create(instanceId, "test-flow", "key");
+        var instance = Instance.Create(instanceId, "test-flow", "1.0.0","key");
         instance.CreatedBy = "bob";
 
         var lastTransition = InstanceTransition.Create(

@@ -47,9 +47,8 @@ public interface IInstanceQueryAppService : IApplicationService
     /// <summary>
     /// Retrieves platform-specific view content for an instance
     /// </summary>
-    Task<Result<GetViewOutput>> GetPlatformSpecificViewAsync(
+    Task<Result<GetViewOutput>> GetViewAsync(
         GetViewInput input,
-        string? platform,
         string? transitionKey,
         CancellationToken cancellationToken = default);
     

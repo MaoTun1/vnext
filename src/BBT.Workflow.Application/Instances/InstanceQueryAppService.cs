@@ -31,6 +31,7 @@ public sealed class InstanceQueryAppService(
     IInstanceExtensionService instanceExtensionService,
     IScriptContextFactory scriptContextFactory,
     IInstanceQueryGateway instanceQueryGateway,
+    IViewContentResolutionService viewContentResolutionService,
     ITaskConditionService taskConditionService,
     IUrlTemplateBuilder urlTemplateBuilder,
     ICurrentSchema currentSchema,
@@ -822,9 +823,8 @@ public sealed class InstanceQueryAppService(
         return [];
     }
 
-    public async Task<Result<GetViewOutput>> GetPlatformSpecificViewAsync(
+    public async Task<Result<GetViewOutput>> GetViewAsync(
         GetViewInput input,
-        string? platform,
         string? transitionKey,
         CancellationToken cancellationToken = default)
     {
@@ -836,7 +836,7 @@ public sealed class InstanceQueryAppService(
                 componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, input.Version, cancellationToken)
                     .MapAsync(workflow => (instance, workflow)))
             .ThenAsync(data =>
-                ResolveViewAsync(data.instance, data.workflow, input, platform, transitionKey, cancellationToken));
+                ResolveViewAsync(data.instance, data.workflow, input, transitionKey, cancellationToken));
     }
 
     /// <summary>
@@ -1050,7 +1050,6 @@ public sealed class InstanceQueryAppService(
         Instance instance,
         Definitions.Workflow currentWorkflow,
         GetViewInput input,
-        string? platform,
         string? transitionKey,
         CancellationToken cancellationToken)
     {
@@ -1070,7 +1069,7 @@ public sealed class InstanceQueryAppService(
             var subFlowViewResult = await GetSubFlowViewWithOverrideAsync(
                 instance,
                 currentState,
-                platform,
+                input.Domain,
                 transitionKey,
                 input.Headers,
                 input.QueryParameters,
@@ -1146,13 +1145,12 @@ public sealed class InstanceQueryAppService(
                     $"No matching view found for state {instance.CurrentState} in workflow {currentWorkflow.Key}"));
         }
 
-        // Fetch and return the view
-        return await componentCacheStore.GetViewAsync(
-                selectedViewEntry.View.Domain,
-                selectedViewEntry.View.Key,
-                selectedViewEntry.View.Version,
-                cancellationToken)
-            .MapAsync(view => BuildViewOutput(view, selectedViewEntry));
+        return await viewContentResolutionService.ResolveViewContentAsync(
+            selectedViewEntry.View,
+            input.Domain,
+            input.Headers,
+            input.QueryParameters,
+            cancellationToken);
     }
 
     /// <summary>
@@ -1161,14 +1159,16 @@ public sealed class InstanceQueryAppService(
     /// </summary>
     /// <param name="instance">The workflow instance</param>
     /// <param name="currentState">The current state of the workflow</param>
-    /// <param name="platform">Platform identifier (optional)</param>
+    /// <param name="requestDomain">The request domain (for remote override resolution).</param>
     /// <param name="transitionKey"></param>
+    /// <param name="headers">Request headers</param>
+    /// <param name="queryParams">Request query parameters</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>GetViewOutput if subflow view is handled, null if should fall back to main flow view</returns>
     private async Task<GetViewOutput?> GetSubFlowViewWithOverrideAsync(
         Instance instance,
         State currentState,
-        string? platform,
+        string requestDomain,
         string? transitionKey = null,
         Dictionary<string, string?>? headers = null,
         Dictionary<string, string?>? queryParams = null,
@@ -1181,10 +1181,9 @@ public sealed class InstanceQueryAppService(
                 Domain = instance.Subflow!.SubFlowDomain,
                 Workflow = instance.Subflow!.SubFlowName,
                 Version = instance.Subflow!.SubFlowVersion,
-                Headers = headers,
-                QueryParams = queryParams
+                Headers = headers ?? new Dictionary<string, string?>(),
+                QueryParams = queryParams ?? new Dictionary<string, string?>()
             },
-            platform?.ToLowerInvariant(),
             transitionKey,
             cancellationToken);
 
@@ -1193,26 +1192,24 @@ public sealed class InstanceQueryAppService(
             return null;
         }
 
-        // If current state has view overrides, use the override view
+        // If current state has view overrides, resolve override view (local or remote) via service
         if (currentState.SubFlow!.HasViewOverrides)
         {
             var overrideViewRef = currentState.SubFlow!.ViewOverrides!.GetOrDefault(subFlowViewResult.Value!.Key);
 
             if (overrideViewRef != null)
             {
-                var overrideViewResult = await componentCacheStore.GetViewAsync(
-                    overrideViewRef.Domain,
-                    overrideViewRef.Key,
-                    overrideViewRef.Version,
+                var overrideResult = await viewContentResolutionService.ResolveViewContentAsync(
+                    overrideViewRef,
+                    requestDomain,
+                    headers,
+                    queryParams,
                     cancellationToken);
-
-                // If override view fetch fails, fall back to subflow view
-                if (overrideViewResult.IsSuccess)
+                if (overrideResult.IsSuccess)
                 {
-                    // Create a default view entry for the override view
-                    var overrideViewEntry = ViewEntry.CreateDefault(overrideViewRef);
-                    return BuildViewOutput(overrideViewResult.Value!, overrideViewEntry);
+                    return overrideResult.Value!;
                 }
+                // Override resolution failed; fall back to subflow view below
             }
         }
 
@@ -1318,26 +1315,6 @@ public sealed class InstanceQueryAppService(
         }
 
         return children;
-    }
-
-    /// <summary>
-    /// Builds a GetViewOutput from a View and ViewEntry.
-    /// Content is returned as JSON object/array for Json, DeepLink, Http, URN when parseable; otherwise as string (including Html, Markdown and parse failures).
-    /// </summary>
-    /// <param name="view">The view to build output from</param>
-    /// <param name="viewEntry">The view entry containing extensions and loadData information</param>
-    /// <returns>GetViewOutput with view content typed by view type</returns>
-    private GetViewOutput BuildViewOutput(View view, ViewEntry viewEntry)
-    {
-        var content = view.GetContentAsTyped();
-        return new GetViewOutput
-        {
-            Key = view.Key,
-            Content = content,
-            Type = view.Type.ToString(),
-            Display = view.Display,
-            Label = ""
-        };
     }
 
     /// <summary>
