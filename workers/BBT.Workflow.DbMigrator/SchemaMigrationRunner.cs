@@ -148,11 +148,38 @@ public sealed class SchemaMigrationRunner(
     /// </summary>
     private async Task MigrateSchemasInParallelAsync(List<string> schemas, CancellationToken cancellationToken)
     {
-        var tasks = schemas.Select(schema =>
-            MigrateSingleSchemaAsync(schema, cancellationToken)).ToArray();
+        var maxConcurrency = Environment.ProcessorCount;
+        if (maxConcurrency <= 0)
+        {
+            maxConcurrency = 4;
+        }
+        
+        maxConcurrency = Math.Min(maxConcurrency, schemas.Count);
+        
+        using var semaphore = new SemaphoreSlim(maxConcurrency, maxConcurrency);
 
-        // Guarantee: do not return until every parallel migration has completed.
+        var tasks = schemas.Select(schema => MigrateWithLimitAsync(schema, cancellationToken)).ToArray();
+        
         await Task.WhenAll(tasks);
+        
+        logger.LogInformation(
+            "Completed parallel migration of {Count} domain schemas with max concurrency {MaxConcurrency}; all tasks finished.",
+            schemas.Count,
+            maxConcurrency);
+        
+        async Task MigrateWithLimitAsync(string schemaName, CancellationToken ct)
+        {
+            await semaphore.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                await MigrateSingleSchemaAsync(schemaName, ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        }
+        
         logger.LogInformation(
             "Completed parallel migration of {Count} domain schemas; all tasks finished.",
             schemas.Count);
