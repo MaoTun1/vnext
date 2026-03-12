@@ -3,6 +3,7 @@ using System.Text;
 using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Scripting;
+using BBT.Workflow.Tasks.Coordinator;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Tasks.Executors;
@@ -46,9 +47,14 @@ public abstract class TaskExecutorBase<TTask>(ILogger logger) : ITaskExecutor
         }
 
         var task = (TTask)context.Task;
+        var taskTypeStr = context.Task.GetTaskType().ToString();
 
         // 2. PrepareInput (virtual - custom per executor)
-        var inputResult = await PrepareInputAsync(task, context, cancellationToken);
+        Result<ScriptResponse?> inputResult;
+        using (TaskExecutionActivityHelper.StartActivity(TaskExecutionActivityHelper.OperationPrepareInput, taskKey, taskTypeStr))
+        {
+            inputResult = await PrepareInputAsync(task, context, cancellationToken);
+        }
         if (!inputResult.IsSuccess)
         {
             stopwatch.Stop();
@@ -72,7 +78,11 @@ public abstract class TaskExecutorBase<TTask>(ILogger logger) : ITaskExecutor
         }
 
         // 4. Invoke (abstract or virtual)
-        var invokeResult = await InvokeAsync(task, context, cancellationToken);
+        Result<TaskInvocationResult> invokeResult;
+        using (TaskExecutionActivityHelper.StartActivity(TaskExecutionActivityHelper.OperationInvoke, taskKey, taskTypeStr))
+        {
+            invokeResult = await InvokeAsync(task, context, cancellationToken);
+        }
         if (!invokeResult.IsSuccess)
         {
             stopwatch.Stop();
@@ -98,7 +108,11 @@ public abstract class TaskExecutorBase<TTask>(ILogger logger) : ITaskExecutor
         }
 
         // 6. ProcessOutput (virtual - custom per executor)
-        var outputResult = await ProcessOutputAsync(task, invokeResult.Value!, context, cancellationToken);
+        Result<object?> outputResult;
+        using (TaskExecutionActivityHelper.StartActivity(TaskExecutionActivityHelper.OperationProcessOutput, taskKey, taskTypeStr))
+        {
+            outputResult = await ProcessOutputAsync(task, invokeResult.Value!, context, cancellationToken);
+        }
         if (!outputResult.IsSuccess)
         {
             stopwatch.Stop();

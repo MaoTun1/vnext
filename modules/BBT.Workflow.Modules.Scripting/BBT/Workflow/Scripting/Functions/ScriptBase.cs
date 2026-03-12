@@ -401,7 +401,8 @@ public abstract class ScriptBase
         {
             ["ScriptFile"] = scriptFile,
             ["ScriptMethod"] = method,
-            ["ScriptLine"] = line
+            ["ScriptLine"] = line,
+            ["HasScript"] = true
         }))
         {
             // Use LoggerExtensions to properly handle message template with args

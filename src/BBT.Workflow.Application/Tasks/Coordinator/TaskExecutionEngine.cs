@@ -1,10 +1,12 @@
 using System.Diagnostics;
 using System.Text.Json;
+using BBT.Aether.Aspects;
 using BBT.Aether.Guids;
 using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Execution.ErrorHandling;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Logging;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks.Executors;
@@ -60,6 +62,7 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
     }
 
     /// <inheritdoc />
+    [Trace]
     public async Task<Result<TasksExecutionResult>> ExecuteAsync(
         OnExecuteTask onExecuteTask,
         Guid? instanceTransitionId,
@@ -72,6 +75,15 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
             onExecuteTask.ErrorBoundary,
             GetStateBoundary(context),
             context.Workflow.ErrorBoundary);
+
+        Activity.Current?.SetDisplayName($"Task.Execute.{onExecuteTask.Task.Key}");
+        var activity = Activity.Current;
+        if (activity != null)
+        {
+            activity.SetTag(TelemetryConstants.TagNames.TaskKey, onExecuteTask.Task.Key);
+            activity.SetTag(TelemetryConstants.TagNames.InstanceId, context.Instance.Id.ToString());
+            activity.SetTag(TelemetryConstants.TagNames.Flow, context.Workflow.Key);
+        }
 
         _logger.LogInformation(
             "Executing task {TaskKey} with error-aware retry.",
@@ -465,6 +477,8 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         var taskType = task.GetTaskType();
         var taskTypeStr = taskType.ToString();
         var workflowKey = context.Workflow.Key;
+
+        Activity.Current?.SetTag(TelemetryConstants.TagNames.TaskType, taskTypeStr);
 
         // 2. Create instance task for tracking
         var instanceTask = new InstanceTask(

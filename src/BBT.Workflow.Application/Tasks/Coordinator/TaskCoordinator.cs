@@ -1,8 +1,10 @@
 using System.Diagnostics;
+using BBT.Aether.Aspects;
 using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Definitions.Timer;
 using BBT.Workflow.Execution.ErrorHandling;
+using BBT.Workflow.Logging;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks.Evaluation;
 using Microsoft.Extensions.Logging;
@@ -117,6 +119,7 @@ public sealed class TaskCoordinator : ITaskCoordinatorExtended
     }
 
     /// <inheritdoc />
+    [Trace]
     public async Task<Result<TasksExecutionResult>> ExecuteWithDetailsAsync(
         IEnumerable<OnExecuteTask> onExecuteTasks,
         Guid? instanceTransitionId,
@@ -125,10 +128,20 @@ public sealed class TaskCoordinator : ITaskCoordinatorExtended
         IEnumerable<string> completedTaskIds,
         CancellationToken cancellationToken = default)
     {
+        Activity.Current?.SetDisplayName("TaskCoordinator.Execute");
+
         var tasks = onExecuteTasks.ToList();
         var completedSet = completedTaskIds.ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
         var executedTasks = new List<TaskExecutionSummary>();
         var totalStopwatch = Stopwatch.StartNew();
+
+        var activity = Activity.Current;
+        if (activity != null)
+        {
+            activity.SetTag(TelemetryConstants.TagNames.InstanceId, context.Instance.Id.ToString());
+            activity.SetTag(TelemetryConstants.TagNames.Flow, context.Workflow.Key);
+            activity.SetTag("vnext.task.count", tasks.Count);
+        }
 
         if (!tasks.Any())
         {
