@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
 using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Scripting;
@@ -90,6 +91,8 @@ public abstract class TaskExecutorBase<TTask>(ILogger logger) : ITaskExecutor
                 taskKey, invokeResult.Error.Message);
             return CreateErrorResponse(invokeResult.Error, stopwatch.ElapsedMilliseconds);
         }
+
+        context.RawInvocationResultJson = JsonSerializer.Serialize(invokeResult.Value!, JsonSerializerConstants.JsonOptions);
 
         // Note: Business errors (HTTP 4xx/5xx) are NOT intercepted here.
         // The invocation result (including IsSuccess=false, StatusCode, Metadata/ExceptionType)

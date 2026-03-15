@@ -297,11 +297,13 @@ public abstract class ScriptBase
     /// <param name="list">The dynamic list to filter</param>
     /// <param name="predicate">The condition each element must satisfy</param>
     /// <returns>A new list containing only matching elements</returns>
-    /// <example>
+    /// <remarks>
+    /// When the list comes from a <c>dynamic</c> source, convert it first to avoid CS1977:
     /// <code>
-    /// var active = ListFilter(context.Instance.Data.items, x => x.status == "active");
+    /// var items = AsList(context.Instance.Data.items);
+    /// var active = ListFilter(items, x => x.status == "active");
     /// </code>
-    /// </example>
+    /// </remarks>
     protected static List<object?> ListFilter(object? list, Func<dynamic, bool> predicate)
     {
         ArgumentNullException.ThrowIfNull(predicate);
@@ -315,11 +317,13 @@ public abstract class ScriptBase
     /// <param name="list">The dynamic list to search</param>
     /// <param name="predicate">Optional filter condition; if null, returns the first element</param>
     /// <returns>The first matching element, or null</returns>
-    /// <example>
+    /// <remarks>
+    /// When the list comes from a <c>dynamic</c> source, convert it first to avoid CS1977:
     /// <code>
-    /// var item = ListFirst(context.Instance.Data.items, x => x.id == targetId);
+    /// var items = AsList(context.Instance.Data.items);
+    /// var item = ListFirst(items, x => x.id == targetId);
     /// </code>
-    /// </example>
+    /// </remarks>
     protected static dynamic? ListFirst(object? list, Func<dynamic, bool>? predicate = null)
     {
         var items = AsList(list);
@@ -350,12 +354,25 @@ public abstract class ScriptBase
     /// <param name="list">The dynamic list to check</param>
     /// <param name="predicate">Optional filter condition; if null, checks whether the list has any element</param>
     /// <returns><c>true</c> if a matching element exists; otherwise <c>false</c></returns>
-    /// <example>
+    /// <remarks>
+    /// <b>Important:</b> When the list comes from a dynamic source (e.g. <c>context.Instance.Data.items</c>),
+    /// C# cannot combine a <c>dynamic</c> argument with a lambda in the same call (CS1977).
+    /// Always convert to a typed list first using <see cref="AsList"/> or <see cref="GetList"/>:
     /// <code>
+    /// // ✗ Fails with CS1977 — dynamic argument + lambda in same call
+    /// // ListAny(context.Instance.Data.items, x => x.status == "pending");
+    ///
+    /// // ✓ Correct — convert to List&lt;object?&gt; first
+    /// var items = AsList(context.Instance.Data.items);
+    /// var hasPending = ListAny(items, x => x.status == "pending");
+    ///
+    /// // ✓ Also correct — using GetList when accessing by property name
+    /// var hasPending = ListAny(GetList(context.Instance.Data, "items"), x => x.status == "pending");
+    ///
+    /// // ✓ No-predicate form works directly (no lambda → no CS1977)
     /// var hasErrors = ListAny(context.Instance.Data.errors);
-    /// var hasPending = ListAny(context.Instance.Data.items, x => x.status == "pending");
     /// </code>
-    /// </example>
+    /// </remarks>
     protected static bool ListAny(object? list, Func<dynamic, bool>? predicate = null)
     {
         var items = AsList(list);
