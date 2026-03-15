@@ -170,7 +170,7 @@ public sealed class InstanceQueryAppService(
                 {
                     var instanceOutputResult = await BuildInstanceOutputAsync(
                         input.Domain,
-                        input.Extension,
+                        input.Extensions,
                         input.Workflow,
                         instance,
                         instance.LatestData,

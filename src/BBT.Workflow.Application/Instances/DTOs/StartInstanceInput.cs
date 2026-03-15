@@ -28,6 +28,12 @@ public sealed class StartInstanceInput(
     public bool StrictIdempotency { get; set; } = false;
 
     /// <summary>
+    /// Extension data to evaluate and include in the sync response. Keys are extension identifiers.
+    /// Evaluated only when <see cref="Sync"/> is true.
+    /// </summary>
+    public string[]? Extensions { get; set; }
+
+    /// <summary>
     /// Creates a WorkflowExecutionContext from this StartInstanceInput for starting a new workflow instance.
     /// </summary>
     /// <param name="instanceId">The workflow instance identifier</param>
@@ -70,45 +76,8 @@ public sealed class CreateInstanceInput: IHasExtraProperties
     public ExtraPropertyDictionary ExtraProperties { get; set; } = new();
 }
 
-public sealed class StartInstanceOutput
+public sealed class StartInstanceOutput : InstanceOutputBase
 {
-    public Guid Id { get; set; }
-    public string? Key { get; set; }
-
-    /// <summary>
-    /// Instance status (Active, Busy, Completed, etc.)
-    /// </summary>
-    public InstanceStatus? Status { get; set; }
-
-    /// <summary>
-    /// Instance attributes filtered by master-schema role grants. Populated only when sync=true.
-    /// </summary>
-    public JsonElement? Attributes { get; set; }
-
-    /// <summary>
-    /// Representation ETag (SHA256 of canonical response JSON), returned with quotes per RFC 7232. Populated only when sync=true.
-    /// </summary>
-    public string? ETag
-    {
-        get => _etag is null ? null : $"\"{_etag.Replace("\"", "")}\"";
-        set => _etag = value;
-    }
-    private string? _etag;
-
-    /// <summary>
-    /// Entity (DB row) version for concurrency, returned with quotes per RFC 7232. Populated only when sync=true.
-    /// </summary>
-    public string? EntityEtag
-    {
-        get => _entityEtag is null ? null : $"\"{_entityEtag.Replace("\"", "")}\"";
-        set => _entityEtag = value;
-    }
-    private string? _entityEtag;
-
-    /// <summary>
-    /// Computed extension fields. Populated only when sync=true.
-    /// </summary>
-    public Dictionary<string, object>? Extensions { get; set; }
 }
 
 /// <summary>

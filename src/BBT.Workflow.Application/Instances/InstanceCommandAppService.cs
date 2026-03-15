@@ -18,8 +18,10 @@ using BBT.Workflow.Execution.Services;
 using BBT.Workflow.Logging;
 using BBT.Workflow.Execution.Transitions.Services;
 using BBT.Workflow.Execution.Validation;
+using BBT.Workflow.Extentions;
 using BBT.Workflow.Headers;
 using BBT.Workflow.Runtime;
+using BBT.Workflow.Scripting;
 using Dapr.Jobs.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -45,6 +47,8 @@ public sealed class InstanceCommandAppService(
     IWorkflowContext workflowContext,
     IRepresentationEtagService representationEtagService,
     ISchemaFieldFilterService schemaFieldFilterService,
+    IInstanceExtensionService instanceExtensionService,
+    IScriptContextFactory scriptContextFactory,
     ILogger<InstanceCommandAppService> logger)
     : ApplicationService(serviceProvider), IInstanceCommandAppService
 {
@@ -66,7 +70,7 @@ public sealed class InstanceCommandAppService(
         if (existingInstanceResult.HasValue)
         {
             if (input.Sync && existingInstanceResult.Value.IsSuccess)
-                return await EnrichSyncOutputAsync(existingInstanceResult.Value.Value!, existingInstanceResult.Value.Value!.Id, workflow, cancellationToken);
+                return await EnrichSyncOutputAsync(existingInstanceResult.Value.Value!, existingInstanceResult.Value.Value!.Id, workflow, input.Extensions, cancellationToken);
             return existingInstanceResult.Value;
         }
 
@@ -283,7 +287,7 @@ public sealed class InstanceCommandAppService(
                 Status = transitionOutput.Status
             })
             .ThenAsync(output => input.Sync
-                ? EnrichSyncOutputAsync(output, output.Id, data.Workflow, cancellationToken)
+                ? EnrichSyncOutputAsync(output, output.Id, data.Workflow, input.Extensions, cancellationToken)
                 : Task.FromResult(Result<StartInstanceOutput>.Ok(output)));
     }
 
@@ -407,7 +411,7 @@ public sealed class InstanceCommandAppService(
             .ThenAsync(output =>
             {
                 if (input.Sync)
-                    return EnrichSyncOutputAsync(output, output.Id, workflowDefinition, cancellationToken);
+                    return EnrichSyncOutputAsync(output, output.Id, workflowDefinition, input.Extensions, cancellationToken);
                 output.Key = resolvedInstance.Key;
                 return Task.FromResult(Result<TransitionOutput>.Ok(output));
             });
@@ -461,8 +465,9 @@ public sealed class InstanceCommandAppService(
         StartInstanceOutput output,
         Guid instanceId,
         Definitions.Workflow? workflow,
+        string[]? extensionRequested,
         CancellationToken cancellationToken)
-        => EnrichOutputCoreAsync(output, instanceId, workflow, cancellationToken);
+        => EnrichOutputCoreAsync(output, instanceId, workflow, extensionRequested, cancellationToken);
 
     /// <summary>
     /// Enriches a sync=true TransitionOutput with attributes (schema-filtered), etag, entityEtag, key and extensions.
@@ -472,13 +477,15 @@ public sealed class InstanceCommandAppService(
         TransitionOutput output,
         Guid instanceId,
         Definitions.Workflow? workflow,
+        string[]? extensionRequested,
         CancellationToken cancellationToken)
-        => EnrichOutputCoreAsync(output, instanceId, workflow, cancellationToken);
+        => EnrichOutputCoreAsync(output, instanceId, workflow, extensionRequested, cancellationToken);
 
     private async Task<Result<TOutput>> EnrichOutputCoreAsync<TOutput>(
         TOutput output,
         Guid instanceId,
         Definitions.Workflow? workflow,
+        string[]? extensionRequested,
         CancellationToken cancellationToken)
         where TOutput : class
     {
@@ -494,12 +501,36 @@ public sealed class InstanceCommandAppService(
         var entityEtag = latestData?.ETag;
         var attributes = filteredAttributes ?? rawAttributes;
 
+        Dictionary<string, object> extensions = new();
+        if (workflow is not null)
+        {
+            var scriptContext = await scriptContextFactory.NewBuilder(instanceRepository)
+                .WithWorkflow(workflow)
+                .WithInstance(freshInstance)
+                .WithRuntime(runtimeInfoProvider)
+                .WithTransition(string.Empty)
+                .WithBody(latestData?.Data ?? new JsonData("{}"))
+                .BuildAsync(cancellationToken);
+
+            var extensionsResult = await instanceExtensionService.ProcessExtensionsAsync(
+                extensionRequested,
+                scriptContext,
+                workflow,
+                ExtensionScope.GetInstance,
+                cancellationToken);
+
+            if (!extensionsResult.IsSuccess)
+                return Result<TOutput>.Fail(extensionsResult.Error);
+
+            extensions = extensionsResult.Value!;
+        }
+
         if (output is StartInstanceOutput start)
         {
             start.Key = key;
             start.Attributes = attributes;
             start.EntityEtag = entityEtag;
-            start.Extensions = new Dictionary<string, object>();
+            start.Extensions = extensions;
             // ETag must be generated after all other fields are set (ETag itself is null at generation time)
             start.ETag = representationEtagService.Generate(start);
         }
@@ -508,7 +539,7 @@ public sealed class InstanceCommandAppService(
             transition.Key = key;
             transition.Attributes = attributes;
             transition.EntityEtag = entityEtag;
-            transition.Extensions = new Dictionary<string, object>();
+            transition.Extensions = extensions;
             // ETag must be generated after all other fields are set (ETag itself is null at generation time)
             transition.ETag = representationEtagService.Generate(transition);
         }
