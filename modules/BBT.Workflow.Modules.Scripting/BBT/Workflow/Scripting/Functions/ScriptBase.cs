@@ -288,6 +288,7 @@ public abstract class ScriptBase
     /// </example>
     protected static List<object?> GetList(object? obj, string propertyName)
     {
+        if (obj is null) return [];
         return AsList(GetPropertyValue(obj!, propertyName));
     }
 
