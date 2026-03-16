@@ -533,6 +533,11 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
             JsonSerializerConstants.JsonOptions));
         instanceTask.SetRequest(requestJson);
 
+        if (executorContext.RawInvocationResultJson != null)
+        {
+            instanceTask.SetInvocationResult(new JsonData(executorContext.RawInvocationResultJson));
+        }
+
         stopwatch.Stop();
 
         // 9. Handle infrastructure error - return without boundary resolution (not retriable)
