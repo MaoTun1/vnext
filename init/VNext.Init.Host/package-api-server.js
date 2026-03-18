@@ -56,17 +56,22 @@ const colors = {
 };
 
 /**
- * Logging utilities with colors
+ * Returns current ISO 8601 timestamp string
+ */
+const getTimestamp = () => new Date().toISOString();
+
+/**
+ * Logging utilities with colors and timestamps
  */
 const log = {
-    info: (msg) => console.log(`${colors.cyan}[package-api]${colors.reset} ${msg}`),
-    success: (msg) => console.log(`${colors.green}[package-api] ✓${colors.reset} ${msg}`),
-    warn: (msg) => console.log(`${colors.yellow}[package-api] ⚠${colors.reset} ${msg}`),
-    error: (msg) => console.error(`${colors.red}[package-api] ✗ ${msg}${colors.reset}`),
-    section: (msg) => console.log(`\n${colors.bold}${colors.blue}${'═'.repeat(60)}${colors.reset}\n${colors.bold}${colors.blue}  ${msg}${colors.reset}\n${colors.bold}${colors.blue}${'═'.repeat(60)}${colors.reset}`),
-    subsection: (msg) => console.log(`\n${colors.cyan}${'─'.repeat(50)}${colors.reset}\n${colors.cyan}  ${msg}${colors.reset}\n${colors.cyan}${'─'.repeat(50)}${colors.reset}`),
-    component: (type, name) => console.log(`${colors.magenta}[package-api]${colors.reset} ${colors.bold}[${type.toUpperCase()}]${colors.reset} ${name}`),
-    detail: (msg) => console.log(`${colors.dim}[package-api]   ${msg}${colors.reset}`)
+    info: (msg) => console.log(`${colors.dim}${getTimestamp()}${colors.reset} ${colors.cyan}[package-api]${colors.reset} ${msg}`),
+    success: (msg) => console.log(`${colors.dim}${getTimestamp()}${colors.reset} ${colors.green}[package-api] ✓${colors.reset} ${msg}`),
+    warn: (msg) => console.log(`${colors.dim}${getTimestamp()}${colors.reset} ${colors.yellow}[package-api] ⚠${colors.reset} ${msg}`),
+    error: (msg) => console.error(`${colors.dim}${getTimestamp()}${colors.reset} ${colors.red}[package-api] ✗ ${msg}${colors.reset}`),
+    section: (msg) => console.log(`\n${colors.bold}${colors.blue}${'═'.repeat(60)}${colors.reset}\n${colors.dim}${getTimestamp()}${colors.reset} ${colors.bold}${colors.blue}  ${msg}${colors.reset}\n${colors.bold}${colors.blue}${'═'.repeat(60)}${colors.reset}`),
+    subsection: (msg) => console.log(`\n${colors.cyan}${'─'.repeat(50)}${colors.reset}\n${colors.dim}${getTimestamp()}${colors.reset} ${colors.cyan}  ${msg}${colors.reset}\n${colors.cyan}${'─'.repeat(50)}${colors.reset}`),
+    component: (type, name) => console.log(`${colors.dim}${getTimestamp()}${colors.reset} ${colors.magenta}[package-api]${colors.reset} ${colors.bold}[${type.toUpperCase()}]${colors.reset} ${name}`),
+    detail: (msg) => console.log(`${colors.dim}${getTimestamp()} [package-api]   ${msg}${colors.reset}`)
 };
 
 /**
@@ -507,8 +512,9 @@ async function uploadToVNextApi(jsonData, description) {
     if (response.statusCode === 200 || response.statusCode === 201) {
         return true;
     } else {
-        log.error(`Failed to upload ${description} (HTTP ${response.statusCode})`);
+        log.error(`Failed to upload ${description} — HTTP ${response.statusCode}`);
         logErrorResponse(response.body, description);
+        log.detail(`Raw response body: ${response.body}`);
         return false;
     }
 }
@@ -593,7 +599,7 @@ function logErrorResponse(responseBody, context) {
     } catch (e) {
         // If response is not valid JSON, display as plain text
         if (responseBody && responseBody.trim()) {
-            log.error(`  Raw Response: ${responseBody.substring(0, 500)}${responseBody.length > 500 ? '...' : ''}`);
+            log.error(`  Raw Response: ${responseBody.substring(0, 2000)}${responseBody.length > 2000 ? '...' : ''}`);
         }
     }
 }
