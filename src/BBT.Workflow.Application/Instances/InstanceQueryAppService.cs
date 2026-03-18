@@ -40,6 +40,13 @@ public sealed class InstanceQueryAppService(
     ILogger<InstanceQueryAppService> logger)
     : ApplicationService(serviceProvider), IInstanceQueryAppService
 {
+    private static readonly HashSet<InstanceStatus> TerminalStatuses =
+    [
+        InstanceStatus.Completed,
+        InstanceStatus.Faulted,
+        InstanceStatus.Passive
+    ];
+    
     public async Task<ConditionalResult<GetInstanceOutput>> GetInstanceAsync(
         GetInstanceInput input,
         CancellationToken cancellationToken = default)
@@ -659,10 +666,7 @@ public sealed class InstanceQueryAppService(
             // status would falsely signal to clients that the whole flow is done.
             // Fall back to the parent's own state so the client receives Status=Busy and retries.
             var sfStatus = subFlowStateInfo.Status;
-            var subFlowIsTerminal = sfStatus != null
-                && (sfStatus.Equals(InstanceStatus.Completed)
-                    || sfStatus.Equals(InstanceStatus.Faulted)
-                    || sfStatus.Equals(InstanceStatus.Passive));
+            var subFlowIsTerminal = sfStatus is not null && TerminalStatuses.Contains(sfStatus);
 
             if (subFlowIsTerminal)
             {
