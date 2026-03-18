@@ -645,10 +645,34 @@ public sealed class InstanceQueryAppService(
             .OrderByDescending(c => c.CorrelationId)
             .FirstOrDefault();
 
-        var subFlowStateInfo = activeSubFlowCorrelation != null
-            ? await GetSubFlowTransitionsAsync(activeSubFlowCorrelation, instance, currentWorkflow, input.Extensions,
-                input.Headers, input.QueryParams, input.Role, cancellationToken)
-            : GetMainFlowTransitions(instance, currentWorkflow, transitionInfo);
+        SubFlowStateInfo subFlowStateInfo;
+        if (activeSubFlowCorrelation != null)
+        {
+            subFlowStateInfo = await GetSubFlowTransitionsAsync(
+                activeSubFlowCorrelation, instance, currentWorkflow,
+                input.Extensions, input.Headers, input.QueryParams,
+                input.Role, cancellationToken);
+
+            // Guard: SubFlow has reached a terminal status but the parent correlation is still
+            // open (IsCompleted=false) — we are in the propagation window.
+            // The parent is Busy handling the SubFlow completion; returning the SubFlow's terminal
+            // status would falsely signal to clients that the whole flow is done.
+            // Fall back to the parent's own state so the client receives Status=Busy and retries.
+            var sfStatus = subFlowStateInfo.Status;
+            var subFlowIsTerminal = sfStatus != null
+                && (sfStatus.Equals(InstanceStatus.Completed)
+                    || sfStatus.Equals(InstanceStatus.Faulted)
+                    || sfStatus.Equals(InstanceStatus.Passive));
+
+            if (subFlowIsTerminal)
+            {
+                subFlowStateInfo = GetMainFlowTransitions(instance, currentWorkflow, transitionInfo);
+            }
+        }
+        else
+        {
+            subFlowStateInfo = GetMainFlowTransitions(instance, currentWorkflow, transitionInfo);
+        }
 
         var stateResult = currentWorkflow.GetState(instance.CurrentState!)
             .Ensure(
