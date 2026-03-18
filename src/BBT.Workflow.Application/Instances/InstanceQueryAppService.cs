@@ -306,7 +306,7 @@ public sealed class InstanceQueryAppService(
                 subFlowInput,
                 cancellationToken);
 
-            if (subFlowResult.Result.IsSuccess && subFlowResult.Result.Value != null)
+            if (subFlowResult.Result is { IsSuccess: true, Value: not null })
             {
                 var subFlowValue = subFlowResult.Result.Value;
 
@@ -481,11 +481,11 @@ public sealed class InstanceQueryAppService(
     {
         runtimeInfoProvider.Check(input.Domain);
 
-        // Railway chain: Load Flow → Get Instance → Match to ConditionalResult
-        return await componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, null, cancellationToken)
-            .BindAsync(workflow =>
-                GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken)
-                    .MapAsync(instance => (flow: workflow, instance)))
+        // Railway chain: Get Instance → Load Flow (using instance.FlowVersion) → Match to ConditionalResult
+        return await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken)
+            .BindAsync(instance =>
+                componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, instance.FlowVersion, cancellationToken)
+                    .MapAsync(workflow => (flow: workflow, instance)))
             .MatchAsync(
                 onSuccess: async data =>
                 {
@@ -603,7 +603,7 @@ public sealed class InstanceQueryAppService(
 
         return await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken)
             .BindAsync(instance =>
-                componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, input.Version, cancellationToken)
+                componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, instance.FlowVersion ?? input.Version, cancellationToken)
                     .MapAsync(workflow => (instance, workflow)))
             .MatchAsync(
                 onSuccess: async data =>
@@ -656,13 +656,75 @@ public sealed class InstanceQueryAppService(
                 Error.NotFound("notfound", $"State {instance.CurrentState} not found in workflow {input.Workflow}"));
         if (!stateResult.IsSuccess)
             return Result<GetInstanceStateOutput>.Fail(stateResult.Error);
-
+        
         var currentStateValue = stateResult.Value!;
         var keysForTransitions = subFlowStateInfo.AvailableTransitions;
-        if (!string.IsNullOrWhiteSpace(input.Role))
-            keysForTransitions = (await transitionAuthorizationManager.FilterAuthorizedTransitionKeysAsync(
-                    currentWorkflow, currentStateValue, instance, keysForTransitions, input.Role!, cancellationToken))
-                .ToList();
+        {
+            // Always evaluate authorization: predefined roles ($InstanceStarter, $PreviousUser) are checked via
+            // ICurrentUser.ActorUserName regardless of whether a role parameter was supplied.
+            // When this instance was started as a SubFlow with parent-defined transition overrides,
+            // apply combined filtering: parent override grants for overridden transitions,
+            // own role filtering for non-overridden transitions.
+            var parentTransitionOverrides = TryGetParentTransitionRoleOverrides(instance);
+            if (parentTransitionOverrides is { Count: > 0 })
+            {
+                var filteredKeys = new List<string>();
+                foreach (var key in keysForTransitions)
+                {
+                    if (parentTransitionOverrides.TryGetValue(key, out var tOverride) &&
+                        tOverride.Roles is { Count: > 0 })
+                    {
+                        // Parent override (replace mode): use parent-defined grants
+                        var allowed = await transitionAuthorizationManager
+                            .IsRoleAllowedForGrantsAsync(input.Role, tOverride.Roles!, instance, cancellationToken);
+                        if (allowed) filteredKeys.Add(key);
+                    }
+                    else
+                    {
+                        // No parent override: if the transition belongs to this workflow, apply own role filtering.
+                        // If not found (e.g. it came from a deeper SubFlow like C), pass through — already filtered by C.
+                        var ownTransition = currentWorkflow.FindTransitionInContext(key);
+                        if (ownTransition != null)
+                        {
+                            var result = await transitionAuthorizationManager.FilterAuthorizedTransitionKeysAsync(
+                                currentWorkflow, currentStateValue, instance, [key], input.Role, cancellationToken);
+                            filteredKeys.AddRange(result);
+                        }
+                        else
+                        {
+                            filteredKeys.Add(key);
+                        }
+                    }
+                }
+                keysForTransitions = filteredKeys;
+            }
+            else if (activeSubFlowCorrelation != null)
+            {
+                // Parent context with active SubFlow:
+                // SubFlow transitions are already correctly role-filtered by the SubFlow itself.
+                // Only apply parent-level filtering to parent-added shared transitions.
+                var subFlowTransitionKeys = subFlowStateInfo.SubFlowTransitionItems?
+                    .Select(t => t.Name).ToHashSet(StringComparer.Ordinal) ?? [];
+                var parentSharedKeys = keysForTransitions
+                    .Where(k => !subFlowTransitionKeys.Contains(k))
+                    .ToList();
+                var filteredParentSharedKeys = parentSharedKeys.Count > 0
+                    ? (await transitionAuthorizationManager.FilterAuthorizedTransitionKeysAsync(
+                            currentWorkflow, currentStateValue, instance, parentSharedKeys, input.Role, cancellationToken))
+                      .ToList()
+                    : parentSharedKeys;
+                keysForTransitions = keysForTransitions
+                    .Where(k => subFlowTransitionKeys.Contains(k))
+                    .Concat(filteredParentSharedKeys)
+                    .ToList();
+            }
+            else
+            {
+                keysForTransitions = (await transitionAuthorizationManager.FilterAuthorizedTransitionKeysAsync(
+                        currentWorkflow, currentStateValue, instance, keysForTransitions, input.Role, cancellationToken))
+                    .ToList();
+            }
+        }
 
         List<TransitionItem> transitionItems;
         if (subFlowStateInfo.SubFlowTransitionItems != null)
@@ -670,28 +732,43 @@ public sealed class InstanceQueryAppService(
             var subFlowItemsByName =
                 subFlowStateInfo.SubFlowTransitionItems.ToDictionary(t => t.Name, StringComparer.Ordinal);
             transitionItems = keysForTransitions
-                .Select(key => (Key: key, SubFlowItem: subFlowItemsByName.GetValueOrDefault(key)))
-                .Where(t => t.SubFlowItem is not null)
-                .Select(t => new TransitionItem
+                .Select(key =>
                 {
-                    Name = t.Key,
-                    Href = urlTemplateBuilder.BuildTransitionUrl(input.Domain, input.Workflow,
-                        instance.Id.ToString(),
-                        t.Key),
-                    View = new ViewHref
+                    var subFlowItem = subFlowItemsByName.GetValueOrDefault(key);
+                    bool hasView, loadData, hasSchema;
+                    if (subFlowItem != null)
                     {
-                        Href = urlTemplateBuilder.BuildViewUrl(input.Domain, input.Workflow, instance.Id.ToString(),
-                            t.Key),
-                        HasView = t.SubFlowItem!.View?.HasView ?? false,
-                        LoadData = t.SubFlowItem.View?.LoadData ?? false,
-                    },
-                    Schema = new SchemaHref
-                    {
-                        Href = urlTemplateBuilder.BuildSchemaUrl(input.Domain, input.Workflow,
-                            instance.Id.ToString(),
-                            t.Key),
-                        HasSchema = t.SubFlowItem.Schema?.HasSchema ?? false
+                        hasView = subFlowItem.View?.HasView ?? false;
+                        loadData = subFlowItem.View?.LoadData ?? false;
+                        hasSchema = subFlowItem.Schema?.HasSchema ?? false;
                     }
+                    else
+                    {
+                        // Parent-owned transition (e.g., shared transition not from SubFlow): resolve from parent workflow
+                        var transition = currentWorkflow.ResolveTransition(key, currentStateValue);
+                        hasView = transition?.View is { Views.Count: > 0 };
+                        loadData = false;
+                        hasSchema = transition?.Schema != null;
+                    }
+                    return new TransitionItem
+                    {
+                        Name = key,
+                        Href = urlTemplateBuilder.BuildTransitionUrl(input.Domain, input.Workflow,
+                            instance.Id.ToString(), key),
+                        View = new ViewHref
+                        {
+                            Href = urlTemplateBuilder.BuildViewUrl(input.Domain, input.Workflow,
+                                instance.Id.ToString(), key),
+                            HasView = hasView,
+                            LoadData = loadData,
+                        },
+                        Schema = new SchemaHref
+                        {
+                            Href = urlTemplateBuilder.BuildSchemaUrl(input.Domain, input.Workflow,
+                                instance.Id.ToString(), key),
+                            HasSchema = hasSchema
+                        }
+                    };
                 })
                 .ToList();
         }
@@ -816,7 +893,7 @@ public sealed class InstanceQueryAppService(
         // Railway chain: Get Instance → Get Workflow → Resolve State → Get View
         return await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken)
             .BindAsync(instance =>
-                componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, input.Version, cancellationToken)
+                componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, instance.FlowVersion ?? input.Version, cancellationToken)
                     .MapAsync(workflow => (instance, workflow)))
             .ThenAsync(data =>
                 ResolveViewAsync(data.instance, data.workflow, input, transitionKey, cancellationToken));
@@ -839,7 +916,7 @@ public sealed class InstanceQueryAppService(
         // Railway chain: Get Instance → Get Workflow → Build Schema Output
         return await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken)
             .BindAsync(instance =>
-                componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, input.Version, cancellationToken)
+                componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, instance.FlowVersion ?? input.Version, cancellationToken)
                     .MapAsync(workflow => (instance, workflow)))
             .ThenAsync(data =>
                 BuildSchemaOutputAsync(data.instance, data.workflow, input, transitionKey, cancellationToken));
@@ -860,7 +937,7 @@ public sealed class InstanceQueryAppService(
         // Railway chain: Get Instance → Get Workflow → Build Extensions Output
         return await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken)
             .BindAsync(instance =>
-                componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, input.Version, cancellationToken)
+                componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, instance.FlowVersion ?? input.Version, cancellationToken)
                     .MapAsync(workflow => (instance, workflow)))
             .ThenAsync(data =>
                 BuildExtensionsOutputAsync(data.instance, data.workflow, input, cancellationToken));
@@ -1176,9 +1253,10 @@ public sealed class InstanceQueryAppService(
         }
 
         // If current state has view overrides, resolve override view (local or remote) via service
+        // EffectiveViewOverrides: overrides.views takes precedence over legacy viewOverrides
         if (currentState.SubFlow!.HasViewOverrides)
         {
-            var overrideViewRef = currentState.SubFlow!.ViewOverrides!.GetOrDefault(subFlowViewResult.Value!.Key);
+            var overrideViewRef = currentState.SubFlow!.EffectiveViewOverrides!.GetOrDefault(subFlowViewResult.Value!.Key);
 
             if (overrideViewRef != null)
             {
@@ -1214,7 +1292,7 @@ public sealed class InstanceQueryAppService(
         }
 
         var instance = instanceResult.Value!;
-        var flowResult = await componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, null, cancellationToken);
+        var flowResult = await componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, instance.FlowVersion, cancellationToken);
         var flowVersion = flowResult.IsSuccess ? flowResult.Value?.Version : null;
 
         var rootNode = new InstanceHierarchyNode
@@ -1319,4 +1397,15 @@ public sealed class InstanceQueryAppService(
         ViewHref? SubFlowView = null,
         List<ActiveCorrelationHref>? SubFlowActiveCorrelations = null,
         List<TransitionItem>? SubFlowTransitionItems = null);
+
+    private static Dictionary<string, SubFlowTransitionOverride>? TryGetParentTransitionRoleOverrides(Instance instance)
+    {
+        if (!instance.ExtraProperties.TryGetValue(DomainConsts.MetaDataKeys.TransitionRoleOverrides, out var raw) ||
+            raw is null)
+            return null;
+        var json = raw.ToString();
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+        return JsonSerializer.Deserialize<Dictionary<string, SubFlowTransitionOverride>>(json);
+    }
 }

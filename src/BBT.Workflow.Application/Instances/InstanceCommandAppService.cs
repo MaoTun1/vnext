@@ -78,7 +78,7 @@ public sealed class InstanceCommandAppService(
         return await PrepareInstanceAsync(workflow, input, cancellationToken)
             .ThenAsync(async data =>
             {
-                await ScheduleWorkflowTimeoutIfConfiguredAsync(data.Workflow, data.Instance, cancellationToken);
+                await ScheduleWorkflowTimeoutIfConfiguredAsync(data.Workflow, data.Instance, input.Instance.ExtraProperties, cancellationToken);
                 return Result<(Definitions.Workflow Workflow, Instance Instance)>.Ok(data);
             })
             .ThenAsync(data => ExecuteStartTransitionAsync(data, input, cancellationToken))
@@ -293,14 +293,26 @@ public sealed class InstanceCommandAppService(
 
     /// <summary>
     /// Schedules a workflow timeout job if the workflow has a timeout configuration.
+    /// When extraProperties contains a timeout override (set by SubflowStarter), it takes precedence over the workflow's own timeout.
     /// </summary>
     private async Task ScheduleWorkflowTimeoutIfConfiguredAsync(
         Definitions.Workflow workflow,
         Instance instance,
+        ExtraPropertyDictionary extraProperties,
         CancellationToken cancellationToken)
     {
-        // Check if workflow has timeout configuration
-        if (workflow.Timeout == null)
+        // Check for SubFlow timeout override in ExtraProperties
+        WorkflowTimeout? timeoutOverride = null;
+        if (extraProperties.TryGetValue(DomainConsts.MetaDataKeys.TimeoutOverride, out var overrideJson)
+            && !string.IsNullOrWhiteSpace(overrideJson?.ToString()))
+        {
+            timeoutOverride = JsonSerializer.Deserialize<WorkflowTimeout>(overrideJson!.ToString()!);
+        }
+
+        var effectiveTimeout = timeoutOverride ?? workflow.Timeout;
+
+        // Check if there is any timeout configuration to schedule
+        if (effectiveTimeout == null)
         {
             return;
         }
@@ -321,7 +333,7 @@ public sealed class InstanceCommandAppService(
             };
 
             // Parse ISO 8601 duration string to TimeSpan
-            var timeoutDuration = System.Xml.XmlConvert.ToTimeSpan(workflow.Timeout.Timer.Duration);
+            var timeoutDuration = System.Xml.XmlConvert.ToTimeSpan(effectiveTimeout.Timer.Duration);
 
             // Calculate timeout schedule - workflow timeout should be evaluated from creation time
             var timeoutDateTime = DateTime.UtcNow.Add(timeoutDuration);
@@ -357,7 +369,7 @@ public sealed class InstanceCommandAppService(
                 true,
                 cancellationToken);
 
-            logger.WorkflowTimeoutScheduled(instance.Id, workflow.Timeout.Timer.Duration, timeoutDateTime);
+            logger.WorkflowTimeoutScheduled(instance.Id, effectiveTimeout.Timer.Duration, timeoutDateTime);
         }
         catch (Exception ex)
         {
