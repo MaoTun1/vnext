@@ -57,7 +57,7 @@ internal sealed class ScriptContextBuilder(
         return this;
     }
 
-    public IScriptContextBuilder WithWorkflow(Definitions.Workflow workflow)
+    public IScriptContextBuilder WithWorkflow(Definitions.Workflow? workflow)
     {
         _workflow = workflow;
         _workflowDomain = null; // Clear async retrieval properties
