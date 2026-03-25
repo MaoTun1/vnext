@@ -532,9 +532,9 @@ public sealed class InstanceCommandAppService(
                 cancellationToken);
 
             if (!extensionsResult.IsSuccess)
-                return Result<TOutput>.Fail(extensionsResult.Error);
-
-            extensions = extensionsResult.Value!;
+                logger.LogWarning("Extension processing failed but continuing. Error: {Error}", extensionsResult.Error);
+            else
+                extensions = extensionsResult.Value!;
         }
 
         if (output is StartInstanceOutput start)

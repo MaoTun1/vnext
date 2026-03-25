@@ -74,15 +74,15 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         var boundaryChain = CompiledBoundaryChain.Compile(
             onExecuteTask.ErrorBoundary,
             GetStateBoundary(context),
-            context.Workflow.ErrorBoundary);
+            context.Workflow?.ErrorBoundary);
 
         Activity.Current?.SetDisplayName($"Task.Execute.{onExecuteTask.Task.Key}");
         var activity = Activity.Current;
         if (activity != null)
         {
             activity.SetTag(TelemetryConstants.TagNames.TaskKey, onExecuteTask.Task.Key);
-            activity.SetTag(TelemetryConstants.TagNames.InstanceId, context.Instance.Id.ToString());
-            activity.SetTag(TelemetryConstants.TagNames.Flow, context.Workflow.Key);
+            activity.SetTag(TelemetryConstants.TagNames.InstanceId, context.Instance?.Id.ToString());
+            activity.SetTag(TelemetryConstants.TagNames.Flow, context.Workflow?.Key);
         }
 
         _logger.LogInformation(
@@ -350,10 +350,10 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         var instance = context.Instance;
         var workflow = context.Workflow;
 
-        if (string.IsNullOrEmpty(instance.CurrentState))
+        if (string.IsNullOrEmpty(instance?.CurrentState))
             return null;
 
-        var state = workflow.FindState(instance.CurrentState);
+        var state = workflow?.FindState(instance.CurrentState);
         return state?.ErrorBoundary;
     }
 
@@ -437,7 +437,7 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
     {
         if (taskTrigger != TaskTrigger.Extension && response.Data is not null)
         {
-            context.Instance.AddData(
+            context.Instance?.AddData(
                 _guidGenerator.Create(),
                 new JsonData(JsonSerializer.Serialize(response.Data, JsonSerializerConstants.JsonOptions)),
                 VersionStrategy.IncreasePatch);
@@ -476,7 +476,7 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         var task = taskResult.Value!;
         var taskType = task.GetTaskType();
         var taskTypeStr = taskType.ToString();
-        var workflowKey = context.Workflow.Key;
+        var workflowKey = context.Workflow?.Key ?? "N/A";
 
         Activity.Current?.SetTag(TelemetryConstants.TagNames.TaskType, taskTypeStr);
 
@@ -495,7 +495,7 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
 
         _logger.LogDebug(
             "Executing task {TaskKey} of type {TaskType} for instance {InstanceId} (retry attempt)",
-            task.Key, taskType, context.Instance.Id);
+            task.Key, taskType, context.Instance?.Id);
 
         // 5. Persist creation
         await PersistCreationAsync(persistenceStrategy, instanceTask, cancellationToken);

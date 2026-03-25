@@ -119,13 +119,13 @@ public sealed class ViewContentResolutionService(
     {
         var attrs = DeserializeAttributes(instanceOutput.Attributes);
         var contentRaw = attrs?.Content ?? string.Empty;
-        var type = attrs?.Type ?? string.Empty;
+        var type = attrs?.Type;
         var contentTyped = View.GetContentAsTypedFromObject(contentRaw, type);
         return new GetViewOutput
         {
             Key = instanceOutput.Key ?? viewKey,
             Content = contentTyped,
-            Type = type,
+            Type = type?.ToString() ?? "Json",
             Display = attrs?.Display ?? string.Empty,
             Label = attrs?.Label ?? string.Empty
         };

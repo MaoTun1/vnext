@@ -998,27 +998,18 @@ async function handlePackagePublish(req, res) {
             npmToken,
             npmUsername,
             npmPassword,
-            npmEmail,
-            appDomain
+            npmEmail
         } = body;
-        
+
         if (!packageName) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'packageName is required' }));
             return;
         }
-        
-        // Determine if domain replacement should happen
-        const shouldReplaceDomain = appDomain && appDomain.trim() !== '';
-        
+
         log.section(`API Request: Package Publish`);
         log.info(`Package: ${packageName}@${version}`);
-        if (shouldReplaceDomain) {
-            log.info(`App Domain: ${appDomain}`);
-            log.info(`Domain Replacement: ENABLED (all domains will be replaced)`);
-        } else {
-            log.info(`Domain Replacement: DISABLED (no appDomain provided)`);
-        }
+        log.info(`Domain Replacement: DISABLED`);
         
         // Wait for vnext app to be ready
         await waitForVNextApp();
@@ -1038,8 +1029,8 @@ async function handlePackagePublish(req, res) {
         await verifyPackageStructure(packagePath);
         
         // Process and publish with isRuntimePackage=false (no special ordering)
-        // appDomain is null if not provided (no replacement)
-        const results = await processPackage(packagePath, packageName, shouldReplaceDomain ? appDomain : null, false);
+        // Domain replacement is never applied for standard packages
+        const results = await processPackage(packagePath, packageName, null, false);
         
         // Determine success status and message based on results
         let success = true;
@@ -1063,8 +1054,6 @@ async function handlePackagePublish(req, res) {
             success: success,
             message: message,
             packageName: packageName,
-            appDomain: shouldReplaceDomain ? appDomain : null,
-            domainReplacement: shouldReplaceDomain,
             results: {
                 successful: results.success,
                 failed: results.failed,
