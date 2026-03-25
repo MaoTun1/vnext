@@ -193,7 +193,12 @@ internal sealed class ScriptContextBuilder(
             var transition = ResolveTransition(workflow);
             builder.SetTransition(transition);
         }
-        
+        else
+        {
+            // If no workflow but transition was set directly, preserve it
+            builder.SetTransition(_transition);
+        }
+
         // Resolve instance if needed
         var instance = await ResolveInstanceAsync(cancellationToken);
         if (instance != null)
