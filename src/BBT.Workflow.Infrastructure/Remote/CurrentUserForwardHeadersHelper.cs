@@ -14,7 +14,7 @@ public static class CurrentUserForwardHeadersHelper
     {
         "Content-Type", "Content-Length", "Content-Encoding", "Content-Language",
         "Content-Location", "Content-Disposition", "Content-Range", "Content-MD5",
-        "Expires", "Last-Modified", "Allow", "Host", "Connection", "Accept", "Accept-Encoding"
+        "Expires", "Last-Modified", "Allow"
     };
 
     /// <summary>

@@ -532,7 +532,7 @@ public sealed class InstanceCommandAppService(
                 cancellationToken);
 
             if (!extensionsResult.IsSuccess)
-                logger.LogWarning("Extension processing failed but continuing. Error: {Error}", extensionsResult.Error);
+                logger.ExtensionProcessingFailedNonBlocking(extensionsResult.Error.Code);
             else
                 extensions = extensionsResult.Value!;
         }
