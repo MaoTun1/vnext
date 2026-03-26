@@ -1208,7 +1208,7 @@ public sealed class InstanceQueryAppService(
                 scriptContext,
                 cancellationToken);
 
-            if (ruleResult.IsSuccess && ruleResult.Value)
+            if (ruleResult is { IsSuccess: true, Value: true })
             {
                 selectedViewEntry = viewEntry;
                 break;

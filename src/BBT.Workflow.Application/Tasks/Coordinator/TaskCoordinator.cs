@@ -131,15 +131,15 @@ public sealed class TaskCoordinator : ITaskCoordinatorExtended
         Activity.Current?.SetDisplayName("TaskCoordinator.Execute");
 
         var tasks = onExecuteTasks.ToList();
-        var completedSet = completedTaskIds.ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
+        var completedSet = completedTaskIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var executedTasks = new List<TaskExecutionSummary>();
         var totalStopwatch = Stopwatch.StartNew();
 
         var activity = Activity.Current;
         if (activity != null)
         {
-            activity.SetTag(TelemetryConstants.TagNames.InstanceId, context.Instance.Id.ToString());
-            activity.SetTag(TelemetryConstants.TagNames.Flow, context.Workflow.Key);
+            activity.SetTag(TelemetryConstants.TagNames.InstanceId, context.Instance?.Id.ToString());
+            activity.SetTag(TelemetryConstants.TagNames.Flow, context.Workflow?.Key);
             activity.SetTag("vnext.task.count", tasks.Count);
         }
 
@@ -158,7 +158,7 @@ public sealed class TaskCoordinator : ITaskCoordinatorExtended
         _logger.LogDebug(
             "Coordinating execution of {TaskCount} tasks for instance {InstanceId}. " +
             "Bypassing {BypassCount} already completed tasks.",
-            tasksToExecute.Count, context.Instance.Id, skippedCount);
+            tasksToExecute.Count, context.Instance?.Id, skippedCount);
 
         // Group tasks by Order for parallel/sequential execution
         var taskGroups = tasksToExecute
@@ -288,7 +288,7 @@ public sealed class TaskCoordinator : ITaskCoordinatorExtended
 
         _logger.LogDebug(
             "Executing {TaskCount} tasks in parallel for instance {InstanceId}",
-            tasks.Count, context.Instance.Id);
+            tasks.Count, context.Instance?.Id);
 
         // Track first failure for error boundary (thread-safe)
         TasksExecutionResult? firstFailure = null;
