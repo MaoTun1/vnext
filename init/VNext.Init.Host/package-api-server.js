@@ -204,7 +204,7 @@ function generateVersion(artifactVersion, packageVersion, domain) {
 
 /**
  * Update version fields in a component object
- * Updates version and flowVersion at root level only
+ * Updates version at root level only
  * 
  * NOTE: data[] items are processed separately by processSysFileData,
  * so we don't process them here to avoid double-processing.
@@ -225,12 +225,6 @@ function updateComponentVersions(component, packageVersion, domain) {
     if (updated.version && typeof updated.version === 'string') {
         const newVersion = generateVersion(updated.version, packageVersion, domain);
         updated.version = newVersion;
-    }
-    
-    // Update flowVersion if present (same logic as version)
-    if (updated.flowVersion && typeof updated.flowVersion === 'string') {
-        const newFlowVersion = generateVersion(updated.flowVersion, packageVersion, domain);
-        updated.flowVersion = newFlowVersion;
     }
     
     // NOTE: data[] items are NOT processed here - they are processed separately
