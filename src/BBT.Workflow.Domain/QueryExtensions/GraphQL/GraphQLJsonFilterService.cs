@@ -194,6 +194,23 @@ public static class GraphQLJsonFilterService
     }
 
     /// <summary>
+    /// Builds JSON and Instance WHERE fragments for raw SQL (e.g. aggregations with optional <c>Instances</c> join).
+    /// Instance fragments use alias <c>s</c>; JSON fragments reference the JSON column on <c>InstancesData</c>.
+    /// </summary>
+    public static (string jsonWhereClause, string instanceWhereClause) BuildSeparatedWhereClausesForSql(
+        GraphQLFilterNode? filterNode,
+        string jsonColumnName,
+        List<NpgsqlParameter> parameters,
+        ref int parameterIndex,
+        ILogger? logger = null)
+    {
+        if (filterNode == null || filterNode.NodeType == FilterNodeType.Empty)
+            return (string.Empty, string.Empty);
+
+        return BuildSeparatedWhereClauses(filterNode, jsonColumnName, parameters, ref parameterIndex, logger);
+    }
+
+    /// <summary>
     /// Build WHERE clauses recursively, separating Instance and JSON conditions
     /// </summary>
     private static void BuildSeparatedClauses(
