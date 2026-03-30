@@ -57,12 +57,14 @@ public sealed class InstanceQueryAppService(
             .MatchAsync(
                 onSuccess: async instance =>
                 {
+                    var instanceData = instance.FindData(input.Version);
+                    
                     var result = await BuildInstanceOutputAsync(
                         input.Domain,
                         input.Extensions,
                         input.Workflow,
                         instance,
-                        instance.LatestData,
+                        instanceData,
                         ExtensionScope.GetInstance,
                         input.Headers,
                         input.QueryParameters,
@@ -497,11 +499,12 @@ public sealed class InstanceQueryAppService(
                 onSuccess: async data =>
                 {
                     var (flow, instance) = data;
-                    var entityEtag = instance.LatestData?.ETag ?? string.Empty;
+                    var instanceData = instance.FindData(input.Version);
+                    var entityEtag = instanceData?.ETag ?? string.Empty;
 
                     var result = new GetInstanceDataOutput
                     {
-                        Data = instance.LatestData?.Data.JsonElement
+                        Data = instanceData?.Data.JsonElement
                     };
 
                     result.Data = await schemaFieldFilterService.ApplyAsync(flow, result.Data, instance, cancellationToken) ??
@@ -526,7 +529,7 @@ public sealed class InstanceQueryAppService(
                             .WithInstance(instance)
                             .WithRuntime(runtimeInfoProvider)
                             .WithTransition(string.Empty)
-                            .WithBody(instance.LatestData?.Data ?? new JsonData("{}"))
+                            .WithBody(instanceData?.Data ?? new JsonData("{}"))
                             .WithHeaders(input.Headers)
                             .WithQueryParameters(input.QueryParameters)
                             .BuildAsync(cancellationToken);
