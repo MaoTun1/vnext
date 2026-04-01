@@ -198,7 +198,7 @@ public static class TaskServiceCollectionExtensions
     /// </summary>
     private static IServiceCollection AddScriptingServices(this IServiceCollection services)
     {
-        services.TryAddSingleton<IScriptContextFactory, ScriptContextFactory>();
+        services.AddSingleton<IScriptContextFactory, ScriptContextFactory>();
 
         // Evaluator is stateless - singleton for efficiency (caches MetadataReferences only)
         services.TryAddSingleton<IEvaluator, CSharpEvaluator>();
