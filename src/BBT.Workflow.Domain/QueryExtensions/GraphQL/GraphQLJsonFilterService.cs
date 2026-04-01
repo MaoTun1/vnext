@@ -166,10 +166,11 @@ public static class GraphQLJsonFilterService
         if (field.Contains('.'))
         {
             var parts = field.Split('.');
-            var arrayElements = string.Join(",", parts.Select(p => $"'{p.Trim()}'"));
+            var arrayElements = string.Join(",", parts.Select(p =>
+                "'" + InputValidator.EscapePostgresSingleQuotedString(p.Trim()) + "'"));
             return "\"Data\" #>> ARRAY[" + arrayElements + "]";
         }
-        return "\"Data\" ->> '" + field.Trim().Replace("'", "''") + "'";
+        return "\"Data\" ->> '" + InputValidator.EscapePostgresSingleQuotedString(field.Trim()) + "'";
     }
 
     /// <summary>
@@ -605,14 +606,16 @@ public static class GraphQLJsonFilterService
 
     private static string BuildJsonTextAccessor(string field, string jsonColumnName)
     {
+        InputValidator.ValidateSqlJsonColumnIdentifier(jsonColumnName);
         if (IsNestedPath(field))
         {
             var parts = field.Split('.');
-            var arrayElements = string.Join(",", parts.Select(p => $"'{p}'"));
+            var arrayElements = string.Join(",", parts.Select(p =>
+                $"'{InputValidator.EscapePostgresSingleQuotedString(p)}'"));
             return $"(\"{jsonColumnName}\" #>> ARRAY[{arrayElements}])";
         }
-        
-        return $"(\"{jsonColumnName}\" ->> '{field}')";
+
+        return $"(\"{jsonColumnName}\" ->> '{InputValidator.EscapePostgresSingleQuotedString(field)}')";
     }
 
     private static string BuildNestedJsonContainmentPattern(string field, object? value, bool isNumeric, bool isBoolean)

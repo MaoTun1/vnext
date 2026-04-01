@@ -93,8 +93,10 @@ public static class TaskServiceCollectionExtensions
     /// </summary>
     private static IServiceCollection AddTaskEvaluators(this IServiceCollection services)
     {
-        // Evaluator implementations
-        services.AddScoped<IConditionEvaluator, ScriptConditionEvaluator>();
+        // Condition: Roslyn scripts + Dynamic Expresso (routed by ScriptCode.Location)
+        services.AddScoped<ScriptConditionEvaluator>();
+        services.AddScoped<DynamicExpressoConditionEvaluator>();
+        services.AddScoped<IConditionEvaluator, RoutingConditionEvaluator>();
         services.AddScoped<ITimerEvaluator, ScriptTimerEvaluator>();
 
         // Unified evaluator registry

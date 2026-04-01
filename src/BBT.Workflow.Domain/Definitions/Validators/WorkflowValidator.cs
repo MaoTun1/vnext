@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using BBT.Workflow.Scripting.Rules;
 
 namespace BBT.Workflow.Definitions.Validators;
 
@@ -430,6 +431,45 @@ public class WorkflowValidator
             result.AddError(new ValidationResult(
                 $"Auto transition '{transition.Key}' cannot have a mapping definition.",
                 [$"{basePath}.{nameof(Transition.Mapping)}"]));
+        }
+
+        ValidateDynamicExpressoRule(transition, basePath, result);
+    }
+
+    /// <summary>
+    /// When rule location selects Dynamic Expresso, the decoded expression must be non-empty and within length limits.
+    /// </summary>
+    private static void ValidateDynamicExpressoRule(Transition transition, string basePath, WorkflowValidationResult result)
+    {
+        if (transition.Rule == null || !ConditionScriptLocations.IsDynamicExpresso(transition.Rule.Location))
+            return;
+
+        string code;
+        try
+        {
+            code = transition.Rule.DecodedCode.Trim();
+        }
+        catch (InvalidOperationException)
+        {
+            result.AddError(new ValidationResult(
+                $"Auto transition '{transition.Key}' Dynamic Expresso rule has invalid Base64 or encoding.",
+                [$"{basePath}.{nameof(Transition.Rule)}.{nameof(ScriptCode.Code)}"]));
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            result.AddError(new ValidationResult(
+                $"Auto transition '{transition.Key}' Dynamic Expresso rule must contain a non-empty expression.",
+                [$"{basePath}.{nameof(Transition.Rule)}.{nameof(ScriptCode.Code)}"]));
+            return;
+        }
+
+        if (code.Length > ConditionScriptLocations.MaxDynamicExpressoExpressionLength)
+        {
+            result.AddError(new ValidationResult(
+                $"Auto transition '{transition.Key}' Dynamic Expresso rule exceeds maximum length ({ConditionScriptLocations.MaxDynamicExpressoExpressionLength}).",
+                [$"{basePath}.{nameof(Transition.Rule)}.{nameof(ScriptCode.Code)}"]));
         }
     }
 

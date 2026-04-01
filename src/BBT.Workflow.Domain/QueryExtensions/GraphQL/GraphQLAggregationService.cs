@@ -222,8 +222,9 @@ public static class GraphQLAggregationService
         // Add group by fields to select
         foreach (var field in groupByFields)
         {
+            var alias = SanitizeAlias(field);
             var accessor = BuildJsonTextAccessor(field, jsonColumnName);
-            selectParts.Add($"{accessor} AS \"{SanitizeAlias(field)}\"");
+            selectParts.Add($"{accessor} AS \"{alias}\"");
             groupByParts.Add(accessor);
         }
 
@@ -311,22 +312,32 @@ public static class GraphQLAggregationService
         return sb.ToString();
     }
 
-    private static string BuildJsonTextAccessor(string field, string jsonColumnName)
+    /// <summary>
+    /// Builds a JSON text accessor for aggregation SQL. Validates path (same rules as filter fields) and escapes literals.
+    /// </summary>
+    internal static string BuildJsonTextAccessor(string field, string jsonColumnName)
     {
-        // Handle "attributes." prefix if present
-        if (field.StartsWith("attributes.", StringComparison.OrdinalIgnoreCase))
-        {
-            field = field.Substring("attributes.".Length);
-        }
+        ArgumentException.ThrowIfNullOrWhiteSpace(field);
+        InputValidator.ValidateSqlJsonColumnIdentifier(jsonColumnName);
 
-        if (field.Contains('.'))
+        var path = field.Trim();
+        if (path.StartsWith("attributes.", StringComparison.OrdinalIgnoreCase))
+            path = path.Substring("attributes.".Length).Trim();
+
+        if (string.IsNullOrEmpty(path))
+            throw new ArgumentException("JSON field path cannot be empty.", nameof(field));
+
+        InputValidator.ValidateFieldName(path);
+
+        if (path.Contains('.'))
         {
-            var parts = field.Split('.');
-            var arrayElements = string.Join(",", parts.Select(p => $"'{p}'"));
+            var parts = path.Split('.');
+            var arrayElements = string.Join(",", parts.Select(p =>
+                $"'{InputValidator.EscapePostgresSingleQuotedString(p.Trim())}'"));
             return $"(\"{jsonColumnName}\" #>> ARRAY[{arrayElements}])";
         }
-        
-        return $"(\"{jsonColumnName}\" ->> '{field}')";
+
+        return $"(\"{jsonColumnName}\" ->> '{InputValidator.EscapePostgresSingleQuotedString(path)}')";
     }
 
     private static string SanitizeAlias(string field)
@@ -363,7 +374,7 @@ public static class GraphQLAggregationService
         return sanitized;
     }
 
-    private static string ReplacePlaceholders(string sql, int paramCount)
+    internal static string ReplacePlaceholders(string sql, int paramCount)
     {
         // Replace {0}, {1}, etc. with $1, $2, etc. for Npgsql
         for (int i = 0; i < paramCount; i++)
