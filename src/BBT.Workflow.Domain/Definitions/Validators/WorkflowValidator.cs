@@ -33,11 +33,14 @@ public class WorkflowValidator
         ValidateUpdateDataTransition(workflow, result);
         ValidateTransitionInStates(workflow, result, stateKeys);
         ValidateStateCountAndTypes(workflow, result);
+        ValidateRoleGrants(workflow.QueryRoles, $"{nameof(Workflow)}.{nameof(Workflow.QueryRoles)}", result);
 
         // State level validations
         ValidateStateLabels(workflow, result);
         ValidateWizardStateTransitions(workflow, result);
         ValidateDefaultAutoTransitions(workflow, result);
+        foreach (var state in workflow.States)
+            ValidateRoleGrants(state.QueryRoles, $"{nameof(Workflow)}.States[{state.Key}].{nameof(State.QueryRoles)}", result);
 
         // Transition level validations
         ValidateTransitionLabels(workflow, result);
@@ -369,6 +372,8 @@ public class WorkflowValidator
                 [$"{basePath}.{nameof(Transition.AvailableIn)}"]));
         }
 
+        ValidateRoleGrants(transition.Roles, $"{basePath}.{nameof(Transition.Roles)}", result);
+
         switch (transition.TriggerType)
         {
             case TriggerType.Automatic:
@@ -545,6 +550,43 @@ public class WorkflowValidator
         }
 
         // Schema, View, Mapping are optional - no validation needed
+    }
+
+    /// <summary>
+    /// Validates a collection of role grants, checking dynamic role references for correct format.
+    /// </summary>
+    private static void ValidateRoleGrants(
+        IReadOnlyCollection<RoleGrant> roleGrants,
+        string context,
+        WorkflowValidationResult result)
+    {
+        if (roleGrants.Count == 0)
+            return;
+
+        foreach (var grant in roleGrants)
+        {
+            if (!DynamicRoleGrant.IsDynamicRole(grant.Role))
+                continue;
+
+            var dynamic = DynamicRoleGrant.TryParse(grant.Role)!;
+            const string contextPrefix = "$.context.";
+
+            if (!dynamic.ContextPath.StartsWith(contextPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                result.AddError(new ValidationResult(
+                    $"Dynamic role '{grant.Role}' in '{context}' has an invalid path. Path must start with '{contextPrefix}'.",
+                    [$"{context}"]));
+                continue;
+            }
+
+            var navPath = dynamic.ContextPath[contextPrefix.Length..];
+            if (string.IsNullOrWhiteSpace(navPath))
+            {
+                result.AddError(new ValidationResult(
+                    $"Dynamic role '{grant.Role}' in '{context}' has an empty navigation path after '{contextPrefix}'.",
+                    [$"{context}"]));
+            }
+        }
     }
 
     #endregion

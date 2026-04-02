@@ -33,6 +33,7 @@ public sealed class LocalAuthorizeGateway : IAuthorizeGateway
         string? functionKey,
         string? version,
         bool checkQueryRoles,
+        AuthorizationRequestContext? requestContext = null,
         CancellationToken cancellationToken = default)
     {
         return _serviceScopeFactory.ExecuteInScopeAsync(async (sp, ct) =>
@@ -43,7 +44,7 @@ public sealed class LocalAuthorizeGateway : IAuthorizeGateway
             using (currentSchema.Use(workflow))
             {
                 return await authorizeAppService.GetAuthorizeResultForInstanceAsync(
-                    domain, workflow, instanceId, role, transitionKey, functionKey, version, checkQueryRoles, ct);
+                    domain, workflow, instanceId, role, transitionKey, functionKey, version, checkQueryRoles, requestContext, ct);
             }
         }, cancellationToken);
     }
