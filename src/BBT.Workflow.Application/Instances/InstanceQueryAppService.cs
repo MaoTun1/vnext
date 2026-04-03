@@ -707,7 +707,7 @@ public sealed class InstanceQueryAppService(
                     {
                         // Parent override (replace mode): use parent-defined grants
                         var allowed = await transitionAuthorizationManager
-                            .IsRoleAllowedForGrantsAsync(input.Role, tOverride.Roles!, instance, cancellationToken);
+                            .IsRoleAllowedForGrantsAsync(input.Role, tOverride.Roles!, instance, cancellationToken: cancellationToken);
                         if (allowed) filteredKeys.Add(key);
                     }
                     else
