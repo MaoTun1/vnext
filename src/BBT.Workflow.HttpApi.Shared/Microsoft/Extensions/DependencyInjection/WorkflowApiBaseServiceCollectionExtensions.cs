@@ -107,9 +107,9 @@ public static class WorkflowApiBaseServiceCollectionExtensions
 
             options.ReplaceService<IMigrationsSqlGenerator, MultiSchemaNpgsqlMigrationsSqlGenerator>();
             options.AddInterceptors(
-                sp.GetRequiredService<NpgsqlSchemaConnectionInterceptor>(),
                 sp.GetRequiredService<WorkflowDatabaseInterceptor>(),
-                sp.GetRequiredService<WorkflowTransactionInterceptor>()
+                sp.GetRequiredService<WorkflowTransactionInterceptor>(),
+                sp.GetRequiredService<PgBouncerSafeSchemaCommandInterceptor>()
             );
         });
 

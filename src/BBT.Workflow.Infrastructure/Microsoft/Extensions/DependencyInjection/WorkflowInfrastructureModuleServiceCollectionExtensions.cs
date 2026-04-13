@@ -79,7 +79,7 @@ public static class WorkflowInfrastructureModuleServiceCollectionExtensions
         }
         
         // DbContext
-        services.AddSingleton<NpgsqlSchemaConnectionInterceptor>();
+        services.AddSingleton<PgBouncerSafeSchemaCommandInterceptor>();
         services.AddScoped<IMultiSchemaMigrator<WorkflowDbContext>, MultiSchemaMigrator<WorkflowDbContext>>();
         
         // Security - Schema Validation
