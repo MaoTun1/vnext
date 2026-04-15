@@ -256,6 +256,8 @@ public abstract class TaskExecutorBase<TTask>(ILogger logger) : ITaskExecutor
         DirectTriggerTask directTrigger => directTrigger.AcceptedStatusCodes,
         GetInstancesTask getInstances => getInstances.AcceptedStatusCodes,
         GetInstanceDataTask getInstanceData => getInstanceData.AcceptedStatusCodes,
+        StartTask startTask => startTask.AcceptedStatusCodes,
+        SubProcessTask subProcess => subProcess.AcceptedStatusCodes,
         _ => null
     };
 
