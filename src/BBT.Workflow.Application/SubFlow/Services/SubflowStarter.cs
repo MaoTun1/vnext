@@ -60,6 +60,8 @@ public sealed class SubflowStarter(
             correlation,
             subFlowConfig.Type.Code,
             inputMappingResult,
+            subFlowConfig.HasTimeoutOverride ? subFlowConfig.Overrides!.Timeout : null,
+            subFlowConfig.Overrides,
             cancellationToken);
     }
 
@@ -83,6 +85,8 @@ public sealed class SubflowStarter(
             correlation,
             subFlowType,
             inputMappingResult,
+            null, // no timeout override for task-triggered sub-processes
+            null, // no role overrides for task-triggered sub-processes
             cancellationToken);
     }
 
@@ -99,6 +103,8 @@ public sealed class SubflowStarter(
         InstanceCorrelation correlation,
         string subFlowTypeCode,
         ScriptResponse? inputMappingResult,
+        WorkflowTimeout? timeoutOverride,
+        SubFlowOverrides? overrides,
         CancellationToken cancellationToken)
     {
         using var activity = SubFlowActivityHelper.StartActivity($"SubFlow.Start/{subFlowReference.Domain}/{subFlowReference.Key}");
@@ -114,7 +120,11 @@ public sealed class SubflowStarter(
 
         using (logger.BeginScope(new Dictionary<string, object>
         {
+            [TelemetryConstants.TagNames.Domain] = workflow.Domain,
+            [TelemetryConstants.TagNames.Flow] = workflow.Key,
+            [TelemetryConstants.TagNames.FlowVersion] = workflow.Version,
             [TelemetryConstants.TagNames.InstanceId] = parentInstance.Id,
+            [TelemetryConstants.TagNames.InstanceKey] = parentInstance.Key ?? "N/A",
             [TelemetryConstants.TagNames.SubflowInstanceId] = correlation.SubFlowInstanceId
         }))
         {
@@ -145,6 +155,26 @@ public sealed class SubflowStarter(
                     [DomainConsts.MetaDataKeys.FlowType] = subFlowTypeCode
                 }
             };
+
+            // Apply timeout override from SubFlow config if present
+            if (timeoutOverride != null)
+            {
+                createInstanceInput.ExtraProperties[DomainConsts.MetaDataKeys.TimeoutOverride] =
+                    JsonSerializer.Serialize(timeoutOverride);
+            }
+
+            // Serialize parent-defined role overrides (transitions + states) for SubFlow to use during state queries.
+            // views are excluded as they are hosted/resolved on the parent side.
+            if (overrides?.Transitions is { Count: > 0 })
+            {
+                createInstanceInput.ExtraProperties[DomainConsts.MetaDataKeys.TransitionRoleOverrides] =
+                    JsonSerializer.Serialize(overrides.Transitions);
+            }
+            if (overrides?.States is { Count: > 0 })
+            {
+                createInstanceInput.ExtraProperties[DomainConsts.MetaDataKeys.StateRoleOverrides] =
+                    JsonSerializer.Serialize(overrides.States);
+            }
 
             // Apply additional properties from input mapping if available
             if (inputMappingResult != null)

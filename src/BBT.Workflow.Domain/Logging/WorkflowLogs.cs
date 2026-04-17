@@ -37,6 +37,32 @@ public static partial class WorkflowLogs
         string jobName);
 
     /// <summary>
+    /// Logs when an instance is set to Busy before an async transition job is enqueued.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10094,
+        Level = LogLevel.Debug,
+        Message = "Instance {InstanceId} set to Busy before async transition {TransitionKey} is processed")]
+    public static partial void InstanceSetBusyForAsyncTransition(
+        this ILogger logger,
+        Guid instanceId,
+        string transitionKey);
+
+    /// <summary>
+    /// Logs when an active job already exists for the same instance and transition key,
+    /// causing the request to be rejected with 409 Conflict.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10095,
+        Level = LogLevel.Warning,
+        Message = "Transition job {JobName} already active for instance {InstanceId} transition {TransitionKey}, returning 409 conflict")]
+    public static partial void TransitionJobAlreadyQueued(
+        this ILogger logger,
+        string jobName,
+        Guid instanceId,
+        string transitionKey);
+
+    /// <summary>
     /// Logs when a cancel transition is detected.
     /// </summary>
     [LoggerMessage(
@@ -246,6 +272,28 @@ public static partial class WorkflowLogs
         string stateKey,
         Guid instanceId,
         string transitionKeys);
+
+    /// <summary>
+    /// Logs when a Dynamic Expresso condition script cannot be decoded.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10076,
+        Level = LogLevel.Warning,
+        Message = "Dynamic Expresso condition script has invalid encoding: {Reason}")]
+    public static partial void DynamicExpressoConditionInvalidEncoding(
+        this ILogger logger,
+        string reason);
+
+    /// <summary>
+    /// Logs when Dynamic Expresso condition evaluation throws.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10077,
+        Level = LogLevel.Error,
+        Message = "Dynamic Expresso condition evaluation failed: {Reason}")]
+    public static partial void DynamicExpressoConditionEvaluationFailed(
+        this ILogger logger,
+        string reason);
 
     /// <summary>
     /// Logs when attempting to update data on an already completed instance.
@@ -982,6 +1030,19 @@ public static partial class WorkflowLogs
         Exception exception,
         Guid instanceId);
 
+    /// <summary>
+    /// Logs when a single job deletion fails during instance cancellation.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40103,
+        Level = LogLevel.Error,
+        Message = "Failed to delete job {JobId} during cancellation for instance {InstanceId}")]
+    public static partial void InstanceJobDeletionFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid jobId,
+        Guid instanceId);
+
     #endregion
 
     #region Instance Completion Cleanup
@@ -1606,6 +1667,21 @@ public static partial class WorkflowLogs
         string viewFlow,
         string viewKey,
         string requestDomain);
+
+    #endregion
+
+    #region Extensions
+
+    /// <summary>
+    /// Logs when extension processing fails but execution continues (non-blocking).
+    /// </summary>
+    [LoggerMessage(
+        EventId = 20101,
+        Level = LogLevel.Warning,
+        Message = "Extension processing failed but continuing. Error: {ErrorCode}")]
+    public static partial void ExtensionProcessingFailedNonBlocking(
+        this ILogger logger,
+        string errorCode);
 
     #endregion
 }

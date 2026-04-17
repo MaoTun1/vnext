@@ -25,6 +25,7 @@ public sealed class Instance : AggregateRoot<Guid>, ICreationAuditedObject, IMod
     {
         IsTransient = true;
         CreatedAt = DateTime.UtcNow;
+        ModifiedAt = DateTime.UtcNow;
         Flow = Check.NotNullOrWhiteSpace(flow, nameof(Flow), WorkflowConstants.MaxKeyLength);
         FlowVersion = Check.NotNullOrWhiteSpace(flowVersion, nameof(FlowVersion), WorkflowConstants.MaxVersionLength);
         Key = Check.Length(key, nameof(Key), InstanceConstants.MaxKeyLength);
@@ -288,6 +289,7 @@ public sealed class Instance : AggregateRoot<Guid>, ICreationAuditedObject, IMod
             InstanceId = Id,
             Domain = domain,
             Flow = Flow,
+            Version =  FlowVersion,
             CompletedAt = CompletedAt.Value
         });
 
@@ -331,6 +333,7 @@ public sealed class Instance : AggregateRoot<Guid>, ICreationAuditedObject, IMod
             InstanceId = Id,
             Domain = domain,
             Flow = Flow,
+            Version =   FlowVersion,
             FaultedAt = CompletedAt.Value
         });
     }
@@ -366,6 +369,7 @@ public sealed class Instance : AggregateRoot<Guid>, ICreationAuditedObject, IMod
             InstanceId = Id,
             Domain = domain,
             Flow = Flow,
+            Version =   FlowVersion,
             CanceledState = GetCurrentState,
             CanceledAt = CompletedAt.Value,
             Duration = Duration
@@ -455,12 +459,12 @@ public sealed class Instance : AggregateRoot<Guid>, ICreationAuditedObject, IMod
         }
 
         correlation.Completed();
-        
-        // If this is a SubFlow (blocking), set instance to Active
-        if (correlation.SubFlowType.Equals(SubFlowType.SubFlow))
-        {
-            Active();
-        }
+
+        // NOTE: Do NOT call Active() here for SubFlow type.
+        // The parent must remain Busy until ClearBusyOnResumeStep runs in ResumePipelineAsync.
+        // Transitioning to Active here would cause the state endpoint to return Active
+        // during the processing window between correlation completion and pipeline resume,
+        // falsely signaling to clients that the flow is no longer busy.
 
         return correlation;
     }

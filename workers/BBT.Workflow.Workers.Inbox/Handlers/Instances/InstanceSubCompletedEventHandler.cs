@@ -37,40 +37,50 @@ internal sealed class InstanceSubCompletedEventHandler(
             return;
         }
 
-        logger.SubFlowEventReceived(
-            eventData.SubInstanceId,
-            eventData.InstanceId,
-            eventData.Domain,
-            eventData.Flow);
-
-        using (currentSchema.Use(eventData.Flow))
+        using (logger.BeginScope(new Dictionary<string, object>
         {
-            var completedData = new FlowCompletedInput
-            {
-                SubInstanceId = eventData.SubInstanceId,
-                InstanceId = eventData.InstanceId,
-                Domain = eventData.Domain,
-                Flow = eventData.Flow,
-                Version = eventData.Version,
-                CompletedState = eventData.CompletedState,
-                InstanceData = eventData.InstanceData,
-                CompletedAt = eventData.CompletedAt,
-                Duration = eventData.Duration
-            };
+            [TelemetryConstants.TagNames.Domain] = eventData.Domain,
+            [TelemetryConstants.TagNames.Flow] = eventData.Flow,
+            [TelemetryConstants.TagNames.FlowVersion] = eventData.Version ?? "N/A",
+            [TelemetryConstants.TagNames.InstanceId] = eventData.InstanceId,
+            [TelemetryConstants.TagNames.SubflowInstanceId] = eventData.SubInstanceId,
+        }))
+        {
+            logger.SubFlowEventReceived(
+                eventData.SubInstanceId,
+                eventData.InstanceId,
+                eventData.Domain,
+                eventData.Flow);
 
-            await scopeFactory.ExecuteInNewScopeAsync(async sp =>
+            using (currentSchema.Use(eventData.Flow))
             {
-                var uowManager = sp.GetRequiredService<IUnitOfWorkManager>();
-                var subflowCompletionService = sp.GetRequiredService<ISubflowCompletionService>();
-
-                await using var uow = await uowManager.BeginAsync(new UnitOfWorkOptions
+                var completedData = new FlowCompletedInput
                 {
-                    Scope = UnitOfWorkScopeOption.RequiresNew
-                }, cancellationToken);
+                    SubInstanceId = eventData.SubInstanceId,
+                    InstanceId = eventData.InstanceId,
+                    Domain = eventData.Domain,
+                    Flow = eventData.Flow,
+                    Version = eventData.Version,
+                    CompletedState = eventData.CompletedState,
+                    InstanceData = eventData.InstanceData,
+                    CompletedAt = eventData.CompletedAt,
+                    Duration = eventData.Duration
+                };
 
-                await subflowCompletionService.CompletionAsync(completedData, cancellationToken);
-                await uow.CommitAsync(cancellationToken);
-            });
+                await scopeFactory.ExecuteWithWorkflowAsync(eventData.Domain, eventData.Flow, eventData.Version,
+                    async (sp, ct) =>
+                    {
+                        var uowManager = sp.GetRequiredService<IUnitOfWorkManager>();
+                        var subflowCompletionService = sp.GetRequiredService<ISubflowCompletionService>();
+                        await using var uow = await uowManager.BeginAsync(new UnitOfWorkOptions
+                        {
+                            Scope = UnitOfWorkScopeOption.RequiresNew
+                        }, ct);
+
+                        await subflowCompletionService.CompletionAsync(completedData, ct);
+                        await uow.CommitAsync(ct);
+                    }, cancellationToken);
+            }
         }
     }
 }

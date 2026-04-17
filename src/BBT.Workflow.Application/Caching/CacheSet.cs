@@ -203,20 +203,32 @@ public class CacheSet<T>(
             }
         }
 
-        // Not in snapshot: load from backend
-        var fromDbResult = await backend.LoadAsync(domain, name, version: null, cancellationToken);
-        
-        if (!fromDbResult.IsSuccess)
-        {
-            return fromDbResult;
-        }
+        // Not in snapshot: load ALL versions for this key from backend
+        var allResult = await backend.LoadAllByKeyAsync(domain, name, cancellationToken);
 
-        var fromDb = fromDbResult.Value!;
-        var cacheKey = CreateCacheKey(fromDb);
-        EnsureReferenceIsSet(fromDb, cacheKey);
-        _ = SetAsync(fromDb, cancellationToken);
+        if (!allResult.IsSuccess)
+            return Result<T>.Fail(CacheErrors.ItemNotFoundInBackend<T>(domain, name, null));
 
-        return Result<T>.Ok(fromDb);
+        var allVersions = allResult.Value!;
+
+        if (allVersions.Count == 0)
+            return Result<T>.Fail(CacheErrors.ItemNotFoundInBackend<T>(domain, name, null));
+
+        // Cache all versions: SnapshotUpsert runs synchronously (local cache updated immediately),
+        // distributed cache writes run asynchronously in the background
+        foreach (var entity in allVersions)
+            _ = SetAsync(entity, cancellationToken);
+
+        // Find the latest version from the in-memory result set
+        var foundLatestVersion = InstanceDataVersionComparer.FindBestMatch(
+            allVersions.Select(e => e.Version), null);
+
+        var latest = allVersions.FirstOrDefault(e =>
+            string.Equals(e.Version, foundLatestVersion, StringComparison.OrdinalIgnoreCase));
+
+        return latest is not null
+            ? Result<T>.Ok(latest)
+            : Result<T>.Fail(CacheErrors.ItemNotFoundInBackend<T>(domain, name, null));
     }
 
     /// <inheritdoc />
@@ -266,21 +278,35 @@ public class CacheSet<T>(
             }
         }
 
-        // 4) Not in snapshot: try distributed cache with pattern matching or load from backend
-        // For artifact/partial versions, we need to load from backend with smart matching
-        var fromDbResult = await backend.LoadAsync(domain, key, version, cancellationToken);
+        // 4) Not in snapshot: load ALL versions for key from backend, cache them all, then smart match
+        var allResult = await backend.LoadAllByKeyAsync(domain, key, cancellationToken);
 
-        if (!fromDbResult.IsSuccess)
-        {
-            return fromDbResult;
-        }
+        if (!allResult.IsSuccess)
+            return Result<T>.Fail(CacheErrors.ItemNotFoundInBackend<T>(domain, key, version));
 
-        var fromDb = fromDbResult.Value!;
-        var foundCacheKey = CreateCacheKey(fromDb);
-        EnsureReferenceIsSet(fromDb, foundCacheKey);
-        _ = SetAsync(fromDb, cancellationToken);
+        var allVersions = allResult.Value!;
 
-        return Result<T>.Ok(fromDb);
+        if (allVersions.Count == 0)
+            return Result<T>.Fail(CacheErrors.ItemNotFoundInBackend<T>(domain, key, version));
+
+        // Cache all versions: SnapshotUpsert runs synchronously (local cache updated immediately),
+        // distributed cache writes run asynchronously in the background
+        foreach (var entity in allVersions)
+            _ = SetAsync(entity, cancellationToken);
+
+        // Smart match from in-memory result set
+        var candidateVersions = allVersions.Select(e => e.Version).ToList();
+        var dbBestMatch = InstanceDataVersionComparer.FindBestMatch(candidateVersions, version);
+
+        if (string.IsNullOrEmpty(dbBestMatch))
+            return Result<T>.Fail(CacheErrors.ItemNotFoundInBackend<T>(domain, key, version));
+
+        var matched = allVersions.FirstOrDefault(e =>
+            string.Equals(e.Version, dbBestMatch, StringComparison.OrdinalIgnoreCase));
+
+        return matched is not null
+            ? Result<T>.Ok(matched)
+            : Result<T>.Fail(CacheErrors.ItemNotFoundInBackend<T>(domain, key, version));
     }
 
     public async Task<Result> InvalidateAsync(string cacheKey, CancellationToken cancellationToken = default)
@@ -392,6 +418,24 @@ public class CacheSet<T>(
                 "CacheSet<{Type}> distributed cache write completed with {ErrorCount} errors out of {TotalCount} items",
                 typeof(T).Name, writeErrors, entitiesList.Count);
         }
+    }
+
+    public async Task MergeAllAsync(object data, CancellationToken cancellationToken = default)
+    {
+        if (data is not IEnumerable<T> entities)
+            throw new ArgumentException($"Invalid data type for {typeof(T).Name}");
+
+        var count = 0;
+        foreach (var entity in entities)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await UpsertLocalAsync(entity, cancellationToken);
+            count++;
+        }
+
+        _logger.LogInformation(
+            "CacheSet<{Type}> merged {Count} item(s) incrementally.",
+            typeof(T).Name, count);
     }
 
     /// <summary>

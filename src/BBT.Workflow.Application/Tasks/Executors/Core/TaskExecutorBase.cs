@@ -1,8 +1,10 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
 using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Scripting;
+using BBT.Workflow.Tasks.Coordinator;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Tasks.Executors;
@@ -46,9 +48,14 @@ public abstract class TaskExecutorBase<TTask>(ILogger logger) : ITaskExecutor
         }
 
         var task = (TTask)context.Task;
+        var taskTypeStr = context.Task.GetTaskType().ToString();
 
         // 2. PrepareInput (virtual - custom per executor)
-        var inputResult = await PrepareInputAsync(task, context, cancellationToken);
+        Result<ScriptResponse?> inputResult;
+        using (TaskExecutionActivityHelper.StartActivity(TaskExecutionActivityHelper.OperationPrepareInput, taskKey, taskTypeStr))
+        {
+            inputResult = await PrepareInputAsync(task, context, cancellationToken);
+        }
         if (!inputResult.IsSuccess)
         {
             stopwatch.Stop();
@@ -72,7 +79,11 @@ public abstract class TaskExecutorBase<TTask>(ILogger logger) : ITaskExecutor
         }
 
         // 4. Invoke (abstract or virtual)
-        var invokeResult = await InvokeAsync(task, context, cancellationToken);
+        Result<TaskInvocationResult> invokeResult;
+        using (TaskExecutionActivityHelper.StartActivity(TaskExecutionActivityHelper.OperationInvoke, taskKey, taskTypeStr))
+        {
+            invokeResult = await InvokeAsync(task, context, cancellationToken);
+        }
         if (!invokeResult.IsSuccess)
         {
             stopwatch.Stop();
@@ -80,6 +91,8 @@ public abstract class TaskExecutorBase<TTask>(ILogger logger) : ITaskExecutor
                 taskKey, invokeResult.Error.Message);
             return CreateErrorResponse(invokeResult.Error, stopwatch.ElapsedMilliseconds);
         }
+
+        context.RawInvocationResultJson = JsonSerializer.Serialize(invokeResult.Value!, JsonSerializerConstants.JsonOptions);
 
         // Note: Business errors (HTTP 4xx/5xx) are NOT intercepted here.
         // The invocation result (including IsSuccess=false, StatusCode, Metadata/ExceptionType)
@@ -98,7 +111,11 @@ public abstract class TaskExecutorBase<TTask>(ILogger logger) : ITaskExecutor
         }
 
         // 6. ProcessOutput (virtual - custom per executor)
-        var outputResult = await ProcessOutputAsync(task, invokeResult.Value!, context, cancellationToken);
+        Result<object?> outputResult;
+        using (TaskExecutionActivityHelper.StartActivity(TaskExecutionActivityHelper.OperationProcessOutput, taskKey, taskTypeStr))
+        {
+            outputResult = await ProcessOutputAsync(task, invokeResult.Value!, context, cancellationToken);
+        }
         if (!outputResult.IsSuccess)
         {
             stopwatch.Stop();
@@ -116,7 +133,7 @@ public abstract class TaskExecutorBase<TTask>(ILogger logger) : ITaskExecutor
         stopwatch.Stop();
 
         // 7. CreateResponse
-        return CreateSuccessResponse(invokeResult.Value!, outputResult.Value, stopwatch.ElapsedMilliseconds);
+        return CreateSuccessResponse(task, invokeResult.Value!, outputResult.Value, stopwatch.ElapsedMilliseconds);
     }
 
     /// <summary>
@@ -203,24 +220,46 @@ public abstract class TaskExecutorBase<TTask>(ILogger logger) : ITaskExecutor
 
     /// <summary>
     /// Creates a success response from invocation result.
+    /// When the task defines <c>AcceptedStatusCodes</c> and the response status code matches,
+    /// <c>IsSuccess</c> is overridden to <c>true</c> regardless of the HTTP error status.
     /// </summary>
     protected virtual Result<StandardTaskResponse> CreateSuccessResponse(
+        WorkflowTask task,
         TaskInvocationResult invocationResult,
         object? outputData,
         long executionDurationMs)
     {
+        var acceptedCodes = GetAcceptedStatusCodes(task);
+        var effectiveIsSuccess = invocationResult.IsSuccess
+            || acceptedCodes.IsAcceptedStatusCode(invocationResult.StatusCode);
+
         return Result<StandardTaskResponse>.Ok(new StandardTaskResponse
         {
-            IsSuccess = invocationResult.IsSuccess,
+            IsSuccess = effectiveIsSuccess,
             Data = outputData,
             StatusCode = invocationResult.StatusCode,
             Headers = invocationResult.Headers,
             Metadata = invocationResult.Metadata,
             ExecutionDurationMs = executionDurationMs,
             TaskType = TaskType.ToString(),
-            ErrorMessage = invocationResult.ErrorMessage
+            ErrorMessage = effectiveIsSuccess ? null : invocationResult.ErrorMessage
         });
     }
+
+    /// <summary>
+    /// Extracts the <c>AcceptedStatusCodes</c> list from the task if it supports it.
+    /// </summary>
+    private static IReadOnlyList<string>? GetAcceptedStatusCodes(WorkflowTask task) => task switch
+    {
+        HttpTask http => http.AcceptedStatusCodes,
+        DaprServiceTask daprService => daprService.AcceptedStatusCodes,
+        DirectTriggerTask directTrigger => directTrigger.AcceptedStatusCodes,
+        GetInstancesTask getInstances => getInstances.AcceptedStatusCodes,
+        GetInstanceDataTask getInstanceData => getInstanceData.AcceptedStatusCodes,
+        StartTask startTask => startTask.AcceptedStatusCodes,
+        SubProcessTask subProcess => subProcess.AcceptedStatusCodes,
+        _ => null
+    };
 
     /// <summary>
     /// Creates an error response.

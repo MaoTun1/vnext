@@ -149,7 +149,6 @@ services:
     command: [
       "./daprd",
       "--app-id", "vnext-db-migrator",
-      "--app-port", "44200",
       "--resources-path", "./components",
       "--dapr-grpc-port", "44211",
       "--dapr-http-port", "44210",
@@ -331,23 +330,6 @@ services:
       - "55679:55679" # zpages extension
     depends_on:
       - openobserve
-    networks:
-      - bbt-development
-
-  mockoon:
-    image: mockoon/cli:${MOCKOON_VERSION:-latest}
-    container_name: migration-mockoon
-    command: ["--data", "/data/migration-api.json", "--port", "3001", "--hostname", "0.0.0.0"]
-    ports:
-      - "3001:3001"
-    volumes:
-      - ./config/mockoon:/data
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
     networks:
       - bbt-development
 

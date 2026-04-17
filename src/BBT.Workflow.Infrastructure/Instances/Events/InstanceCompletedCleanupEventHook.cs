@@ -1,7 +1,10 @@
+using BBT.Aether.DependencyInjection;
 using BBT.Aether.MultiSchema;
+using BBT.Aether.Results;
 using BBT.Aether.Uow;
 using BBT.Workflow.Events.Hooks;
 using BBT.Workflow.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Instances.Events;
@@ -9,6 +12,8 @@ namespace BBT.Workflow.Instances.Events;
 /// <summary>
 /// Hook executed before InstanceCompletedCleanupEvent is published.
 /// Cancels all scheduled jobs for the completed instance.
+/// Uses IServiceScopeFactory to create an isolated DI scope, avoiding EF transaction
+/// conflicts when the hook runs inside an outer UoW's CommitAsync pipeline.
 /// </summary>
 /// <remarks>
 /// Register this hook in DI using:
@@ -18,9 +23,7 @@ namespace BBT.Workflow.Instances.Events;
 /// </remarks>
 public sealed class InstanceCompletedCleanupEventHook(
     ILogger<InstanceCompletedCleanupEventHook> logger,
-    IInstanceCancellationService cancellationService,
-    ICurrentSchema currentSchema,
-    IUnitOfWorkManager unitOfWorkManager) : IEventPublishHook<InstanceCompletedCleanupEvent>
+    IServiceScopeFactory scopeFactory) : IEventPublishHook<InstanceCompletedCleanupEvent>
 {
     /// <summary>
     /// Executes hook logic before the InstanceCompletedCleanupEvent is published.
@@ -35,48 +38,63 @@ public sealed class InstanceCompletedCleanupEventHook(
         EventHookContext context,
         CancellationToken cancellationToken = default)
     {
-        logger.InstanceCompletedCleanupHookProcessing(eventData.InstanceId, eventData.Flow);
-
-        try
+        using (logger.BeginScope(new Dictionary<string, object>
         {
-            await ProcessLocalAsync(eventData, cancellationToken);
-
-            return EventHookResult.Ok(new Dictionary<string, string>
-            {
-                ["hook_executed"] = "true",
-                ["instance_id"] = eventData.InstanceId.ToString(),
-                ["event_type"] = "completed_cleanup"
-            });
-        }
-        catch (Exception ex)
+            [TelemetryConstants.TagNames.Domain] = eventData.Domain,
+            [TelemetryConstants.TagNames.Flow] = eventData.Flow,
+            [TelemetryConstants.TagNames.FlowVersion] = eventData.Version ?? "N/A",
+            [TelemetryConstants.TagNames.InstanceId] = eventData.InstanceId,
+        }))
         {
-            logger.InstanceCompletedCleanupHookFailed(ex, eventData.InstanceId);
+            logger.InstanceCompletedCleanupHookProcessing(eventData.InstanceId, eventData.Flow);
 
-            return EventHookResult.Fail(ex, new Dictionary<string, string>
+            try
             {
-                ["hook_error"] = "InstanceCompletedCleanupHookFailed"
-            });
+                await ProcessLocalAsync(eventData, cancellationToken);
+
+                return EventHookResult.Ok(new Dictionary<string, string>
+                {
+                    ["hook_executed"] = "true",
+                    ["instance_id"] = eventData.InstanceId.ToString(),
+                    ["event_type"] = "completed_cleanup"
+                });
+            }
+            catch (Exception ex)
+            {
+                logger.InstanceCompletedCleanupHookFailed(ex, eventData.InstanceId);
+
+                return EventHookResult.Fail(ex, new Dictionary<string, string>
+                {
+                    ["hook_error"] = "InstanceCompletedCleanupHookFailed"
+                });
+            }
         }
     }
 
     /// <summary>
-    /// Processes the instance completion cleanup locally with proper schema and UoW scope.
+    /// Processes the instance completion cleanup in an isolated DI scope with its own DbContext
+    /// and UoW, preventing EF transaction conflicts with the caller's active transaction.
     /// </summary>
     /// <param name="eventData">The event data containing instance completion details.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     private async Task ProcessLocalAsync(InstanceCompletedCleanupEvent eventData, CancellationToken cancellationToken)
     {
-        using (currentSchema.Use(eventData.Flow))
+        await scopeFactory.ExecuteWithWorkflowAsync(eventData.Domain, eventData.Flow, eventData.Version, async (sp, ct) =>
         {
-            await using (var uow = await unitOfWorkManager.BeginAsync(new UnitOfWorkOptions
-                         {
-                             Scope = UnitOfWorkScopeOption.RequiresNew
-                         }, cancellationToken))
+            var currentSchema = sp.GetRequiredService<ICurrentSchema>();
+            var unitOfWorkManager = sp.GetRequiredService<IUnitOfWorkManager>();
+            var cancellationService = sp.GetRequiredService<IInstanceCancellationService>();
+
+            using (currentSchema.Use(eventData.Flow))
             {
-                await cancellationService.ProcessCancellationAsync(eventData.InstanceId, cancellationToken);
-                await uow.SaveChangesAsync(cancellationToken);
-                await uow.CommitAsync(cancellationToken);
+                await using var uow = await unitOfWorkManager.BeginAsync(new UnitOfWorkOptions
+                {
+                    Scope = UnitOfWorkScopeOption.RequiresNew
+                }, ct);
+
+                await cancellationService.ProcessCancellationAsync(eventData.InstanceId, ct);
+                await uow.CommitAsync(ct);
             }
-        }
+        }, cancellationToken);
     }
 }

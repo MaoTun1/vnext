@@ -211,6 +211,23 @@ public sealed class EfCoreInstanceRepository(
             string.Equals(c.InstanceData.Version, bestMatchVersion, StringComparison.OrdinalIgnoreCase));
     }
 
+    public async Task<List<InstanceAndDataModel>> GetActiveDataListByKeyAsync(string key,
+        CancellationToken cancellationToken = default)
+    {
+        var context = await GetDbContextAsync();
+        return await (from instance in context.Instances
+                      where instance.Status == InstanceStatus.Active && instance.Key == key
+                      join data in context.InstancesData on instance.Id equals data.InstanceId
+                      select new InstanceAndDataModel
+                      {
+                          Instance = instance,
+                          InstanceData = data
+                      })
+            .AsNoTracking()
+            .AsSplitQuery()
+            .ToListAsync(cancellationToken);
+    }
+
     private async Task<IQueryable<Instance>> GetFilteredQueryAsync(
         string? filter,
         CancellationToken cancellationToken = default)
@@ -850,6 +867,49 @@ public sealed class EfCoreInstanceRepository(
                       })
             .AsNoTracking() // Don't track changes for read-only operations
             .AsSplitQuery() // Use split queries for better performance with joins
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<InstanceAndDataModel>> GetActiveDataListPagedAsync(
+        int skip, int take, CancellationToken cancellationToken = default)
+    {
+        var context = await GetDbContextAsync();
+
+        return await (from instance in context.Instances
+                      where instance.Status == InstanceStatus.Active
+                      orderby instance.Id
+                      join data in context.InstancesData on instance.Id equals data.InstanceId
+                      select new InstanceAndDataModel
+                      {
+                          Instance = instance,
+                          InstanceData = data
+                      })
+            .AsNoTracking()
+            .AsSplitQuery()
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<InstanceAndDataModel>> GetActiveDataListSinceAsync(
+        DateTime since, int skip, int take, CancellationToken cancellationToken = default)
+    {
+        var context = await GetDbContextAsync();
+
+        return await (from instance in context.Instances
+                      where instance.Status == InstanceStatus.Active
+                            && (instance.ModifiedAt ?? instance.CreatedAt) >= since
+                      orderby instance.Id
+                      join data in context.InstancesData on instance.Id equals data.InstanceId
+                      select new InstanceAndDataModel
+                      {
+                          Instance = instance,
+                          InstanceData = data
+                      })
+            .AsNoTracking()
+            .AsSplitQuery()
+            .Skip(skip)
+            .Take(take)
             .ToListAsync(cancellationToken);
     }
 

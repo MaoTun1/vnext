@@ -177,12 +177,15 @@ public class TransitionPipeline
                 }
             }
 
-            // 6) Check for next transition in sync dispatch chain
+            // 6) Apply deferred resolved status after all work is done
+            await ApplyResolvedStatusAsync(context, cancellationToken);
+
+            // 7) Check for next transition in sync dispatch chain
             var nextTransition = context.Directives.ConsumeNextTransition();
             if (nextTransition is null)
                 return Result<TransitionExecutionContext>.Ok(context);
 
-            // 7) Create new WorkflowExecutionContext for next transition
+            // 8) Create new WorkflowExecutionContext for next transition
             currentWorkflowContext = CreateNextWorkflowContext(context, nextTransition);
             pipelineFaulted = false; // Reset for next iteration
         }
@@ -201,46 +204,75 @@ public class TransitionPipeline
 
         var state = CreateInitialState(context);
 
-        try
+        using (_logger.BeginScope(BuildLogScope(context)))
         {
-            while (state.HasMoreSteps())
+            try
             {
-                // Guard: Skip immediate execution requested
-                if (context.SkipImmediateExecution)
-                    return Result.Ok();
-
-                // Execute current step with error boundary handling
-                var stepResult = await ExecuteStepWithBoundaryAsync(
-                    state.CurrentStep, context, cancellationToken);
-
-                if (!stepResult.IsSuccess)
-                    return Result.Fail(stepResult.Error);
-
-                // Determine flow control based on step outcome
-                var flowControl = DetermineFlowControl(stepResult.Value!, state.CurrentStep, context, state);
-
-                // Apply flow control decision
-                if (flowControl.ShouldStop)
-                    break;
-
-                if (flowControl.ShouldReplan)
+                while (state.HasMoreSteps())
                 {
-                    state = CreateInitialState(context);
-                    continue;
+                    // Guard: Skip immediate execution requested
+                    if (context.SkipImmediateExecution)
+                        return Result.Ok();
+
+                    // Execute current step with error boundary handling
+                    var stepResult = await ExecuteStepWithBoundaryAsync(
+                        state.CurrentStep, context, cancellationToken);
+
+                    if (!stepResult.IsSuccess)
+                        return Result.Fail(stepResult.Error);
+
+                    // Determine flow control based on step outcome
+                    var flowControl = DetermineFlowControl(stepResult.Value!, state.CurrentStep, context, state);
+
+                    // Apply flow control decision
+                    if (flowControl.ShouldStop)
+                        break;
+
+                    if (flowControl.ShouldReplan)
+                    {
+                        state = CreateInitialState(context);
+                        continue;
+                    }
+
+                    state = state.MoveNext();
                 }
 
-                state = state.MoveNext();
+                return Result.Ok();
             }
+            catch (Exception ex)
+            {
+                // Unhandled exception - propagate as error
+                _logger.LogError(ex, "Unhandled exception in pipeline execution for workflow {WorkflowKey}",
+                    context.Workflow.Key);
+                return Result.Fail(Error.Failure("PipelineException", ex.Message));
+            }
+        }
+    }
 
-            return Result.Ok();
-        }
-        catch (Exception ex)
+    /// <summary>
+    /// Builds a log scope dictionary for the current transition.
+    /// All log lines emitted within <see cref="RunSingleTransitionAsync"/> will carry these fields automatically.
+    /// </summary>
+    private static Dictionary<string, object> BuildLogScope(TransitionExecutionContext context)
+    {
+        var props = new Dictionary<string, object>
         {
-            // Unhandled exception - propagate as error
-            _logger.LogError(ex, "Unhandled exception in pipeline execution for workflow {WorkflowKey}", 
-                context.Workflow.Key);
-            return Result.Fail(Error.Failure("PipelineException", ex.Message));
+            [TelemetryConstants.TagNames.Domain]    = context.Domain,
+            [TelemetryConstants.TagNames.Flow]    = context.Workflow.Key,
+            [TelemetryConstants.TagNames.FlowVersion]    = context.Workflow.Version,
+            [TelemetryConstants.TagNames.InstanceId]    = context.InstanceId,
+            [TelemetryConstants.TagNames.InstanceKey]    = context.Instance.Key ?? "N/A",
+            [TelemetryConstants.TagNames.StateFrom]     = context.Transition?.From ?? context.Instance.GetCurrentState,
+            [TelemetryConstants.TagNames.StateTo]       = context.Transition?.Target ?? "N/A",
+            [TelemetryConstants.TagNames.TransitionKey] = context.TransitionKey,
+            [TelemetryConstants.TagNames.TriggerType]    = context.Transition?.TriggerType.ToString() ?? "N/A"
+        };
+        if (context.Headers.TryGetValue(TelemetryConstants.HeaderNames.ParentInstanceId, out var raw)
+            && Guid.TryParse(raw, out var parentId))
+        {
+            props[TelemetryConstants.TagNames.ParentInstanceId] = parentId;
         }
+        return props;
     }
 
     /// <summary>
@@ -499,6 +531,58 @@ public class TransitionPipeline
         {
             _logger.LogError(
                 "Failed to acquire lock for marking instance {InstanceId} as faulted",
+                context.InstanceId);
+        }
+    }
+
+    /// <summary>
+    /// Applies the deferred resolved status to the instance after all pipeline work
+    /// (including post-commit jobs) has completed.
+    /// Re-acquires the distributed lock to ensure consistent state update.
+    /// Guards against applying Active when:
+    /// - Auto chain is continuing (NextTransition is set)
+    /// - Instance has reached a terminal status (Completed/Faulted)
+    /// - Target state SubType is Busy (ChangeState already set Busy)
+    /// </summary>
+    private async Task ApplyResolvedStatusAsync(
+        TransitionExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        var resolvedStatus = context.Directives.ConsumeResolvedStatus();
+        if (resolvedStatus is null)
+            return;
+
+        // Auto chain is continuing — instance should stay Busy
+        if (context.Directives.NextTransition is not null)
+            return;
+
+        // Terminal status reached (Completed/Faulted/Passive) — don't override
+        if (context.Instance.IsCompleted)
+            return;
+
+        // Target state SubType is Busy — ChangeState already set Busy
+        if (context.Target?.SubType == StateSubType.Busy)
+            return;
+
+        // All guards passed — re-acquire lock and apply the resolved status
+        var lockAcquired = await _distributedLockService.ExecuteWithLockAsync(
+            context.LockKey,
+            async () =>
+            {
+                context.Instance.Active();
+                await _instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
+
+                _logger.LogDebug(
+                    "Instance {InstanceId} resolved to Active after post-commit completion",
+                    context.InstanceId);
+            },
+            DefaultLockLeaseSeconds,
+            cancellationToken);
+
+        if (!lockAcquired)
+        {
+            _logger.LogWarning(
+                "Failed to acquire lock for applying resolved status on instance {InstanceId}",
                 context.InstanceId);
         }
     }

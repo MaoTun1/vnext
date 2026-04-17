@@ -30,16 +30,22 @@ public sealed class LocalInstanceCommandGateway : IInstanceCommandGateway
         StartInstanceInput input,
         CancellationToken cancellationToken = default)
     {
-        return await _serviceScopeFactory.ExecuteWithWorkflowAsync<StartInstanceOutput>(input.Domain, input.Workflow, input.Version, async (sp, cancellationToken) =>
-        {
-            var currentSchema = sp.GetRequiredService<ICurrentSchema>();
-            var commandService = sp.GetRequiredService<IInstanceCommandAppService>();
-
-            using (currentSchema.Use(input.Workflow))
+        return await _serviceScopeFactory.ExecuteWithWorkflowAsync(input.Domain, input.Workflow, input.Version,
+            async (sp, ct) =>
             {
-                return await commandService.StartAsync(input, cancellationToken);
-            }
-        }, cancellationToken);
+                var commandService = sp.GetRequiredService<IInstanceCommandAppService>();
+                var unitOfWorkManager = sp.GetRequiredService<IUnitOfWorkManager>();
+
+                await using var uow = await unitOfWorkManager.BeginAsync(new UnitOfWorkOptions
+                {
+                    Scope = UnitOfWorkScopeOption.RequiresNew
+                }, ct);
+                
+                var result =  await commandService.StartAsync(input, ct);
+
+                await uow.CommitAsync(ct);
+                return result;
+            }, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -47,89 +53,85 @@ public sealed class LocalInstanceCommandGateway : IInstanceCommandGateway
         StartInstanceInput input,
         CancellationToken cancellationToken = default)
     {
-        // StartSubAsync uses the same StartAsync endpoint but with sub-specific handling
-        // The IInstanceCommandAppService.StartAsync handles both normal and sub-flow starts
-        return await _serviceScopeFactory.ExecuteWithWorkflowAsync<StartInstanceOutput>(input.Domain, input.Workflow, input.Version, async (sp, cancellationToken) =>
-        {
-            var currentSchema = sp.GetRequiredService<ICurrentSchema>();
-            var commandService = sp.GetRequiredService<IInstanceCommandAppService>();
-
-            using (currentSchema.Use(input.Workflow))
+        return await _serviceScopeFactory.ExecuteWithWorkflowAsync(input.Domain, input.Workflow, input.Version,
+            async (sp, ct) =>
             {
-                return await commandService.StartAsync(input, cancellationToken);
-            }
-        }, cancellationToken);
+                var commandService = sp.GetRequiredService<IInstanceCommandAppService>();
+                var unitOfWorkManager = sp.GetRequiredService<IUnitOfWorkManager>();
+                
+                await using var uow = await unitOfWorkManager.BeginAsync(new UnitOfWorkOptions
+                {
+                    Scope = UnitOfWorkScopeOption.RequiresNew
+                }, ct);
+
+                var result = await commandService.StartAsync(input, ct);
+                await uow.CommitAsync(ct);
+                return result;
+            }, cancellationToken);
     }
 
     /// <inheritdoc />
-    public async Task<Result<TransitionOutput>> TransitionAsync(
+    public Task<Result<TransitionOutput>> TransitionAsync(
         Guid instanceId,
         string transitionKey,
         TransitionInput input,
         CancellationToken cancellationToken = default)
     {
-        await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        var currentSchema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
-        var commandService = scope.ServiceProvider.GetRequiredService<IInstanceCommandAppService>();
+        return _serviceScopeFactory.ExecuteWithWorkflowAsync(input.Domain, input.Workflow, string.Empty,
+            async (sp, ct) =>
+            {
+                var commandService = sp.GetRequiredService<IInstanceCommandAppService>();
+                var unitOfWorkManager = sp.GetRequiredService<IUnitOfWorkManager>();
 
-        using (currentSchema.Use(input.Workflow))
-        {
-            return await commandService.TransitionAsync(
-                instanceId.ToString(),
-                transitionKey,
-                input,
-                cancellationToken);
-        }
+                await using var uow = await unitOfWorkManager.BeginAsync(new UnitOfWorkOptions
+                {
+                    Scope = UnitOfWorkScopeOption.RequiresNew
+                }, ct);
+                
+                var result =  await commandService.TransitionAsync(
+                    instanceId.ToString(),
+                    transitionKey,
+                    input,
+                    ct);
+
+                await uow.CommitAsync(ct);
+                return result;
+            }, cancellationToken);
     }
 
     /// <inheritdoc />
-    public async Task<Result> CompleteAsync(
+    public Task<Result> CompleteAsync(
         FlowCompletedInput input,
         CancellationToken cancellationToken = default)
     {
-        await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        var currentSchema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
-        var subflowCompletionService = scope.ServiceProvider.GetRequiredService<ISubflowCompletionService>();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-
-        using (currentSchema.Use(input.Flow))
+        return _serviceScopeFactory.ExecuteWithWorkflowAsync(input.Domain, input.Flow, input.Version, async (sp, ct) =>
         {
-            await using var uow = await unitOfWorkManager.BeginAsync(new UnitOfWorkOptions
-            {
-                Scope = UnitOfWorkScopeOption.RequiresNew
-            }, cancellationToken);
-
-            await subflowCompletionService.CompletionAsync(input, cancellationToken);
-            await uow.SaveChangesAsync(cancellationToken);
-            await uow.CommitAsync(cancellationToken);
+            var subflowCompletionService = sp.GetRequiredService<ISubflowCompletionService>();
+            await subflowCompletionService.CompletionAsync(input, ct);
 
             return Result.Ok();
-        }
+        }, cancellationToken);
     }
 
     /// <inheritdoc />
-    public async Task<Result> UpdateSubFlowStateAsync(
+    public Task<Result> UpdateSubFlowStateAsync(
         SubFlowStateChangedInput input,
         CancellationToken cancellationToken = default)
     {
-        await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        var currentSchema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
-        var subflowStateService = scope.ServiceProvider.GetRequiredService<ISubflowStateService>();
-        var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
-
-        using (currentSchema.Use(input.Flow))
+        return _serviceScopeFactory.ExecuteWithWorkflowAsync(input.Domain, input.Flow, input.Version, async (sp, ct) =>
         {
+            var subflowStateService = sp.GetRequiredService<ISubflowStateService>();
+            var unitOfWorkManager = sp.GetRequiredService<IUnitOfWorkManager>();
+
             await using var uow = await unitOfWorkManager.BeginAsync(new UnitOfWorkOptions
             {
                 Scope = UnitOfWorkScopeOption.RequiresNew
-            }, cancellationToken);
+            }, ct);
 
-            await subflowStateService.UpdateParentStateAsync(input, cancellationToken);
-            await uow.SaveChangesAsync(cancellationToken);
-            await uow.CommitAsync(cancellationToken);
+            await subflowStateService.UpdateParentStateAsync(input, ct);
+            await uow.CommitAsync(ct);
 
             return Result.Ok();
-        }
+        }, cancellationToken);
     }
 }
-

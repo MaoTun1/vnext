@@ -1,5 +1,6 @@
 using BBT.Aether.MultiSchema;
 using BBT.Aether.Results;
+using BBT.Aether.Uow;
 using BBT.Workflow.Instances;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -28,13 +29,19 @@ public sealed class LocalInstanceRetryGateway : IInstanceRetryGateway
         RetryInstanceInput input,
         CancellationToken cancellationToken = default)
     {
-        await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        var currentSchema = scope.ServiceProvider.GetRequiredService<ICurrentSchema>();
-        var retryService = scope.ServiceProvider.GetRequiredService<IInstanceRetryAppService>();
+        return await _serviceScopeFactory.ExecuteWithWorkflowAsync(input.Domain, input.Workflow, string.Empty,
+            async (sp, ct) =>
+            {
+                var retryService = sp.GetRequiredService<IInstanceRetryAppService>();
+                var unitOfWorkManager = sp.GetRequiredService<IUnitOfWorkManager>();
 
-        using (currentSchema.Use(input.Workflow))
-        {
-            return await retryService.RetryAsync(input, cancellationToken);
-        }
+                await using var uow = await unitOfWorkManager.BeginAsync(new UnitOfWorkOptions
+                {
+                    Scope = UnitOfWorkScopeOption.RequiresNew
+                }, ct);
+                var result =  await retryService.RetryAsync(input, ct);
+                await uow.CommitAsync(ct);
+                return result;
+            }, cancellationToken);
     }
 }

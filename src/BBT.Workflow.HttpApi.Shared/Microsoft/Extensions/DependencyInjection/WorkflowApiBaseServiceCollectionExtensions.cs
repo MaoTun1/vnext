@@ -1,10 +1,8 @@
 using System.Net;
-using System.Text.Json.Serialization;
 using BBT.Aether.AspNetCore.ExceptionHandling;
 using BBT.Aether.AspNetCore.MultiSchema;
 using BBT.Aether.Domain.Services;
 using BBT.Aether.Events;
-using BBT.Aether.MultiSchema.EntityFrameworkCore.Interceptors;
 using BBT.Workflow;
 using BBT.Workflow.BackgroundJobs.Handlers;
 using BBT.Workflow.Data;
@@ -17,6 +15,7 @@ using Dapr.Jobs.Extensions;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 
@@ -107,8 +106,13 @@ public static class WorkflowApiBaseServiceCollectionExtensions
                 .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
 
             options.ReplaceService<IMigrationsSqlGenerator, MultiSchemaNpgsqlMigrationsSqlGenerator>();
+
+            // SchemaAwareModelCacheKeyFactory replaces SET search_path approach:
+            // a separate compiled model is cached per schema, table names are fully qualified,
+            // no session-level directive is ever sent — PgBouncer transaction-mode safe.
+            options.ReplaceService<IModelCacheKeyFactory, SchemaAwareModelCacheKeyFactory>();
+
             options.AddInterceptors(
-                sp.GetRequiredService<NpgsqlSchemaConnectionInterceptor>(),
                 sp.GetRequiredService<WorkflowDatabaseInterceptor>(),
                 sp.GetRequiredService<WorkflowTransactionInterceptor>()
             );
@@ -117,8 +121,6 @@ public static class WorkflowApiBaseServiceCollectionExtensions
         services.AddAetherUnitOfWorkMiddleware();
 
         services.AddSingleton<IDataSeedService, WorkflowDataSeedService>();
-
-        #region DomainEvents
 
         services.AddAetherDbContext<MessagingDbContext>((_, options) =>
         {
@@ -130,6 +132,17 @@ public static class WorkflowApiBaseServiceCollectionExtensions
                 .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
         });
 
+        return services;
+    }
+
+    /// <summary>
+    /// Registers domain event dispatching, transactional outbox, and inbox infrastructure.
+    /// Requires <see cref="BBT.Aether.Events.IDistributedEventBus"/> and <see cref="BBT.Aether.Events.IEventSerializer"/>
+    /// to be registered (via <c>AddEventBus</c> or <c>AddAetherEventBus</c>).
+    /// Do NOT call from DbMigrator or other minimal hosts.
+    /// </summary>
+    public static IServiceCollection AddDomainEventsInfrastructure(this IServiceCollection services)
+    {
         services.AddAetherDomainEvents<MessagingDbContext>(options =>
         {
             options.DispatchStrategy = DomainEventDispatchStrategy.AlwaysUseOutbox;
@@ -138,8 +151,6 @@ public static class WorkflowApiBaseServiceCollectionExtensions
         services.AddAetherOutbox<MessagingDbContext>();
         services.AddAetherInbox<MessagingDbContext>();
 
-        #endregion
-        
         return services;
     }
 
@@ -158,7 +169,7 @@ public static class WorkflowApiBaseServiceCollectionExtensions
     
     public static IServiceCollection AppMapper(this IServiceCollection services)
     {
-        services.AddAetherAutoMapperMapper(
+        services.AddAetherMapperlyMapper(
         [
             typeof(WorkflowApiBaseServiceCollectionExtensions), // HttpApi.Shared
             typeof(WorkflowDomainModuleServiceCollectionExtensions), // Domain

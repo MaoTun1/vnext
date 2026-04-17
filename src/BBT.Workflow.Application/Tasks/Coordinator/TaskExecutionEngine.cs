@@ -1,10 +1,12 @@
 using System.Diagnostics;
 using System.Text.Json;
+using BBT.Aether.Aspects;
 using BBT.Aether.Guids;
 using BBT.Aether.Results;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Execution.ErrorHandling;
 using BBT.Workflow.Instances;
+using BBT.Workflow.Logging;
 using BBT.Workflow.Monitoring;
 using BBT.Workflow.Scripting;
 using BBT.Workflow.Tasks.Executors;
@@ -60,6 +62,7 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
     }
 
     /// <inheritdoc />
+    [Trace]
     public async Task<Result<TasksExecutionResult>> ExecuteAsync(
         OnExecuteTask onExecuteTask,
         Guid? instanceTransitionId,
@@ -71,7 +74,16 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         var boundaryChain = CompiledBoundaryChain.Compile(
             onExecuteTask.ErrorBoundary,
             GetStateBoundary(context),
-            context.Workflow.ErrorBoundary);
+            context.Workflow?.ErrorBoundary);
+
+        Activity.Current?.SetDisplayName($"Task.Execute.{onExecuteTask.Task.Key}");
+        var activity = Activity.Current;
+        if (activity != null)
+        {
+            activity.SetTag(TelemetryConstants.TagNames.TaskKey, onExecuteTask.Task.Key);
+            activity.SetTag(TelemetryConstants.TagNames.InstanceId, context.Instance?.Id.ToString());
+            activity.SetTag(TelemetryConstants.TagNames.Flow, context.Workflow?.Key);
+        }
 
         _logger.LogInformation(
             "Executing task {TaskKey} with error-aware retry.",
@@ -119,6 +131,7 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
                 if (result is { IsSuccess: true, Value.IsSuccess: true })
                 {
                     totalStopwatch.Stop();
+                    Activity.Current?.SetStatus(ActivityStatusCode.Ok);
                     _logger.LogInformation(
                         "Task {TaskKey} completed successfully. Total duration: {Duration}ms",
                         taskKey, totalStopwatch.ElapsedMilliseconds);
@@ -152,6 +165,9 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
                     "Error-aware retry {Attempt}/{MaxRetries} for task {TaskKey}. Delay: {Delay}ms. Error: {Error}",
                     attempt + 1, retryPolicy.MaxRetries, taskKey, delay.TotalMilliseconds, executionError.ErrorMessage);
 
+                TaskExecutionActivityHelper.AddRetryEvent(
+                    Activity.Current, attempt + 1, retryPolicy.MaxRetries, executionError?.ErrorMessage, delay);
+
                 await Task.Delay(delay, cancellationToken);
                 attempt++;
             }
@@ -170,6 +186,8 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         {
             totalStopwatch.Stop();
             _logger.LogError(ex, "Task execution failed with exception for {TaskKey}", taskKey);
+
+            Activity.Current?.RecordExceptionWithStatus(ex, $"Task {taskKey} threw unhandled exception");
 
             var taskError = _errorFactory.CreateFromException(ex, taskKey, "Unknown", totalStopwatch.ElapsedMilliseconds);
             return Result<TasksExecutionResult>.Fail(taskError.ToError());
@@ -232,8 +250,11 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
                 "No fallback boundary found for task {TaskKey}. Pipeline will mark instance as faulted.",
                 taskKey);
 
+            TaskExecutionActivityHelper.SetError(Activity.Current, executionError?.ErrorMessage, executionError?.TaskType, executionError?.StatusCode);
+            TaskExecutionActivityHelper.AddFailedEvent(Activity.Current, executionError?.ErrorMessage, executionError?.TaskType, executionError?.StatusCode);
+
             // Return failure without boundary action - pipeline will fault
-            return Result<TasksExecutionResult>.Fail(executionError.ToError());
+            return Result<TasksExecutionResult>.Fail(executionError!.ToError());
         }
 
         // Execute matched action (Abort, Notify, Rollback, Log, Ignore)
@@ -273,6 +294,9 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         }
 
         // Create boundary result for TasksExecutionResult
+        TaskExecutionActivityHelper.SetError(Activity.Current, executionError.ErrorMessage, executionError.TaskType, executionError.StatusCode);
+        TaskExecutionActivityHelper.AddFailedEvent(Activity.Current, executionError.ErrorMessage, executionError.TaskType, executionError.StatusCode);
+
         var boundaryResult = new BoundaryActionResult
         {
             Action = actionResult.ExecutedAction,
@@ -338,10 +362,10 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         var instance = context.Instance;
         var workflow = context.Workflow;
 
-        if (string.IsNullOrEmpty(instance.CurrentState))
+        if (string.IsNullOrEmpty(instance?.CurrentState))
             return null;
 
-        var state = workflow.FindState(instance.CurrentState);
+        var state = workflow?.FindState(instance.CurrentState);
         return state?.ErrorBoundary;
     }
 
@@ -425,7 +449,7 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
     {
         if (taskTrigger != TaskTrigger.Extension && response.Data is not null)
         {
-            context.Instance.AddData(
+            context.Instance?.AddData(
                 _guidGenerator.Create(),
                 new JsonData(JsonSerializer.Serialize(response.Data, JsonSerializerConstants.JsonOptions)),
                 VersionStrategy.IncreasePatch);
@@ -458,13 +482,17 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
                 "Unknown",
                 stopwatch.ElapsedMilliseconds);
 
+            TaskExecutionActivityHelper.AddFailedEvent(Activity.Current, error.ErrorMessage, "TaskFactoryError");
+
             return Result<TasksExecutionResult>.Fail(error.ToError());
         }
 
         var task = taskResult.Value!;
         var taskType = task.GetTaskType();
         var taskTypeStr = taskType.ToString();
-        var workflowKey = context.Workflow.Key;
+        var workflowKey = context.Workflow?.Key ?? "N/A";
+
+        Activity.Current?.SetTag(TelemetryConstants.TagNames.TaskType, taskTypeStr);
 
         // 2. Create instance task for tracking
         var instanceTask = new InstanceTask(
@@ -481,7 +509,7 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
 
         _logger.LogDebug(
             "Executing task {TaskKey} of type {TaskType} for instance {InstanceId} (retry attempt)",
-            task.Key, taskType, context.Instance.Id);
+            task.Key, taskType, context.Instance?.Id);
 
         // 5. Persist creation
         await PersistCreationAsync(persistenceStrategy, instanceTask, cancellationToken);
@@ -496,6 +524,8 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
 
             var infraError = _errorFactory.CreateFromError(
                 executorResult.Error, task.Key, taskTypeStr, stopwatch.ElapsedMilliseconds);
+
+            TaskExecutionActivityHelper.AddFailedEvent(Activity.Current, infraError.ErrorMessage, "ExecutorNotFound");
 
             // Return failure without boundary resolution - not retriable
             return Result<TasksExecutionResult>.Ok(TasksExecutionResult.Failure(
@@ -519,6 +549,11 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
             JsonSerializerConstants.JsonOptions));
         instanceTask.SetRequest(requestJson);
 
+        if (executorContext.RawInvocationResultJson != null)
+        {
+            instanceTask.SetInvocationResult(new JsonData(executorContext.RawInvocationResultJson));
+        }
+
         stopwatch.Stop();
 
         // 9. Handle infrastructure error - return without boundary resolution (not retriable)
@@ -529,6 +564,8 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
 
             var infraError = _errorFactory.CreateFromError(
                 executeResult.Error, task.Key, taskTypeStr, stopwatch.ElapsedMilliseconds);
+
+            TaskExecutionActivityHelper.AddFailedEvent(Activity.Current, infraError.ErrorMessage, taskTypeStr);
 
             return Result<TasksExecutionResult>.Ok(TasksExecutionResult.Failure(
                 onExecuteTask, infraError, [], stopwatch.ElapsedMilliseconds));
@@ -559,6 +596,8 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
         _workflowMetrics.FinishTaskExecution(taskTypeStr, workflowKey);
 
         // 11. Handle business failure
+        // response.IsSuccess is already overridden by AcceptedStatusCodes in TaskExecutorBase,
+        // so a matching accepted code will arrive here as IsSuccess = true and fall through to step 12.
         if (!response.IsSuccess)
         {
             var executionError = _errorFactory.CreateFromResponse(
@@ -575,6 +614,9 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
                     "but no ErrorBoundary is defined. Flow will continue with auto-transitions.",
                     task.Key, response.StatusCode);
 
+                // Add event only — span Status stays OK since the flow continues normally via auto-transitions
+                TaskExecutionActivityHelper.AddFailedEvent(Activity.Current, executionError.ErrorMessage, taskTypeStr, response.StatusCode);
+
                 var failureSummary = TaskExecutionSummary.Failure(
                     task.Key, taskTypeStr, executionError.ErrorMessage,
                     response.StatusCode, stopwatch.ElapsedMilliseconds);
@@ -585,11 +627,14 @@ public sealed class TaskExecutionEngine : ITaskExecutionEngine
                         [failureSummary], stopwatch.ElapsedMilliseconds));
             }
 
-            // ErrorBoundary exists - return failure for Polly retry evaluation
+            // ErrorBoundary exists - return failure for retry evaluation
             _logger.LogDebug(
                 "Task {TaskKey} failed with business error (StatusCode: {StatusCode}). " +
-                "ErrorBoundary is configured - Polly will evaluate retry policy.",
+                "ErrorBoundary is configured - retry policy will be evaluated.",
                 task.Key, response.StatusCode);
+
+            // Add event per attempt so each failure is visible in the trace timeline
+            TaskExecutionActivityHelper.AddFailedEvent(Activity.Current, executionError.ErrorMessage, executionError.TaskType, response.StatusCode);
 
             return Result<TasksExecutionResult>.Ok(new TasksExecutionResult
             {
