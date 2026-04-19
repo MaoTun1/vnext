@@ -92,6 +92,15 @@ public class DomainCacheContext : CacheContext, IDomainCacheContext, IDisposable
         }
     }
 
+    public async Task LoadFromDistributedCacheAsync(Dictionary<Type, IEnumerable<string>> cacheKeysByType, CancellationToken cancellationToken = default)
+    {
+        foreach (var cacheSet in CacheSets)
+        {
+            if (cacheKeysByType.TryGetValue(cacheSet.EntityType, out var keys))
+                await cacheSet.LoadFromDistributedCacheAsync(keys, cancellationToken);
+        }
+    }
+
     public async Task MergeAsync(Dictionary<Type, object> deltaData, CancellationToken cancellationToken = default)
     {
         foreach (var cacheSet in CacheSets)

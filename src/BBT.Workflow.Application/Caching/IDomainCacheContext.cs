@@ -37,6 +37,15 @@ public interface IDomainCacheContext
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Warms each local in-memory cache set from the distributed cache using the provided keys.
+    /// On a distributed cache miss for a key, falls back to a per-key DB query.
+    /// No write-back to distributed cache is performed.
+    /// Used by broadcast-receiving pods to avoid a full DB scan.
+    /// </summary>
+    Task LoadFromDistributedCacheAsync(Dictionary<Type, IEnumerable<string>> cacheKeysByType,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets the cache set for the specified entity type.
     /// </summary>
     /// <typeparam name="T">The entity type</typeparam>

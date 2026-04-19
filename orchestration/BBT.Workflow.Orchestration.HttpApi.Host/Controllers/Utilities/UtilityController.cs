@@ -116,8 +116,8 @@ public sealed class UtilityController(
                 eventData.Domain,
                 eventData.RequestedBy);
 
-            // Update only in-memory cache (distributed cache already updated by initiating pod)
-            await runtimeCacheInitializer.InitializeAsync(eventData.FullLoad, cancellationToken);
+            // Warm in-memory cache from distributed cache; no full DB scan on receiving pods
+            await runtimeCacheInitializer.InitializeFromDistributedCacheAsync(cancellationToken);
 
             logger.DefinitionCacheInvalidationSucceeded(podInstance);
 

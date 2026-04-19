@@ -519,6 +519,36 @@ public class CacheSet<T>(
         return removedCount;
     }
 
+    public async Task LoadFromDistributedCacheAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default)
+    {
+        foreach (var cacheKey in cacheKeys)
+        {
+            try
+            {
+                var entity = await distributedCache.GetAsync<T>(cacheKey, cancellationToken);
+                if (entity is not null)
+                {
+                    EnsureReferenceIsSet(entity, cacheKey);
+                    SnapshotUpsert(cacheKey, entity);
+                }
+                else
+                {
+                    // Distributed cache miss — fall back to per-key DB query, populate in-memory only
+                    var parsed = TryParseCacheKey(cacheKey);
+                    if (parsed is null) continue;
+
+                    var result = await backend.LoadAsync(parsed.Value.Domain, parsed.Value.Key, parsed.Value.Version, cancellationToken);
+                    if (result.IsSuccess && result.Value is not null)
+                        SnapshotUpsert(CreateCacheKey(result.Value), result.Value);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to warm in-memory cache for key {CacheKey}", cacheKey);
+            }
+        }
+    }
+
     public void Dispose()
     {
         // Snapshot only contains managed objects, no cleanup needed

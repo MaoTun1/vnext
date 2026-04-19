@@ -68,4 +68,10 @@ public interface IInstanceRepository : IRepository<Instance, Guid>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>True if an active instance with the same key exists, false otherwise.</returns>
     Task<bool> AnyActiveByKeyAsync(string key, Guid excludeInstanceId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the key and version of every active instance without loading <c>InstanceData.Data</c>.
+    /// Used by broadcast-receiving pods to discover what to warm from the distributed cache.
+    /// </summary>
+    Task<List<InstanceKeyModel>> GetActiveInstanceKeysAsync(CancellationToken cancellationToken = default);
 }
