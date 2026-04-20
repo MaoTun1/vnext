@@ -127,6 +127,25 @@ public static class ExecutionErrors
             WorkflowErrorCodes.ResourceLockKeyResolutionFailed,
             $"Failed to resolve resource lock key for transition '{transitionKey}': {errorMessage}");
 
+    /// <summary>
+    /// Creates an error when an unknown resource lock action is encountered.
+    /// </summary>
+    /// <param name="action">The unrecognized action value.</param>
+    public static Error ResourceLockInvalidAction(string action)
+        => Error.Validation(
+            WorkflowErrorCodes.ResourceLockInvalidAction,
+            $"Unknown resource lock action: {action}");
+
+    /// <summary>
+    /// Creates an error when a resource lock release fails because the lock is not held by this owner.
+    /// </summary>
+    /// <param name="resourceKey">The lock key that could not be released.</param>
+    public static Error ResourceLockReleaseFailed(string resourceKey)
+        => Error.Failure(
+            WorkflowErrorCodes.ResourceLockReleaseFailed,
+            $"Failed to release resource lock for key '{resourceKey}'. Lock not held by this owner.",
+            target: resourceKey);
+
     #endregion
 
     #region Task / Pipeline Errors

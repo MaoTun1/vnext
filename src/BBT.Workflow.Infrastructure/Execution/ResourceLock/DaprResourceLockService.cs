@@ -2,6 +2,7 @@
 
 using Dapr.Client;
 using BBT.Workflow.Execution;
+using BBT.Workflow.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Infrastructure.Execution.ResourceLock;
@@ -20,66 +21,38 @@ public sealed class DaprResourceLockService(
     public async Task<bool> AcquireAsync(
         string resourceKey, string owner, int ttlSeconds, CancellationToken cancellationToken)
     {
-        try
-        {
-            var response = await daprClient.Lock(
-                lockStoreName, resourceKey, owner, ttlSeconds, cancellationToken);
+        var response = await daprClient.Lock(
+            lockStoreName, resourceKey, owner, ttlSeconds, cancellationToken);
 
-            if (response.Success)
-            {
-                logger.LogInformation(
-                    "Resource lock acquired: key={ResourceKey}, owner={Owner}, ttl={TtlSeconds}s",
-                    resourceKey, owner, ttlSeconds);
-                return true;
-            }
-
-            logger.LogWarning(
-                "Resource lock conflict: key={ResourceKey}, owner={Owner}. Resource is already locked.",
-                resourceKey, owner);
-            return false;
-        }
-        catch (Exception ex)
+        if (response.Success)
         {
-            logger.LogError(ex,
-                "Failed to acquire resource lock: key={ResourceKey}, owner={Owner}",
-                resourceKey, owner);
-            throw;
+            logger.ResourceLockAcquired(resourceKey, owner, ttlSeconds);
+            return true;
         }
+
+        logger.ResourceLockAcquireConflict(resourceKey, owner);
+        return false;
     }
 
     /// <inheritdoc />
     public async Task<bool> ReleaseAsync(
         string resourceKey, string owner, CancellationToken cancellationToken)
     {
-        try
+        var response = await daprClient.Unlock(
+            lockStoreName, resourceKey, owner, cancellationToken);
+
+        var success = response.status == LockStatus.Success;
+
+        if (success)
         {
-            var response = await daprClient.Unlock(
-                lockStoreName, resourceKey, owner, cancellationToken);
-
-            var success = response.status == LockStatus.Success;
-
-            if (success)
-            {
-                logger.LogInformation(
-                    "Resource lock released: key={ResourceKey}, owner={Owner}",
-                    resourceKey, owner);
-            }
-            else
-            {
-                logger.LogWarning(
-                    "Resource lock release failed: key={ResourceKey}, owner={Owner}, status={Status}",
-                    resourceKey, owner, response.status);
-            }
-
-            return success;
+            logger.ResourceLockReleased(resourceKey, owner);
         }
-        catch (Exception ex)
+        else
         {
-            logger.LogError(ex,
-                "Failed to release resource lock: key={ResourceKey}, owner={Owner}",
-                resourceKey, owner);
-            throw;
+            logger.ResourceLockReleaseFailed(resourceKey, owner, response.status.ToString());
         }
+
+        return success;
     }
 
     /// <inheritdoc />
@@ -93,15 +66,11 @@ public sealed class DaprResourceLockService(
 
         if (response.Success)
         {
-            logger.LogInformation(
-                "Resource lock extended: key={ResourceKey}, owner={Owner}, ttl={TtlSeconds}s",
-                resourceKey, owner, ttlSeconds);
+            logger.ResourceLockExtended(resourceKey, owner, ttlSeconds);
             return true;
         }
 
-        logger.LogWarning(
-            "Resource lock extend failed (not held by owner?): key={ResourceKey}, owner={Owner}",
-            resourceKey, owner);
+        logger.ResourceLockExtendFailed(resourceKey, owner);
         return false;
     }
 }

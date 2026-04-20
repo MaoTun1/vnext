@@ -50,8 +50,7 @@ public sealed class ResourceLockStep(
             ResourceLockAction.Release => await ReleaseAsync(resourceKey, owner, cancellationToken),
             ResourceLockAction.Extend  => await ExtendAsync(resourceKey, owner, lockDef, cancellationToken),
             _ => Result<StepOutcome>.Fail(
-                     Error.Validation("ResourceLock:InvalidAction",
-                         $"Unknown resource lock action: {lockDef.Action}"))
+                     ExecutionErrors.ResourceLockInvalidAction(lockDef.Action.ToString()))
         };
     }
 
@@ -97,7 +96,10 @@ public sealed class ResourceLockStep(
     private async Task<Result<StepOutcome>> ReleaseAsync(
         string resourceKey, string owner, CancellationToken ct)
     {
-        await resourceLockService.ReleaseAsync(resourceKey, owner, ct);
+        var released = await resourceLockService.ReleaseAsync(resourceKey, owner, ct);
+        if (!released)
+            return Result<StepOutcome>.Fail(ExecutionErrors.ResourceLockReleaseFailed(resourceKey));
+
         return Result<StepOutcome>.Ok(StepOutcome.Continue());
     }
 
