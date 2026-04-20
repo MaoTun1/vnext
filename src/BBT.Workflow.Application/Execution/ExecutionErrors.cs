@@ -144,7 +144,7 @@ public static class ExecutionErrors
         => Error.Failure(
             WorkflowErrorCodes.ResourceLockReleaseFailed,
             $"Failed to release resource lock for key '{resourceKey}'. Lock not held by this owner.",
-            target: resourceKey);
+            detail: resourceKey);
 
     #endregion
 
