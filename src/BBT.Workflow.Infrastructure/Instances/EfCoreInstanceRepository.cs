@@ -32,13 +32,9 @@ public sealed class EfCoreInstanceRepository(
 {
     public override async Task<IQueryable<Instance>> WithDetailsAsync()
     {
-        // Runtime only consumes the latest InstanceData snapshot and active (non-completed)
-        // child correlations. Filtered includes keep the join sets minimal so the partial
-        // indexes UX_InstancesData_Instance_IsLatest and IX_InstancesCorrelations_ActiveByParent_Covering
-        // can serve these reads as index-only scans.
         return (await base.WithDetailsAsync())
-            .Include(i => i.DataList.Where(d => d.IsLatest))
-            .Include(i => i.ChildCorrelations.Where(c => !c.IsCompleted));
+            .Include(i => i.DataList)
+            .Include(i => i.ChildCorrelations);
     }
 
     /// <summary>
@@ -900,14 +896,10 @@ public sealed class EfCoreInstanceRepository(
     {
         var context = await GetDbContextAsync();
 
-        // Uses the LastTouchedAt STORED GENERATED column (COALESCE(ModifiedAt, CreatedAt)).
-        // The previous (instance.ModifiedAt ?? instance.CreatedAt) expression prevented the
-        // planner from using any index. Reading the shadow column via EF.Property keeps the
-        // query strongly typed while letting IX_Instances_Active_LastTouched_Id serve it.
         return await (from instance in context.Instances
                       where instance.Status == InstanceStatus.Active
-                            && EF.Property<DateTime>(instance, "LastTouchedAt") >= since
-                      orderby EF.Property<DateTime>(instance, "LastTouchedAt"), instance.Id
+                            && (instance.ModifiedAt ?? instance.CreatedAt) >= since
+                      orderby instance.Id
                       join data in context.InstancesData on instance.Id equals data.InstanceId
                       select new InstanceAndDataModel
                       {

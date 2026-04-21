@@ -2,14 +2,11 @@ using BBT.Aether.DistributedCache;
 using BBT.Workflow.Definitions;
 using BBT.Workflow.Runtime;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace BBT.Workflow.Caching;
 
 public class DomainCacheContext : CacheContext, IDomainCacheContext, IDisposable
 {
-    private readonly CacheWarmupOptions _warmupOptions;
-
     public ICacheSet<Definitions.Workflow> Workflows { get; }
     public ICacheSet<WorkflowTask> Tasks { get; }
     public ICacheSet<SchemaDefinition> Schemas { get; }
@@ -26,52 +23,43 @@ public class DomainCacheContext : CacheContext, IDomainCacheContext, IDisposable
         ICacheBackend<View> viewBackend,
         ICacheBackend<Extension> extensionBackend,
         IComponentVersionIndex versionIndex,
-        ILoggerFactory loggerFactory,
-        IOptions<CacheWarmupOptions>? warmupOptions = null)
+        ILoggerFactory loggerFactory)
     {
-        _warmupOptions = warmupOptions?.Value ?? new CacheWarmupOptions();
-
         Workflows = new CacheSet<Definitions.Workflow>(
             distributedCache,
             workflowBackend,
             versionIndex,
-            loggerFactory.CreateLogger<CacheSet<Definitions.Workflow>>(),
-            warmupOptions);
+            loggerFactory.CreateLogger<CacheSet<Definitions.Workflow>>());
 
         Tasks = new CacheSet<WorkflowTask>(
             distributedCache,
             taskBackend,
             versionIndex,
-            loggerFactory.CreateLogger<CacheSet<WorkflowTask>>(),
-            warmupOptions);
+            loggerFactory.CreateLogger<CacheSet<WorkflowTask>>());
 
         Schemas = new CacheSet<SchemaDefinition>(
             distributedCache,
             schemaBackend,
             versionIndex,
-            loggerFactory.CreateLogger<CacheSet<SchemaDefinition>>(),
-            warmupOptions);
+            loggerFactory.CreateLogger<CacheSet<SchemaDefinition>>());
 
         Functions = new CacheSet<Function>(
             distributedCache,
             functionBackend,
             versionIndex,
-            loggerFactory.CreateLogger<CacheSet<Function>>(),
-            warmupOptions);
+            loggerFactory.CreateLogger<CacheSet<Function>>());
 
         Views = new CacheSet<View>(
             distributedCache,
             viewBackend,
             versionIndex,
-            loggerFactory.CreateLogger<CacheSet<View>>(),
-            warmupOptions);
+            loggerFactory.CreateLogger<CacheSet<View>>());
 
         Extensions = new CacheSet<Extension>(
             distributedCache,
             extensionBackend,
             versionIndex,
-            loggerFactory.CreateLogger<CacheSet<Extension>>(),
-            warmupOptions);
+            loggerFactory.CreateLogger<CacheSet<Extension>>());
 
         CacheSets =
         [
@@ -112,20 +100,13 @@ public class DomainCacheContext : CacheContext, IDomainCacheContext, IDisposable
         }
     }
 
-    public Task LoadFromDistributedCacheAsync(Dictionary<Type, IEnumerable<string>> cacheKeysByType, CancellationToken cancellationToken = default)
+    public async Task LoadFromDistributedCacheAsync(Dictionary<Type, IEnumerable<string>> cacheKeysByType, CancellationToken cancellationToken = default)
     {
-        var options = new ParallelOptions
-        {
-            CancellationToken = cancellationToken,
-            MaxDegreeOfParallelism = Math.Max(1, _warmupOptions.MaxConcurrencyAcrossCacheSets)
-        };
-
-        // CacheSets are independent (separate _snapshot fields) → safe to warm in parallel.
-        return Parallel.ForEachAsync(CacheSets, options, async (cacheSet, ct) =>
+        foreach (var cacheSet in CacheSets)
         {
             if (cacheKeysByType.TryGetValue(cacheSet.EntityType, out var keys))
-                await cacheSet.LoadFromDistributedCacheAsync(keys, ct).ConfigureAwait(false);
-        });
+                await cacheSet.LoadFromDistributedCacheAsync(keys, cancellationToken);
+        }
     }
 
     public Task WarmComponentAsync(

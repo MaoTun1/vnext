@@ -1,11 +1,9 @@
-using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Text.RegularExpressions;
 using BBT.Aether.DistributedCache;
 using BBT.Aether.Results;
 using BBT.Workflow.Instances;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace BBT.Workflow.Caching;
 
@@ -18,13 +16,11 @@ public class CacheSet<T>(
     IDistributedCacheService distributedCache,
     ICacheBackend<T> backend,
     IComponentVersionIndex versionIndex,
-    ILogger<CacheSet<T>> logger,
-    IOptions<CacheWarmupOptions>? warmupOptions = null)
+    ILogger<CacheSet<T>> logger)
     : ICacheSet<T>
     where T : class, IDomainEntity, IReferenceSetter
 {
     private readonly ILogger _logger = logger;
-    private readonly CacheWarmupOptions _warmupOptions = warmupOptions?.Value ?? new CacheWarmupOptions();
 
     // Logical component-type discriminator (e.g. "sys-flows", "sys-tasks") sourced from
     // the entity's static abstract ComponentTypeKey. Used as the prefix for both the body
@@ -579,88 +575,31 @@ public class CacheSet<T>(
 
     public async Task LoadFromDistributedCacheAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default)
     {
-        var keys = cacheKeys as IReadOnlyCollection<string> ?? cacheKeys.ToArray();
-        if (keys.Count == 0) return;
-
-        // Single-key fast path (e.g. WarmComponentAsync after a publish broadcast):
-        // skip Parallel.ForEachAsync overhead and use the per-key SnapshotUpsert directly.
-        if (keys.Count == 1)
-        {
-            await LoadSingleKeyAsync(keys.First(), cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        var collected = new ConcurrentBag<(string CacheKey, T Entity)>();
-
-        var options = new ParallelOptions
-        {
-            CancellationToken = cancellationToken,
-            MaxDegreeOfParallelism = Math.Max(1, _warmupOptions.MaxConcurrencyPerCacheSet)
-        };
-
-        await Parallel.ForEachAsync(keys, options, async (cacheKey, ct) =>
+        foreach (var cacheKey in cacheKeys)
         {
             try
             {
-                var entity = await distributedCache.GetAsync<T>(cacheKey, ct).ConfigureAwait(false);
+                var entity = await distributedCache.GetAsync<T>(cacheKey, cancellationToken);
                 if (entity is not null)
                 {
                     EnsureReferenceIsSet(entity, cacheKey);
-                    collected.Add((cacheKey, entity));
-                    return;
+                    SnapshotUpsert(cacheKey, entity);
                 }
+                else
+                {
+                    // Distributed cache miss — fall back to per-key DB query, populate in-memory only
+                    var parsed = TryParseCacheKey(cacheKey);
+                    if (parsed is null) continue;
 
-                // Distributed cache miss — fall back to per-key DB query, populate in-memory only
-                var parsed = TryParseCacheKey(cacheKey);
-                if (parsed is null) return;
-
-                var result = await backend.LoadAsync(parsed.Value.Domain, parsed.Value.Key, parsed.Value.Version, ct)
-                    .ConfigureAwait(false);
-                if (result is { IsSuccess: true, Value: not null })
-                    collected.Add((CreateCacheKey(result.Value), result.Value));
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
+                    var result = await backend.LoadAsync(parsed.Value.Domain, parsed.Value.Key, parsed.Value.Version, cancellationToken);
+                    if (result is { IsSuccess: true, Value: not null })
+                        SnapshotUpsert(CreateCacheKey(result.Value), result.Value);
+                }
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to warm in-memory cache for key {CacheKey}", cacheKey);
             }
-        }).ConfigureAwait(false);
-
-        // Single atomic snapshot swap → live readers observe the warm-up as one transition.
-        if (!collected.IsEmpty)
-            SnapshotUpsertBatch(collected.ToArray());
-    }
-
-    private async Task LoadSingleKeyAsync(string cacheKey, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var entity = await distributedCache.GetAsync<T>(cacheKey, cancellationToken).ConfigureAwait(false);
-            if (entity is not null)
-            {
-                EnsureReferenceIsSet(entity, cacheKey);
-                SnapshotUpsert(cacheKey, entity);
-                return;
-            }
-
-            var parsed = TryParseCacheKey(cacheKey);
-            if (parsed is null) return;
-
-            var result = await backend.LoadAsync(parsed.Value.Domain, parsed.Value.Key, parsed.Value.Version, cancellationToken)
-                .ConfigureAwait(false);
-            if (result is { IsSuccess: true, Value: not null })
-                SnapshotUpsert(CreateCacheKey(result.Value), result.Value);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to warm in-memory cache for key {CacheKey}", cacheKey);
         }
     }
 
@@ -694,40 +633,6 @@ public class CacheSet<T>(
             var original = Interlocked.CompareExchange(ref _snapshot, newSnapshot, current);
             if (ReferenceEquals(original, current))
                 break; // CAS succeeded
-        }
-    }
-
-    /// <summary>
-    /// Bulk upsert that rebuilds the snapshot once per CAS attempt (vs. once per item).
-    /// Used by warm-up paths so live readers observe a single atomic swap regardless of N.
-    /// Concurrent writers (e.g. publish path) on the same snapshot will trigger a CAS retry.
-    /// </summary>
-    private void SnapshotUpsertBatch(IReadOnlyCollection<(string CacheKey, T Entity)> items)
-    {
-        if (items.Count == 0) return;
-
-        while (true)
-        {
-            var current = _snapshot;
-
-            var entries = current.Entries.ToDictionary(k => k.Key, v => v.Value);
-            var index = current.Index.ToDictionary(
-                k => k.Key,
-                v => new SortedSet<string>(v.Value));
-
-            foreach (var (cacheKey, entity) in items)
-            {
-                entries[cacheKey] = new CacheItem<T>(entity);
-                UpdateIndex(index, entity);
-            }
-
-            var newSnapshot = new CacheSnapshot<T>(
-                entries.ToImmutableDictionary(),
-                index.ToImmutableDictionary(kvp => kvp.Key, kvp => new SortedSet<string>(kvp.Value)));
-
-            var original = Interlocked.CompareExchange(ref _snapshot, newSnapshot, current);
-            if (ReferenceEquals(original, current))
-                break;
         }
     }
 

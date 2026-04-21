@@ -66,29 +66,6 @@ public static class InstancesModelCreatingExtensions
             b.Metadata
                 .FindNavigation(nameof(Instance.ChildCorrelations))
                 ?.SetPropertyAccessMode(PropertyAccessMode.Field);
-
-            // STORED GENERATED column: COALESCE(ModifiedAt, CreatedAt).
-            // Enables index-friendly incremental scans (GetActiveDataListSinceAsync) and
-            // is paired with IX_Instances_Active_LastTouched_Id below.
-            b.Property<DateTime>("LastTouchedAt")
-                .HasColumnType("timestamp with time zone")
-                .HasComputedColumnSql("COALESCE(\"ModifiedAt\", \"CreatedAt\")", stored: true);
-
-            // Runtime hot-path partial indexes. Runtime DB queries only ever filter by
-            // Status = 'A' (Active); 'B' (Busy) is consumed in-memory and 'F' (Faulted)
-            // retry path performs a PK lookup. Keeping the partial filter narrow lets the
-            // planner pick these indexes for Status == InstanceStatus.Active LINQ queries.
-            b.HasIndex(p => p.Id)
-                .HasFilter("\"Status\" = 'A'")
-                .HasDatabaseName("IX_Instances_Active_Id");
-
-            b.HasIndex(p => p.Key)
-                .HasFilter("\"Status\" = 'A'")
-                .HasDatabaseName("IX_Instances_Active_Key");
-
-            b.HasIndex("LastTouchedAt", "Id")
-                .HasFilter("\"Status\" = 'A'")
-                .HasDatabaseName("IX_Instances_Active_LastTouched_Id");
         });
 
         builder.Entity<InstanceCorrelation>(b =>
@@ -120,38 +97,9 @@ public static class InstancesModelCreatingExtensions
             b.Property(p => p.SubFlowCurrentState)
                 .HasMaxLength(StateConstants.MaxKeyLength);
 
-            // Partial covering index for the runtime hot-path. The WithDetailsAsync
-            // include now filters c => !c.IsCompleted, so this partial set matches the
-            // include precisely and serves it as an index-only scan.
-            // CompletedAt is intentionally omitted from INCLUDE: it is NULL within the
-            // partial set by definition.
-            b.HasIndex(p => p.ParentInstanceId)
-                .HasFilter("\"IsCompleted\" = false")
-                .IncludeProperties(p => new
-                {
-                    p.SubFlowType,
-                    p.SubFlowInstanceId,
-                    p.SubFlowDomain,
-                    p.SubFlowName,
-                    p.SubFlowVersion,
-                    p.SubFlowCurrentState,
-                    p.SubFlowStateChangedAt,
-                    p.ParentState
-                })
-                .HasDatabaseName("IX_InstancesCorrelations_ActiveByParent_Covering");
-
-            // Tiny partial index dedicated to the blocking-subflow predicate evaluated on
-            // every transition (AnyActiveSubFlowByParentAsync / FindActiveSubFlowByParentAsync).
-            b.HasIndex(p => p.ParentInstanceId)
-                .HasFilter("\"IsCompleted\" = false AND \"SubFlowType\" = 'S'")
-                .HasDatabaseName("IX_InstancesCorrelations_ActiveBlockingSubFlow");
-
-            // SubFlowInstanceId is 1-1 with the started SubFlow instance (subflow start is
-            // unique per parent state). UNIQUE both enforces this invariant and gives the
-            // hot SubFlow-completion lookup (FindBySubInstanceIdAsync) a direct B-tree probe.
-            b.HasIndex(p => p.SubFlowInstanceId)
-                .IsUnique()
-                .HasDatabaseName("UX_InstancesCorrelations_SubFlowInstanceId");
+            // Create index for performance on blocking SubFlow queries
+            b.HasIndex(p => new { p.ParentInstanceId, p.IsCompleted, p.SubFlowType })
+                .HasDatabaseName("IX_InstancesCorrelations_Performance");
         });
 
         builder.Entity<InstanceData>(b =>
@@ -199,23 +147,10 @@ public static class InstancesModelCreatingExtensions
                 .IsUnique()
                 .HasDatabaseName("UX_InstancesData_Instance_VersionNo");
 
-            // Partial unique index: Only one record per instance can have IsLatest = true.
-            // INCLUDE adds the meta columns the runtime reads alongside the latest snapshot
-            // so most reads can be served as index-only scans. The Data jsonb payload is
-            // intentionally NOT included to keep the index compact; the planner falls back
-            // to a heap fetch only when the JSON body is needed.
+            // Partial unique index: Only one record per instance can have IsLatest = true
             b.HasIndex(p => p.InstanceId)
                 .IsUnique()
                 .HasFilter("\"IsLatest\" = true")
-                .IncludeProperties(p => new
-                {
-                    p.Version,
-                    p.VersionNo,
-                    p.HistorySequence,
-                    p.ETag,
-                    p.DataHash,
-                    p.EnteredAt
-                })
                 .HasDatabaseName("UX_InstancesData_Instance_IsLatest");
         });
 
@@ -260,18 +195,6 @@ public static class InstancesModelCreatingExtensions
                 .WithMany()
                 .HasForeignKey(p => p.InstanceId)
                 .OnDelete(DeleteBehavior.Cascade);
-
-            // Partial index for GetLatestIncompleteAsync (Retry path & in-flight checks).
-            // Most transitions complete quickly, so the IS NULL subset stays small/hot.
-            b.HasIndex(p => new { p.InstanceId, p.StartedAt })
-                .HasFilter("\"FinishedAt\" IS NULL")
-                .HasDatabaseName("IX_InstanceTransitions_Incomplete");
-
-            // Partial index for GetLastCompletedManualTransitionAsync. TriggerType = 0 is
-            // Manual (default value, see TriggerType.Manual mapping above).
-            b.HasIndex(p => new { p.InstanceId, p.FinishedAt })
-                .HasFilter("\"FinishedAt\" IS NOT NULL AND \"TriggerType\" = 0")
-                .HasDatabaseName("IX_InstanceTransitions_CompletedManual");
         });
 
         builder.Entity<InstanceTask>(b =>
@@ -316,14 +239,6 @@ public static class InstancesModelCreatingExtensions
                 .WithMany()
                 .HasForeignKey(p => p.FaultedTaskId)
                 .OnDelete(DeleteBehavior.NoAction);
-
-            // Covering index for the Status-filtered TaskId selection queries
-            // (GetCompletedTaskIdsAsync, GetTaskIdsByStatusAsync, GetSuccessfulTaskIdsAsync).
-            // GetByTransitionIdAsync (no Status filter) can also use this index via the
-            // (TransitionId, ...) leftmost prefix.
-            b.HasIndex(p => new { p.TransitionId, p.Status })
-                .IncludeProperties(p => new { p.TaskId, p.BusinessStatus, p.StartedAt })
-                .HasDatabaseName("IX_InstanceTasks_Transition_Status_Covering");
         });
 
         builder.Entity<InstanceAction>(b =>
