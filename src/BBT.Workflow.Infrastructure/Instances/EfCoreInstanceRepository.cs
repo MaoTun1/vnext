@@ -153,6 +153,38 @@ public sealed class EfCoreInstanceRepository(
                 cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async Task<Instance?> FindByIdentifierWithFullHistoryAsync(string identifier,
+        CancellationToken cancellationToken = default)
+    {
+        // Bypass WithDetailsAsync because its DataList include is filtered to
+        // IsLatest = true. GetInstanceHistoryAsync needs every InstanceData revision
+        // to enumerate the full transition history.
+        var dbSet = await GetDbSetAsync();
+        var query = dbSet
+            .Include(i => i.DataList)
+            .Include(i => i.ChildCorrelations.Where(c => !c.IsCompleted))
+            .AsNoTracking()
+            .AsSplitQuery();
+
+        if (Guid.TryParse(identifier, out var instanceId))
+        {
+            var response = await query
+                .FirstOrDefaultAsync(
+                    p => p.Id == instanceId,
+                    cancellationToken);
+            if (response != null)
+            {
+                return response;
+            }
+        }
+
+        return await query
+            .FirstOrDefaultAsync(
+                p => p.Key == identifier,
+                cancellationToken);
+    }
+
     /// <summary>
     /// Finds active instance data with smart version matching.
     /// </summary>

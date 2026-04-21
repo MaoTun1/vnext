@@ -13,6 +13,15 @@ public interface IInstanceRepository : IRepository<Instance, Guid>
     Task<Instance?> FindByIdentifierAsReadOnlyAsync(string identifier,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Loads an instance with the full <see cref="Instance.DataList"/> history (no IsLatest
+    /// filter). Dedicated to <c>GetInstanceHistoryAsync</c>; runtime hot-paths must keep
+    /// using <see cref="FindByIdentifierAsReadOnlyAsync"/> which loads only the latest
+    /// snapshot.
+    /// </summary>
+    Task<Instance?> FindByIdentifierWithFullHistoryAsync(string identifier,
+        CancellationToken cancellationToken = default);
+
     Task<Result<Instance>> GetActiveAsync(string identifier, CancellationToken cancellationToken = default);
     
     Task<List<InstanceAndDataModel>> GetActiveDataListAsync(CancellationToken cancellationToken = default);

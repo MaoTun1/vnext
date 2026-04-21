@@ -78,13 +78,16 @@ public static class InstancesModelCreatingExtensions
             // Status = 'A' (Active); 'B' (Busy) is consumed in-memory and 'F' (Faulted)
             // retry path performs a PK lookup. Keeping the partial filter narrow lets the
             // planner pick these indexes for Status == InstanceStatus.Active LINQ queries.
-            b.HasIndex(p => p.Id)
-                .HasFilter("\"Status\" = 'A'")
-                .HasDatabaseName("IX_Instances_Active_Id");
+            b.HasIndex(new[] { "Key" }, "IX_Instances_Active_Key")
+                .HasFilter("\"Status\" = 'A'");
 
-            b.HasIndex(p => p.Key)
-                .HasFilter("\"Status\" = 'A'")
-                .HasDatabaseName("IX_Instances_Active_Key");
+            // Full (non-partial) Key index. FindByIdentifierAsync /
+            // FindByIdentifierAsReadOnlyAsync probe by Key without a Status filter, so the
+            // partial IX_Instances_Active_Key above cannot serve those lookups. This index
+            // covers Key probes across all statuses while the partial index keeps the
+            // active-only fast path compact. The named-overload form is required so EF
+            // Core does not deduplicate the two Key indexes into a single model entry.
+            b.HasIndex(new[] { "Key" }, "IX_Instances_Key");
 
             b.HasIndex("LastTouchedAt", "Id")
                 .HasFilter("\"Status\" = 'A'")

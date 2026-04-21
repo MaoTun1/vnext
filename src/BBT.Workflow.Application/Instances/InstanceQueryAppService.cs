@@ -216,7 +216,7 @@ public sealed class InstanceQueryAppService(
     {
         runtimeInfoProvider.Check(input.Domain);
 
-        return await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken)
+        return await GetInstanceWithFullHistoryAsync(input.Instance, cancellationToken)
             .ThenAsync(async instance =>
             {
                 var transitions = new List<GetInstanceOutput>();
@@ -414,6 +414,19 @@ public sealed class InstanceQueryAppService(
         CancellationToken cancellationToken)
     {
         var instance = await instanceRepository.FindByIdentifierAsReadOnlyAsync(instanceIdentifier, cancellationToken);
+        return instance.EnsureNotNull(WorkflowErrors.InstanceNotFound(instanceIdentifier));
+    }
+
+    /// <summary>
+    /// Loads an instance with the full DataList history (no IsLatest filter). Dedicated to
+    /// <see cref="GetInstanceHistoryAsync"/>; runtime hot-paths must keep using
+    /// <see cref="GetInstanceByIdOrKeyAsync"/> which loads only the latest snapshot.
+    /// </summary>
+    private async Task<Result<Instance>> GetInstanceWithFullHistoryAsync(
+        string instanceIdentifier,
+        CancellationToken cancellationToken)
+    {
+        var instance = await instanceRepository.FindByIdentifierWithFullHistoryAsync(instanceIdentifier, cancellationToken);
         return instance.EnsureNotNull(WorkflowErrors.InstanceNotFound(instanceIdentifier));
     }
 
