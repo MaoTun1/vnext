@@ -139,6 +139,8 @@ public sealed class DefinitionAppService(
             cancellationToken
         );
 
+        await PublishComponentPublishedEventAsync(input.Domain, input.Flow, input.Key, input.Version, cancellationToken);
+
         if (input.Data?.Any() == true)
         {
             var seedDataResult = await HandleAdditionalDataVersionsAsync(input, cancellationToken);
@@ -193,6 +195,8 @@ public sealed class DefinitionAppService(
             input.Attributes,
             cancellationToken
         );
+
+        await PublishComponentPublishedEventAsync(input.Domain, input.Flow, input.Key, input.Version, cancellationToken);
 
         if (input.Data?.Any() == true)
         {
@@ -281,7 +285,49 @@ public sealed class DefinitionAppService(
             cancellationToken
         );
 
+        await PublishComponentPublishedEventAsync(input.Domain, input.Key, dataItem.Key, dataItem.Version, cancellationToken);
+
         return Result.Ok();
+    }
+
+    /// <summary>
+    /// Best-effort granular broadcast that lets every pod warm its local snapshot for the
+    /// just-published component. Failures are logged and swallowed so a publish is never
+    /// blocked by pubsub issues - the Redis version index keeps consumers correct in that case.
+    /// </summary>
+    private async Task PublishComponentPublishedEventAsync(
+        string domain,
+        string componentType,
+        string key,
+        string version,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var evt = new ComponentPublishedEvent
+            {
+                Domain = domain,
+                Environment = configuration["ASPNETCORE_ENVIRONMENT"]!,
+                ComponentType = componentType,
+                Key = key,
+                Version = version,
+                PublishedBy = "System",
+                PublishedAt = DateTime.UtcNow
+            };
+
+            await daprClient.PublishEventAsync(
+                pubsubName: configuration["DAPR_PUBSUB_BROADCAST_STORE_NAME"]!,
+                topicName: ComponentPublishedEvent.TopicName,
+                data: evt,
+                cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(
+                ex,
+                "ComponentPublishedEvent broadcast failed for {ComponentType} {Domain}/{Key}@{Version}",
+                componentType, domain, key, version);
+        }
     }
 
     /// <summary>
@@ -355,9 +401,6 @@ public sealed class DefinitionAppService(
     /// <inheritdoc />
     public async Task<Result> ReInitializeAsync(bool fullLoad = false, CancellationToken cancellationToken = default)
     {
-        // First, update both in-memory and distributed cache on this initiating pod
-        await runtimeCacheInitializer.InitializeWithDistributedCacheAsync(fullLoad, cancellationToken);
-
         // Then, publish broadcast event to all pods using Dapr client directly
         var cacheInvalidationEvent = new DefinitionCacheInvalidationEvent
         {

@@ -926,6 +926,19 @@ public sealed class EfCoreInstanceRepository(
                 cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async Task<List<InstanceKeyModel>> GetActiveInstanceKeysAsync(CancellationToken cancellationToken = default)
+    {
+        var context = await GetDbContextAsync();
+        return await (from instance in context.Instances
+                      where instance.Status == InstanceStatus.Active
+                      join data in context.InstancesData on instance.Id equals data.InstanceId
+                      where data.IsLatest
+                      select new InstanceKeyModel(instance.Key!, data.Version))
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+    }
+
     /// <summary>
     /// Loads DataList for instances (ordered by id list) and returns list in the same order. Used when ORDER BY must be preserved (EF Include breaks order).
     /// </summary>
