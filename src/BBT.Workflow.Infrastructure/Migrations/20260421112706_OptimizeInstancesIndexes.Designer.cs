@@ -5,6 +5,7 @@ using System.Text.Json;
 using BBT.Workflow.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -13,9 +14,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BBT.Workflow.Migrations
 {
     [DbContext(typeof(WorkflowDbContext))]
-    partial class WorkflowDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260421112706_OptimizeInstancesIndexes")]
+    partial class OptimizeInstancesIndexes
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -324,6 +327,9 @@ namespace BBT.Workflow.Migrations
                     b.HasIndex("SubFlowInstanceId")
                         .IsUnique()
                         .HasDatabaseName("UX_InstancesCorrelations_SubFlowInstanceId");
+
+                    b.HasIndex("ParentInstanceId", "IsCompleted", "SubFlowType")
+                        .HasDatabaseName("IX_InstancesCorrelations_Performance");
 
                     b.ToTable("InstancesCorrelations", (string)null);
                 });
