@@ -44,6 +44,7 @@ public sealed class InstanceCommandAppService(
     IHeaderService headerService,
     ITransitionDataMapper transitionDataMapper,
     ITransitionValidationService transitionValidationService,
+    ITransitionContextFactory transitionContextFactory,
     IWorkflowContext workflowContext,
     IRepresentationEtagService representationEtagService,
     ISchemaFieldFilterService schemaFieldFilterService,
@@ -74,14 +75,19 @@ public sealed class InstanceCommandAppService(
             return existingInstanceResult.Value;
         }
 
-        // Step 3-6: Continue with normal railway flow for NEW instances
+        // Step 3-6: Continue with normal railway flow for NEW instances.
+        // Order matters: PrepareInstanceAsync runs schema validation before persisting the instance,
+        // ExecuteStartTransitionAsync dispatches the (sync or async) execution, and only after a
+        // successful dispatch do we schedule the workflow timeout — otherwise a failed enqueue or
+        // a 409 lock conflict would leave a dangling timeout job for an instance that never started.
         return await PrepareInstanceAsync(workflow, input, cancellationToken)
-            .ThenAsync(async data =>
-            {
-                await ScheduleWorkflowTimeoutIfConfiguredAsync(data.Workflow, data.Instance, input.Instance.ExtraProperties, cancellationToken);
-                return Result<(Definitions.Workflow Workflow, Instance Instance)>.Ok(data);
-            })
-            .ThenAsync(data => ExecuteStartTransitionAsync(data, input, cancellationToken))
+            .ThenAsync(data => ExecuteStartTransitionAsync(data, input, cancellationToken)
+                .ThenAsync(async output =>
+                {
+                    await ScheduleWorkflowTimeoutIfConfiguredAsync(
+                        data.Workflow, data.Instance, input.Instance.ExtraProperties, cancellationToken);
+                    return Result<StartInstanceOutput>.Ok(output);
+                }))
             .OnSuccess(output => AddWorkflowHeader(output, input));
     }
 
@@ -417,6 +423,20 @@ public sealed class InstanceCommandAppService(
 
         var workflowDefinition = workflowResult.Value;
 
+        // Pre-dispatch validation guard: validate schema + state-machine policy BEFORE
+        // dispatching to the execution service. This guarantees consistent 400 Bad Request
+        // behaviour for both sync=true and sync=false callers — the async path would otherwise
+        // accept the request, flip the instance to Busy and discover the schema violation
+        // later in the background job (leaving the instance Faulted). The same check is also
+        // performed inside AsyncTransitionStrategy as defense in depth for callers that
+        // bypass the AppService and invoke WorkflowExecutionService directly.
+        var preValidation = await ValidateTransitionRequestAsync(context, cancellationToken);
+        if (!preValidation.IsSuccess)
+        {
+            logger.TransitionValidationFailed(resolvedInstance.Id, transitionKey, preValidation.Error.Code);
+            return Result<TransitionOutput>.Fail(preValidation.Error);
+        }
+
         return await workflowExecutionService
             .ExecuteTransitionAsync(context, cancellationToken)
             .OnSuccess(output => AddTransitionHeader(output, resolvedInstance.Flow, resolvedInstance.FlowVersion))
@@ -427,6 +447,24 @@ public sealed class InstanceCommandAppService(
                 output.Key = resolvedInstance.Key;
                 return Task.FromResult(Result<TransitionOutput>.Ok(output));
             });
+    }
+
+    /// <summary>
+    /// Pre-dispatch schema + state-machine validation for a transition request.
+    /// Builds the execution context via <see cref="ITransitionContextFactory"/> (read-only,
+    /// no side effects) and runs the same <see cref="ITransitionValidationService.ValidateAsync"/>
+    /// that the sync pipeline uses, so both sync=true and sync=false callers get the same
+    /// validation error contract before any state mutation or background-job enqueue.
+    /// </summary>
+    private async Task<Result> ValidateTransitionRequestAsync(
+        WorkflowExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        var contextResult = await transitionContextFactory.CreateAsync(context, cancellationToken);
+        if (!contextResult.IsSuccess)
+            return Result.Fail(contextResult.Error);
+
+        return await transitionValidationService.ValidateAsync(contextResult.Value!, cancellationToken);
     }
 
     /// <summary>

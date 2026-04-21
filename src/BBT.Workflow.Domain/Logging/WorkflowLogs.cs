@@ -929,6 +929,21 @@ public static partial class WorkflowLogs
         string errorCode);
 
     /// <summary>
+    /// Logs when a transition request fails pre-dispatch validation (schema or policy).
+    /// Emitted by the AppService guard so both sync=true and sync=false callers see
+    /// the same 400 Bad Request behaviour for invalid payloads.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40051,
+        Level = LogLevel.Warning,
+        Message = "Transition validation failed for instance {InstanceId} on transition {TransitionKey}: {ErrorCode}")]
+    public static partial void TransitionValidationFailed(
+        this ILogger logger,
+        Guid instanceId,
+        string transitionKey,
+        string errorCode);
+
+    /// <summary>
     /// Logs when workflow timeout is scheduled.
     /// </summary>
     [LoggerMessage(
