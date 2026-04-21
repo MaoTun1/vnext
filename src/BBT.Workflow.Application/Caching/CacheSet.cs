@@ -15,11 +15,18 @@ namespace BBT.Workflow.Caching;
 public class CacheSet<T>(
     IDistributedCacheService distributedCache,
     ICacheBackend<T> backend,
+    IComponentVersionIndex versionIndex,
     ILogger<CacheSet<T>> logger)
     : ICacheSet<T>
     where T : class, IDomainEntity, IReferenceSetter
 {
     private readonly ILogger _logger = logger;
+
+    // Logical component-type discriminator (e.g. "sys-flows", "sys-tasks") sourced from
+    // the entity's static abstract ComponentTypeKey. Used as the prefix for both the body
+    // cache key (CreateCacheKey) and the Redis version index key (vidx:{ComponentKeyName}:...)
+    // so the two systems stay aligned across pods.
+    private static readonly string ComponentKeyName = T.ComponentTypeKey;
 
     // Immutable snapshot holding all local cache state
     private CacheSnapshot<T> _snapshot = new(
@@ -110,6 +117,18 @@ public class CacheSet<T>(
             // Local cache is already updated, distributed cache failure is logged but not blocking
         }
 
+        // 3) Update version index in Redis (best-effort, errors are swallowed by the impl).
+        // Allows partial/"latest" lookups on other pods to resolve via Redis without a DB scan.
+        if (!string.IsNullOrEmpty(entity.Domain) && !string.IsNullOrEmpty(entity.Key) && !string.IsNullOrEmpty(entity.Version))
+        {
+            _ = versionIndex.AddVersionAsync(
+                ComponentKeyName,
+                entity.Domain,
+                entity.Key,
+                entity.Version,
+                cancellationToken);
+        }
+
         return Result.Ok();
     }
 
@@ -178,29 +197,43 @@ public class CacheSet<T>(
         var snap = _snapshot;
         var indexKey = CreateIndexKey(domain, name);
 
-        string? latestVersion = null;
+        string? localLatest = null;
 
         if (snap.Index.TryGetValue(indexKey, out var versions) && versions.Count > 0)
         {
-            latestVersion = versions
+            localLatest = versions
                 .OrderByDescending(v => v, new SemVersionComparer())
                 .FirstOrDefault();
         }
 
-        // If we have a latest version from the index, find it in the snapshot
-        if (!string.IsNullOrEmpty(latestVersion))
+        // Always consult the Redis version index first so a publish on another pod
+        // becomes visible immediately - even when the local snapshot already holds
+        // an older "latest" for this component. Falling back to a stale local value
+        // would otherwise mask freshly published versions until the next ReInitialize.
+        var redisVersions = await versionIndex.GetVersionsAsync(
+            ComponentKeyName, domain, name, cancellationToken);
+
+        var indexLatest = redisVersions is { Count: > 0 }
+            ? InstanceDataVersionComparer.FindBestMatch(redisVersions, null)
+            : null;
+
+        var authoritativeLatest = ChooseHigher(indexLatest, localLatest);
+
+        if (!string.IsNullOrEmpty(authoritativeLatest))
         {
-            foreach (var entry in snap.Entries.Values)
+            // Fast path: the authoritative version is already in the local snapshot.
+            // Direct O(1) dictionary lookup using the canonical cache-key format.
+            if (string.Equals(authoritativeLatest, localLatest, StringComparison.OrdinalIgnoreCase) &&
+                snap.Entries.TryGetValue(CreateCacheKey(domain, name, authoritativeLatest), out var entry))
             {
-                var entity = entry.Value;
-                if (string.Equals(entity.Domain, domain, StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(entity.Key, name, StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(entity.Version, latestVersion, StringComparison.OrdinalIgnoreCase))
-                {
-                    entry.UpdateAccess();
-                    return Result<T>.Ok(entity);
-                }
+                entry.UpdateAccess();
+                return Result<T>.Ok(entry.Value);
             }
+
+            // Resolved via Redis index (or local entry missing) - load body via the
+            // standard cacheKey path (snapshot -> Redis body -> single-version DB).
+            var resolvedKey = CreateCacheKey(domain, name, authoritativeLatest);
+            return await GetAsync(resolvedKey, cancellationToken);
         }
 
         // Not in snapshot: load ALL versions for this key from backend
@@ -247,35 +280,44 @@ public class CacheSet<T>(
         // 2) If full version → try exact match first from local snapshot
         if (InstanceDataVersionComparer.IsFullVersion(version))
         {
-            var cacheKey = $"{typeof(T).Name}:{domain}:{key}:{version}";
+            var cacheKey = CreateCacheKey(domain, key, version);
             return await GetAsync(cacheKey, cancellationToken);
         }
 
-        // 3) For artifact or partial version → use smart matching
+        // 3) For artifact or partial version → use smart matching.
+        // Always consult the Redis vidx alongside the local snapshot so a fresh publish
+        // on another pod is visible even when the local snapshot already has a match.
         var snap = _snapshot;
         var indexKey = CreateIndexKey(domain, key);
 
-        // Get all versions from index
+        string? localBest = null;
         if (snap.Index.TryGetValue(indexKey, out var versions) && versions.Count > 0)
         {
-            // Use InstanceDataVersionComparer.FindBestMatch to find the best matching version
-            var bestMatch = InstanceDataVersionComparer.FindBestMatch(versions, version);
+            localBest = InstanceDataVersionComparer.FindBestMatch(versions, version);
+        }
 
-            if (!string.IsNullOrEmpty(bestMatch))
+        var redisVersions = await versionIndex.GetVersionsAsync(
+            ComponentKeyName, domain, key, cancellationToken);
+
+        var indexBest = redisVersions is { Count: > 0 }
+            ? InstanceDataVersionComparer.FindBestMatch(redisVersions, version)
+            : null;
+
+        var authoritative = ChooseHigher(indexBest, localBest);
+
+        if (!string.IsNullOrEmpty(authoritative))
+        {
+            // Fast path: snapshot already has the authoritative version.
+            // Direct O(1) dictionary lookup using the canonical cache-key format.
+            if (string.Equals(authoritative, localBest, StringComparison.OrdinalIgnoreCase) &&
+                snap.Entries.TryGetValue(CreateCacheKey(domain, key, authoritative), out var entry))
             {
-                // Find the entity with the best matching version in snapshot
-                foreach (var entry in snap.Entries.Values)
-                {
-                    var entity = entry.Value;
-                    if (string.Equals(entity.Domain, domain, StringComparison.OrdinalIgnoreCase) &&
-                        string.Equals(entity.Key, key, StringComparison.OrdinalIgnoreCase) &&
-                        string.Equals(entity.Version, bestMatch, StringComparison.OrdinalIgnoreCase))
-                    {
-                        entry.UpdateAccess();
-                        return Result<T>.Ok(entity);
-                    }
-                }
+                entry.UpdateAccess();
+                return Result<T>.Ok(entry.Value);
             }
+
+            var resolvedKey = CreateCacheKey(domain, key, authoritative);
+            return await GetAsync(resolvedKey, cancellationToken);
         }
 
         // 4) Not in snapshot: load ALL versions for key from backend, cache them all, then smart match
@@ -323,6 +365,18 @@ public class CacheSet<T>(
         {
             _logger.LogError(ex, "Error removing from distributed cache for {CacheKey}", cacheKey);
             // Local cache is already removed, distributed cache failure is logged but not blocking
+        }
+
+        // Drop the version from the Redis index so other pods don't resolve to a missing body.
+        var parsed = TryParseCacheKey(cacheKey);
+        if (parsed is not null && !string.IsNullOrEmpty(parsed.Value.Version))
+        {
+            _ = versionIndex.RemoveVersionAsync(
+                ComponentKeyName,
+                parsed.Value.Domain,
+                parsed.Value.Key,
+                parsed.Value.Version!,
+                cancellationToken);
         }
 
         return Result.Ok();
@@ -538,7 +592,7 @@ public class CacheSet<T>(
                     if (parsed is null) continue;
 
                     var result = await backend.LoadAsync(parsed.Value.Domain, parsed.Value.Key, parsed.Value.Version, cancellationToken);
-                    if (result.IsSuccess && result.Value is not null)
+                    if (result is { IsSuccess: true, Value: not null })
                         SnapshotUpsert(CreateCacheKey(result.Value), result.Value);
                 }
             }
@@ -630,7 +684,22 @@ public class CacheSet<T>(
     // ----------------
 
     private static string CreateCacheKey(T entity)
-        => $"{(typeof(T) as IDomainEntity)?.ComponentKey}:{entity.Domain}:{entity.Key}:{entity.Version}";
+        => CreateCacheKey(entity.Domain, entity.Key, entity.Version);
+
+    private static string CreateCacheKey(string domain, string key, string? version)
+        => $"{ComponentKeyName}:{domain}:{key}:{version}";
+
+    /// <summary>
+    /// Picks the SemVer-higher of two candidate versions. Either may be null/empty.
+    /// Used to reconcile a local-snapshot resolution with the cross-pod Redis vidx
+    /// resolution so the freshest known version always wins.
+    /// </summary>
+    private static string? ChooseHigher(string? a, string? b)
+    {
+        if (string.IsNullOrEmpty(a)) return b;
+        if (string.IsNullOrEmpty(b)) return a;
+        return new SemVersionComparer().Compare(a, b) >= 0 ? a : b;
+    }
 
     private static string CreateIndexKey(string domain, string name)
         => $"{domain}:{name}";

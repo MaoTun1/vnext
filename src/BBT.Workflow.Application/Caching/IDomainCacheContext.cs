@@ -53,6 +53,24 @@ public interface IDomainCacheContext
     ICacheSet<T> Set<T>() where T : class, IDomainEntity, IReferenceSetter;
 
     /// <summary>
+    /// Warms the local snapshot for a single (componentType, domain, key, version) triple
+    /// from the distributed cache. Falls back to a single-version DB load on Redis miss.
+    /// Used by the granular ComponentPublishedEvent handler so receiving pods stay hot
+    /// without a full <see cref="LoadFromDistributedCacheAsync"/> sweep.
+    /// </summary>
+    /// <param name="componentType">RuntimeSysSchemaInfo discriminator (e.g. "sys-flows").</param>
+    /// <param name="domain">Domain identifier.</param>
+    /// <param name="key">Component logical key.</param>
+    /// <param name="version">Concrete version that was just published.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task WarmComponentAsync(
+        string componentType,
+        string domain,
+        string key,
+        string version,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Performs cleanup on all cache sets, removing expired and least-used items.
     /// </summary>
     /// <param name="ttl">Time-to-live for cache items</param>

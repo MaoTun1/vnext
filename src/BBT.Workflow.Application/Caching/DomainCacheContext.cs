@@ -1,5 +1,6 @@
 using BBT.Aether.DistributedCache;
 using BBT.Workflow.Definitions;
+using BBT.Workflow.Runtime;
 using Microsoft.Extensions.Logging;
 
 namespace BBT.Workflow.Caching;
@@ -21,36 +22,43 @@ public class DomainCacheContext : CacheContext, IDomainCacheContext, IDisposable
         ICacheBackend<Function> functionBackend,
         ICacheBackend<View> viewBackend,
         ICacheBackend<Extension> extensionBackend,
+        IComponentVersionIndex versionIndex,
         ILoggerFactory loggerFactory)
     {
         Workflows = new CacheSet<Definitions.Workflow>(
             distributedCache,
             workflowBackend,
+            versionIndex,
             loggerFactory.CreateLogger<CacheSet<Definitions.Workflow>>());
 
         Tasks = new CacheSet<WorkflowTask>(
             distributedCache,
             taskBackend,
+            versionIndex,
             loggerFactory.CreateLogger<CacheSet<WorkflowTask>>());
 
         Schemas = new CacheSet<SchemaDefinition>(
             distributedCache,
             schemaBackend,
+            versionIndex,
             loggerFactory.CreateLogger<CacheSet<SchemaDefinition>>());
 
         Functions = new CacheSet<Function>(
             distributedCache,
             functionBackend,
+            versionIndex,
             loggerFactory.CreateLogger<CacheSet<Function>>());
 
         Views = new CacheSet<View>(
             distributedCache,
             viewBackend,
+            versionIndex,
             loggerFactory.CreateLogger<CacheSet<View>>());
 
         Extensions = new CacheSet<Extension>(
             distributedCache,
             extensionBackend,
+            versionIndex,
             loggerFactory.CreateLogger<CacheSet<Extension>>());
 
         CacheSets =
@@ -99,6 +107,35 @@ public class DomainCacheContext : CacheContext, IDomainCacheContext, IDisposable
             if (cacheKeysByType.TryGetValue(cacheSet.EntityType, out var keys))
                 await cacheSet.LoadFromDistributedCacheAsync(keys, cancellationToken);
         }
+    }
+
+    public Task WarmComponentAsync(
+        string componentType,
+        string domain,
+        string key,
+        string version,
+        CancellationToken cancellationToken = default)
+    {
+        ICacheSet? targetSet = componentType switch
+        {
+            RuntimeSysSchemaInfo.Flows => Workflows,
+            RuntimeSysSchemaInfo.Tasks => Tasks,
+            RuntimeSysSchemaInfo.Schemas => Schemas,
+            RuntimeSysSchemaInfo.Functions => Functions,
+            RuntimeSysSchemaInfo.Views => Views,
+            RuntimeSysSchemaInfo.Extensions => Extensions,
+            _ => null
+        };
+
+        if (targetSet is null)
+            return Task.CompletedTask;
+
+        // Mirror the cache-key format produced by CacheSet.CreateCacheKey
+        // ("{ComponentTypeKey}:{domain}:{key}:{version}") so the snapshot upsert key
+        // collides with the one written by the publishing pod.
+        var cacheKey = $"{componentType}:{domain}:{key}:{version}";
+
+        return targetSet.LoadFromDistributedCacheAsync(new[] { cacheKey }, cancellationToken);
     }
 
     public async Task MergeAsync(Dictionary<Type, object> deltaData, CancellationToken cancellationToken = default)
