@@ -6,6 +6,25 @@ on:
       - 'release-v*'
   workflow_dispatch:
     inputs:
+      version:
+        description: 'Base version (e.g. 0.0.50). Required when prerelease_type is not none.'
+        required: false
+        type: string
+      prerelease_type:
+        description: 'Prerelease channel'
+        required: false
+        default: 'none'
+        type: choice
+        options:
+          - none
+          - alpha
+          - beta
+          - rc
+      prerelease_number:
+        description: 'Prerelease number (e.g. 1 -> v0.0.50-alpha.1)'
+        required: false
+        default: '1'
+        type: string
       force_publish:
         description: 'Force publish images even if they exist'
         required: false
@@ -35,6 +54,7 @@ jobs:
       packages: read
     outputs:
       version: ${{ steps.version.outputs.version }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
     steps:
       - name: Generate GitHub App Token
         id: generate_token
@@ -52,12 +72,50 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.generate_token.outputs.token }}
 
-      - name: Calculate version from branch name
+      - name: Calculate version
         id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_PRERELEASE_TYPE: ${{ inputs.prerelease_type }}
+          INPUT_PRERELEASE_NUMBER: ${{ inputs.prerelease_number }}
+          INPUT_FORCE_PUBLISH: ${{ inputs.force_publish }}
         run: |
           BRANCH_NAME="${{ github.ref_name }}"
+          IS_PRERELEASE="false"
 
-          if [[ "$BRANCH_NAME" =~ ^release-v([0-9]+\.[0-9]+)$ ]]; then
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "$INPUT_PRERELEASE_TYPE" && "$INPUT_PRERELEASE_TYPE" != "none" ]]; then
+            echo "Prerelease workflow_dispatch detected (type=$INPUT_PRERELEASE_TYPE)"
+
+            if [ -z "$INPUT_VERSION" ]; then
+              echo "Error: 'version' input is required when prerelease_type is not 'none'"
+              exit 1
+            fi
+
+            if [[ ! "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Error: 'version' must match X.Y.Z (got: $INPUT_VERSION)"
+              exit 1
+            fi
+
+            if [[ ! "$INPUT_PRERELEASE_NUMBER" =~ ^[0-9]+$ ]]; then
+              echo "Error: 'prerelease_number' must be a non-negative integer (got: $INPUT_PRERELEASE_NUMBER)"
+              exit 1
+            fi
+
+            VERSION="${INPUT_VERSION}-${INPUT_PRERELEASE_TYPE}.${INPUT_PRERELEASE_NUMBER}"
+            TAG="v${VERSION}"
+            IS_PRERELEASE="true"
+
+            if git tag -l "$TAG" | grep -q "^$TAG$"; then
+              if [[ "$INPUT_FORCE_PUBLISH" == "true" ]]; then
+                echo "Warning: Tag $TAG already exists but force_publish=true, continuing"
+              else
+                echo "Error: Tag $TAG already exists. Bump prerelease_number or set force_publish=true."
+                exit 1
+              fi
+            fi
+
+            echo "Resolved prerelease version: $VERSION"
+          elif [[ "$BRANCH_NAME" =~ ^release-v([0-9]+\.[0-9]+)$ ]]; then
             BASE_VERSION="${BASH_REMATCH[1]}"
             echo "Base version from branch: $BASE_VERSION"
 
@@ -90,9 +148,11 @@ jobs:
           fi
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Using version: $VERSION"
+          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+          echo "Using version: $VERSION (prerelease=$IS_PRERELEASE)"
 
       - name: Update version in common.props and commit
+        if: steps.version.outputs.is_prerelease != 'true'
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           sed -i "s|<Version>.*</Version>|<Version>$VERSION</Version>|g" ./common.props
@@ -181,7 +241,7 @@ jobs:
           images: ${{ env.IMAGE_BASE }}/${{ matrix.image }}
           tags: |
             type=raw,value=${{ needs.prepare.outputs.version }}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ needs.prepare.outputs.is_prerelease != 'true' }}
             type=ref,event=branch
             type=sha,prefix={{branch}}-
 
@@ -513,73 +573,15 @@ jobs:
           name: Release v${{ needs.prepare.outputs.version }}
           body_path: changelog.md
           draft: false
-          prerelease: false
+          prerelease: ${{ needs.prepare.outputs.is_prerelease == 'true' }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  update-compose:
-    needs: [prepare, release]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Generate GitHub App Token
-        id: generate_token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          repositories: |
-            vnext
-
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          token: ${{ steps.generate_token.outputs.token }}
-          ref: ${{ github.ref_name }}
-
-      - name: Update Docker Compose files
-        run: |
-          VERSION="${{ needs.prepare.outputs.version }}"
-
-          if [ -f "./etc/docker/docker-compose.yml" ]; then
-            sed -i "s|image: .*execution.*|image: ${{ env.REGISTRY }}/${{ env.EXECUTION_IMAGE_NAME }}:${VERSION}|g" ./etc/docker/docker-compose.yml
-            sed -i "s|image: .*orchestrator.*|image: ${{ env.REGISTRY }}/${{ env.ORCHESTRATOR_IMAGE_NAME }}:${VERSION}|g" ./etc/docker/docker-compose.yml
-            sed -i "s|image: .*inbox.*|image: ${{ env.REGISTRY }}/${{ env.INBOX_IMAGE_NAME }}:${VERSION}|g" ./etc/docker/docker-compose.yml
-            sed -i "s|image: .*outbox.*|image: ${{ env.REGISTRY }}/${{ env.OUTBOX_IMAGE_NAME }}:${VERSION}|g" ./etc/docker/docker-compose.yml
-            sed -i "s|image: .*db-migrator.*|image: ${{ env.REGISTRY }}/${{ env.DBMIGRATOR_IMAGE_NAME }}:${VERSION}|g" ./etc/docker/docker-compose.yml
-            echo "Updated docker-compose.yml with version $VERSION"
-          fi
-
-          if [ -f "./etc/docker/docker-compose.stage.yml" ]; then
-            sed -i "s|image: .*execution.*|image: ${{ env.REGISTRY }}/${{ env.EXECUTION_IMAGE_NAME }}:${VERSION}|g" ./etc/docker/docker-compose.stage.yml
-            sed -i "s|image: .*orchestrator.*|image: ${{ env.REGISTRY }}/${{ env.ORCHESTRATOR_IMAGE_NAME }}:${VERSION}|g" ./etc/docker/docker-compose.stage.yml
-            sed -i "s|image: .*inbox.*|image: ${{ env.REGISTRY }}/${{ env.INBOX_IMAGE_NAME }}:${VERSION}|g" ./etc/docker/docker-compose.stage.yml
-            sed -i "s|image: .*outbox.*|image: ${{ env.REGISTRY }}/${{ env.OUTBOX_IMAGE_NAME }}:${VERSION}|g" ./etc/docker/docker-compose.stage.yml
-            sed -i "s|image: .*db-migrator.*|image: ${{ env.REGISTRY }}/${{ env.DBMIGRATOR_IMAGE_NAME }}:${VERSION}|g" ./etc/docker/docker-compose.stage.yml
-            echo "Updated docker-compose.stage.yml with version $VERSION"
-          fi
-
-      - name: Commit and push compose updates
-        run: |
-          VERSION="${{ needs.prepare.outputs.version }}"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          if ! git diff --quiet; then
-            git add etc/docker/docker-compose*.yml || true
-            git commit -m "chore: bump compose to v${VERSION} [skip ci]"
-            git push origin ${{ github.ref_name }}
-            echo "Committed and pushed compose updates"
-          else
-            echo "No compose changes to commit"
-          fi
-
   trigger-helm:
     needs: [prepare, release]
     runs-on: ubuntu-latest
+    if: needs.prepare.outputs.is_prerelease != 'true'
     steps:
       - name: Generate GitHub App Token
         id: generate_token
@@ -661,7 +663,6 @@ jobs:
             echo "2. 🏷️ Git tag v${VERSION} has been created"
             echo "3. 📋 GitHub release published with cosign verify commands"
             echo "4. 🔒 Cosign signatures, SBOMs and provenance attestations generated"
-            echo "5. 📝 Docker Compose files updated with new version"
           } >> $GITHUB_STEP_SUMMARY
 
   publish-nuget:
