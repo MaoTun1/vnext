@@ -14,6 +14,7 @@ using BBT.Workflow.Scripting;
 using Microsoft.Extensions.Logging;
 using BBT.Workflow.Shared;
 using System.Text.Json;
+using BBT.Aether.Application.Pagination;
 using BBT.Workflow.Definitions.GraphQL;
 using BBT.Workflow.RepresentationEtag;
 using BBT.Workflow.Tasks.Coordinator;
@@ -26,6 +27,7 @@ public sealed class InstanceQueryAppService(
     IRuntimeInfoProvider runtimeInfoProvider,
     IComponentCacheStore componentCacheStore,
     IInstanceRepository instanceRepository,
+    IInstanceTransitionRepository instanceTransitionRepository,
     IInstanceCorrelationRepository instanceCorrelationRepository,
     IInstanceExtensionService instanceExtensionService,
     IScriptContextFactory scriptContextFactory,
@@ -37,6 +39,7 @@ public sealed class InstanceQueryAppService(
     ITransitionAuthorizationManager transitionAuthorizationManager,
     IRepresentationEtagService representationEtagService,
     ISchemaFieldFilterService schemaFieldFilterService,
+    IPaginationLinkGenerator paginationLinkGenerator,
     ILogger<InstanceQueryAppService> logger)
     : ApplicationService(serviceProvider), IInstanceQueryAppService
 {
@@ -167,10 +170,20 @@ public sealed class InstanceQueryAppService(
                     groups = result.Groups;
                 }
 
+                var route = urlTemplateBuilder.BuildInstanceListUrl(input.Domain, input.Workflow);
+                var linkGen = paginationLinkGenerator.Relative();
+
                 // If groups are present, populate items with groups instead of instances
-                if (groups != null && groups.Count > 0)
+                if (groups is { Count: > 0 })
                 {
-                    return InstanceListWithGroupsResponse<GetInstanceOutput>.FromGroups(groups);
+                    var groupPagedList = new HateoasPagedList<GroupSummary>(
+                        groups,
+                        input.Page,
+                        input.PageSize,
+                        hasNext: groups.Count == input.PageSize);
+                    var groupedResponse = InstanceListWithGroupsResponse<GetInstanceOutput>.FromGroups(groups);
+                    groupedResponse.Links = linkGen.GenerateLinks(groupPagedList, route);
+                    return groupedResponse;
                 }
 
                 // Normal flow: build instance outputs
@@ -205,7 +218,9 @@ public sealed class InstanceQueryAppService(
                     pagedList.PageSize,
                     pagedList.HasNext);
 
-                return InstanceListWithGroupsResponse<GetInstanceOutput>.FromPagedList(resultPagedList, null);
+                var response = InstanceListWithGroupsResponse<GetInstanceOutput>.FromPagedList(resultPagedList, null);
+                response.Links = linkGen.GenerateLinks(resultPagedList, route);
+                return response;
             },
             cancellationToken);
     }
@@ -219,32 +234,30 @@ public sealed class InstanceQueryAppService(
         return await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken)
             .ThenAsync(async instance =>
             {
-                var transitions = new List<GetInstanceOutput>();
-                foreach (var instanceData in instance.DataList.OrderBy(d => d.EnteredAt))
-                {
-                    var transitionOutputResult = await BuildInstanceOutputAsync(
-                        input.Domain,
-                        input.Extensions,
-                        input.Workflow,
-                        instance,
-                        instanceData,
-                        ExtensionScope.GetInstance,
-                        input.Headers,
-                        input.QueryParameters,
-                        cancellationToken);
+                var transitions = await instanceTransitionRepository.GetByInstanceIdAsync(instance.Id, cancellationToken);
 
-                    // Propagate extension errors - fail-fast behavior
-                    if (!transitionOutputResult.IsSuccess)
+                var dtoList = transitions
+                    .Select(t => new InstanceTransitionDto
                     {
-                        return Result<GetInstanceHistoryOutput>.Fail(transitionOutputResult.Error);
-                    }
-
-                    transitions.Add(transitionOutputResult.Value!);
-                }
+                        Id = t.Id,
+                        TransitionId = t.TransitionId,
+                        FromState = t.FromState,
+                        ToState = t.ToState,
+                        StartedAt = t.StartedAt,
+                        FinishedAt = t.FinishedAt,
+                        DurationSeconds = t.Duration?.TotalSeconds,
+                        TriggerType = t.TriggerType,
+                        Body = t.Body.JsonElement,
+                        Header = t.Header.JsonElement,
+                        CreatedAt = t.CreatedAt,
+                        CreatedBy = t.CreatedBy,
+                        CreatedByBehalfOf = t.CreatedByBehalfOf
+                    })
+                    .ToList();
 
                 return Result<GetInstanceHistoryOutput>.Ok(new GetInstanceHistoryOutput
                 {
-                    Transitions = transitions
+                    Transitions = dtoList
                 });
             });
     }
