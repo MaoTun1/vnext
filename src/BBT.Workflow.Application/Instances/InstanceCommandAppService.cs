@@ -21,7 +21,9 @@ using BBT.Workflow.Execution.Validation;
 using BBT.Workflow.Extentions;
 using BBT.Workflow.Headers;
 using BBT.Workflow.Runtime;
+using BBT.Workflow.Definitions.Timer;
 using BBT.Workflow.Scripting;
+using BBT.Workflow.Tasks.Evaluation;
 using Dapr.Jobs.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -50,6 +52,7 @@ public sealed class InstanceCommandAppService(
     ISchemaFieldFilterService schemaFieldFilterService,
     IInstanceExtensionService instanceExtensionService,
     IScriptContextFactory scriptContextFactory,
+    ITimerEvaluator timerEvaluator,
     ILogger<InstanceCommandAppService> logger)
     : ApplicationService(serviceProvider), IInstanceCommandAppService
 {
@@ -300,6 +303,8 @@ public sealed class InstanceCommandAppService(
     /// <summary>
     /// Schedules a workflow timeout job if the workflow has a timeout configuration.
     /// When extraProperties contains a timeout override (set by SubflowStarter), it takes precedence over the workflow's own timeout.
+    /// When a mapping script is configured, it is evaluated to determine the timeout schedule dynamically.
+    /// If mapping fails, the static Timer.Duration is used as fallback.
     /// </summary>
     private async Task ScheduleWorkflowTimeoutIfConfiguredAsync(
         Definitions.Workflow workflow,
@@ -338,19 +343,23 @@ public sealed class InstanceCommandAppService(
                 TraceState = activity?.TraceStateString
             };
 
-            // Parse ISO 8601 duration string to TimeSpan
-            var timeoutDuration = System.Xml.XmlConvert.ToTimeSpan(effectiveTimeout.Timer.Duration);
+            var resolvedSchedule = await ResolveTimeoutScheduleAsync(
+                effectiveTimeout, workflow, instance, cancellationToken);
 
-            // Calculate timeout schedule - workflow timeout should be evaluated from creation time
-            var timeoutDateTime = DateTime.UtcNow.Add(timeoutDuration);
-            var schedule = DaprJobSchedule.FromDateTime(timeoutDateTime).ExpressionValue;
+            var schedule = resolvedSchedule.ToDaprJobSchedule().ExpressionValue;
+
+            var timeoutAt = resolvedSchedule.ScheduleType == TimerScheduleType.DateTime
+                ? resolvedSchedule.ScheduledDateTime!.Value
+                : resolvedSchedule.Duration.HasValue
+                    ? DateTime.UtcNow.Add(resolvedSchedule.Duration.Value)
+                    : DateTime.UtcNow;
 
             var metadata = new Dictionary<string, object>
             {
                 ["domain"] = workflow.Domain,
                 ["flowName"] = workflow.Key,
                 ["instanceId"] = instance.Id.ToString(),
-                ["timeoutAt"] = timeoutDateTime.ToString("O")
+                ["timeoutAt"] = timeoutAt.ToString("O")
             };
 
             // Enqueue the timeout job
@@ -375,13 +384,53 @@ public sealed class InstanceCommandAppService(
                 true,
                 cancellationToken);
 
-            logger.WorkflowTimeoutScheduled(instance.Id, effectiveTimeout.Timer.Duration, timeoutDateTime);
+            logger.WorkflowTimeoutScheduled(instance.Id, effectiveTimeout.Timer.Duration, timeoutAt);
         }
         catch (Exception ex)
         {
             logger.WorkflowTimeoutSchedulingFailed(ex, instance.Id);
             // Don't throw - timeout scheduling failure should not prevent workflow start
         }
+    }
+
+    /// <summary>
+    /// Resolves the timeout schedule, trying mapping first (if configured) with static duration as fallback.
+    /// </summary>
+    private async Task<TimerSchedule> ResolveTimeoutScheduleAsync(
+        WorkflowTimeout effectiveTimeout,
+        Definitions.Workflow workflow,
+        Instance instance,
+        CancellationToken cancellationToken)
+    {
+        if (effectiveTimeout.Mapping != null)
+        {
+            var scriptContext = await scriptContextFactory.NewBuilder(instanceRepository)
+                .WithWorkflow(workflow)
+                .WithInstance(instance)
+                .WithRuntime(runtimeInfoProvider)
+                .WithTransition(effectiveTimeout.Key)
+                .WithBody(instance.LatestData?.Data ?? new JsonData("{}"))
+                .BuildAsync(cancellationToken);
+
+            var mappingResult = await timerEvaluator.EvaluateAsync(
+                effectiveTimeout.Mapping, scriptContext, cancellationToken);
+
+            if (mappingResult.IsSuccess)
+            {
+                logger.TimeoutMappingResolved(instance.Id, mappingResult.Value!.ScheduleType.ToString());
+                return mappingResult.Value!;
+            }
+
+            logger.TimeoutMappingFallback(
+                instance.Id,
+                effectiveTimeout.Timer.Duration,
+                mappingResult.Error.Message ?? mappingResult.Error.Code);
+        }
+
+        // Static fallback: parse ISO 8601 duration
+        var timeoutDuration = System.Xml.XmlConvert.ToTimeSpan(effectiveTimeout.Timer.Duration);
+        var timeoutDateTime = DateTime.UtcNow.Add(timeoutDuration);
+        return TimerSchedule.FromDateTime(timeoutDateTime);
     }
 
     /// <summary>
