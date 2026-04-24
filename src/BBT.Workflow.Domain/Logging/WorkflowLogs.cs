@@ -969,6 +969,31 @@ public static partial class WorkflowLogs
         Guid instanceId);
 
     /// <summary>
+    /// Logs when timeout mapping script fails and static timer duration is used as fallback.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40100,
+        Level = LogLevel.Warning,
+        Message = "Timeout mapping failed for instance {InstanceId}, falling back to static duration {Duration}. Error: {ErrorMessage}")]
+    public static partial void TimeoutMappingFallback(
+        this ILogger logger,
+        Guid instanceId,
+        string duration,
+        string errorMessage);
+
+    /// <summary>
+    /// Logs when timeout mapping script executes successfully.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 40101,
+        Level = LogLevel.Information,
+        Message = "Timeout mapping resolved for instance {InstanceId}, schedule type: {ScheduleType}")]
+    public static partial void TimeoutMappingResolved(
+        this ILogger logger,
+        Guid instanceId,
+        string scheduleType);
+
+    /// <summary>
     /// Logs when workflow definition is not found.
     /// </summary>
     [LoggerMessage(
