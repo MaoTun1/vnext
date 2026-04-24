@@ -1424,6 +1424,85 @@ public static partial class WorkflowLogs
 
     #endregion
 
+    #region Resource Lock
+
+    /// <summary>
+    /// Logs when a distributed resource lock is successfully acquired.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10100,
+        Level = LogLevel.Information,
+        Message = "Resource lock acquired: Key={ResourceKey}, Owner={Owner}, TTL={TtlSeconds}s")]
+    public static partial void ResourceLockAcquired(
+        this ILogger logger,
+        string resourceKey,
+        string owner,
+        int ttlSeconds);
+
+    /// <summary>
+    /// Logs when a resource lock acquisition fails because the resource is already locked.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10101,
+        Level = LogLevel.Warning,
+        Message = "Resource lock conflict: Key={ResourceKey}, Owner={Owner}. Resource is already locked")]
+    public static partial void ResourceLockAcquireConflict(
+        this ILogger logger,
+        string resourceKey,
+        string owner);
+
+    /// <summary>
+    /// Logs when a distributed resource lock is successfully released.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10103,
+        Level = LogLevel.Information,
+        Message = "Resource lock released: Key={ResourceKey}, Owner={Owner}")]
+    public static partial void ResourceLockReleased(
+        this ILogger logger,
+        string resourceKey,
+        string owner);
+
+    /// <summary>
+    /// Logs when a resource lock release fails (lock not held by this owner).
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10104,
+        Level = LogLevel.Warning,
+        Message = "Resource lock release failed: Key={ResourceKey}, Owner={Owner}, Status={Status}")]
+    public static partial void ResourceLockReleaseFailed(
+        this ILogger logger,
+        string resourceKey,
+        string owner,
+        string status);
+
+    /// <summary>
+    /// Logs when a distributed resource lock TTL is successfully extended.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10106,
+        Level = LogLevel.Information,
+        Message = "Resource lock extended: Key={ResourceKey}, Owner={Owner}, TTL={TtlSeconds}s")]
+    public static partial void ResourceLockExtended(
+        this ILogger logger,
+        string resourceKey,
+        string owner,
+        int ttlSeconds);
+
+    /// <summary>
+    /// Logs when a resource lock extension fails (lock not held by this owner).
+    /// </summary>
+    [LoggerMessage(
+        EventId = 10107,
+        Level = LogLevel.Warning,
+        Message = "Resource lock extend failed: Key={ResourceKey}, Owner={Owner}")]
+    public static partial void ResourceLockExtendFailed(
+        this ILogger logger,
+        string resourceKey,
+        string owner);
+
+    #endregion
+
     #region Instance Retry
  
     /// <summary>
