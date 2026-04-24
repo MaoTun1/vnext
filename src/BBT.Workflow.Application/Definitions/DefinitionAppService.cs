@@ -51,7 +51,7 @@ public sealed class DefinitionAppService(
                     return migrationResult;
             }
             
-            var instance = await instanceRepository.FindByIdentifierAsync(input.Key, cancellationToken)
+            var instance = await instanceRepository.FindByIdentifierWithFullDataAsync(input.Key, cancellationToken)
                            ?? Instance.Create(GuidGenerator.Create(), input.Flow, input.FlowVersion, input.Key);
 
             instance.AddTags(input.Tags.ToArray());
@@ -245,7 +245,7 @@ public sealed class DefinitionAppService(
         PublishDataInput dataItem,
         CancellationToken cancellationToken)
     {
-        var instance = await instanceRepo.FindByIdentifierAsync(dataItem.Key, cancellationToken)
+        var instance = await instanceRepo.FindByIdentifierWithFullDataAsync(dataItem.Key, cancellationToken)
                        ?? Instance.Create(GuidGenerator.Create(), input.Key, input.FlowVersion, dataItem.Key);
 
         if (instance.FindData(dataItem.Version) != null)
@@ -372,7 +372,7 @@ public sealed class DefinitionAppService(
 
         using (currentSchema.Use(input.Flow))
         {
-            var instance = await instanceRepository.FindByIdentifierAsync(input.Key, cancellationToken);
+            var instance = await instanceRepository.FindByIdentifierWithFullDataAsync(input.Key, cancellationToken);
             if (instance == null)
             {
                 return Result.Fail(WorkflowErrors.InstanceNotFound(input.Key));
