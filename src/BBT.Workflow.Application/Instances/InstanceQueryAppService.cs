@@ -53,7 +53,7 @@ public sealed class InstanceQueryAppService(
     {
         runtimeInfoProvider.Check(input.Domain);
 
-        return await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken)
+        return await GetInstanceByIdOrKeyAsync(input.Instance, input.Version, cancellationToken)
             .MatchAsync(
                 onSuccess: async instance =>
                 {
@@ -418,9 +418,27 @@ public sealed class InstanceQueryAppService(
     }
 
     /// <summary>
+    /// Version-aware instance loading. When a specific (non-latest) version is requested,
+    /// loads the full DataList so <see cref="Instance.FindData"/> can resolve any version.
+    /// For null/empty/"latest" requests, uses the optimized path that only loads IsLatest rows.
+    /// </summary>
+    private async Task<Result<Instance>> GetInstanceByIdOrKeyAsync(
+        string instanceIdentifier,
+        string? version,
+        CancellationToken cancellationToken)
+    {
+        if (InstanceDataVersionComparer.IsRequestingLatest(version))
+        {
+            return await GetInstanceByIdOrKeyAsync(instanceIdentifier, cancellationToken);
+        }
+
+        return await GetInstanceWithFullHistoryAsync(instanceIdentifier, cancellationToken);
+    }
+
+    /// <summary>
     /// Loads an instance with the full DataList history (no IsLatest filter). Dedicated to
     /// <see cref="GetInstanceHistoryAsync"/>; runtime hot-paths must keep using
-    /// <see cref="GetInstanceByIdOrKeyAsync"/> which loads only the latest snapshot.
+    /// <see cref="GetInstanceByIdOrKeyAsync(string, CancellationToken)"/> which loads only the latest snapshot.
     /// </summary>
     private async Task<Result<Instance>> GetInstanceWithFullHistoryAsync(
         string instanceIdentifier,
@@ -504,7 +522,7 @@ public sealed class InstanceQueryAppService(
         runtimeInfoProvider.Check(input.Domain);
 
         // Railway chain: Get Instance → Load Flow (using instance.FlowVersion) → Match to ConditionalResult
-        return await GetInstanceByIdOrKeyAsync(input.Instance, cancellationToken)
+        return await GetInstanceByIdOrKeyAsync(input.Instance, input.Version, cancellationToken)
             .BindAsync(instance =>
                 componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, instance.FlowVersion, cancellationToken)
                     .MapAsync(workflow => (flow: workflow, instance)))

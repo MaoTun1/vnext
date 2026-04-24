@@ -185,6 +185,34 @@ public sealed class EfCoreInstanceRepository(
                 cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async Task<Instance?> FindByIdentifierWithFullDataAsync(string? identifier,
+        CancellationToken cancellationToken = default)
+    {
+        var dbSet = await GetDbSetAsync();
+        var query = dbSet
+            .Include(i => i.DataList)
+            .Include(i => i.ChildCorrelations.Where(c => !c.IsCompleted))
+            .AsSplitQuery();
+
+        if (Guid.TryParse(identifier, out var instanceId))
+        {
+            var response = await query
+                .FirstOrDefaultAsync(
+                    p => p.Id == instanceId,
+                    cancellationToken);
+            if (response != null)
+            {
+                return response;
+            }
+        }
+
+        return await query
+            .FirstOrDefaultAsync(
+                p => p.Key == identifier,
+                cancellationToken);
+    }
+
     /// <summary>
     /// Finds active instance data with smart version matching.
     /// </summary>
