@@ -15,7 +15,7 @@ using BBT.Workflow.Security;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-
+using BBT.Workflow.Definitions.Schemas;
 namespace BBT.Workflow.Instances;
 
 public sealed class EfCoreInstanceRepository(
@@ -294,7 +294,8 @@ public sealed class EfCoreInstanceRepository(
 
     private async Task<IQueryable<Instance>> GetFilteredQueryAsync(
         string? filter,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        SchemaFilterContext? schemaContext = null)
     {
         // Apply PostgreSQL native JSON filters if provided
         if (!string.IsNullOrWhiteSpace(filter))
@@ -307,7 +308,8 @@ public sealed class EfCoreInstanceRepository(
                         jsonColumnName: "Data",
                         tableName: "InstancesData",
                         schema: currentSchema.Name ?? "public",
-                        schemaValidator: schemaValidator
+                        schemaValidator: schemaValidator,
+                        schemaContext: schemaContext
                     );
 
                 return filteredInstances
@@ -350,7 +352,8 @@ public sealed class EfCoreInstanceRepository(
         string? filter,
         string? groupBy = null,
         string? aggregations = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        SchemaFilterContext? schemaContext = null)
     {
         // If groupBy or aggregations are provided, use ApplyFilterWithAggregationsAsync
         if (!string.IsNullOrWhiteSpace(groupBy) || !string.IsNullOrWhiteSpace(aggregations))
@@ -398,7 +401,7 @@ public sealed class EfCoreInstanceRepository(
                 }
             }
 
-            var response = await UnifiedFilterService.ApplyFilterWithAggregationsAsync(
+             var response = await UnifiedFilterService.ApplyFilterWithAggregationsAsync(
                 context,
                 dbSet,
                 combinedFilter,
@@ -408,7 +411,8 @@ public sealed class EfCoreInstanceRepository(
                 currentSchema.Name ?? "public",
                 query => query.Include(i => i.DataList).AsSplitQuery(),
                 schemaValidator,
-                cancellationToken);
+                cancellationToken,
+                schemaContext);
 
             // If response has groups or aggregations, return empty paged list
             // (groups and aggregations are handled separately in the response)
@@ -467,7 +471,8 @@ public sealed class EfCoreInstanceRepository(
         string? groupBy = null,
         string? aggregations = null,
         string? sort = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        SchemaFilterContext? schemaContext = null)
     {
         // If groupBy is provided, use ApplyFilterWithAggregationsAsync
         if (!string.IsNullOrWhiteSpace(groupBy))
@@ -525,7 +530,8 @@ public sealed class EfCoreInstanceRepository(
                 currentSchema.Name ?? "public",
                 query => query.Include(i => i.DataList).AsSplitQuery(),
                 schemaValidator,
-                cancellationToken);
+                cancellationToken,
+                schemaContext);
 
             // Convert GroupByResponse to GroupSummary
             List<GroupSummary>? groups = null;
@@ -613,7 +619,8 @@ public sealed class EfCoreInstanceRepository(
                 currentSchema.Name ?? "public",
                 query => query.Include(i => i.DataList).AsSplitQuery(),
                 schemaValidator,
-                cancellationToken);
+                cancellationToken,
+                schemaContext);
 
             // Aggregations without groupBy - return empty groups
             HateoasPagedList<Instance> pagedList;
@@ -649,8 +656,7 @@ public sealed class EfCoreInstanceRepository(
 
         if (string.IsNullOrWhiteSpace(filter) && hasAttributesOrderBy)
         {
-            // No filter + attributes orderBy: raw SQL with ORDER BY, then load DataList by IDs
-            var orderByClause = GraphQLJsonFilterService.BuildOrderByClause(orderBy, schema);
+            var orderByClause = GraphQLJsonFilterService.BuildOrderByClause(orderBy, schema, schemaContext: schemaContext);
             if (!string.IsNullOrEmpty(orderByClause))
             {
                 var dbSet = await GetDbSetAsync();
@@ -659,16 +665,16 @@ public sealed class EfCoreInstanceRepository(
                     .FromSqlRaw(rawSql)
                     .AsNoTracking()
                     .ToListAsync(cancellationToken);
-
+ 
                 hasNextPage = orderedInstances.Count > pageSize;
                 if (hasNextPage)
                     orderedInstances = orderedInstances.Take(pageSize).ToList();
-
+ 
                 items = await LoadDataListAndPreserveOrderAsync(orderedInstances, cancellationToken);
             }
             else
             {
-                var query = await GetFilteredQueryAsync(filter, cancellationToken);
+                var query = await GetFilteredQueryAsync(filter, cancellationToken, schemaContext);
                 if (orderBy != null)
                     query = InstanceOrderByApplicator.Apply(query, orderBy);
                 items = await query
@@ -683,28 +689,28 @@ public sealed class EfCoreInstanceRepository(
         else if (!string.IsNullOrWhiteSpace(filter) && hasAttributesOrderBy)
         {
             var combinedFilter = BuildCombinedFilterJson(filter);
-            var orderByClause = GraphQLJsonFilterService.BuildOrderByClause(orderBy, schema);
+            var orderByClause = GraphQLJsonFilterService.BuildOrderByClause(orderBy, schema, schemaContext: schemaContext);
             if (!string.IsNullOrEmpty(combinedFilter) && !string.IsNullOrEmpty(orderByClause))
             {
                 var dbSet = await GetDbSetAsync();
                 var filterNode = GraphQLFilterParser.ParseFilter(combinedFilter);
                 if (filterNode != null && filterNode.NodeType != FilterNodeType.Empty)
                 {
-                    var query = dbSet.ApplyGraphQLFilter(filterNode, "Data", "InstancesData", schema, schemaValidator, null, orderByClause);
+                    var query = dbSet.ApplyGraphQLFilter(filterNode, "Data", "InstancesData", schema, schemaValidator, null, orderByClause, schemaContext: schemaContext);
                     var orderedInstances = await query
                         .Skip(skipCount)
                         .Take(pageSize + 1)
                         .ToListAsync(cancellationToken);
-
+ 
                     hasNextPage = orderedInstances.Count > pageSize;
                     if (hasNextPage)
                         orderedInstances = orderedInstances.Take(pageSize).ToList();
-
+ 
                     items = await LoadDataListAndPreserveOrderAsync(orderedInstances, cancellationToken);
                 }
                 else
                 {
-                    var query = await GetFilteredQueryAsync(filter, cancellationToken);
+                    var query = await GetFilteredQueryAsync(filter, cancellationToken, schemaContext);
                     if (orderBy != null)
                         query = InstanceOrderByApplicator.Apply(query, orderBy);
                     items = await query
@@ -718,7 +724,7 @@ public sealed class EfCoreInstanceRepository(
             }
             else
             {
-                var query = await GetFilteredQueryAsync(filter, cancellationToken);
+                var query = await GetFilteredQueryAsync(filter, cancellationToken, schemaContext);
                 if (orderBy != null)
                     query = InstanceOrderByApplicator.Apply(query, orderBy);
                 items = await query
@@ -732,7 +738,7 @@ public sealed class EfCoreInstanceRepository(
         }
         else
         {
-            var query = await GetFilteredQueryAsync(filter, cancellationToken);
+            var query = await GetFilteredQueryAsync(filter, cancellationToken, schemaContext);
             if (orderBy != null)
                 query = InstanceOrderByApplicator.Apply(query, orderBy);
             items = await query
@@ -743,7 +749,7 @@ public sealed class EfCoreInstanceRepository(
             if (hasNextPage)
                 items = items.Take(pageSize).ToList();
         }
-
+ 
         var normalPagedList = new HateoasPagedList<Instance>(items, page, pageSize, hasNextPage);
         return (normalPagedList, null);
     }

@@ -19,6 +19,7 @@ using BBT.Workflow.Definitions.GraphQL;
 using BBT.Workflow.RepresentationEtag;
 using BBT.Workflow.Tasks.Coordinator;
 using BBT.Aether.MultiSchema;
+using BBT.Workflow.Definitions.Schemas;
 
 namespace BBT.Workflow.Instances;
 
@@ -104,6 +105,18 @@ public sealed class InstanceQueryAppService(
         return await ResultExtensions.TryAsync(
             async ct =>
             {
+ 
+                // Resolve schema-driven filter/sort metadata from workflow's master schema
+                SchemaFilterContext? schemaContext = null;
+                var flowResult = await componentCacheStore.GetFlowAsync(input.Domain, input.Workflow, null, ct);
+                if (flowResult.IsSuccess && flowResult.Value?.Schema is not null)
+                {
+                    var schemaResult = await componentCacheStore.GetSchemaAsync(flowResult.Value.Schema, ct);
+                    if (schemaResult.IsSuccess)
+                        schemaContext = SchemaFilterMetadataResolver.Resolve(schemaResult.Value!.Schema);
+                }
+ 
+ 
                 // Parse filter parameter - check if it's in GraphQLFilterRequest format
                 string? groupBy = input.GroupBy;
                 string? aggregations = input.Aggregations;
@@ -148,6 +161,7 @@ public sealed class InstanceQueryAppService(
                 List<GroupSummary>? groups;
                 if (parsedRequest != null)
                 {
+                   parsedRequest.SchemaContext = schemaContext;
                     var result = await instanceRepository.GetPagedResultsWithGroupsAsync(
                         input.Page,
                         input.PageSize,
@@ -158,14 +172,15 @@ public sealed class InstanceQueryAppService(
                 }
                 else
                 {
-                    var result = await instanceRepository.GetPagedResultsWithGroupsAsync(
+                   var result = await instanceRepository.GetPagedResultsWithGroupsAsync(
                         input.Page,
                         input.PageSize,
                         input.Filter,
                         groupBy,
                         aggregations,
                         input.Sort,
-                        ct);
+                        ct,
+                        schemaContext);
                     pagedList = result.PagedList;
                     groups = result.Groups;
                 }

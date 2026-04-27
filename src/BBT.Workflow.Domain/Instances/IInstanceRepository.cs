@@ -1,6 +1,7 @@
 using BBT.Aether;
 using BBT.Aether.Domain.Repositories;
 using BBT.Aether.Results;
+using BBT.Workflow.Definitions.Schemas;
 using Microsoft.AspNetCore.Http;
 
 namespace BBT.Workflow.Instances;
@@ -46,17 +47,19 @@ public interface IInstanceRepository : IRepository<Instance, Guid>
         CancellationToken cancellationToken = default);
         
     Task<HateoasPagedList<Instance>> GetPagedResultsAsync(
-        int page, 
-        int pageSize, 
+        int page,
+        int pageSize,
         string? filter,
         string? groupBy = null,
         string? aggregations = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        SchemaFilterContext? schemaContext = null);
 
     /// <summary>
     /// Gets paged results with optional groups for groupBy queries
     /// </summary>
     /// <param name="sort">Optional orderBy JSON (e.g. {"field":"createdAt","direction":"desc"} or {"fields":[...]})</param>
+    /// <param name="schemaContext">Optional schema-driven filter/sort metadata</param>
     Task<(HateoasPagedList<Instance> PagedList, List<GroupSummary>? Groups)> GetPagedResultsWithGroupsAsync(
         int page,
         int pageSize,
@@ -64,7 +67,8 @@ public interface IInstanceRepository : IRepository<Instance, Guid>
         string? groupBy = null,
         string? aggregations = null,
         string? sort = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        SchemaFilterContext? schemaContext = null);
 
     /// <summary>
     /// Gets paged results with optional groups using parsed GraphQL filter request (optimized - avoids parse-serialize cycle)
