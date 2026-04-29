@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using NpgsqlTypes;
+using BBT.Workflow.Definitions.Schemas;
 using BBT.Workflow.Security;
 
 namespace BBT.Workflow.Definitions.GraphQL;
@@ -30,9 +31,9 @@ public static class GraphQLAggregationService
         string jsonColumnName = "Data",
         string schema = "public",
         ISchemaValidator? schemaValidator = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        SchemaFilterContext? schemaContext = null)
     {
-        // Validate schema
         schema = schemaValidator != null
             ? await schemaValidator.ValidateSchemaAsync(schema, cancellationToken)
             : new SyncSchemaValidator().ValidateSchemaSync(schema);
@@ -42,7 +43,7 @@ public static class GraphQLAggregationService
 
         var (selectClause, _) = BuildAggregationSelectClause(aggregations, jsonColumnName);
         var (jsonWhereClause, instanceWhereClause) = GraphQLJsonFilterService.BuildSeparatedWhereClausesForSql(
-            filterNode, jsonColumnName, parameters, ref parameterIndex);
+            filterNode, jsonColumnName, parameters, ref parameterIndex, schemaContext: schemaContext);
 
         var sql = BuildAggregationSql(selectClause, jsonWhereClause, instanceWhereClause, null, schema);
 
@@ -92,13 +93,13 @@ public static class GraphQLAggregationService
         string jsonColumnName = "Data",
         string schema = "public",
         ISchemaValidator? schemaValidator = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        SchemaFilterContext? schemaContext = null)
     {
         var groupByFields = groupBy.GetFields();
         if (groupByFields.Count == 0)
             throw new ArgumentException("GroupBy must have at least one field");
 
-        // Validate schema
         schema = schemaValidator != null
             ? await schemaValidator.ValidateSchemaAsync(schema, cancellationToken)
             : new SyncSchemaValidator().ValidateSchemaSync(schema);
@@ -110,7 +111,7 @@ public static class GraphQLAggregationService
             groupByFields, groupBy.Aggregations ?? new AggregationRequest { Count = true }, jsonColumnName);
 
         var (jsonWhereClause, instanceWhereClause) = GraphQLJsonFilterService.BuildSeparatedWhereClausesForSql(
-            filterNode, jsonColumnName, parameters, ref parameterIndex);
+            filterNode, jsonColumnName, parameters, ref parameterIndex, schemaContext: schemaContext);
 
         var sql = BuildAggregationSql(selectClause, jsonWhereClause, instanceWhereClause, groupByClause, schema);
 
