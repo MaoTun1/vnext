@@ -72,6 +72,14 @@ Alternatively, pass `groupBy` and `aggregations` as query parameters:
 ?filter={"status":{"eq":"Active"}}&groupBy={"field":"attributes.status"}&aggregations={"count":true}
 ```
 
+`groupBy.field` / `groupBy.fields` may use JSON paths (`attributes.*`) or any **instance column** that is filterable on the `Instances` table (same whitelist as top-level GraphQL filters). Example grouping by creator:
+
+```
+?groupBy={"field":"createdBy"}&aggregations={"count":true}
+```
+
+You can combine instance-column filters with JSON or instance `groupBy` keys in one request.
+
 **Format precedence:** If any `filter` value is GraphQL JSON, the request is handled as GraphQL format.
 
 ### URL Encoding
@@ -99,6 +107,10 @@ Filters can target these Instance columns:
 | `modifiedAt` | Modification timestamp |
 | `completedAt` | Completion timestamp |
 | `isTransient` | Boolean flag |
+| `createdBy` | Creator user identifier |
+| `createdByBehalfOf` | Behalf-of user at creation |
+| `modifiedBy` | Last modifier user identifier |
+| `modifiedByBehalfOf` | Behalf-of user at last modification |
 
 ### JSON Attributes
 
@@ -140,6 +152,10 @@ Instance list results can be sorted via the `sort` or `orderBy` query parameter 
 | `status` | Instance status |
 | `key` | Instance key |
 | `currentState` / `state` | Current state (state is alias) |
+| `createdBy` | Creator user identifier |
+| `createdByBehalfOf` | Behalf-of user at creation |
+| `modifiedBy` | Last modifier user identifier |
+| `modifiedByBehalfOf` | Behalf-of user at last modification |
 | `attributes.fieldName` | JSON attribute (path into `InstancesData.Data`); nested paths supported (e.g. `attributes.nested.path`) |
 
 Instance columns are applied in the database; `attributes.*` ordering uses the latest instance data JSON and is subject to the same schema/security as filtering.
