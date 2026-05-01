@@ -473,7 +473,7 @@ public class TransitionPipeline
         // Already within lock scope - update instance directly
         context.Instance.Fault(context.Domain);
         context.ExtractAndDeferInstanceEvents();
-        await _instanceRepository.UpdateAsync(context.Instance, false, cancellationToken);
+        await _instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
 
         _logger.LogInformation(
             "Instance {InstanceId} marked as faulted successfully. Client will receive Status = 'F'",
@@ -518,7 +518,7 @@ public class TransitionPipeline
                         instanceResult.Value.ClearDomainEvents();
                     }
 
-                    await _instanceRepository.UpdateAsync(instanceResult.Value, false, cancellationToken);
+                    await _instanceRepository.UpdateAsync(instanceResult.Value, true, cancellationToken);
 
                     _logger.LogInformation(
                         "Instance {InstanceId} marked as faulted successfully",
@@ -578,7 +578,7 @@ public class TransitionPipeline
             async () =>
             {
                 context.Instance.Active();
-                await _instanceRepository.UpdateAsync(context.Instance, false, cancellationToken);
+                await _instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
 
                 _logger.LogDebug(
                     "Instance {InstanceId} resolved to Active after post-commit completion",

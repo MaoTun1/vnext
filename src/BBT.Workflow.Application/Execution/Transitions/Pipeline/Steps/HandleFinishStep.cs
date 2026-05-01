@@ -39,7 +39,7 @@ public sealed class HandleFinishStep(
         return await Result.Ok(context)
             .Tap(UpdateInstanceStatus)
             .Tap(ctx => ctx.ExtractAndDeferInstanceEvents())
-            .TapAsync(ctx => instanceRepository.UpdateAsync(ctx.Instance, false, cancellationToken))
+            .TapAsync(ctx => instanceRepository.UpdateAsync(ctx.Instance, true, cancellationToken))
             .Tap(ctx => ctx.Items["IsFinishState"] = true)
             .Map(_ => StepOutcome.Continue());
     }

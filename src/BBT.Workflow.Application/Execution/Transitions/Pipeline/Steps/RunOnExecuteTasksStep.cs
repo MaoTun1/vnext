@@ -75,7 +75,7 @@ public sealed class RunOnExecuteTasksStep(
 
             // Apply script context changes before handling boundary
             context.ApplyScriptContextChanges(scriptContext);
-            await instanceRepository.UpdateAsync(context.Instance, false, cancellationToken);
+            await instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
 
             return BoundaryOutcomeHandler.Handle(context, tasksResult);
         }
@@ -117,7 +117,7 @@ public sealed class RunOnExecuteTasksStep(
         }
         
         context.ApplyScriptContextChanges(scriptContext);
-        await instanceRepository.UpdateAsync(context.Instance, false, cancellationToken);
+        await instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
         
         return Result<StepOutcome>.Ok(StepOutcome.Continue());
     }

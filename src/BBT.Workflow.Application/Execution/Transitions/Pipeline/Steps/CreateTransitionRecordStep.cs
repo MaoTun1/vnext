@@ -45,7 +45,7 @@ public sealed class CreateTransitionRecordStep(
         return await MapTransitionDataAsync(context, transition, cancellationToken)
             .Tap(mappedData => AddMappedDataToInstance(context, mappedData, transition))
             .BindAsync(_ => ValidateAndSetInstanceKeyAsync(context, cancellationToken))
-            .TapAsync(_ => instanceRepository.UpdateAsync(context.Instance, false, cancellationToken))
+            .TapAsync(_ => instanceRepository.UpdateAsync(context.Instance, true, cancellationToken))
             .TapAsync(_ =>
                 instanceTransitionRepository.InsertAsync(instanceTransition, saveChanges: true, cancellationToken))
             .Tap(_ => UpdateContextItems(context, instanceTransition))
