@@ -113,7 +113,7 @@ public sealed class HandleSubFlowStep(
         var correlation = CreateCorrelation(context);
         context.Instance.AddCorrelation(correlation);
 
-        await instanceRepository.UpdateAsync(context.Instance, true, cancellationToken);
+        await instanceRepository.UpdateAsync(context.Instance, false, cancellationToken);
 
         // Enqueue post-commit job - actual subflow start happens after lock release
         context.Directives.EnqueuePostCommit(new StartSubflowJob(correlation.Id, context.Target!.Key));

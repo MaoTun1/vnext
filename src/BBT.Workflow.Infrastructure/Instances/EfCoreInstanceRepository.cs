@@ -68,32 +68,38 @@ public sealed class EfCoreInstanceRepository(
     }
 
     /// <summary>
-    /// Updates an instance and automatically records status change metrics
+    /// Updates an instance and automatically records status change metrics.
+    /// Uses EF change tracker to detect status changes without an extra DB round-trip.
     /// </summary>
     public override async Task<Instance> UpdateAsync(Instance entity, bool autoSave = false,
         CancellationToken cancellationToken = default)
     {
-        // Get the original entity to compare status changes
-        var originalEntity = await FindAsync(entity.Id, includeDetails: false, cancellationToken);
-        var originalStatus = originalEntity?.Status;
+        var dbContext = await GetDbContextAsync();
+        var entry = dbContext.Entry(entity);
+
+        InstanceStatus? originalStatus = null;
+        if (entry.State != EntityState.Detached)
+        {
+            var statusProperty = entry.Property(nameof(Instance.Status));
+            if (statusProperty.IsModified)
+            {
+                originalStatus = (InstanceStatus)statusProperty.OriginalValue!;
+            }
+        }
 
         var result = await base.UpdateAsync(entity, autoSave, cancellationToken);
 
-        // Database metrics are automatically recorded by WorkflowDatabaseInterceptor
-        // Only handle business-specific status change metrics here
         if (originalStatus != null && !originalStatus.Equals(entity.Status))
         {
             await HandleStatusChangeMetrics(entity, originalStatus, entity.Status);
         }
 
-        // Transfer to data sinks (e.g., ClickHouse) if enabled
         try
         {
             await dataSinkManager.HandleUpdateAsync(result, cancellationToken);
         }
         catch (Exception ex)
         {
-            // Log error but don't fail the main operation
             logger.LogWarning(ex, "Failed to transfer instance to data sinks");
         }
 

@@ -35,10 +35,11 @@ public sealed class HandleFinishStep(
             return Result<StepOutcome>.Ok(StepOutcome.Continue());
         }
 
-        // Railway chain: Update status -> Persist -> Mark finish
+        // Railway chain: Update status -> Extract events -> Persist -> Mark finish
         return await Result.Ok(context)
             .Tap(UpdateInstanceStatus)
-            .TapAsync(ctx => instanceRepository.UpdateAsync(ctx.Instance, true, cancellationToken))
+            .Tap(ctx => ctx.ExtractAndDeferInstanceEvents())
+            .TapAsync(ctx => instanceRepository.UpdateAsync(ctx.Instance, false, cancellationToken))
             .Tap(ctx => ctx.Items["IsFinishState"] = true)
             .Map(_ => StepOutcome.Continue());
     }
