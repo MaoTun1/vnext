@@ -72,8 +72,6 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
         
         // Runtime Services
         services.AddScoped<IRuntimeService, RuntimeService>();
-        services.AddScoped<IRuntimeCacheInitializer, RuntimeCacheInitializer>();
-        services.AddSingleton<CacheInitializationGate>();
     }
 
     /// <summary>
@@ -81,9 +79,6 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
     /// </summary>
     private static void AddCacheServices(this IServiceCollection services)
     {
-        services.AddOptions<CacheWarmupOptions>()
-            .BindConfiguration(CacheWarmupOptions.SectionName);
-
         services.AddSingleton<ComponentCacheStore>();
         services.AddSingleton<IComponentCacheStore>(serviceProvider =>
         {

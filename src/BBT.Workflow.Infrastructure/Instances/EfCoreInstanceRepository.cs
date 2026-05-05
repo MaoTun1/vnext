@@ -30,14 +30,41 @@ public sealed class EfCoreInstanceRepository(
     : EfCoreRepository<WorkflowDbContext, Instance, Guid>(dbContext, serviceProvider),
         IInstanceRepository
 {
+    #region Compiled Queries
+
+    private static readonly Func<WorkflowDbContext, string, Guid, Task<bool>>
+        AnyActiveByKeyCompiledQuery = EF.CompileAsyncQuery(
+            (WorkflowDbContext ctx, string key, Guid excludeId) =>
+                ctx.Instances.Any(
+                    i => i.Key == key
+                         && i.Id != excludeId
+                         && i.Status == InstanceStatus.Active));
+
+    private static readonly Func<WorkflowDbContext, string, string, IAsyncEnumerable<InstanceAndDataModel>>
+        FindActiveDataExactCompiledQuery = EF.CompileAsyncQuery(
+            (WorkflowDbContext ctx, string key, string version) =>
+                ctx.Instances
+                    .Where(i => i.Status == InstanceStatus.Active && i.Key == key)
+                    .Join(ctx.InstancesData,
+                        i => i.Id,
+                        d => d.InstanceId,
+                        (i, d) => new { Instance = i, Data = d })
+                    .Where(x => x.Data.Version == version)
+                    .Select(x => new InstanceAndDataModel
+                    {
+                        Instance = x.Instance,
+                        InstanceData = x.Data
+                    }));
+
+    #endregion
+
     public override async Task<IQueryable<Instance>> WithDetailsAsync()
     {
-        // Runtime only consumes the latest InstanceData snapshot and active (non-completed)
-        // child correlations. Filtered includes keep the join sets minimal so the partial
-        // indexes UX_InstancesData_Instance_IsLatest and IX_InstancesCorrelations_ActiveByParent_Covering
-        // can serve these reads as index-only scans.
+        // Loads the full InstanceData history so that Instance.AddData can perform
+        // correct JSON merges against previous versions during execution.
+        // ChildCorrelations are still filtered to active-only.
         return (await base.WithDetailsAsync())
-            .Include(i => i.DataList.Where(d => d.IsLatest))
+            .Include(i => i.DataList)
             .Include(i => i.ChildCorrelations.Where(c => !c.IsCompleted));
     }
 
@@ -163,9 +190,8 @@ public sealed class EfCoreInstanceRepository(
     public async Task<Instance?> FindByIdentifierWithFullHistoryAsync(string identifier,
         CancellationToken cancellationToken = default)
     {
-        // Bypass WithDetailsAsync because its DataList include is filtered to
-        // IsLatest = true. GetInstanceHistoryAsync needs every InstanceData revision
-        // to enumerate the full transition history.
+        // Read-only query for history enumeration. Uses AsNoTracking since the caller
+        // only reads; WithDetailsAsync is not used here to keep the query detached.
         var dbSet = await GetDbSetAsync();
         var query = dbSet
             .Include(i => i.DataList)
@@ -237,34 +263,29 @@ public sealed class EfCoreInstanceRepository(
     {
         var context = await GetDbContextAsync();
 
-        // If full version → exact match (optimized query)
+        // If full version → exact match via compiled query (avoids expression tree re-compilation)
         if (InstanceDataVersionComparer.IsFullVersion(version))
         {
-            return await (from instance in context.Instances
-                          where instance.Status == InstanceStatus.Active
-                          join data in context.InstancesData on instance.Id equals data.InstanceId
-                          where instance.Key == key && data.Version == version
-                          select new InstanceAndDataModel
-                          {
-                              Instance = instance,
-                              InstanceData = data
-                          })
-                .AsNoTracking()
-                .AsSplitQuery()
-                .FirstOrDefaultAsync(cancellationToken);
+            await foreach (var item in FindActiveDataExactCompiledQuery(context, key, version))
+            {
+                return item;
+            }
+
+            return null;
         }
 
         // For artifact or partial version → load all matching versions and use smart matching
-        var candidates = await (from instance in context.Instances
-                                where instance.Status == InstanceStatus.Active && instance.Key == key
-                                join data in context.InstancesData on instance.Id equals data.InstanceId
-                                select new InstanceAndDataModel
-                                {
-                                    Instance = instance,
-                                    InstanceData = data
-                                })
+        var candidates = await context.Instances
+            .Where(i => i.Status == InstanceStatus.Active && i.Key == key)
+            .Join(context.InstancesData,
+                i => i.Id,
+                d => d.InstanceId,
+                (i, d) => new InstanceAndDataModel
+                {
+                    Instance = i,
+                    InstanceData = d
+                })
             .AsNoTracking()
-            .AsSplitQuery()
             .ToListAsync(cancellationToken);
 
         if (candidates.Count == 0)
@@ -285,16 +306,17 @@ public sealed class EfCoreInstanceRepository(
         CancellationToken cancellationToken = default)
     {
         var context = await GetDbContextAsync();
-        return await (from instance in context.Instances
-                      where instance.Status == InstanceStatus.Active && instance.Key == key
-                      join data in context.InstancesData on instance.Id equals data.InstanceId
-                      select new InstanceAndDataModel
-                      {
-                          Instance = instance,
-                          InstanceData = data
-                      })
+        return await context.Instances
+            .Where(i => i.Status == InstanceStatus.Active && i.Key == key)
+            .Join(context.InstancesData,
+                i => i.Id,
+                d => d.InstanceId,
+                (i, d) => new InstanceAndDataModel
+                {
+                    Instance = i,
+                    InstanceData = d
+                })
             .AsNoTracking()
-            .AsSplitQuery()
             .ToListAsync(cancellationToken);
     }
 
@@ -931,18 +953,17 @@ public sealed class EfCoreInstanceRepository(
     public async Task<List<InstanceAndDataModel>> GetActiveDataListAsync(CancellationToken cancellationToken = default)
     {
         var context = await GetDbContextAsync();
-
-        // Optimize query with proper indexing and reduced data transfer
-        return await (from instance in context.Instances
-                      where instance.Status == InstanceStatus.Active
-                      join data in context.InstancesData on instance.Id equals data.InstanceId
-                      select new InstanceAndDataModel
-                      {
-                          Instance = instance,
-                          InstanceData = data
-                      })
-            .AsNoTracking() // Don't track changes for read-only operations
-            .AsSplitQuery() // Use split queries for better performance with joins
+        return await context.Instances
+            .Where(i => i.Status == InstanceStatus.Active)
+            .Join(context.InstancesData,
+                i => i.Id,
+                d => d.InstanceId,
+                (i, d) => new InstanceAndDataModel
+                {
+                    Instance = i,
+                    InstanceData = d
+                })
+            .AsNoTracking()
             .ToListAsync(cancellationToken);
     }
 
@@ -950,18 +971,18 @@ public sealed class EfCoreInstanceRepository(
         int skip, int take, CancellationToken cancellationToken = default)
     {
         var context = await GetDbContextAsync();
-
-        return await (from instance in context.Instances
-                      where instance.Status == InstanceStatus.Active
-                      orderby instance.Id
-                      join data in context.InstancesData on instance.Id equals data.InstanceId
-                      select new InstanceAndDataModel
-                      {
-                          Instance = instance,
-                          InstanceData = data
-                      })
+        return await context.Instances
+            .Where(i => i.Status == InstanceStatus.Active)
+            .OrderBy(i => i.Id)
+            .Join(context.InstancesData,
+                i => i.Id,
+                d => d.InstanceId,
+                (i, d) => new InstanceAndDataModel
+                {
+                    Instance = i,
+                    InstanceData = d
+                })
             .AsNoTracking()
-            .AsSplitQuery()
             .Skip(skip)
             .Take(take)
             .ToListAsync(cancellationToken);
@@ -973,21 +994,22 @@ public sealed class EfCoreInstanceRepository(
         var context = await GetDbContextAsync();
 
         // Uses the LastTouchedAt STORED GENERATED column (COALESCE(ModifiedAt, CreatedAt)).
-        // The previous (instance.ModifiedAt ?? instance.CreatedAt) expression prevented the
-        // planner from using any index. Reading the shadow column via EF.Property keeps the
-        // query strongly typed while letting IX_Instances_Active_LastTouched_Id serve it.
-        return await (from instance in context.Instances
-                      where instance.Status == InstanceStatus.Active
-                            && EF.Property<DateTime>(instance, "LastTouchedAt") >= since
-                      orderby EF.Property<DateTime>(instance, "LastTouchedAt"), instance.Id
-                      join data in context.InstancesData on instance.Id equals data.InstanceId
-                      select new InstanceAndDataModel
-                      {
-                          Instance = instance,
-                          InstanceData = data
-                      })
+        // Reading the shadow column via EF.Property keeps the query strongly typed
+        // while letting IX_Instances_Active_LastTouched_Id serve it.
+        return await context.Instances
+            .Where(i => i.Status == InstanceStatus.Active
+                        && EF.Property<DateTime>(i, "LastTouchedAt") >= since)
+            .OrderBy(i => EF.Property<DateTime>(i, "LastTouchedAt"))
+            .ThenBy(i => i.Id)
+            .Join(context.InstancesData,
+                i => i.Id,
+                d => d.InstanceId,
+                (i, d) => new InstanceAndDataModel
+                {
+                    Instance = i,
+                    InstanceData = d
+                })
             .AsNoTracking()
-            .AsSplitQuery()
             .Skip(skip)
             .Take(take)
             .ToListAsync(cancellationToken);
@@ -997,24 +1019,22 @@ public sealed class EfCoreInstanceRepository(
     public async Task<bool> AnyActiveByKeyAsync(string key, Guid excludeInstanceId,
         CancellationToken cancellationToken = default)
     {
-        return await (await GetDbSetAsync())
-            .AsNoTracking()
-            .AnyAsync(
-                i => i.Key == key
-                     && i.Id != excludeInstanceId
-                     && i.Status == InstanceStatus.Active,
-                cancellationToken);
+        var context = await GetDbContextAsync();
+        return await AnyActiveByKeyCompiledQuery(context, key, excludeInstanceId);
     }
 
     /// <inheritdoc />
     public async Task<List<InstanceKeyModel>> GetActiveInstanceKeysAsync(CancellationToken cancellationToken = default)
     {
         var context = await GetDbContextAsync();
-        return await (from instance in context.Instances
-                      where instance.Status == InstanceStatus.Active
-                      join data in context.InstancesData on instance.Id equals data.InstanceId
-                      where data.IsLatest
-                      select new InstanceKeyModel(instance.Key!, data.Version))
+        return await context.Instances
+            .Where(i => i.Status == InstanceStatus.Active)
+            .Join(context.InstancesData,
+                i => i.Id,
+                d => d.InstanceId,
+                (i, d) => new { Instance = i, Data = d })
+            .Where(x => x.Data.IsLatest)
+            .Select(x => new InstanceKeyModel(x.Instance.Key!, x.Data.Version))
             .AsNoTracking()
             .ToListAsync(cancellationToken);
     }
