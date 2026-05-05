@@ -20,6 +20,7 @@ using BBT.Workflow.RepresentationEtag;
 using BBT.Workflow.Tasks.Coordinator;
 using BBT.Aether.MultiSchema;
 using BBT.Workflow.Definitions.Schemas;
+using Microsoft.Extensions.Options;
 
 namespace BBT.Workflow.Instances;
 
@@ -41,6 +42,7 @@ public sealed class InstanceQueryAppService(
     IRepresentationEtagService representationEtagService,
     ISchemaFieldFilterService schemaFieldFilterService,
     IPaginationLinkGenerator paginationLinkGenerator,
+    IOptions<InstanceFilteringOptions> instanceFilteringOptions,
     ILogger<InstanceQueryAppService> logger)
     : ApplicationService(serviceProvider), IInstanceQueryAppService
 {
@@ -115,8 +117,10 @@ public sealed class InstanceQueryAppService(
                     if (schemaResult.IsSuccess)
                         schemaContext = SchemaFilterMetadataResolver.Resolve(schemaResult.Value!.Schema);
                 }
- 
- 
+
+                if (!instanceFilteringOptions.Value.EnforceMasterSchemaFiltering)
+                    schemaContext = null;
+
                 // Parse filter parameter - check if it's in GraphQLFilterRequest format
                 string? groupBy = input.GroupBy;
                 string? aggregations = input.Aggregations;

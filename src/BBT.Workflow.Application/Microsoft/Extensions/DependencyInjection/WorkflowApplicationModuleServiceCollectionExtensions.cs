@@ -49,6 +49,8 @@ public static class WorkflowApplicationModuleServiceCollectionExtensions
     /// </summary>
     private static void AddApplicationServices(this IServiceCollection services)
     {
+           services.AddOptions<InstanceFilteringOptions>()
+            .BindConfiguration(InstanceFilteringOptions.SectionName);
         // Application Services
         services.AddScoped<IDefinitionAppService, DefinitionAppService>();
         services.AddScoped<IInstanceCommandAppService, InstanceCommandAppService>();

@@ -372,6 +372,7 @@ If no schema is bound (`schema: null`), all fields are filterable with current b
 | Scenario | Behavior |
 |---|---|
 | No schema defined on workflow | All fields filterable, all operators allowed, `gt`/`lt` numeric only (current behavior) |
+| Orchestration `Workflow:InstanceFiltering:EnforceMasterSchemaFiltering` = `false` | Even when a schema is bound to the workflow, filtering behaves as schema-less mode: all fields are treated as filterable, range comparisons use `::numeric`, and attribute `orderBy` does not enforce `x-sortable` (configured in Orchestration `appsettings`) |
 | Schema defined but field not in schema | Field is not filterable (`SchemaFilterValidationException`) |
 | Schema defined, field exists, `x-filterOperators` empty/missing | Field is not filterable |
 | Schema defined, field exists, operator not in list | Operator not allowed (`SchemaFilterValidationException`) |
@@ -385,8 +386,10 @@ InstanceQueryAppService
     |-- 2. componentCacheStore.GetSchemaAsync(workflow.Schema)
     |-- 3. SchemaFilterMetadataResolver.Resolve(schema.Schema) --> SchemaFilterContext
     |
-    |-- 4a. parsedRequest.SchemaContext = schemaContext  (GraphQLFilterRequest path)
-    |-- 4b. schemaContext parameter to repository         (string filter path)
+    |-- 4. if Workflow:InstanceFiltering:EnforceMasterSchemaFiltering is false -> schemaContext = null
+    |
+    |-- 5a. parsedRequest.SchemaContext = schemaContext  (GraphQLFilterRequest path)
+    |-- 5b. schemaContext parameter to repository         (string filter path)
     |
     v
 IInstanceRepository / EfCoreInstanceRepository
@@ -412,6 +415,7 @@ UnifiedFilterService --> GraphQLJsonFilterService
 | `Domain/ExceptionHandling/SchemaFilterValidationException.cs` | Validation error exception |
 | `Domain/WorkflowErrorCodes.cs` | `SchemaFilterValidation = "Validation:900010"` |
 | `Application/Instances/InstanceQueryAppService.cs` | Schema loading and context creation |
+| `Application/Instances/InstanceFilteringOptions.cs` | `Workflow:InstanceFiltering:EnforceMasterSchemaFiltering` (Orchestration configuration) |
 | `Infrastructure/Instances/EfCoreInstanceRepository.cs` | Schema context threading to SQL pipeline |
 
 ## Performance
