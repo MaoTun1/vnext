@@ -1,5 +1,6 @@
 using System.Data;
 using System.Text;
+using BBT.Workflow.Definitions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using NpgsqlTypes;
@@ -107,13 +108,19 @@ public static class GraphQLAggregationService
         var parameters = new List<NpgsqlParameter>();
         var parameterIndex = 0;
 
-        var (selectClause, groupByClause) = BuildGroupBySelectClause(
+        var (selectClause, groupByClause, needsInstanceJoin) = BuildGroupBySelectClause(
             groupByFields, groupBy.Aggregations ?? new AggregationRequest { Count = true }, jsonColumnName);
 
         var (jsonWhereClause, instanceWhereClause) = GraphQLJsonFilterService.BuildSeparatedWhereClausesForSql(
             filterNode, jsonColumnName, parameters, ref parameterIndex, schemaContext: schemaContext);
 
-        var sql = BuildAggregationSql(selectClause, jsonWhereClause, instanceWhereClause, groupByClause, schema);
+        var sql = BuildAggregationSql(
+            selectClause,
+            jsonWhereClause,
+            instanceWhereClause,
+            groupByClause,
+            schema,
+            forceInstanceJoin: needsInstanceJoin);
 
         using var connection = dbContext.Database.GetDbConnection();
         if (connection.State != ConnectionState.Open)
@@ -212,19 +219,32 @@ public static class GraphQLAggregationService
         return (string.Join(", ", selectParts), null);
     }
 
-    private static (string selectClause, string groupByClause) BuildGroupBySelectClause(
+    internal static (string selectClause, string groupByClause, bool needsInstanceJoin) BuildGroupBySelectClause(
         List<string> groupByFields,
         AggregationRequest aggregations,
         string jsonColumnName)
     {
         var selectParts = new List<string>();
         var groupByParts = new List<string>();
+        var needsInstanceJoin = false;
 
         // Add group by fields to select
         foreach (var field in groupByFields)
         {
-            var alias = SanitizeAlias(field);
-            var accessor = BuildJsonTextAccessor(field, jsonColumnName);
+            var trimmed = field.Trim();
+            var alias = SanitizeAlias(trimmed);
+            string accessor;
+            if (InstanceFieldDiscriminator.IsInstanceColumn(trimmed))
+            {
+                var columnName = InstanceFieldDiscriminator.GetInstanceColumnName(trimmed);
+                accessor = $"s.\"{columnName}\"";
+                needsInstanceJoin = true;
+            }
+            else
+            {
+                accessor = BuildJsonTextAccessor(trimmed, jsonColumnName);
+            }
+
             selectParts.Add($"{accessor} AS \"{alias}\"");
             groupByParts.Add(accessor);
         }
@@ -271,21 +291,26 @@ public static class GraphQLAggregationService
             selectParts.Add($"MAX({accessor}) AS max_result");
         }
 
-        return (string.Join(", ", selectParts), string.Join(", ", groupByParts));
+        return (string.Join(", ", selectParts), string.Join(", ", groupByParts), needsInstanceJoin);
     }
 
+    /// <summary>
+    /// Builds aggregation/groupBy SQL against <c>InstancesData</c> (alias <c>d</c> when joined) and optional <c>Instances</c> join (<c>s</c>).
+    /// </summary>
+    /// <param name="forceInstanceJoin">When true, always joins <c>Instances</c> as <c>s</c> (required when grouping or selecting instance columns).</param>
     internal static string BuildAggregationSql(
         string selectClause,
         string jsonWhereClause,
         string? instanceWhereClause,
         string? groupByClause,
-        string schema)
+        string schema,
+        bool forceInstanceJoin = false)
     {
         var sb = new StringBuilder();
 
         sb.AppendLine($@"SELECT {selectClause}");
 
-        var hasInstanceJoin = !string.IsNullOrEmpty(instanceWhereClause);
+        var hasInstanceJoin = forceInstanceJoin || !string.IsNullOrEmpty(instanceWhereClause);
         if (hasInstanceJoin)
         {
             sb.AppendLine($@"FROM ""{schema}"".""InstancesData"" d");
