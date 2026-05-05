@@ -19,7 +19,6 @@ Workflow'un master schema'sinda her property icin asagidaki extension'lar taniml
 1. `x-filterOperators` mevcut ve dolu ise alan filtrelenebilir. Bos veya yok ise alan filtrelenemez
 2. `x-sortable: true` ise alan siralanabilir. Tanimli degilse siralanabilir degil
 3. Filtrelenemez bir alan sorgulandiginda veya izin verilmeyen bir operator kullanildiginda `SchemaFilterValidationException` firlatilir
-4. JSON dizisi alanlarinda kullanilan GraphQL-only `includes` operatoru icin, ilgili alanin `x-filterOperators` listesinde `includes` tanimli olmalidir (diger operatorler gibi). Yuk boyutu ve ic ice derinlik `InputValidator` limitleriyle sinirlidir
 
 ### Tip-Operator Iliskisi
 
@@ -29,7 +28,6 @@ Workflow'un master schema'sinda her property icin asagidaki extension'lar taniml
 | `string` + gt/lt/gte/lte/between | tarih karsilastirma | `accessor::timestamptz {op} @param` |
 | `string` + eq/contains/startsWith/endsWith | metin karsilastirma | `accessor ILIKE @param` |
 | `boolean` | eq, neq | equality |
-| `array` (instance verisinde JSON dizi) | `includes` | `Data @> @param`; yaprak yolda tek elemanli dizi + kismi nesne deseni |
 
 ## Ornek Schema
 
@@ -73,10 +71,6 @@ Workflow'un master schema'sinda her property icin asagidaki extension'lar taniml
     "isActive": {
       "type": "boolean",
       "x-filterOperators": ["eq", "neq"]
-    },
-    "members": {
-      "type": "array",
-      "x-filterOperators": ["includes"]
     }
   }
 }
@@ -90,7 +84,6 @@ Bu schema'ya gore:
 - `amount` -- numeric karsilastirma desteklenir
 - `customerName` -- metin aramasi desteklenir, range operatorleri (`gt`, `lt`) **izin verilmez**
 - `isActive` -- sadece esitlik kontrolu, range veya metin aramalari **izin verilmez**
-- `members` -- bu yolda yalnizca `includes` operatoru (dizi icerir mi) izinlidir
 
 ## Operator Isimlendirmesi
 
@@ -111,9 +104,6 @@ Schema'daki operator isimleri ile filter API'sindeki operator isimleri arasinda 
 | `in` | `in` | Listede var |
 | `nin` | `nin` | Listede yok |
 | `isNull` | `isnull` | Null kontrolu |
-| `includes` | `includes` | Dizi icerir mi (yalniz GraphQL): yol altindaki dizide en az bir eleman, verilen kismi JSON nesnesini icerir (`jsonb @>`) |
-
-`includes` icin ornek istek JSON'u [Instance filtering](./instance-filtering.md) dosyasinda (Array containment basligi).
 
 ## Ornek Filtre Sorgulari
 
