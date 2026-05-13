@@ -27,18 +27,49 @@ jobs:
         uses: actions/checkout@v4
 
       #####################################################
-      ## .NET DEPENDENCY GENERATION
+      ## .NET SETUP
       #####################################################
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0"
 
-      - name: Restore dependencies (create lock file)
-        run: dotnet restore vnext.sln --use-lock-file
+      #####################################################
+      ## DETECT SOLUTION (FIX MSB1011)
+      #####################################################
+      - name: Detect solution file
+        id: detect
+        run: |
+          SLN=$(find . -name "*.sln" | head -n 1)
+          echo "sln=$SLN" >> $GITHUB_OUTPUT
 
-      - name: Build solution
-        run: dotnet build --no-restore --configuration Release
+          if [ -n "$SLN" ]; then
+            echo "Found solution: $SLN"
+          else
+            echo "No solution file found"
+          fi
+
+      #####################################################
+      ## RESTORE
+      #####################################################
+      - name: Restore dependencies
+        run: |
+          if [ -n "${{ steps.detect.outputs.sln }}" ]; then
+            dotnet restore "${{ steps.detect.outputs.sln }}" --use-lock-file
+          else
+            find . -name "*.csproj" -exec dotnet restore {} \;
+          fi
+
+      #####################################################
+      ## BUILD
+      #####################################################
+      - name: Build project
+        run: |
+          if [ -n "${{ steps.detect.outputs.sln }}" ]; then
+            dotnet build "${{ steps.detect.outputs.sln }}" --configuration Release --no-restore
+          else
+            find . -name "*.csproj" -exec dotnet build {} --configuration Release \;
+          fi
 
       #####################################################
       ## CACHE (NuGet)
@@ -59,7 +90,7 @@ jobs:
         run: semgrep --config auto --json --output semgrep.json || true
 
       #####################################################
-      ## TRIVY (C# + config + secrets)
+      ## TRIVY (FULL SCAN)
       #####################################################
       - name: Run Trivy Scan
         uses: aquasecurity/trivy-action@v0.36.0
@@ -71,7 +102,7 @@ jobs:
           output: trivy-report.txt
 
       #####################################################
-      ## TRUFFLEHOG (FIXED)
+      ## TRUFFLEHOG
       #####################################################
       - name: Run TruffleHog
         uses: trufflesecurity/trufflehog@main
@@ -80,7 +111,7 @@ jobs:
           extra_args: --only-verified --json
 
       #####################################################
-      ## REPORT
+      ## REPORT GENERATION
       #####################################################
       - name: Generate Report
         run: |
@@ -104,12 +135,12 @@ jobs:
           fi
 
       #####################################################
-      ## PAGES (FIXED - NO INVALID MAPPING)
+      ## PAGES DEPLOY (FIXED)
       #####################################################
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload Pages Artifact
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: .
@@ -120,7 +151,7 @@ jobs:
       #####################################################
       ## ARTIFACT
       #####################################################
-      - name: Upload Report Artifact
+      - name: Upload report artifact
         uses: actions/upload-artifact@v4
         with:
           name: security-report
@@ -132,8 +163,8 @@ jobs:
       - name: GitHub Summary
         run: |
           echo "### 🔐 Security Scan Completed" >> $GITHUB_STEP_SUMMARY
-          echo "- 📄 Report artifact generated" >> $GITHUB_STEP_SUMMARY
-          echo "- 🌐 GitHub Pages deployed" >> $GITHUB_STEP_SUMMARY
+          echo "- 📄 Report generated" >> $GITHUB_STEP_SUMMARY
+          echo "- 🌐 Pages deployed" >> $GITHUB_STEP_SUMMARY
 
       #####################################################
       ## PR COMMENT
@@ -146,4 +177,4 @@ jobs:
           message: |
             ✅ Security scan completed
             📄 Report available in artifacts
-            🌐 Pages deployed successfully
+            🌐 GitHub Pages deployed
