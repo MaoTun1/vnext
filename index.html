@@ -1,0 +1,154 @@
+<h1 id="security-scan-report">🔐 Security Scan Report</h1>
+<h2 id="semgrep-findings">🧠 Semgrep Findings</h2>
+<pre><code>                    
+                    
+┌──────────────────┐
+│ 19 Code Findings │
+└──────────────────┘
+                                                  
+    .github/workflows/build-and-publish-images.yml
+   ❯❯❱ yaml.github-actions.security.run-shell-injection.run-shell-injection
+          ❰❰ Blocking ❱❱
+          Using variable interpolation `${{...}}` with `github` context data in a `run:` step could allow an  
+          attacker to inject their own code into the runner. This would allow them to steal secrets and code. 
+          `github` context data can have arbitrary user input and should be treated as untrusted. Instead, use
+          an intermediate environment variable with `env:` to store the data and use the environment variable 
+          in the `run:` script. Be sure to use double-quotes the environment variable, like this: &quot;$ENVVAR&quot;.  
+          Details: https://sg.run/pkzk                                                                        
+                                                                                                              
+           82┆ run: |
+           83┆   BRANCH_NAME=&quot;${{ github.ref_name }}&quot;
+           84┆   IS_PRERELEASE=&quot;false&quot;
+           85┆
+           86┆   if [[ &quot;${{ github.event_name }}&quot; == &quot;workflow_dispatch&quot; &amp;&amp; -n &quot;$INPUT_PRERELEASE_TYPE&quot; &amp;&amp;
+               &quot;$INPUT_PRERELEASE_TYPE&quot; != &quot;none&quot; ]]; then                                                
+           87┆     echo &quot;Prerelease workflow_dispatch detected (type=$INPUT_PRERELEASE_TYPE)&quot;
+           88┆
+           89┆     if [ -z &quot;$INPUT_VERSION&quot; ]; then
+           90┆       echo &quot;Error: &#39;version&#39; input is required when prerelease_type is not &#39;none&#39;&quot;
+           91┆       exit 1
+             [hid 62 additional lines, adjust with --max-lines-per-finding] 
+          156┆ run: |
+          157┆   VERSION=&quot;${{ steps.version.outputs.version }}&quot;
+          158┆
+          159┆   # Pull latest remote state to avoid non-fast-forward on re-runs
+          160┆   git pull --rebase origin ${{ github.ref_name }}
+          161┆
+          162┆   sed -i &quot;s|&lt;Version&gt;.*&lt;/Version&gt;|&lt;Version&gt;$VERSION&lt;/Version&gt;|g&quot; ./common.props
+          163┆   echo &quot;Updated common.props with version $VERSION&quot;
+          164┆
+          165┆   git config user.name &quot;github-actions[bot]&quot;
+             [hid 11 additional lines, adjust with --max-lines-per-finding] 
+          437┆ run: |
+          438┆   VERSION=&quot;${{ needs.prepare.outputs.version }}&quot;
+          439┆   REGISTRY=&quot;${{ env.REGISTRY }}&quot;
+          440┆   REPO=&quot;${{ github.repository }}&quot;
+          441┆   WORKFLOW_REF=&quot;https://github.com/${REPO}/.github/workflows/build-and-publish-
+               images.yml@.*&quot;                                                                 
+          442┆
+          443┆   EXEC_DIGEST=&quot;${{ steps.digests.outputs.exec_digest }}&quot;
+          444┆   ORCH_DIGEST=&quot;${{ steps.digests.outputs.orch_digest }}&quot;
+          445┆   INIT_DIGEST=&quot;${{ steps.digests.outputs.init_digest }}&quot;
+          446┆   INBOX_DIGEST=&quot;${{ steps.digests.outputs.inbox_digest }}&quot;
+             [hid 144 additional lines, adjust with --max-lines-per-finding] 
+          640┆ run: |
+          641┆   VERSION=&quot;${{ needs.prepare.outputs.version }}&quot;
+          642┆   REGISTRY=&quot;${{ env.REGISTRY }}&quot;
+          643┆   REPO=&quot;${{ github.repository }}&quot;
+          644┆
+          645┆   EXEC_DIGEST=$(cat digests/execution.digest 2&gt;/dev/null || echo &quot;n/a&quot;)
+          646┆   ORCH_DIGEST=$(cat digests/orchestrator.digest 2&gt;/dev/null || echo &quot;n/a&quot;)
+          647┆   INIT_DIGEST=$(cat digests/init.digest 2&gt;/dev/null || echo &quot;n/a&quot;)
+          648┆   INBOX_DIGEST=$(cat digests/inbox.digest 2&gt;/dev/null || echo &quot;n/a&quot;)
+          649┆   OUTBOX_DIGEST=$(cat digests/outbox.digest 2&gt;/dev/null || echo &quot;n/a&quot;)
+             [hid 40 additional lines, adjust with --max-lines-per-finding] 
+                                              
+    init/VNext.Init.Host/package-api-server.js
+    ❯❱ javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+          ❰❰ Blocking ❱❱
+          Detected possible user input going into a `path.join` or `path.resolve` function. This could   
+          possibly lead to a path traversal vulnerability,  where the attacker can access arbitrary files
+          stored in the file system. Instead, be sure to sanitize or validate user input first.          
+          Details: https://sg.run/OPqk                                                                   
+                                                                                                         
+          185┆ const fullPath = path.join(dirPath, entry.name);
+            ⋮┆----------------------------------------
+          185┆ const fullPath = path.join(dirPath, entry.name);
+            ⋮┆----------------------------------------
+          229┆ const fullPath = path.join(packagePath, componentsRoot, relativePath);
+            ⋮┆----------------------------------------
+          229┆ const fullPath = path.join(packagePath, componentsRoot, relativePath);
+            ⋮┆----------------------------------------
+          229┆ const fullPath = path.join(packagePath, componentsRoot, relativePath);
+            ⋮┆----------------------------------------
+          233┆ relativePath: path.join(componentsRoot, relativePath)
+            ⋮┆----------------------------------------
+          233┆ relativePath: path.join(componentsRoot, relativePath)
+            ⋮┆----------------------------------------
+          247┆ const configPath = path.join(packagePath, &#39;vnext.config.json&#39;);
+   
+   ❯❯❱ javascript.lang.security.detect-child-process.detect-child-process
+          ❰❰ Blocking ❱❱
+          Detected calls to child_process from a function argument `packageName`. This could lead to a command
+          injection if the input is user controllable. Try to avoid calls to child_process, and if it is      
+          needed ensure user input is correctly sanitized or sandboxed.                                       
+          Details: https://sg.run/l2lo                                                                        
+                                                                                                              
+          520┆ execSync(installCmd, { cwd: &#39;/app&#39;, stdio: &#39;inherit&#39; });
+            ⋮┆----------------------------------------
+   ❯❯❱ javascript.lang.security.detect-child-process.detect-child-process
+          ❰❰ Blocking ❱❱
+          Detected calls to child_process from a function argument `version`. This could lead to a command
+          injection if the input is user controllable. Try to avoid calls to child_process, and if it is  
+          needed ensure user input is correctly sanitized or sandboxed.                                   
+          Details: https://sg.run/l2lo                                                                    
+                                                                                                          
+          520┆ execSync(installCmd, { cwd: &#39;/app&#39;, stdio: &#39;inherit&#39; });
+   
+    ❯❱ javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+          ❰❰ Blocking ❱❱
+          Detected possible user input going into a `path.join` or `path.resolve` function. This could   
+          possibly lead to a path traversal vulnerability,  where the attacker can access arbitrary files
+          stored in the file system. Instead, be sure to sanitize or validate user input first.          
+          Details: https://sg.run/OPqk                                                                   
+                                                                                                         
+          1252┆ const vnextConfigPath = path.join(packagePath, &#39;vnext.config.json&#39;);
+            ⋮┆----------------------------------------
+          1253┆ const corePath = path.join(packagePath, &#39;core&#39;);
+   
+    ❯❱ problem-based-packs.insecure-transport.js-node.using-http-server.using-http-server
+          ❰❰ Blocking ❱❱
+          Checks for any usage of http servers instead of https servers. Encourages the usage of https       
+          protocol instead of http, which does not have TLS and is therefore unencrypted. Using http can lead
+          to man-in-the-middle attacks in which the attacker is able to read sensitive information.          
+          Details: https://sg.run/x1zL                                                                       
+                                                                                                             
+          1458┆ const server = http.createServer(handleRequest);
+                                                                                
+    src/BBT.Workflow.Domain/QueryExtensions/GraphQL/GraphQLAggregationService.cs
+   ❯❯❱ csharp.lang.security.sqli.csharp-sqli.csharp-sqli
+          ❰❰ Blocking ❱❱
+          Detected a formatted string in a SQL statement. This could lead to SQL injection if variables in the
+          SQL statement are not properly sanitized. Use a prepared statements instead. You can obtain a       
+          PreparedStatement using &#39;SqlCommand&#39; and &#39;SqlParameter&#39;.                                            
+          Details: https://sg.run/d2Xd                                                                        
+                                                                                                              
+           56┆ command.CommandText = ReplacePlaceholders(sql, parameters.Count);
+            ⋮┆----------------------------------------
+          130┆ command.CommandText = ReplacePlaceholders(sql, parameters.Count);
+</code></pre>
+<h2 id="gitleaks-secrets">🕵️‍♂️ Gitleaks Secrets</h2>
+<h2 id="trufflehog-history">🔍 TruffleHog History</h2>
+<p>No history secrets found ✅ ## 📦 Trivy Dependency Scan</p>
+<pre><code>
+Report Summary
+
+┌────────┬──────┬─────────────────┬─────────┐
+│ Target │ Type │ Vulnerabilities │ Secrets │
+├────────┼──────┼─────────────────┼─────────┤
+│   -    │  -   │        -        │    -    │
+└────────┴──────┴─────────────────┴─────────┘
+Legend:
+- &#39;-&#39;: Not scanned
+- &#39;0&#39;: Clean (no security findings detected)
+</code></pre>
