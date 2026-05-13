@@ -107,51 +107,51 @@ jobs:
           output: trivy-report.txt
 
       #####################################################
-      ## REPORT GENERATION
+      ## REPORT GENERATION (FIXED - NO YAML BREAK)
       #####################################################
       - name: Generate Markdown Report
         run: |
-          cat << 'EOF' > report.md
-# 🔐 Security Scan Report
+          {
+            echo "# 🔐 Security Scan Report"
+            echo ""
+            echo "Generated: $(date)"
+            echo ""
+            echo "---"
+            echo ""
+            echo "## 🧠 Semgrep Findings"
 
-Generated: $(date)
+            if [ -s semgrep-report.txt ]; then
+              echo "\`\`\`"
+              cat semgrep-report.txt
+              echo "\`\`\`"
+            else
+              echo "✅ No issues found"
+            fi
 
----
+            echo ""
+            echo "## 🕵️ Gitleaks"
 
-## 🧠 Semgrep Findings
-EOF
+            if [ -s gitleaks-report.json ]; then
+              jq -r '.[] | "- " + .RuleID + " in `" + .File + "`"' gitleaks-report.json
+            else
+              echo "✅ No secrets found"
+            fi
 
-          if [ -s semgrep-report.txt ]; then
-            echo "\`\`\`" >> report.md
-            cat semgrep-report.txt >> report.md
-            echo "\`\`\`" >> report.md
-          else
-            echo "✅ No issues found" >> report.md
-          fi
+            echo ""
+            echo "## 🐷 TruffleHog"
+            echo "Scan completed (see JSON output)"
 
-          echo "" >> report.md
-          echo "## 🕵️ Gitleaks" >> report.md
+            echo ""
+            echo "## 📦 Trivy Results"
 
-          if [ -s gitleaks-report.json ]; then
-            jq -r '.[] | "- " + .RuleID + " in `" + .File + "`"' gitleaks-report.json >> report.md
-          else
-            echo "✅ No secrets found" >> report.md
-          fi
-
-          echo "" >> report.md
-          echo "## 🐷 TruffleHog" >> report.md
-
-          if [ -s trufflehog-report.json ]; then
-            echo "- Secrets scan completed (check raw JSON)" >> report.md
-          else
-            echo "✅ No secrets found" >> report.md
-          fi
-
-          echo "" >> report.md
-          echo "## 📦 Trivy Results" >> report.md
-          echo "\`\`\`" >> report.md
-          cat trivy-report.txt >> report.md
-          echo "\`\`\`" >> report.md
+            if [ -s trivy-report.txt ]; then
+              echo "\`\`\`"
+              cat trivy-report.txt
+              echo "\`\`\`"
+            else
+              echo "✅ No vulnerabilities found"
+            fi
+          } > report.md
 
       #####################################################
       ## HTML EXPORT
@@ -174,7 +174,7 @@ EOF
           head -20 public/index.html
 
       #####################################################
-      ## GITHUB PAGES (FIXED OFFICIAL WAY)
+      ## PAGES SETUP
       #####################################################
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -217,7 +217,7 @@ EOF
           message: |
             ✅ Security scan completed
 
-            📄 Artifacts:
+            📄 Report:
             https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
             🌐 Pages:
