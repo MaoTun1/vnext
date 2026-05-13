@@ -1803,4 +1803,20 @@ public static partial class WorkflowLogs
         string errorCode);
 
     #endregion
+
+    #region Server Configuration
+
+    /// <summary>
+    /// Logs the configured Kestrel request header limits at startup.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 60001,
+        Level = LogLevel.Information,
+        Message = "Kestrel limits configured: MaxRequestHeadersTotalSize={MaxRequestHeadersTotalSize}, MaxRequestHeaderCount={MaxRequestHeaderCount}")]
+    public static partial void KestrelLimitsConfigured(
+        this ILogger logger,
+        int maxRequestHeadersTotalSize,
+        int maxRequestHeaderCount);
+
+    #endregion
 }
