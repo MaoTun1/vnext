@@ -35,7 +35,7 @@ jobs:
           dotnet-version: "8.0"
 
       - name: Restore dependencies (create lock file)
-        run: dotnet restore --use-lock-file
+        run: dotnet restore vnex.sln --use-lock-file
 
       - name: Build solution
         run: dotnet build --no-restore --configuration Release
