@@ -16,6 +16,9 @@ jobs:
   security-scan:
     runs-on: ubuntu-latest
 
+    environment:
+      name: github-pages
+
     steps:
       #####################################################
       ## CHECKOUT
@@ -24,21 +27,21 @@ jobs:
         uses: actions/checkout@v4
 
       #####################################################
-      ## .NET SETUP + DEPENDENCY GENERATION
+      ## .NET DEPENDENCY GENERATION
       #####################################################
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0"
 
-      - name: Restore dependencies (generate dependency graph)
+      - name: Restore dependencies (create lock file)
         run: dotnet restore --use-lock-file
 
       - name: Build solution
         run: dotnet build --no-restore --configuration Release
 
       #####################################################
-      ## CACHE (optional but recommended)
+      ## CACHE (NuGet)
       #####################################################
       - name: Cache NuGet
         uses: actions/cache@v4
@@ -56,10 +59,10 @@ jobs:
         run: semgrep --config auto --json --output semgrep.json || true
 
       #####################################################
-      ## TRIVY (NOW USES DOTNET LOCK FILES)
+      ## TRIVY (C# + config + secrets)
       #####################################################
-      - name: Run Trivy Security Scan
-        uses: aquasecurity/trivy-action@0.36.0
+      - name: Run Trivy Scan
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -68,7 +71,7 @@ jobs:
           output: trivy-report.txt
 
       #####################################################
-      ## TRUFFLEHOG (FIXED USAGE)
+      ## TRUFFLEHOG (FIXED)
       #####################################################
       - name: Run TruffleHog
         uses: trufflesecurity/trufflehog@main
@@ -77,24 +80,21 @@ jobs:
           extra_args: --only-verified --json
 
       #####################################################
-      ## REPORT GENERATION
+      ## REPORT
       #####################################################
-      - name: Generate Markdown Report
+      - name: Generate Report
         run: |
           echo "# 🔐 Security Scan Report" > report.md
           echo "Generated: $(date -u)" >> report.md
 
-          echo "## 🧠 Semgrep Findings" >> report.md
+          echo "## 🧠 Semgrep" >> report.md
           if [ -s semgrep.json ]; then
             cat semgrep.json >> report.md
           else
             echo "No issues found ✅" >> report.md
           fi
 
-          echo "## 🐷 TruffleHog Secrets" >> report.md
-          echo "See workflow logs for details (JSON output enabled)" >> report.md
-
-          echo "## 📦 Trivy Results" >> report.md
+          echo "## 📦 Trivy" >> report.md
           if [ -s trivy-report.txt ]; then
             echo '```' >> report.md
             cat trivy-report.txt >> report.md
@@ -104,40 +104,36 @@ jobs:
           fi
 
       #####################################################
-      ## PAGES BUILD
+      ## PAGES (FIXED - NO INVALID MAPPING)
       #####################################################
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload Pages artifact
+      - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: .
 
       - name: Deploy to GitHub Pages
-        id: deployment
         uses: actions/deploy-pages@v4
-        with:
-          environment:
-            name: github-pages
 
       #####################################################
       ## ARTIFACT
       #####################################################
-      - name: Upload report artifact
+      - name: Upload Report Artifact
         uses: actions/upload-artifact@v4
         with:
           name: security-report
           path: report.md
 
       #####################################################
-      ## SUMMARY UI
+      ## SUMMARY
       #####################################################
       - name: GitHub Summary
         run: |
           echo "### 🔐 Security Scan Completed" >> $GITHUB_STEP_SUMMARY
-          echo "- 📄 Artifact available in Actions run" >> $GITHUB_STEP_SUMMARY
-          echo "- 🌐 GitHub Pages report deployed" >> $GITHUB_STEP_SUMMARY
+          echo "- 📄 Report artifact generated" >> $GITHUB_STEP_SUMMARY
+          echo "- 🌐 GitHub Pages deployed" >> $GITHUB_STEP_SUMMARY
 
       #####################################################
       ## PR COMMENT
@@ -149,5 +145,5 @@ jobs:
           header: security-scan
           message: |
             ✅ Security scan completed
-            📄 Report available in Actions artifacts
-            🌐 Pages report deployed
+            📄 Report available in artifacts
+            🌐 Pages deployed successfully
