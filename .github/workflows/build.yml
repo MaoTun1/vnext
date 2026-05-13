@@ -7,7 +7,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
   pull-requests: write
   security-events: write
 
@@ -29,10 +31,9 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-          
 
       #####################################################
-      ## SYSTEM DEPS
+      ## SYSTEM DEPENDENCIES
       #####################################################
       - name: Install system dependencies
         run: |
@@ -100,62 +101,201 @@ jobs:
           output: trivy-report.txt
 
       #####################################################
-      ## MARKDOWN REPORT
+      ## GENERATE BEAUTIFUL REPORT
       #####################################################
       - name: Generate Markdown Report
         run: |
-          echo "# 🔐 Security Scan Report" > report.md
+          cat << 'EOF' > report.md
+          <style>
+          body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #0f172a;
+            color: #e2e8f0;
+          }
 
+          h1,h2,h3 {
+            color: #38bdf8;
+          }
+
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            background: #1e293b;
+          }
+
+          th, td {
+            border: 1px solid #334155;
+            padding: 10px;
+            text-align: left;
+          }
+
+          th {
+            background: #0ea5e9;
+            color: white;
+          }
+
+          tr:nth-child(even) {
+            background: #172033;
+          }
+
+          code {
+            background: #1e293b;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #facc15;
+          }
+
+          .critical { color: #ef4444; font-weight: bold; }
+          .high { color: #f97316; font-weight: bold; }
+          .medium { color: #eab308; font-weight: bold; }
+          .low { color: #22c55e; font-weight: bold; }
+
+          details {
+            margin-bottom: 15px;
+            background: #1e293b;
+            padding: 10px;
+            border-radius: 8px;
+          }
+
+          summary {
+            cursor: pointer;
+            font-weight: bold;
+            color: #38bdf8;
+          }
+          </style>
+
+          # 🔐 Security Scan Report
+
+          Generated on: $(date)
+
+          ---
+
+          ## 📊 Scan Summary
+
+          EOF
+
+          #####################################################
+          ## TRIVY SUMMARY
+          #####################################################
+
+          echo "| Scanner | Critical | High | Medium | Low |" >> report.md
+          echo "|---|---|---|---|---|" >> report.md
+
+          CRITICAL=$(grep -o "CRITICAL: [0-9]*" trivy-report.txt | awk '{sum+=$2} END {print sum+0}')
+          HIGH=$(grep -o "HIGH: [0-9]*" trivy-report.txt | awk '{sum+=$2} END {print sum+0}')
+          MEDIUM=$(grep -o "MEDIUM: [0-9]*" trivy-report.txt | awk '{sum+=$2} END {print sum+0}')
+          LOW=$(grep -o "LOW: [0-9]*" trivy-report.txt | awk '{sum+=$2} END {print sum+0}')
+
+          echo "| Scanner | Critical | High | Medium | Low |" >> report.md
+          echo "|---|---|---|---|---|" >> report.md
+          echo "| Trivy | <span class='critical'>$CRITICAL</span> | <span class='high'>$HIGH</span> | <span class='medium'>$MEDIUM</span> | <span class='low'>$LOW</span> |" >> report.md
+
+          #####################################################
+          ## SEMGREP
+          #####################################################
+
+          echo "" >> report.md
           echo "## 🧠 Semgrep Findings" >> report.md
+
           if [ -s semgrep-report.txt ]; then
+            echo "<details><summary>View Semgrep Results</summary>" >> report.md
+            echo "" >> report.md
             echo '```' >> report.md
             cat semgrep-report.txt >> report.md
             echo '```' >> report.md
+            echo "</details>" >> report.md
           else
-            echo "No issues found ✅" >> report.md
+            echo "✅ No Semgrep issues found" >> report.md
           fi
 
-          echo "## 🕵️‍♂️ Gitleaks Secrets" >> report.md
+          #####################################################
+          ## GITLEAKS
+          #####################################################
+
+          echo "" >> report.md
+          echo "## 🕵️ Gitleaks Secrets" >> report.md
+
           if [ -s gitleaks-report.json ]; then
-            jq -r '.[] | "* " + .RuleID + " in `" + .File + "` at line " + (.StartLine | tostring)' \
+            echo "| Rule | File | Line |" >> report.md
+            echo "|---|---|---|" >> report.md
+
+            jq -r '.[] | "| " + .RuleID + " | `" + .File + "` | " + (.StartLine|tostring) + " |"' \
             gitleaks-report.json >> report.md
           else
-            echo "No secrets found ✅" >> report.md
+            echo "✅ No secrets found" >> report.md
           fi
 
-          echo "## 🔍 TruffleHog History" >> report.md
+          #####################################################
+          ## TRUFFLEHOG
+          #####################################################
+
+          echo "" >> report.md
+          echo "## 🔍 TruffleHog" >> report.md
+
           if [ -s trufflehog-report.json ]; then
-            jq -r '.results[]?.StringsFound[]? | "* Secret in `" + .SourceMetadata.Data + "`"' \
+            echo "<details><summary>View TruffleHog Results</summary>" >> report.md
+            echo "" >> report.md
+
+            jq -r '.results[]?.StringsFound[]? | "- Secret found in `" + .SourceMetadata.Data + "`"' \
             trufflehog-report.json >> report.md
+
+            echo "</details>" >> report.md
           else
-            echo "No history secrets found ✅" >> report.md
+            echo "✅ No historical secrets found" >> report.md
           fi
 
-          echo "## 📦 Trivy Dependency Scan" >> report.md
-          if [ -s trivy-report.txt ]; then
-            echo '```' >> report.md
-            cat trivy-report.txt >> report.md
-            echo '```' >> report.md
-          else
-            echo "No vulnerabilities found ✅" >> report.md
-          fi
+          #####################################################
+          ## TRIVY DETAILS
+          #####################################################
+
+          echo "" >> report.md
+          echo "## 📦 Trivy Vulnerabilities" >> report.md
+
+          echo "<details><summary>View Full Trivy Report</summary>" >> report.md
+          echo "" >> report.md
+          echo '```' >> report.md
+          cat trivy-report.txt >> report.md
+          echo '```' >> report.md
+          echo "</details>" >> report.md
 
       #####################################################
-      ## HTML REPORT
+      ## CONVERT TO HTML
       #####################################################
       - name: Convert Markdown to HTML
         run: |
           mkdir -p public
-          pandoc report.md -o public/index.html
+
+          pandoc report.md \
+            -f markdown \
+            -t html5 \
+            --standalone \
+            --metadata title="Security Scan Report" \
+            -o public/index.html
+
+      #####################################################
+      ## DEBUG OUTPUT
+      #####################################################
+      - name: Debug public folder
+        run: |
+          ls -la public
+          head -20 public/index.html
 
       #####################################################
       ## GITHUB PAGES
       #####################################################
-      - name: Upload HTML to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./public
+          path: ./public
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 
       #####################################################
       ## ARTIFACT
@@ -164,7 +304,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: security-scan-report
-          path: report.md
+          path: |
+            report.md
+            public/index.html
 
       #####################################################
       ## STEP SUMMARY
@@ -172,8 +314,9 @@ jobs:
       - name: GitHub Summary UI
         run: |
           echo "### 🔐 Security Scan Completed" >> $GITHUB_STEP_SUMMARY
-          echo "- 📄 [Download report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
-          echo "- 🌐 [View full HTML report](https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- 📄 [Download Workflow Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+          echo "- 🌐 [View HTML Report](https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/)" >> $GITHUB_STEP_SUMMARY
 
       #####################################################
       ## PR COMMENT
@@ -186,7 +329,7 @@ jobs:
           message: |
             ✅ Security scan completed
 
-            📄 Markdown Report:
+            📄 Workflow Artifacts:
             https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
             🌐 HTML Report:
