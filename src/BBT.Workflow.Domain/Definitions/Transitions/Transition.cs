@@ -93,6 +93,7 @@ public sealed class Transition : IHasKey
     /// Use namespaced keys to avoid collisions (e.g., <c>ui/visible-in</c>, <c>ui/priority</c>).
     /// </summary>
     [JsonInclude]
+    [JsonPropertyName("annotations")]
     public Dictionary<string, string>? Annotations { get; private set; }
 
     [JsonInclude]
