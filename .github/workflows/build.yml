@@ -7,186 +7,119 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
   pages: write
   id-token: write
-  pull-requests: write
-  security-events: write
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   security-scan:
     runs-on: ubuntu-latest
 
-    environment:
-      name: github-pages
-
     steps:
-
       #####################################################
       ## CHECKOUT
       #####################################################
       - name: Checkout source code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       #####################################################
-      ## PYTHON
+      ## .NET SETUP + DEPENDENCY GENERATION
       #####################################################
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
-          python-version: "3.11"
+          dotnet-version: "8.0"
+
+      - name: Restore dependencies (generate dependency graph)
+        run: dotnet restore --use-lock-file
+
+      - name: Build solution
+        run: dotnet build --no-restore --configuration Release
 
       #####################################################
-      ## SYSTEM DEPENDENCIES
+      ## CACHE (optional but recommended)
       #####################################################
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq pandoc
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
 
       #####################################################
       ## SEMGREP
       #####################################################
       - name: Install Semgrep
-        run: |
-          pip install --upgrade pip
-          pip install semgrep
+        run: pip install semgrep
 
       - name: Run Semgrep
-        run: |
-          semgrep --config auto --quiet > semgrep-report.txt || true
+        run: semgrep --config auto --json --output semgrep.json || true
 
       #####################################################
-      ## GITLEAKS
+      ## TRIVY (NOW USES DOTNET LOCK FILES)
       #####################################################
-      - name: Install Gitleaks
-        run: |
-          GITLEAKS_VERSION="8.24.2"
-          curl -sSL \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            -o gitleaks.tar.gz
-          tar -xzf gitleaks.tar.gz
-          chmod +x gitleaks
-          sudo mv gitleaks /usr/local/bin/
-
-      - name: Run Gitleaks
-        run: |
-          git fetch --unshallow || true
-          gitleaks detect \
-            --report-format json \
-            --report-path gitleaks-report.json \
-            --redact \
-            || true
-
-      #####################################################
-      ## TRUFFLEHOG (FIXED)
-      #####################################################
-      - name: Run TruffleHog
-        continue-on-error: true
-        run: |
-          docker run --rm -v "$PWD:/repo" \
-            ghcr.io/trufflesecurity/trufflehog:latest \
-            filesystem /repo \
-            --json \
-            --only-verified \
-            --exclude-paths=node_modules,vendor \
-            > trufflehog-report.json || true
-
-      #####################################################
-      ## TRIVY
-      #####################################################
-      - name: Run Trivy
-        uses: aquasecurity/trivy-action@v0.36.0
+      - name: Run Trivy Security Scan
+        uses: aquasecurity/trivy-action@0.36.0
         with:
           scan-type: fs
-          ignore-unfixed: true
+          scan-ref: .
+          scanners: vuln,secret,config
           format: table
           output: trivy-report.txt
 
       #####################################################
-      ## REPORT GENERATION (FIXED - NO YAML BREAK)
+      ## TRUFFLEHOG (FIXED USAGE)
+      #####################################################
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: .
+          extra_args: --only-verified --json
+
+      #####################################################
+      ## REPORT GENERATION
       #####################################################
       - name: Generate Markdown Report
         run: |
-          {
-            echo "# 🔐 Security Scan Report"
-            echo ""
-            echo "Generated: $(date)"
-            echo ""
-            echo "---"
-            echo ""
-            echo "## 🧠 Semgrep Findings"
+          echo "# 🔐 Security Scan Report" > report.md
+          echo "Generated: $(date -u)" >> report.md
 
-            if [ -s semgrep-report.txt ]; then
-              echo "\`\`\`"
-              cat semgrep-report.txt
-              echo "\`\`\`"
-            else
-              echo "✅ No issues found"
-            fi
+          echo "## 🧠 Semgrep Findings" >> report.md
+          if [ -s semgrep.json ]; then
+            cat semgrep.json >> report.md
+          else
+            echo "No issues found ✅" >> report.md
+          fi
 
-            echo ""
-            echo "## 🕵️ Gitleaks"
+          echo "## 🐷 TruffleHog Secrets" >> report.md
+          echo "See workflow logs for details (JSON output enabled)" >> report.md
 
-            if [ -s gitleaks-report.json ]; then
-              jq -r '.[] | "- " + .RuleID + " in `" + .File + "`"' gitleaks-report.json
-            else
-              echo "✅ No secrets found"
-            fi
-
-            echo ""
-            echo "## 🐷 TruffleHog"
-            echo "Scan completed (see JSON output)"
-
-            echo ""
-            echo "## 📦 Trivy Results"
-
-            if [ -s trivy-report.txt ]; then
-              echo "\`\`\`"
-              cat trivy-report.txt
-              echo "\`\`\`"
-            else
-              echo "✅ No vulnerabilities found"
-            fi
-          } > report.md
+          echo "## 📦 Trivy Results" >> report.md
+          if [ -s trivy-report.txt ]; then
+            echo '```' >> report.md
+            cat trivy-report.txt >> report.md
+            echo '```' >> report.md
+          else
+            echo "No vulnerabilities found ✅" >> report.md
+          fi
 
       #####################################################
-      ## HTML EXPORT
-      #####################################################
-      - name: Convert to HTML
-        run: |
-          mkdir -p public
-          pandoc report.md \
-            -f markdown \
-            -t html5 \
-            --standalone \
-            -o public/index.html
-
-      #####################################################
-      ## DEBUG
-      #####################################################
-      - name: Debug output
-        run: |
-          ls -la public
-          head -20 public/index.html
-
-      #####################################################
-      ## PAGES SETUP
+      ## PAGES BUILD
       #####################################################
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload artifact
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./public
+          path: .
 
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          environment:
+            name: github-pages
 
       #####################################################
       ## ARTIFACT
@@ -198,13 +131,13 @@ jobs:
           path: report.md
 
       #####################################################
-      ## SUMMARY
+      ## SUMMARY UI
       #####################################################
       - name: GitHub Summary
         run: |
           echo "### 🔐 Security Scan Completed" >> $GITHUB_STEP_SUMMARY
-          echo "- 📄 Artifacts available in Actions tab" >> $GITHUB_STEP_SUMMARY
-          echo "- 🌐 Pages: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/" >> $GITHUB_STEP_SUMMARY
+          echo "- 📄 Artifact available in Actions run" >> $GITHUB_STEP_SUMMARY
+          echo "- 🌐 GitHub Pages report deployed" >> $GITHUB_STEP_SUMMARY
 
       #####################################################
       ## PR COMMENT
@@ -216,9 +149,5 @@ jobs:
           header: security-scan
           message: |
             ✅ Security scan completed
-
-            📄 Report:
-            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            🌐 Pages:
-            https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+            📄 Report available in Actions artifacts
+            🌐 Pages report deployed
