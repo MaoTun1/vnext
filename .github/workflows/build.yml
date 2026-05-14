@@ -28,7 +28,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22' # En güncel LTS sürümüne çekildi
+          node-version: '22'
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -41,7 +41,6 @@ jobs:
       # -------------------------------------------------
       # GITLEAKS & SEMGREP CLI KURULUMLARI
       # -------------------------------------------------
-      # Hatalı hazır action'lar yerine doğrudan kararlı çalışan CLI araçlarını kuruyoruz
       - name: Install Tools (Gitleaks & Semgrep)
         run: |
           mkdir -p security-reports-dir
@@ -75,13 +74,12 @@ jobs:
           if [ -f package.json ]; then npm install --package-lock-only; fi
 
       # -------------------------------------------------
-      # BUILD (Uyarılardan dolayı fail etmemesi için iyileştirildi)
+      # BUILD (Uyarılardan dolayı fail etmemesi için)
       # -------------------------------------------------
       - name: Build solution
         if: steps.find_sln.outputs.sln_exists == 'true'
         continue-on-error: true
         run: |
-          # /p:NoWarn ve /p:TreatWarningsAsErrors=false ile XML param ve Obsolete uyarılarının build'ı bozması engellendi
           dotnet build "${{ steps.find_sln.outputs.sln_file }}" \
             --configuration Release \
             --no-restore \
@@ -89,23 +87,25 @@ jobs:
             /p:NoWarn=CS1573,CS1591,CS0618,CS0612
 
       # -------------------------------------------------
-      # SEMGREP (Kusursuz SARIF Çıktısı)
+      # SEMGREP (Text Raporu)
       # -------------------------------------------------
       - name: Run Semgrep SAST
         continue-on-error: true
         run: |
-          semgrep scan --config auto --sarif --output security-reports-dir/semgrep.sarif || true
+          semgrep scan --config auto --text --output security-reports-dir/semgrep-report.txt || true
 
       # -------------------------------------------------
-      # GITLEAKS (Kusursuz SARIF Çıktısı)
+      # GITLEAKS (Text Raporu)
       # -------------------------------------------------
       - name: Run Gitleaks Secrets Scan
         continue-on-error: true
         run: |
-          gitleaks detect --source=. --format=sarif --report-path=security-reports-dir/gitleaks.sarif || true
+          gitleaks detect --source=. --verbose --report-path=security-reports-dir/gitleaks-raw.json || true
+          # Okunabilir formata çevirelim
+          gitleaks detect --source=. --verbose > security-reports-dir/gitleaks-report.txt || true
 
       # -------------------------------------------------
-      # TRUFFLEHOG (Detaylı Markdown Raporu)
+      # TRUFFLEHOG (Text Raporu)
       # -------------------------------------------------
       - name: Run TruffleHog
         continue-on-error: true
@@ -114,26 +114,25 @@ jobs:
             -v "$PWD:/repo" \
             ghcr.io/trufflesecurity/trufflehog:latest \
             filesystem /repo \
-            --only-verified=false > security-reports-dir/Trufflehog-Secret-Raporu.md || true
+            --only-verified=false > security-reports-dir/trufflehog-report.txt || true
 
       # -------------------------------------------------
-      # TRIVY FS SCAN -> HTML RAPORU
+      # TRIVY FS SCAN -> TEXT RAPORU
       # -------------------------------------------------
-      - name: Run Trivy Filesystem Scan (HTML)
+      - name: Run Trivy Filesystem Scan
         uses: aquasecurity/trivy-action@master
         continue-on-error: true
         with:
           scan-type: 'fs'
           scan-ref: '.'
-          format: 'template'
-          template: '@contrib/html.tpl'
-          output: 'security-reports-dir/Trivy-Genel-Zafiyet-Raporu.html'
+          format: 'table'
+          output: 'security-reports-dir/trivy-fs-report.txt'
           severity: 'CRITICAL,HIGH,MEDIUM'
           ignore-unfixed: true
-          exit-code: '0' # Rapor üretilirken pipeline'ın kırılmasını önler
+          exit-code: '0'
 
       # -------------------------------------------------
-      # TRIVY: GENERATE SBOM (Ham Veri)
+      # TRIVY: GENERATE SBOM
       # -------------------------------------------------
       - name: Generate SBOM using Trivy
         uses: aquasecurity/trivy-action@master
@@ -144,36 +143,118 @@ jobs:
           output: 'security-reports-dir/sbom.json'
 
       # -------------------------------------------------
-      # TRIVY: SCAN GENERATED SBOM -> HTML RAPORU
+      # TRIVY: SCAN GENERATED SBOM -> TEXT RAPORU
       # -------------------------------------------------
-      - name: Scan Generated SBOM using Trivy (HTML)
+      - name: Scan Generated SBOM using Trivy
         uses: aquasecurity/trivy-action@master
         continue-on-error: true
         with:
           scan-type: 'sbom'
           scan-ref: 'security-reports-dir/sbom.json'
-          format: 'template'
-          template: '@contrib/html.tpl'
-          output: 'security-reports-dir/Trivy-SBOM-Zafiyet-Raporu.html'
+          format: 'table'
+          output: 'security-reports-dir/trivy-sbom-report.txt'
           severity: 'CRITICAL,HIGH'
-          exit-code: '0' # Rapor üretilirken pipeline'ın kırılmasını önler
+          exit-code: '0'
 
       # -------------------------------------------------
-      # DİĞER ARAÇLARIN LOGLARINI GÜZELLEŞTİRME (Trivy Convert HTML)
+      # MERKEZİ HTML DASHBOARD RAPORU OLUŞTURMA
       # -------------------------------------------------
-      - name: Convert Other SARIFs to HTML using Trivy CLI
+      - name: Generate Centralized HTML Report
         if: always()
         shell: bash
         run: |
-          if [ -f security-reports-dir/semgrep.sarif ]; then
-            docker run --rm -v "$PWD/security-reports-dir:/reports" aquasec/trivy:latest convert \
-              --format template --template "@contrib/html.tpl" --output /reports/Semgrep-Kod-Analiz-Raporu.html /reports/semgrep.sarif || true
-          fi
+          cat << 'EOF' > security-reports-dir/generate_html.py
+          import os
+          import html
+
+          report_dir = "."
+          files_to_load = {
+              "Trivy Genel": "trivy-fs-report.txt",
+              "Trivy SBOM": "trivy-sbom-report.txt",
+              "Semgrep SAST": "semgrep-report.txt",
+              "Gitleaks": "gitleaks-report.txt",
+              "TruffleHog": "trufflehog-report.txt"
+          }
+
+          html_content = """<!DOCTYPE html>
+          <html lang="tr">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Merkezi Güvenlik Tarama Raporu</title>
+              <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+              <style>
+                  body { background-color: #f8f9fa; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+                  .nav-pills .nav-link.active { background-color: #0d6efd; }
+                  .report-container { background: #1e1e1e; color: #d4d4d4; padding: 20px; border-radius: 8px; font-family: "Courier New", Courier, monospace; white-space: pre-wrap; word-wrap: break-word; overflow-x: auto; max-height: 700px; }
+                  .header-banner { background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); color: white; padding: 30px; border-radius: 8px; margin-bottom: 30px; }
+              </style>
+          </head>
+          <body>
+          <div class="container my-5">
+              <div class="header-banner shadow-sm">
+                  <h1 class="display-5 fw-bold">Merkezi Güvenlik Paneli (DevSecOps)</h1>
+                  <p class="lead mb-0">Tüm araçların tarama sonuçları tek bir çatı altında birleştirildi.</p>
+              </div>
+              
+              <div class="row">
+                  <div class="col-md-3">
+                      <div class="nav flex-column nav-pills me-3 shadow-sm bg-white p-3 border rounded" id="v-pills-tab" role="tablist" aria-orientation="vertical">
+          """
+
+          # Tab butonlarını üret
+          first = True
+          for idx, (name, filename) in enumerate(files_to_load.items()):
+              active_class = "active" if first else ""
+              html_content += f'<button class="nav-link text-start my-1 {active_class}" id="v-pills-{idx}-tab" data-bs-toggle="pill" data-bs-target="#v-pills-{idx}" type="button" role="tab">{name}</button>\n'
+              first = False
+
+          html_content += """
+                      </div>
+                  </div>
+                  <div class="col-md-9">
+                      <div class="tab-content shadow-sm bg-white p-4 border rounded" id="v-pills-tabContent">
+          """
+
+          # Tab içeriklerini (logları) üret
+          first = True
+          for idx, (name, filename) in enumerate(files_to_load.items()):
+              active_class = "show active" if first else ""
+              file_path = os.path.join(report_dir, filename)
+              
+              content = "Bu araç için rapor çıktısı bulunamadı."
+              if os.path.exists(file_path):
+                  with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                      content = f.read().strip()
+                      if not content:
+                          content = "Tarama tamamlandı, herhangi bir bulguya rastlanmadı."
+
+              escaped_content = html.escape(content)
+              html_content += f"""
+              <div class="tab-pane fade {active_class}" id="v-pills-{idx}" role="tabpanel">
+                  <h3 class="mb-3 text-dark border-bottom pb-2">{name} Sonuçları</h3>
+                  <div class="report-container">{escaped_content}</div>
+              </div>
+              """
+              first = False
+
+          html_content += """
+                      </div>
+                  </div>
+              </div>
+          </div>
+          <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+          </body>
+          </html>
+          """
+
+          with open("Merkezi-Guvenlik-Raporu.html", "w", encoding="utf-8") as f:
+              f.write(html_content)
+          print("Master HTML raporu başarıyla üretildi.")
+          EOF
           
-          if [ -f security-reports-dir/gitleaks.sarif ]; then
-            docker run --rm -v "$PWD/security-reports-dir:/reports" aquasec/trivy:latest convert \
-              --format template --template "@contrib/html.tpl" --output /reports/Gitleaks-Secret-Raporu.html /reports/gitleaks.sarif || true
-          fi
+          # Script'i çalıştırıp HTML raporunu ana dizine basalım
+          cd security-reports-dir && python3 generate_html.py
 
       # -------------------------------------------------
       # TÜM RAPORLARI TEK BİR ARTIFACT OLARAK YÜKLEME
