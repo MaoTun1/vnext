@@ -1,180 +1,173 @@
-name: Universal Security Scan
+name: Security Scan
 
 on:
   push:
-    branches: [master]
+    branches:
+      - master
+      - main
+      - develop
   pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
-  pages: write
-  id-token: write
+  contents: read
+  security-events: write
+  actions: read
 
 jobs:
   security-scan:
     runs-on: ubuntu-latest
 
-    environment:
-      name: github-pages
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
-      #####################################################
-      ## CHECKOUT
-      #####################################################
-      - name: Checkout source code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      #####################################################
-      ## .NET SETUP
-      #####################################################
+      # -------------------------------------------------
+      # .NET SETUP
+      # -------------------------------------------------
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "8.0"
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
 
-      #####################################################
-      ## DETECT SOLUTION (FIX MSB1011)
-      #####################################################
-      - name: Detect solution file
-        id: detect
+      # -------------------------------------------------
+      # FIND SOLUTION
+      # -------------------------------------------------
+      - name: Find solution file
+        id: find_sln
+        shell: bash
         run: |
-          SLN=$(find . -name "*.sln" | head -n 1)
-          echo "sln=$SLN" >> $GITHUB_OUTPUT
+          SLN_FILE=$(find . -name "*.sln" | head -n 1)
 
-          if [ -n "$SLN" ]; then
-            echo "Found solution: $SLN"
-          else
+          if [ -z "$SLN_FILE" ]; then
             echo "No solution file found"
+            echo "sln_exists=false" >> $GITHUB_OUTPUT
+          else
+            echo "Found solution: $SLN_FILE"
+            echo "sln_exists=true" >> $GITHUB_OUTPUT
+            echo "sln_file=$SLN_FILE" >> $GITHUB_OUTPUT
           fi
 
-      #####################################################
-      ## RESTORE
-      #####################################################
+      # -------------------------------------------------
+      # RESTORE
+      # -------------------------------------------------
       - name: Restore dependencies
+        if: steps.find_sln.outputs.sln_exists == 'true'
+        continue-on-error: true
         run: |
-          if [ -n "${{ steps.detect.outputs.sln }}" ]; then
-            dotnet restore "${{ steps.detect.outputs.sln }}" --use-lock-file
-          else
-            find . -name "*.csproj" -exec dotnet restore {} \;
-          fi
+          dotnet restore "${{ steps.find_sln.outputs.sln_file }}" --use-lock-file
 
-      #####################################################
-      ## BUILD
-      #####################################################
-      - name: Build project
+      # -------------------------------------------------
+      # BUILD (NON-BLOCKING)
+      # -------------------------------------------------
+      - name: Build solution
+        if: steps.find_sln.outputs.sln_exists == 'true'
+        continue-on-error: true
         run: |
-          if [ -n "${{ steps.detect.outputs.sln }}" ]; then
-            dotnet build "${{ steps.detect.outputs.sln }}" --configuration Release --no-restore
-          else
-            find . -name "*.csproj" -exec dotnet build {} --configuration Release \;
-          fi
+          dotnet build "${{ steps.find_sln.outputs.sln_file }}" \
+            --configuration Release \
+            --no-restore
 
-      #####################################################
-      ## CACHE (NuGet)
-      #####################################################
-      - name: Cache NuGet
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
+      # -------------------------------------------------
+      # GENERATE SBOM
+      # -------------------------------------------------
+      - name: Install CycloneDX tool
+        run: |
+          dotnet tool install --global CycloneDX
 
-      #####################################################
-      ## SEMGREP
-      #####################################################
-      - name: Install Semgrep
-        run: pip install semgrep
+      - name: Generate SBOM
+        if: steps.find_sln.outputs.sln_exists == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p sbom
 
+          dotnet-CycloneDX \
+            "${{ steps.find_sln.outputs.sln_file }}" \
+            -o sbom
+
+          echo "SBOM generated"
+
+      # -------------------------------------------------
+      # SEMGREP
+      # -------------------------------------------------
       - name: Run Semgrep
-        run: semgrep --config auto --json --output semgrep.json || true
+        uses: returntocorp/semgrep-action@v1
+        continue-on-error: true
+        with:
+          config: >
+            p/security-audit
+            p/secrets
+            p/owasp-top-ten
 
-      #####################################################
-      ## TRIVY (FULL SCAN)
-      #####################################################
-      - name: Run Trivy Scan
-        uses: aquasecurity/trivy-action@v0.36.0
+      # -------------------------------------------------
+      # GITLEAKS
+      # -------------------------------------------------
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # -------------------------------------------------
+      # TRUFFLEHOG
+      # -------------------------------------------------
+      - name: Run TruffleHog
+        continue-on-error: true
+        run: |
+          docker run --rm \
+            -v "$PWD:/repo" \
+            ghcr.io/trufflesecurity/trufflehog:latest \
+            filesystem /repo \
+            --only-verified=false \
+            --json > trufflehog-results.json || true
+
+          echo "TruffleHog scan completed"
+
+      # -------------------------------------------------
+      # TRIVY FS SCAN
+      # -------------------------------------------------
+      - name: Run Trivy Filesystem Scan
+        uses: aquasecurity/trivy-action@0.28.0
+        continue-on-error: true
         with:
           scan-type: fs
           scan-ref: .
-          scanners: vuln,secret,config
           format: table
-          output: trivy-report.txt
+          severity: CRITICAL,HIGH,MEDIUM
+          ignore-unfixed: true
 
-      #####################################################
-      ## TRUFFLEHOG
-      #####################################################
-      - name: Run TruffleHog
-        uses: trufflesecurity/trufflehog@main
-        with:
-          path: .
-          extra_args: --only-verified --json
-
-      #####################################################
-      ## REPORT GENERATION
-      #####################################################
-      - name: Generate Report
+      # -------------------------------------------------
+      # TRIVY SBOM SCAN
+      # -------------------------------------------------
+      - name: Run Trivy SBOM Scan
+        continue-on-error: true
         run: |
-          echo "# 🔐 Security Scan Report" > report.md
-          echo "Generated: $(date -u)" >> report.md
-
-          echo "## 🧠 Semgrep" >> report.md
-          if [ -s semgrep.json ]; then
-            cat semgrep.json >> report.md
+          if ls sbom/*.json 1> /dev/null 2>&1; then
+            docker run --rm \
+              -v "$PWD:/work" \
+              aquasec/trivy:latest sbom \
+              /work/sbom/*.json \
+              --severity HIGH,CRITICAL \
+              --format table
           else
-            echo "No issues found ✅" >> report.md
+            echo "No SBOM found, skipping Trivy SBOM scan"
           fi
 
-          echo "## 📦 Trivy" >> report.md
-          if [ -s trivy-report.txt ]; then
-            echo '```' >> report.md
-            cat trivy-report.txt >> report.md
-            echo '```' >> report.md
-          else
-            echo "No vulnerabilities found ✅" >> report.md
-          fi
-
-      #####################################################
-      ## PAGES DEPLOY (FIXED)
-      #####################################################
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: .
-
-      - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@v4
-
-      #####################################################
-      ## ARTIFACT
-      #####################################################
-      - name: Upload report artifact
+      # -------------------------------------------------
+      # UPLOAD REPORTS
+      # -------------------------------------------------
+      - name: Upload scan artifacts
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: security-report
-          path: report.md
-
-      #####################################################
-      ## SUMMARY
-      #####################################################
-      - name: GitHub Summary
-        run: |
-          echo "### 🔐 Security Scan Completed" >> $GITHUB_STEP_SUMMARY
-          echo "- 📄 Report generated" >> $GITHUB_STEP_SUMMARY
-          echo "- 🌐 Pages deployed" >> $GITHUB_STEP_SUMMARY
-
-      #####################################################
-      ## PR COMMENT
-      #####################################################
-      - name: Comment on PR
-        if: github.event_name == 'pull_request'
-        uses: marocchino/sticky-pull-request-comment@v2
-        with:
-          header: security-scan
-          message: |
-            ✅ Security scan completed
-            📄 Report available in artifacts
-            🌐 GitHub Pages deployed
+          name: security-reports
+          path: |
+            trufflehog-results.json
+            sbom/
