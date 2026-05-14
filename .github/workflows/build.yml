@@ -151,7 +151,7 @@ jobs:
           exit-code: '0'
 
       # -------------------------------------------------
-      # MERKEZİ HTML PANELİ OLUŞTURMA (Ultra Geniş Mod)
+      # MERKEZİ HTML PANELİ OLUŞTURMA (Görsel İyileştirme)
       # -------------------------------------------------
       - name: Generate Centralized HTML Dashboard
         if: always()
@@ -178,55 +178,74 @@ jobs:
               <title>Merkezi Güvenlik Tarama Raporu</title>
               <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
               <style>
-                  /* Tüm sayfayı sınırları kaldırarak genişletiyoruz */
-                  body { background-color: #f8f9fa; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; }
-                  .container-fluid { width: 100% !important; max-width: 100% !important; padding: 20px; }
-                  .row { --bs-gutter-x: 1.5rem; width: 100%; margin: 0; }
+                  /* Sayfanın dikey kaymasını engellemek ve tam ekran yapmak için ana yapıyı kuruyoruz */
+                  html, body { height: 100%; margin: 0; padding: 0; background-color: #f1f3f5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+                  
+                  /* Tüm yapıyı yatay ve dikey esnek bir flexbox yapıyoruz */
+                  .main-wrapper { display: flex; flex-direction: column; height: 100vh; }
+                  
+                  .header-banner { background: linear-gradient(135deg, #112233 0%, #1a365d 100%); color: white; padding: 15px 25px; margin: 0; border-bottom: 2px solid #0d6efd; }
+                  
+                  .content-layout { display: flex; flex: 1; overflow: hidden; }
+                  
+                  /* Sol menüyü sabit genişlikte tutuyoruz, asla daralmaz */
+                  .sidebar-menu { width: 220px; background: white; border-right: 1px solid #dee2e6; padding: 15px; overflow-y: auto; flex-shrink: 0; }
+                  .nav-pills .nav-link { color: #495057; font-weight: 500; margin-bottom: 5px; text-align: left; }
                   .nav-pills .nav-link.active { background-color: #0d6efd; }
                   
-                  /* Siyah kutunun tabloyu daraltmasını tamamen engelleyen CSS mimarisi */
+                  /* Sağ rapor penceresini ana tarayıcı penceresi gibi bağımsız bir alana çeviriyoruz */
+                  .report-view { flex-grow: 1; padding: 20px; overflow: auto; background-color: #f8f9fa; }
+                  .tab-content, .tab-pane { height: 100%; }
+                  
+                  /* SİYAH ÇERÇEVEYİ DEVASA BÜYÜTÜYORUZ */
                   .report-wrapper {
                       width: 100%;
-                      overflow-x: auto; /* Yatay kaydırma dış sarmalayıcıda çözülür */
-                      border-radius: 8px;
                       background: #1e1e1e;
-                      padding: 20px;
+                      border-radius: 8px;
+                      padding: 25px;
+                      box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+                      overflow-x: auto; /* Tablo çok genişse çerçeve içinde kayar */
+                      overflow-y: auto;
                   }
+                  
+                  /* YAZILARIN BİRBİRİNE GİRMESİNİ ENGELLEYEN KRİTİK ALAN */
                   .report-container { 
-                      color: #d4d4d4; 
-                      font-family: "Courier New", Courier, monospace; 
+                      color: #e0e0e0; 
+                      font-family: "Consolas", "Courier New", Courier, monospace; 
                       font-size: 13px;
-                      white-space: pre; /* Kelime kaydırmayı (word-wrap) kapatarak tablonun büzülmesini engeller */
-                      display: inline-block; /* Genişliğin içeriğe göre serbestçe esnemesini sağlar */
-                      min-width: max-content; /* Tablo genişliği ne kadarsa o kadar alan açar */
+                      line-height: 1.5;
+                      white-space: pre; /* Kelime kaydırmayı tamamen kapatır */
+                      display: block;
+                      /* Yazıların büzüşmemesi için tabloya devasa bir alt taban genişliği dayatıyoruz */
+                      min-width: 1600px; 
                       margin: 0;
                   }
-                  .header-banner { background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); color: white; padding: 20px 25px; border-radius: 8px; margin-bottom: 20px; width: 100%; }
               </style>
           </head>
           <body>
-          <div class="container-fluid">
-              <div class="header-banner shadow-sm">
-                  <h1 class="h3 fw-bold mb-1">Merkezi Güvenlik Paneli (DevSecOps)</h1>
-                  <p class="mb-0 small text-white-50">Tüm araçların orijinal terminal tabloları tam genişlikte listelenmektedir.</p>
+          <div class="main-wrapper">
+              <div class="header-banner">
+                  <h1 class="h4 fw-bold mb-0">🛡️ DevSecOps Merkezi Güvenlik Paneli</h1>
+                  <p class="small text-white-50 mb-0">Tüm güvenlik araçlarının raporları terminal formatında aslına uygun birleştirildi.</p>
               </div>
               
-              <div class="row">
-                  <div class="col-md-1 px-1">
-                      <div class="nav flex-column nav-pills shadow-sm bg-white p-2 border rounded" id="v-pills-tab" role="tablist" aria-orientation="vertical">
+              <div class="content-layout">
+                  <div class="sidebar-menu">
+                      <div class="nav flex-column nav-pills" id="v-pills-tab" role="tablist" aria-orientation="vertical">
           """
 
           first = True
           for idx, (name, filename) in enumerate(files_to_load.items()):
               active_class = "active" if first else ""
-              html_content += f'<button class="nav-link text-start my-1 p-2 small {active_class}" id="v-pills-{idx}-tab" data-bs-toggle="pill" data-bs-target="#v-pills-{idx}" type="button" role="tab">{name}</button>\n'
+              html_content += f'<button class="nav-link {active_class}" id="v-pills-{idx}-tab" data-bs-toggle="pill" data-bs-target="#v-pills-{idx}" type="button" role="tab">{name}</button>\n'
               first = False
 
           html_content += """
                       </div>
                   </div>
-                  <div class="col-md-11 px-3">
-                      <div class="tab-content shadow-sm bg-white p-3 border rounded" id="v-pills-tabContent">
+                  
+                  <div class="report-view">
+                      <div class="tab-content" id="v-pills-tabContent">
           """
 
           first = True
@@ -244,7 +263,7 @@ jobs:
               escaped_content = html.escape(content)
               html_content += f"""
               <div class="tab-pane fade {active_class}" id="v-pills-{idx}" role="tabpanel">
-                  <h4 class="h5 mb-3 text-dark border-bottom pb-2 fw-bold">{name} Sonuçları</h4>
+                  <h3 class="h5 mb-3 text-dark fw-bold">{name} Analiz Raporu</h3>
                   <div class="report-wrapper">
                       <pre class="report-container">{escaped_content}</pre>
                   </div>
@@ -276,8 +295,8 @@ jobs:
         run: |
           LOWCASE_USER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           REPO_NAME=$(echo "${{ github.event.repository.name }}")
-          echo "### 🚀 Güvenlik Raporunuz Ultra Geniş Ekran Modunda Güncellendi!" >> $GITHUB_STEP_SUMMARY
-          echo "Tabloların sıkışması engellendi. Aşağıdaki linkten tam genişlikteki rapora erişebilirsiniz:" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Güvenlik Raporu Arayüzü Tamamen Yenilendi!" >> $GITHUB_STEP_SUMMARY
+          echo "Tablo büzüşme problemi giderildi. Aşağıdaki linkten tam çözünürlüklü rapora erişebilirsiniz:" >> $GITHUB_STEP_SUMMARY
           echo "🔗 **[Güvenlik Raporu Panelini Aç](https://${LOWCASE_USER}.github.io/${REPO_NAME}/)**" >> $GITHUB_STEP_SUMMARY
 
       # -------------------------------------------------
