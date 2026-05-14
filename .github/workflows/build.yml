@@ -1,4 +1,4 @@
-name: Ultimate Security Scan
+name: Ultimate Security Scan & Deploy
 
 on:
   push:
@@ -9,10 +9,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# GitHub Pages'e yükleme yapabilmek için gerekli izinler
 permissions:
   contents: read
-  security-events: write
-  actions: read
+  pages: write
+  id-token: write
 
 jobs:
   security-scan:
@@ -43,7 +44,7 @@ jobs:
       # -------------------------------------------------
       - name: Install Tools (Gitleaks & Semgrep)
         run: |
-          mkdir -p security-reports-dir
+          mkdir -p public
           # Gitleaks Kurulumu
           wget https://github.com/gitleaks/gitleaks/releases/download/v8.18.2/gitleaks_8.18.2_linux_x64.tar.gz
           tar -xf gitleaks_8.18.2_linux_x64.tar.gz
@@ -74,17 +75,13 @@ jobs:
           if [ -f package.json ]; then npm install --package-lock-only; fi
 
       # -------------------------------------------------
-      # BUILD (Uyarılardan dolayı fail etmemesi için)
+      # BUILD (Hata Veren Parametre Yapısı Düzeltildi)
       # -------------------------------------------------
       - name: Build solution
         if: steps.find_sln.outputs.sln_exists == 'true'
         continue-on-error: true
         run: |
-          dotnet build "${{ steps.find_sln.outputs.sln_file }}" \
-            --configuration Release \
-            --no-restore \
-            /p:TreatWarningsAsErrors=false \
-            /p:NoWarn=CS1573,CS1591,CS0618,CS0612
+          dotnet build "${{ steps.find_sln.outputs.sln_file }}" --configuration Release --no-restore "/p:TreatWarningsAsErrors=false" "/p:NoWarn=1573;1591;0618;0612"
 
       # -------------------------------------------------
       # SEMGREP (Text Raporu)
@@ -92,7 +89,7 @@ jobs:
       - name: Run Semgrep SAST
         continue-on-error: true
         run: |
-          semgrep scan --config auto --text --output security-reports-dir/semgrep-report.txt || true
+          semgrep scan --config auto --text --output public/semgrep-report.txt || true
 
       # -------------------------------------------------
       # GITLEAKS (Text Raporu)
@@ -100,9 +97,7 @@ jobs:
       - name: Run Gitleaks Secrets Scan
         continue-on-error: true
         run: |
-          gitleaks detect --source=. --verbose --report-path=security-reports-dir/gitleaks-raw.json || true
-          # Okunabilir formata çevirelim
-          gitleaks detect --source=. --verbose > security-reports-dir/gitleaks-report.txt || true
+          gitleaks detect --source=. --verbose > public/gitleaks-report.txt || true
 
       # -------------------------------------------------
       # TRUFFLEHOG (Text Raporu)
@@ -114,7 +109,7 @@ jobs:
             -v "$PWD:/repo" \
             ghcr.io/trufflesecurity/trufflehog:latest \
             filesystem /repo \
-            --only-verified=false > security-reports-dir/trufflehog-report.txt || true
+            --only-verified=false > public/trufflehog-report.txt || true
 
       # -------------------------------------------------
       # TRIVY FS SCAN -> TEXT RAPORU
@@ -126,7 +121,7 @@ jobs:
           scan-type: 'fs'
           scan-ref: '.'
           format: 'table'
-          output: 'security-reports-dir/trivy-fs-report.txt'
+          output: 'public/trivy-fs-report.txt'
           severity: 'CRITICAL,HIGH,MEDIUM'
           ignore-unfixed: true
           exit-code: '0'
@@ -140,7 +135,7 @@ jobs:
         with:
           scan-type: 'fs'
           format: 'cyclonedx'
-          output: 'security-reports-dir/sbom.json'
+          output: 'public/sbom.json'
 
       # -------------------------------------------------
       # TRIVY: SCAN GENERATED SBOM -> TEXT RAPORU
@@ -150,20 +145,20 @@ jobs:
         continue-on-error: true
         with:
           scan-type: 'sbom'
-          scan-ref: 'security-reports-dir/sbom.json'
+          scan-ref: 'public/sbom.json'
           format: 'table'
-          output: 'security-reports-dir/trivy-sbom-report.txt'
+          output: 'public/trivy-sbom-report.txt'
           severity: 'CRITICAL,HIGH'
           exit-code: '0'
 
       # -------------------------------------------------
-      # MERKEZİ HTML DASHBOARD RAPORU OLUŞTURMA
+      # MERKEZİ HTML PANALİ OLUŞTURMA (index.html)
       # -------------------------------------------------
-      - name: Generate Centralized HTML Report
+      - name: Generate Centralized HTML Dashboard
         if: always()
         shell: bash
         run: |
-          cat << 'EOF' > security-reports-dir/generate_html.py
+          cat << 'EOF' > public/generate_html.py
           import os
           import html
 
@@ -202,7 +197,6 @@ jobs:
                       <div class="nav flex-column nav-pills me-3 shadow-sm bg-white p-3 border rounded" id="v-pills-tab" role="tablist" aria-orientation="vertical">
           """
 
-          # Tab butonlarını üret
           first = True
           for idx, (name, filename) in enumerate(files_to_load.items()):
               active_class = "active" if first else ""
@@ -216,7 +210,6 @@ jobs:
                       <div class="tab-content shadow-sm bg-white p-4 border rounded" id="v-pills-tabContent">
           """
 
-          # Tab içeriklerini (logları) üret
           first = True
           for idx, (name, filename) in enumerate(files_to_load.items()):
               active_class = "show active" if first else ""
@@ -248,20 +241,25 @@ jobs:
           </html>
           """
 
-          with open("Merkezi-Guvenlik-Raporu.html", "w", encoding="utf-8") as f:
+          with open("index.html", "w", encoding="utf-8") as f:
               f.write(html_content)
-          print("Master HTML raporu başarıyla üretildi.")
           EOF
           
-          # Script'i çalıştırıp HTML raporunu ana dizine basalım
-          cd security-reports-dir && python3 generate_html.py
+          cd public && python3 generate_html.py
 
       # -------------------------------------------------
-      # TÜM RAPORLARI TEK BİR ARTIFACT OLARAK YÜKLEME
+      # GITHUB PAGES AYARLARI VE YAYINLAMA
       # -------------------------------------------------
-      - name: Upload Master Security Report
-        uses: actions/upload-artifact@v4
+      - name: Setup Pages
         if: always()
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact for Pages
+        if: always()
+        uses: actions/upload-pages-artifact@v3
         with:
-          name: Butun-Guvenlik-Raporlari
-          path: security-reports-dir/
+          path: 'public'
+
+      - name: Deploy to GitHub Pages
+        if: always()
+        uses: actions/deploy-pages@v4
