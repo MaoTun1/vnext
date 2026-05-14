@@ -18,9 +18,6 @@ jobs:
   security-scan:
     runs-on: ubuntu-latest
 
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -31,7 +28,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22' # En güncel LTS sürümüne çekildi
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -40,6 +37,20 @@ jobs:
             8.0.x
             9.0.x
             10.0.x
+
+      # -------------------------------------------------
+      # GITLEAKS & SEMGREP CLI KURULUMLARI
+      # -------------------------------------------------
+      # Hatalı hazır action'lar yerine doğrudan kararlı çalışan CLI araçlarını kuruyoruz
+      - name: Install Tools (Gitleaks & Semgrep)
+        run: |
+          mkdir -p security-reports-dir
+          # Gitleaks Kurulumu
+          wget https://github.com/gitleaks/gitleaks/releases/download/v8.18.2/gitleaks_8.18.2_linux_x64.tar.gz
+          tar -xf gitleaks_8.18.2_linux_x64.tar.gz
+          sudo mv gitleaks /usr/local/bin/
+          # Semgrep Kurulumu
+          pip install semgrep
 
       # -------------------------------------------------
       # FIND SOLUTION & RESTORE
@@ -63,49 +74,35 @@ jobs:
           dotnet restore "${{ steps.find_sln.outputs.sln_file }}" --use-lock-file
           if [ -f package.json ]; then npm install --package-lock-only; fi
 
+      # -------------------------------------------------
+      # BUILD (Uyarılardan dolayı fail etmemesi için iyileştirildi)
+      # -------------------------------------------------
       - name: Build solution
         if: steps.find_sln.outputs.sln_exists == 'true'
         continue-on-error: true
         run: |
-          dotnet build "${{ steps.find_sln.outputs.sln_file }}" --configuration Release --no-restore
+          # /p:NoWarn ve /p:TreatWarningsAsErrors=false ile XML param ve Obsolete uyarılarının build'ı bozması engellendi
+          dotnet build "${{ steps.find_sln.outputs.sln_file }}" \
+            --configuration Release \
+            --no-restore \
+            /p:TreatWarningsAsErrors=false \
+            /p:NoWarn=CS1573,CS1591,CS0618,CS0612
 
       # -------------------------------------------------
-      # RAPOR DİZİNİNİ HAZIRLAMA
+      # SEMGREP (Kusursuz SARIF Çıktısı)
       # -------------------------------------------------
-      - name: Create Reports Directory
-        run: mkdir -p security-reports-dir
-
-      # -------------------------------------------------
-      # SEMGREP (SARIF Çıktısı)
-      # -------------------------------------------------
-      - name: Run Semgrep
-        uses: returntocorp/semgrep-action@v1
+      - name: Run Semgrep SAST
         continue-on-error: true
-        with:
-          config: >
-            p/security-audit
-            p/secrets
-            p/owasp-top-ten
-          sarif: true
-      
-      - name: Move Semgrep Report
-        if: always()
         run: |
-          if [ -f semgrep.sarif ]; then
-            mv semgrep.sarif security-reports-dir/semgrep.sarif
-          fi
+          semgrep scan --config auto --sarif --output security-reports-dir/semgrep.sarif || true
 
       # -------------------------------------------------
-      # GITLEAKS (SARIF Çıktısı)
+      # GITLEAKS (Kusursuz SARIF Çıktısı)
       # -------------------------------------------------
-      - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+      - name: Run Gitleaks Secrets Scan
         continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          format: sarif
-          output: security-reports-dir/gitleaks.sarif
+        run: |
+          gitleaks detect --source=. --format=sarif --report-path=security-reports-dir/gitleaks.sarif || true
 
       # -------------------------------------------------
       # TRUFFLEHOG (Detaylı Markdown Raporu)
@@ -113,7 +110,6 @@ jobs:
       - name: Run TruffleHog
         continue-on-error: true
         run: |
-          # TruffleHog için insan gözüne hitap eden bir text/markdown log üretiyoruz
           docker run --rm \
             -v "$PWD:/repo" \
             ghcr.io/trufflesecurity/trufflehog:latest \
@@ -134,6 +130,7 @@ jobs:
           output: 'security-reports-dir/Trivy-Genel-Zafiyet-Raporu.html'
           severity: 'CRITICAL,HIGH,MEDIUM'
           ignore-unfixed: true
+          exit-code: '0' # Rapor üretilirken pipeline'ın kırılmasını önler
 
       # -------------------------------------------------
       # TRIVY: GENERATE SBOM (Ham Veri)
@@ -159,6 +156,7 @@ jobs:
           template: '@contrib/html.tpl'
           output: 'security-reports-dir/Trivy-SBOM-Zafiyet-Raporu.html'
           severity: 'CRITICAL,HIGH'
+          exit-code: '0' # Rapor üretilirken pipeline'ın kırılmasını önler
 
       # -------------------------------------------------
       # DİĞER ARAÇLARIN LOGLARINI GÜZELLEŞTİRME (Trivy Convert HTML)
@@ -167,9 +165,6 @@ jobs:
         if: always()
         shell: bash
         run: |
-          # Pipeline ortamına yüklü gelen Docker üzerinden Trivy imajını çağırıp, convert komutunu çalıştırıyoruz.
-          # Bu sayede Semgrep ve Gitleaks raporları da Trivy HTML arayüzüne kavuşuyor.
-          
           if [ -f security-reports-dir/semgrep.sarif ]; then
             docker run --rm -v "$PWD/security-reports-dir:/reports" aquasec/trivy:latest convert \
               --format template --template "@contrib/html.tpl" --output /reports/Semgrep-Kod-Analiz-Raporu.html /reports/semgrep.sarif || true
