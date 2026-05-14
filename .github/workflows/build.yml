@@ -108,39 +108,35 @@ jobs:
           output: security-reports-dir/gitleaks.sarif
 
       # -------------------------------------------------
-      # TRUFFLEHOG (SARIF Çıktısı)
+      # TRUFFLEHOG (Detaylı Markdown Raporu)
       # -------------------------------------------------
       - name: Run TruffleHog
         continue-on-error: true
         run: |
+          # TruffleHog için insan gözüne hitap eden bir text/markdown log üretiyoruz
           docker run --rm \
             -v "$PWD:/repo" \
             ghcr.io/trufflesecurity/trufflehog:latest \
             filesystem /repo \
-            --only-verified=false \
-            --scandash > trufflehog-raw.json || true
-          
-          docker run --rm \
-            -v "$PWD:/repo" \
-            ghcr.io/trufflesecurity/trufflehog:latest \
-            convert --format=sarif /repo/trufflehog-raw.json > security-reports-dir/trufflehog.sarif || true
+            --only-verified=false > security-reports-dir/Trufflehog-Secret-Raporu.md || true
 
       # -------------------------------------------------
-      # TRIVY FS SCAN (SARIF Çıktısı)
+      # TRIVY FS SCAN -> HTML RAPORU
       # -------------------------------------------------
-      - name: Run Trivy Filesystem Scan
+      - name: Run Trivy Filesystem Scan (HTML)
         uses: aquasecurity/trivy-action@master
         continue-on-error: true
         with:
           scan-type: 'fs'
           scan-ref: '.'
-          format: 'sarif'
-          output: 'security-reports-dir/trivy-fs.sarif'
+          format: 'template'
+          template: '@contrib/html.tpl'
+          output: 'security-reports-dir/Trivy-Genel-Zafiyet-Raporu.html'
           severity: 'CRITICAL,HIGH,MEDIUM'
           ignore-unfixed: true
 
       # -------------------------------------------------
-      # TRIVY: GENERATE SBOM & SCAN (SARIF Çıktısı)
+      # TRIVY: GENERATE SBOM (Ham Veri)
       # -------------------------------------------------
       - name: Generate SBOM using Trivy
         uses: aquasecurity/trivy-action@master
@@ -150,36 +146,38 @@ jobs:
           format: 'cyclonedx'
           output: 'security-reports-dir/sbom.json'
 
-      - name: Scan Generated SBOM using Trivy
+      # -------------------------------------------------
+      # TRIVY: SCAN GENERATED SBOM -> HTML RAPORU
+      # -------------------------------------------------
+      - name: Scan Generated SBOM using Trivy (HTML)
         uses: aquasecurity/trivy-action@master
         continue-on-error: true
         with:
           scan-type: 'sbom'
           scan-ref: 'security-reports-dir/sbom.json'
-          format: 'sarif'
-          output: 'security-reports-dir/trivy-sbom.sarif'
+          format: 'template'
+          template: '@contrib/html.tpl'
+          output: 'security-reports-dir/Trivy-SBOM-Zafiyet-Raporu.html'
           severity: 'CRITICAL,HIGH'
 
       # -------------------------------------------------
-      # MERKEZİ HTML RAPORU OLUŞTURMA (SARIF -> HTML)
+      # DİĞER ARAÇLARIN LOGLARINI GÜZELLEŞTİRME (Trivy Convert HTML)
       # -------------------------------------------------
-      - name: Merge and Generate Master HTML Report
+      - name: Convert Other SARIFs to HTML using Trivy CLI
         if: always()
         shell: bash
         run: |
-          npm install -g @microsoft/sarif-multitool
+          # Pipeline ortamına yüklü gelen Docker üzerinden Trivy imajını çağırıp, convert komutunu çalıştırıyoruz.
+          # Bu sayede Semgrep ve Gitleaks raporları da Trivy HTML arayüzüne kavuşuyor.
           
-          # Hata almamak için dizindeki tüm .sarif dosyalarını bir değişkene toplayıp gönderiyoruz
-          SARIF_FILES=$(find security-reports-dir -name "*.sarif" | tr '\n' ' ')
+          if [ -f security-reports-dir/semgrep.sarif ]; then
+            docker run --rm -v "$PWD/security-reports-dir:/reports" aquasec/trivy:latest convert \
+              --format template --template "@contrib/html.tpl" --output /reports/Semgrep-Kod-Analiz-Raporu.html /reports/semgrep.sarif || true
+          fi
           
-          if [ -n "$SARIF_FILES" ]; then
-            # Dosyaları birleştir
-            sarif-multitool merge $SARIF_FILES --output-file=security-reports-dir/master-security.sarif
-            
-            # HTML'e dönüştür
-            sarif-multitool transform security-reports-dir/master-security.sarif --format HTML --output-file=security-reports-dir/Butun-Guvenlik-Raporu.html
-          else
-            echo "Birleştirilecek SARIF raporu bulunamadı."
+          if [ -f security-reports-dir/gitleaks.sarif ]; then
+            docker run --rm -v "$PWD/security-reports-dir:/reports" aquasec/trivy:latest convert \
+              --format template --template "@contrib/html.tpl" --output /reports/Gitleaks-Secret-Raporu.html /reports/gitleaks.sarif || true
           fi
 
       # -------------------------------------------------
@@ -189,5 +187,5 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Bütün-Güvenlik-Raporları
+          name: Butun-Guvenlik-Raporlari
           path: security-reports-dir/
