@@ -90,7 +90,10 @@ jobs:
       
       - name: Move Semgrep Report
         if: always()
-        run: [ -f semgrep.sarif ] && mv semgrep.sarif security-reports-dir/semgrep.sarif || echo "No semgrep report"
+        run: |
+          if [ -f semgrep.sarif ]; then
+            mv semgrep.sarif security-reports-dir/semgrep.sarif
+          fi
 
       # -------------------------------------------------
       # GITLEAKS (SARIF Çıktısı)
@@ -117,7 +120,6 @@ jobs:
             --only-verified=false \
             --scandash > trufflehog-raw.json || true
           
-          # TruffleHog çıktısını SARIF formatına dönüştürmek için resmi aracı kullanalım
           docker run --rm \
             -v "$PWD:/repo" \
             ghcr.io/trufflesecurity/trufflehog:latest \
@@ -163,15 +165,22 @@ jobs:
       # -------------------------------------------------
       - name: Merge and Generate Master HTML Report
         if: always()
+        shell: bash
         run: |
-          # Microsoft'un SARIF Multitool aracını kuralım
           npm install -g @microsoft/sarif-multitool
           
-          # Tüm bağımsız sarif dosyalarını tek bir ana dosyada birleştirelim
-          sarif-multitool merge security-reports-dir/*.sarif --output-file=security-reports-dir/master-security.sarif
+          # Hata almamak için dizindeki tüm .sarif dosyalarını bir değişkene toplayıp gönderiyoruz
+          SARIF_FILES=$(find security-reports-dir -name "*.sarif" | tr '\n' ' ')
           
-          # Birleştirilmiş bu ana dosyayı çok şık bir HTML dosyasına dönüştürelim
-          sarif-multitool transform security-reports-dir/master-security.sarif --format HTML --output-file=security-reports-dir/Bütün-Güvenlik-Raporu.html
+          if [ -n "$SARIF_FILES" ]; then
+            # Dosyaları birleştir
+            sarif-multitool merge $SARIF_FILES --output-file=security-reports-dir/master-security.sarif
+            
+            # HTML'e dönüştür
+            sarif-multitool transform security-reports-dir/master-security.sarif --format HTML --output-file=security-reports-dir/Butun-Guvenlik-Raporu.html
+          else
+            echo "Birleştirilecek SARIF raporu bulunamadı."
+          fi
 
       # -------------------------------------------------
       # TÜM RAPORLARI TEK BİR ARTIFACT OLARAK YÜKLEME
