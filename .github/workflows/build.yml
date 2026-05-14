@@ -9,7 +9,6 @@ on:
   pull_request:
   workflow_dispatch:
 
-# GitHub Pages'e yükleme yapabilmek için gerekli izinler
 permissions:
   contents: read
   pages: write
@@ -75,7 +74,7 @@ jobs:
           if [ -f package.json ]; then npm install --package-lock-only; fi
 
       # -------------------------------------------------
-      # BUILD (Hata Veren Parametre Yapısı Düzeltildi)
+      # BUILD
       # -------------------------------------------------
       - name: Build solution
         if: steps.find_sln.outputs.sln_exists == 'true'
@@ -152,7 +151,7 @@ jobs:
           exit-code: '0'
 
       # -------------------------------------------------
-      # MERKEZİ HTML PANALİ OLUŞTURMA (index.html)
+      # MERKEZİ HTML PANELİ OLUŞTURMA (index.html)
       # -------------------------------------------------
       - name: Generate Centralized HTML Dashboard
         if: always()
@@ -248,7 +247,20 @@ jobs:
           cd public && python3 generate_html.py
 
       # -------------------------------------------------
-      # GITHUB PAGES AYARLARI VE YAYINLAMA
+      # LINKI SUMMARY EKRANINA YAZDIRMA
+      # -------------------------------------------------
+      - name: Output Live Rapor Link
+        if: always()
+        run: |
+          # GitHub değişkenlerini kullanarak dinamik olarak sayfa linkini oluşturuyoruz
+          LOWCASE_USER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REPO_NAME=$(echo "${{ github.event.repository.name }}")
+          echo "### 🚀 Güvenlik Raporunuz Hazır!" >> $GITHUB_STEP_SUMMARY
+          echo "Aşağıdaki bağlantıdan tarama panelinize canlı olarak erişebilirsiniz:" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 **[Güvenlik Raporu Panelini Aç](https://${LOWCASE_USER}.github.io/${REPO_NAME}/)**" >> $GITHUB_STEP_SUMMARY
+
+      # -------------------------------------------------
+      # GITHUB PAGES YAYINLAMA
       # -------------------------------------------------
       - name: Setup Pages
         if: always()
