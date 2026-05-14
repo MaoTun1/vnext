@@ -1,4 +1,4 @@
-name: Security Scan
+name: Ultimate Security Scan
 
 on:
   push:
@@ -26,16 +26,13 @@ jobs:
         uses: actions/checkout@v4
 
       # -------------------------------------------------
-      # NODE.JS SETUP (JavaScript Paket Çözümlemesi İçin)
+      # ORTAM KURULUMLARI (Node.js & .NET)
       # -------------------------------------------------
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # -------------------------------------------------
-      # .NET SETUP
-      # -------------------------------------------------
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -45,26 +42,20 @@ jobs:
             10.0.x
 
       # -------------------------------------------------
-      # FIND SOLUTION
+      # FIND SOLUTION & RESTORE
       # -------------------------------------------------
       - name: Find solution file
         id: find_sln
         shell: bash
         run: |
           SLN_FILE=$(find . -name "*.sln" | head -n 1)
-
           if [ -z "$SLN_FILE" ]; then
-            echo "No solution file found"
             echo "sln_exists=false" >> $GITHUB_OUTPUT
           else
-            echo "Found solution: $SLN_FILE"
             echo "sln_exists=true" >> $GITHUB_OUTPUT
             echo "sln_file=$SLN_FILE" >> $GITHUB_OUTPUT
           fi
 
-      # -------------------------------------------------
-      # RESTORE & PREPARE DEPENDENCIES (C# & JS)
-      # -------------------------------------------------
       - name: Restore dependencies
         if: steps.find_sln.outputs.sln_exists == 'true'
         continue-on-error: true
@@ -72,19 +63,20 @@ jobs:
           dotnet restore "${{ steps.find_sln.outputs.sln_file }}" --use-lock-file
           if [ -f package.json ]; then npm install --package-lock-only; fi
 
-      # -------------------------------------------------
-      # BUILD (NON-BLOCKING)
-      # -------------------------------------------------
       - name: Build solution
         if: steps.find_sln.outputs.sln_exists == 'true'
         continue-on-error: true
         run: |
-          dotnet build "${{ steps.find_sln.outputs.sln_file }}" \
-            --configuration Release \
-            --no-restore
+          dotnet build "${{ steps.find_sln.outputs.sln_file }}" --configuration Release --no-restore
 
       # -------------------------------------------------
-      # SEMGREP
+      # RAPOR DİZİNİNİ HAZIRLAMA
+      # -------------------------------------------------
+      - name: Create Reports Directory
+        run: mkdir -p security-reports-dir
+
+      # -------------------------------------------------
+      # SEMGREP (SARIF Çıktısı)
       # -------------------------------------------------
       - name: Run Semgrep
         uses: returntocorp/semgrep-action@v1
@@ -94,18 +86,26 @@ jobs:
             p/security-audit
             p/secrets
             p/owasp-top-ten
+          sarif: true
+      
+      - name: Move Semgrep Report
+        if: always()
+        run: [ -f semgrep.sarif ] && mv semgrep.sarif security-reports-dir/semgrep.sarif || echo "No semgrep report"
 
       # -------------------------------------------------
-      # GITLEAKS
+      # GITLEAKS (SARIF Çıktısı)
       # -------------------------------------------------
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          format: sarif
+          output: security-reports-dir/gitleaks.sarif
 
       # -------------------------------------------------
-      # TRUFFLEHOG
+      # TRUFFLEHOG (SARIF Çıktısı)
       # -------------------------------------------------
       - name: Run TruffleHog
         continue-on-error: true
@@ -115,12 +115,16 @@ jobs:
             ghcr.io/trufflesecurity/trufflehog:latest \
             filesystem /repo \
             --only-verified=false \
-            --json > trufflehog-results.json || true
-
-          echo "TruffleHog scan completed"
+            --scandash > trufflehog-raw.json || true
+          
+          # TruffleHog çıktısını SARIF formatına dönüştürmek için resmi aracı kullanalım
+          docker run --rm \
+            -v "$PWD:/repo" \
+            ghcr.io/trufflesecurity/trufflehog:latest \
+            convert --format=sarif /repo/trufflehog-raw.json > security-reports-dir/trufflehog.sarif || true
 
       # -------------------------------------------------
-      # TRIVY FS SCAN (Genel Dosya Sistemi Taraması)
+      # TRIVY FS SCAN (SARIF Çıktısı)
       # -------------------------------------------------
       - name: Run Trivy Filesystem Scan
         uses: aquasecurity/trivy-action@master
@@ -128,12 +132,13 @@ jobs:
         with:
           scan-type: 'fs'
           scan-ref: '.'
-          format: 'table'
+          format: 'sarif'
+          output: 'security-reports-dir/trivy-fs.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM'
           ignore-unfixed: true
 
       # -------------------------------------------------
-      # TRIVY: GENERATE SBOM (C# ve JS Paketlerini Toplar)
+      # TRIVY: GENERATE SBOM & SCAN (SARIF Çıktısı)
       # -------------------------------------------------
       - name: Generate SBOM using Trivy
         uses: aquasecurity/trivy-action@master
@@ -141,30 +146,39 @@ jobs:
         with:
           scan-type: 'fs'
           format: 'cyclonedx'
-          output: 'sbom.json'
+          output: 'security-reports-dir/sbom.json'
 
-      # -------------------------------------------------
-      # TRIVY: SCAN GENERATED SBOM
-      # -------------------------------------------------
       - name: Scan Generated SBOM using Trivy
         uses: aquasecurity/trivy-action@master
         continue-on-error: true
         with:
           scan-type: 'sbom'
-          scan-ref: 'sbom.json'
-          format: 'table'
+          scan-ref: 'security-reports-dir/sbom.json'
+          format: 'sarif'
+          output: 'security-reports-dir/trivy-sbom.sarif'
           severity: 'CRITICAL,HIGH'
-          # Not: Eğer kritik açıkta pipeline dursun isterseniz alt satırı aktifleştirebilirsiniz:
-          # exit-code: '1' 
 
       # -------------------------------------------------
-      # UPLOAD REPORTS
+      # MERKEZİ HTML RAPORU OLUŞTURMA (SARIF -> HTML)
       # -------------------------------------------------
-      - name: Upload scan artifacts
+      - name: Merge and Generate Master HTML Report
+        if: always()
+        run: |
+          # Microsoft'un SARIF Multitool aracını kuralım
+          npm install -g @microsoft/sarif-multitool
+          
+          # Tüm bağımsız sarif dosyalarını tek bir ana dosyada birleştirelim
+          sarif-multitool merge security-reports-dir/*.sarif --output-file=security-reports-dir/master-security.sarif
+          
+          # Birleştirilmiş bu ana dosyayı çok şık bir HTML dosyasına dönüştürelim
+          sarif-multitool transform security-reports-dir/master-security.sarif --format HTML --output-file=security-reports-dir/Bütün-Güvenlik-Raporu.html
+
+      # -------------------------------------------------
+      # TÜM RAPORLARI TEK BİR ARTIFACT OLARAK YÜKLEME
+      # -------------------------------------------------
+      - name: Upload Master Security Report
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: security-reports
-          path: |
-            trufflehog-results.json
-            sbom.json
+          name: Bütün-Güvenlik-Raporları
+          path: security-reports-dir/
